@@ -1,3 +1,4 @@
+import { version } from "canvas";
 import { env } from "src/lib/env-client";
 import { ILayerConfig } from "src/types";
 
@@ -19,7 +20,7 @@ export type LayerConfigTemplate = Pick<
 export const basemaps = {
   monochrome: {
     name: "Monochrome",
-    url: "mapbox://styles/mapbox/light-v10",
+    url: "mapbox://styles/mapbox/light-v11",
     thumbnailClass: "bg-thumbnail-monochrome",
     ...defaults,
     isBasemap: true,

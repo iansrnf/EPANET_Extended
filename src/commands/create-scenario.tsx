@@ -37,7 +37,7 @@ export const useCreateScenario = () => {
   return useCallback(
     ({ source: _source }: { source: string }) => {
       const isFirstTimeEnabling = scenariosList.length === 0;
-      const shouldBypassPaywall = isDemoTrialOn && fileInfo?.isDemoNetwork;
+      const shouldBypassPaywall = true;
 
       if (
         isFirstTimeEnabling &&

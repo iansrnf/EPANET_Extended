@@ -4,7 +4,6 @@ import {
   addMapboxStyle,
   addXYZStyle,
   addTileJSONStyle,
-  addOSMStyle,
 } from "src/lib/layer-config-adapters";
 import { emptyFeatureCollection } from "src/lib/constants";
 
@@ -40,10 +39,6 @@ export async function buildBaseStyle({
   for (const layer of layers) {
     id++;
     switch (layer.type) {
-      case "MAPBOX": {
-        style = addOSMStyle(style, layer, id);
-        break;
-      }
       case "MAPBOX": {
         style = await addMapboxStyle(style, layer, translate);
         break;

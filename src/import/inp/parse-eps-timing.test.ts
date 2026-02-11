@@ -1,0 +1,220 @@
+import { parseInp } from "./parse-inp";
+
+describe("parse EPS timing", () => {
+  const baseInp = `
+    [JUNCTIONS]
+    j1\t100
+
+    [RESERVOIRS]
+    r1\t200
+
+    [PIPES]
+    p1\tr1\tj1\t1000\t100\t100\t0
+
+    [COORDINATES]
+    j1\t10\t20
+    r1\t30\t40
+  `;
+
+  it("parses DURATION in HH:MM format", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    DURATION\t24:00
+    `;
+
+    const { hydraulicModel } = parseInp(inp);
+
+    expect(hydraulicModel.epsTiming.duration).toEqual(24 * 3600);
+  });
+
+  it("parses DURATION in HH:MM:SS format", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    DURATION\t1:30:00
+    `;
+
+    const { hydraulicModel } = parseInp(inp);
+
+    expect(hydraulicModel.epsTiming.duration).toEqual(1 * 3600 + 30 * 60);
+  });
+
+  it("parses DURATION with HOURS unit", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    DURATION\t48 HOURS
+    `;
+
+    const { hydraulicModel } = parseInp(inp);
+
+    expect(hydraulicModel.epsTiming.duration).toEqual(48 * 3600);
+  });
+
+  it("parses DURATION with numeric value (assumes hours)", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    DURATION\t12
+    `;
+
+    const { hydraulicModel } = parseInp(inp);
+
+    expect(hydraulicModel.epsTiming.duration).toEqual(12 * 3600);
+  });
+
+  it("parses HYDRAULIC TIMESTEP", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    HYDRAULIC TIMESTEP\t1:00
+    `;
+
+    const { hydraulicModel } = parseInp(inp);
+
+    expect(hydraulicModel.epsTiming.hydraulicTimestep).toEqual(3600);
+  });
+
+  it("parses REPORT TIMESTEP", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    REPORT TIMESTEP\t0:30
+    `;
+
+    const { hydraulicModel } = parseInp(inp);
+
+    expect(hydraulicModel.epsTiming.reportTimestep).toEqual(30 * 60);
+  });
+
+  it("parses PATTERN TIMESTEP", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    PATTERN TIMESTEP\t1:00
+    `;
+
+    const { hydraulicModel } = parseInp(inp);
+
+    expect(hydraulicModel.epsTiming.patternTimestep).toEqual(3600);
+  });
+
+  it("parses all time settings together", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    DURATION\t24:00
+    HYDRAULIC TIMESTEP\t1:00
+    REPORT TIMESTEP\t1:00
+    PATTERN TIMESTEP\t1:00
+    `;
+
+    const { hydraulicModel } = parseInp(inp);
+
+    expect(hydraulicModel.epsTiming.duration).toEqual(24 * 3600);
+    expect(hydraulicModel.epsTiming.hydraulicTimestep).toEqual(3600);
+    expect(hydraulicModel.epsTiming.reportTimestep).toEqual(3600);
+    expect(hydraulicModel.epsTiming.patternTimestep).toEqual(3600);
+  });
+
+  it("leaves time settings undefined when not specified", () => {
+    const { hydraulicModel } = parseInp(baseInp);
+
+    expect(hydraulicModel.epsTiming.duration).toBeUndefined();
+    expect(hydraulicModel.epsTiming.hydraulicTimestep).toBeUndefined();
+    expect(hydraulicModel.epsTiming.reportTimestep).toBeUndefined();
+    expect(hydraulicModel.epsTiming.patternTimestep).toBeUndefined();
+  });
+
+  it("warns for PATTERN START with non-zero value", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    PATTERN START\t6:00
+    `;
+
+    const { issues } = parseInp(inp);
+
+    expect(issues?.nonDefaultTimes?.has("PATTERN START")).toBe(true);
+  });
+
+  it("does not warn for PATTERN START with zero value", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    PATTERN START\t0
+    `;
+
+    const { issues } = parseInp(inp);
+
+    expect(issues?.nonDefaultTimes?.has("PATTERN START")).toBeFalsy();
+  });
+
+  it("does not warn for REPORT START with zero value", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    REPORT START\t00:00
+    `;
+
+    const { issues } = parseInp(inp);
+
+    expect(issues?.nonDefaultTimes?.has("REPORT START")).toBeFalsy();
+  });
+
+  it("warns for REPORT START with non-zero value", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    REPORT START\t1:00
+    `;
+
+    const { issues } = parseInp(inp);
+
+    expect(issues?.nonDefaultTimes?.has("REPORT START")).toBe(true);
+  });
+
+  it("does not warn for START CLOCKTIME with 12 AM (default)", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    START CLOCKTIME\t12 AM
+    `;
+
+    const { issues } = parseInp(inp);
+
+    expect(issues?.nonDefaultTimes?.has("START CLOCKTIME")).toBeFalsy();
+  });
+
+  it("warns for START CLOCKTIME with non-default value", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    START CLOCKTIME\t6 AM
+    `;
+
+    const { issues } = parseInp(inp);
+
+    expect(issues?.nonDefaultTimes?.has("START CLOCKTIME")).toBe(true);
+  });
+
+  it("does not warn for QUALITY TIMESTEP", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    QUALITY TIMESTEP\t0:05
+    `;
+
+    const { issues } = parseInp(inp);
+
+    expect(issues?.nonDefaultTimes?.has("QUALITY TIMESTEP")).toBeFalsy();
+  });
+
+  it("warns for STATISTIC with non-NONE value", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    STATISTIC\tAVERAGE
+    `;
+
+    const { issues } = parseInp(inp);
+
+    expect(issues?.nonDefaultTimes?.has("STATISTIC")).toBe(true);
+  });
+
+  it("does not warn for STATISTIC with NONE value", () => {
+    const inp = `${baseInp}
+    [TIMES]
+    STATISTIC\tNONE
+    `;
+
+    const { issues } = parseInp(inp);
+
+    expect(issues?.nonDefaultTimes?.has("STATISTIC")).toBeFalsy();
+  });
+});

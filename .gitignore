@@ -1,36 +1,74 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
+toms-air*
 # dependencies
-/node_modules
-/.pnp
-.pnp.js
+node_modules
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.pnp.*
+.npm
+web_modules/
 
-# testing
-/coverage
-
-# next.js
+# blitz
+/.blitz/
 /.next/
 /out/
-
-# production
-/build
+*.sqlite
+*.sqlite-journal
+.now
+.blitz-console-history
+blitz-log.log
+.blitz.config.compiled.js
 
 # misc
 .DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
 # local env files
-.env*.local
 .env
+.env.local
+.env.*.local
+.env.*
+!.env.example
+.envrc
 
-# vercel
+# Logs
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Testing
+.coverage
+coverage
+*.lcov
+.nyc_output
+lib-cov
+
+# Caches
+*.tsbuildinfo
+.eslintcache
+.node_repl_history
+.yarn-integrity
+
+# Serverless directories
+.serverless/
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+.nova
 .vercel
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# Sentry Config File
+.env.sentry-build-plugin
+
+*.patch
+
+.claude
+specs/
+
+# Benchmark data files
+**/.benchmark/

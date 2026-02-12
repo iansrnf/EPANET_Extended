@@ -2,15 +2,11 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Next.js: Server",
-      "type": "node",
+      "name": "Next.js: Server (pnpm)",
+      "type": "node-terminal",
       "request": "launch",
-      "program": "${workspaceFolder}\\node_modules\\next\\dist\\bin\\next",
-      "args": ["dev"],
-      "cwd": "${workspaceFolder}",
-      "runtimeArgs": ["--inspect"],
-      "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"]
+      "command": "pnpm dev",
+      "cwd": "${workspaceFolder}"
     },
     {
       "name": "Next.js: Client (Chrome)",
@@ -24,7 +20,7 @@
     {
       "name": "Next.js: Full Debug (Chrome)",
       "configurations": [
-        "Next.js: Server",
+        "Next.js: Server (pnpm)",
         "Next.js: Client (Chrome)"
       ]
     }

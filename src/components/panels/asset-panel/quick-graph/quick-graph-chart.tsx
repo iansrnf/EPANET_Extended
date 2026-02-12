@@ -15,6 +15,11 @@ interface QuickGraphChartProps {
   currentIntervalIndex: number;
   onIntevalClick: (intervalIndex: number) => void;
   scenarioName: string | null;
+
+  // ✅ NEW optional live overlay
+  liveValues?: (number | null)[] | null;
+  liveLabel?: string | null;
+  liveColor?: string;
 }
 
 export function QuickGraphChart(props: QuickGraphChartProps) {
@@ -31,15 +36,34 @@ function QuickGraphChartECharts({
   decimals,
   onIntevalClick,
   scenarioName,
+  liveValues,
+  liveLabel,
+  liveColor,
 }: QuickGraphChartProps) {
   const translate = useTranslate();
 
-  const showLegend = mainValues && mainValues.length > 0;
+  const hasMain = !!(mainValues && mainValues.length > 0);
+  const hasLive = !!(liveValues && liveValues.length > 0 && liveLabel);
+  const showLegend = hasMain || hasLive;
+
+  const getNumericTooltipValue = (pValue: any): number | null => {
+    const v = Array.isArray(pValue) ? pValue[1] : pValue;
+    if (typeof v !== "number") return null;
+    if (!Number.isFinite(v)) return null;
+    return v;
+  };
 
   const allValues = useMemo(() => {
-    if (!mainValues || mainValues.length === 0) return values;
-    return [...values, ...mainValues];
-  }, [values, mainValues]);
+    const merged: number[] = [];
+    for (const v of values) if (typeof v === "number" && Number.isFinite(v)) merged.push(v);
+    if (mainValues && mainValues.length > 0) {
+      for (const v of mainValues) if (typeof v === "number" && Number.isFinite(v)) merged.push(v);
+    }
+    if (liveValues && liveValues.length > 0) {
+      for (const v of liveValues) if (typeof v === "number" && Number.isFinite(v)) merged.push(v);
+    }
+    return merged;
+  }, [values, mainValues, liveValues]);
 
   const xAxis: EChartsOption["xAxis"] = useMemo(
     () => buildXAxis(intervalsCount, intervalSeconds),
@@ -76,30 +100,55 @@ function QuickGraphChartECharts({
         },
         label: { show: false },
       },
+      z: 3,
     };
 
-    if (!mainValues || mainValues.length === 0) {
-      return [scenarioSeries];
+    const list: any[] = [];
+
+    if (mainValues && mainValues.length > 0) {
+      list.push({
+        type: "line" as const,
+        name: mainLabel ?? undefined,
+        data: mainValues,
+        lineStyle: {
+          color: colors.gray400,
+          width: 1.5,
+        },
+        itemStyle: {
+          color: colors.gray400,
+        },
+        symbol: "none",
+        smooth: false,
+        z: 0,
+      });
     }
 
-    const mainSeries = {
-      type: "line" as const,
-      name: mainLabel ?? undefined,
-      data: mainValues,
-      lineStyle: {
-        color: colors.gray400,
-        width: 1.5,
-      },
-      itemStyle: {
-        color: colors.gray400,
-      },
-      symbol: "none",
-      smooth: false,
-      z: 0,
-    };
+    if (liveValues && liveValues.length > 0 && liveLabel) {
+      const c = liveColor ?? "rgb(239, 68, 68)";
+      list.push({
+        type: "line" as const,
+        name: liveLabel,
+        data: liveValues.map((v) => (typeof v === "number" && Number.isFinite(v) ? v : null)),
+        lineStyle: { color: c, width: 2 },
+        itemStyle: { color: c },
+        symbol: "none",
+        smooth: false,
+        z: 1,
+      });
+    }
 
-    return [mainSeries, scenarioSeries];
-  }, [values, mainValues, mainLabel, scenarioName, currentIntervalIndex]);
+    list.push(scenarioSeries);
+    return list;
+  }, [
+    values,
+    mainValues,
+    mainLabel,
+    scenarioName,
+    currentIntervalIndex,
+    liveValues,
+    liveLabel,
+    liveColor,
+  ]);
 
   const legend: EChartsOption["legend"] = useMemo(() => {
     if (!showLegend) return undefined;
@@ -140,13 +189,17 @@ function QuickGraphChartECharts({
       formatter: (params: any) => {
         if (!Array.isArray(params) || params.length === 0) return "";
         const timeLabel = params[0]?.name ?? "";
+
         const lines = params.map((p: any) => {
-          const value = localizeDecimal(p.value, { decimals });
-          const isComparingScenarios = mainValues !== null;
-          if (!isComparingScenarios) return value;
+          const num = getNumericTooltipValue(p.value);
+          const valueText = num === null ? "—" : localizeDecimal(num, { decimals });
+
+          if (!showLegend) return valueText;
+
           const colorDot = `<span style="display:inline-block;width:8px;height:8px;background:${p.color};margin-right:4px;border-radius:50%;"></span>`;
-          return `${colorDot}${p.seriesName ?? ""}: ${value}`;
+          return `${colorDot}${p.seriesName ?? ""}: ${valueText}`;
         });
+
         return `${timeLabel}<br/>${lines.join("<br/>")}`;
       },
     },
@@ -252,13 +305,22 @@ const buildXAxis = (
 
 const buildTimeLabels = (intervalsCount: number, intervalSeconds: number) => {
   const labels: string[] = [];
-  for (let i = 0; i < intervalsCount; i++) {
-    const totalSeconds = i * intervalSeconds;
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    labels.push(`${hours}:${minutes.toString().padStart(2, "0")}`);
-  }
-  return labels;
+
+for (let i = 0; i < intervalsCount; i++) {
+  const totalSeconds = i * intervalSeconds;
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  const hh = hours.toString().padStart(2, "0");
+  const mm = minutes.toString().padStart(2, "0");
+  const ss = seconds.toString().padStart(2, "0");
+
+  labels.push(`${hh}:${mm}:${ss}`);
+}
+
+return labels;
 };
 
 const calculateXAxisInterval = (
@@ -273,16 +335,12 @@ const calculateXAxisInterval = (
   const idealStep = totalSeconds / (targetTickCount - 1 || 1);
 
   const bestStepSeconds = logicalSteps.reduce((prev, curr) => {
-    return Math.abs(curr - idealStep) < Math.abs(prev - idealStep)
-      ? curr
-      : prev;
+    return Math.abs(curr - idealStep) < Math.abs(prev - idealStep) ? curr : prev;
   });
 
   const indexInterval = Math.round(bestStepSeconds / intervalSeconds);
 
-  return (index: number) => {
-    return index % indexInterval === 0;
-  };
+  return (index: number) => index % indexInterval === 0;
 };
 
 const calculateXAxisStep = (
@@ -302,10 +360,7 @@ const calculateXAxisStep = (
   return Math.max(1, Math.round(step / intervalSeconds));
 };
 
-const buildYAxis = (
-  values: number[],
-  decimals: number,
-): EChartsOption["yAxis"] => {
+const buildYAxis = (values: number[], decimals: number): EChartsOption["yAxis"] => {
   const { min, max, interval } = calculateInterval(decimals, values, 5);
   return {
     type: "value",
@@ -322,9 +377,7 @@ const buildYAxis = (
     axisLabel: {
       color: colors.gray500,
       fontSize: 12,
-      formatter: (value: number) => {
-        return localizeDecimal(value, { decimals });
-      },
+      formatter: (value: number) => localizeDecimal(value, { decimals }),
     },
   };
 };
@@ -345,6 +398,7 @@ export const calculateInterval = (
 
   const minPrecision = Math.pow(10, -decimals + 1);
   let niceInterval = minPrecision;
+
   if (range > 0) {
     const roughInterval = range / (targetIntervalsCount - 1);
     const magnitude = Math.pow(10, Math.floor(Math.log10(roughInterval)));

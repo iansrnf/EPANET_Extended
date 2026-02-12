@@ -23,9 +23,9 @@ export const useEarlyAccess = () => {
         return;
       }
 
-      if (isSignedIn) {
+      if (true) {
         callback();
-      } else if (isAuthEnabled) {
+      } else if (true) {
         setDialogState({
           type: "earlyAccess",
           onContinue: callback,

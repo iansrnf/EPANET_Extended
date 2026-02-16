@@ -1,6 +1,3 @@
-// File: src/components/asset-panel/quick-graph/use-quick-graph.tsx
-// (Use the same path where your current QuickGraphSection lives. Replace that file’s contents with this.)
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import { PinIcon, PinOffIcon } from "src/icons";
@@ -23,6 +20,9 @@ import type { AssetId, Valve } from "src/hydraulic-model/asset-types";
 import { useTimeSeries } from "./use-time-series";
 import { QuickGraphChart } from "./quick-graph-chart";
 import { useChangeTimestep } from "src/commands/change-timestep";
+
+// ✅ Zustand store (must include liveLogger + ensureSeriesLength + resetLiveSeries)
+import { useLiveSeriesStore, type LiveLoggerConfig } from "src/store/liveSeriesStore";
 
 const QUICK_GRAPH_PROPERTIES: {
   [K in QuickGraphAssetType]: {
@@ -78,6 +78,7 @@ export const useShowQuickGraph = () => {
 };
 
 interface QuickGraphSectionProps {
+  nodeTitle: string;
   assetType: QuickGraphAssetType;
   assetId: AssetId;
   data: TimeSeries | null;
@@ -95,28 +96,6 @@ const getValveSettingQuantityKey = (valve: Valve): QuantityProperty | null => {
 // ------------------------
 // Live logger helpers
 // ------------------------
-type LiveLoggerConfig = {
-  enabled: boolean;
-  wsUrl: string;
-  deviceId: string;
-  field: string;
-
-  /**
-   * How to map incoming timestamps onto the chart x-axis.
-   * - "midnight": map to seconds since local midnight (works for 00:00..24:00 timelines)
-   * - "rolling": map relative to when you hit Enable (useful for “last 1 hour” style charts)
-   */
-  timeMapping: "midnight" | "rolling";
-};
-
-const DEFAULT_LIVE_LOGGER: LiveLoggerConfig = {
-  enabled: false,
-  wsUrl: "wss://logger-api.gscwd.app/stream",
-  deviceId: "pi-sim-001",
-  field: "pressure",
-  timeMapping: "midnight",
-};
-
 function safeNumber(x: unknown): number | null {
   if (typeof x !== "number") return null;
   if (!Number.isFinite(x)) return null;
@@ -138,7 +117,7 @@ function secondsSinceLocalMidnight(tsMs: number): number {
 }
 // ------------------------
 
-const QuickGraphSection = ({
+export const QuickGraph = ({
   assetType,
   assetId,
   data,
@@ -196,39 +175,37 @@ const QuickGraphSection = ({
       : 0;
 
   // ------------------------
-  // Live logger state + buffers
+  // Live logger: GLOBAL state + local connection refs
   // ------------------------
   const [isLiveModalOpen, setIsLiveModalOpen] = useState(false);
-  const [liveLogger, setLiveLogger] =
-    useState<LiveLoggerConfig>(DEFAULT_LIVE_LOGGER);
+
+  const liveSeries = useLiveSeriesStore((s) => s.liveSeries);
+  const setLiveSeries = useLiveSeriesStore((s) => s.setLiveSeries);
+  const resetLiveSeries = useLiveSeriesStore((s) => s.resetLiveSeries);
+  const ensureSeriesLength = useLiveSeriesStore((s) => s.ensureSeriesLength);
+
+  const liveLogger = useLiveSeriesStore((s) => s.liveLogger);
+  const setLiveLogger = useLiveSeriesStore((s) => s.setLiveLogger);
 
   const wsRef = useRef<WebSocket | null>(null);
-
-  // Rolling anchor (used when timeMapping="rolling")
   const rollingStartMsRef = useRef<number | null>(null);
 
-  // Live series buffer aligned to values[] length
-  const liveSeriesRef = useRef<(number | null)[]>([]);
-
-  // A tick to force changes into memo deps and to ensure child gets new props
-  const [tick, setTick] = useState(0);
-
-  // Reset live buffers if timeline size changes
+  // Keep series length aligned to chart length WITHOUT wiping existing points
   useEffect(() => {
-    liveSeriesRef.current = values.length ? Array(values.length).fill(null) : [];
-    setTick((x) => x + 1);
-  }, [values.length, data?.intervalSeconds, data?.intervalsCount]);
+    if (!values.length) return;
+    ensureSeriesLength(values.length);
+  }, [values.length, ensureSeriesLength]);
 
-  // Keep live field in sync with selected property
+  // Keep live field in sync with selected property (optional but matches your old behavior)
   useEffect(() => {
-    setLiveLogger((prev) => ({ ...prev, field: String(selectedProperty) }));
+    setLiveLogger((prev: LiveLoggerConfig) => ({ ...prev, field: String(selectedProperty) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProperty]);
 
-  // Connect/disconnect live websocket
+  // Connect/disconnect websocket based on liveLogger.enabled
   useEffect(() => {
+    // If disabled: close any existing socket (but DO NOT clear points here)
     if (!liveLogger.enabled) {
-      // disconnect
       if (wsRef.current) {
         try {
           wsRef.current.close();
@@ -238,12 +215,11 @@ const QuickGraphSection = ({
       return;
     }
 
-    // clear series on connect
-    liveSeriesRef.current = values.length ? Array(values.length).fill(null) : [];
-    setTick((x) => x + 1);
+    // Ensure length so writes won't explode
+    ensureSeriesLength(values.length);
 
-    // set rolling anchor when enabling
-    if (liveLogger.timeMapping === "rolling") {
+    // Rolling anchor (only set if missing)
+    if (liveLogger.timeMapping === "rolling" && rollingStartMsRef.current == null) {
       rollingStartMsRef.current = Date.now();
     }
 
@@ -277,31 +253,24 @@ const QuickGraphSection = ({
           idx = Math.round(elapsedSec / data.intervalSeconds);
         }
 
-        // Drop points outside the current series length
         if (idx < 0 || idx >= values.length) return;
 
-        // Ensure correct buffer length
-        if (
-          !liveSeriesRef.current ||
-          liveSeriesRef.current.length !== values.length
-        ) {
-          liveSeriesRef.current = Array(values.length).fill(null);
-        }
+        // Immutable update to trigger React rerender, while preserving older points
+        setLiveSeries((prev) => {
+          const base =
+            prev.length === values.length
+              ? prev
+              : prev.length > values.length
+                ? prev.slice(0, values.length)
+                : [...prev, ...Array(values.length - prev.length).fill(null)];
 
-        // Update value and tick
-        liveSeriesRef.current[idx] = v;
-        setTick((x) => x + 1);
+          const next = base.slice();
+          next[idx] = v;
+          return next;
+        });
       } catch {
         // ignore invalid json
       }
-    };
-
-    ws.onclose = () => {
-      // optional: you can set some "connected" UI state here
-    };
-
-    ws.onerror = () => {
-      // optional: set some "error" UI state here
     };
 
     return () => {
@@ -316,24 +285,22 @@ const QuickGraphSection = ({
     liveLogger.deviceId,
     liveLogger.field,
     liveLogger.timeMapping,
+    ensureSeriesLength,
+    setLiveSeries,
     data,
     values.length,
   ]);
 
-  // IMPORTANT:
-  // Return a NEW array reference when tick changes.
-  // This makes memoized children re-render reliably.
+  // Chart gets live series only when enabled
   const liveAlignedValues = useMemo(() => {
     if (!liveLogger.enabled) return null;
     if (!data) return null;
 
-    const arr =
-      liveSeriesRef.current && liveSeriesRef.current.length === values.length
-        ? liveSeriesRef.current
-        : Array(values.length).fill(null);
-
-    return arr.slice();
-  }, [liveLogger.enabled, data, values.length, tick]);
+    if (!liveSeries || liveSeries.length !== values.length) {
+      return Array(values.length).fill(null);
+    }
+    return liveSeries;
+  }, [liveLogger.enabled, data, liveSeries, values.length]);
   // ------------------------
 
   const propertyOptions = useMemo(() => {
@@ -395,7 +362,6 @@ const QuickGraphSection = ({
         {pinButton}
       </div>
 
-      {/* selector + add live logger */}
       <div className="flex items-center gap-2 pb-2">
         <div className="w-max">
           <Selector
@@ -417,6 +383,22 @@ const QuickGraphSection = ({
             <span className="text-sm font-semibold">Add Live Logger</span>
           </span>
         </Button>
+
+        {liveLogger.enabled && (
+          <Button
+            variant="quiet"
+            onClick={() => {
+              // ✅ ONLY here we clear points (because user explicitly stopped)
+              setLiveLogger((p: LiveLoggerConfig) => ({ ...p, enabled: false }));
+              resetLiveSeries();
+              rollingStartMsRef.current = null;
+            }}
+          >
+            <span className="flex items-center gap-2 text-red-600">
+              <span className="text-sm font-semibold">Stop Logger</span>
+            </span>
+          </Button>
+        )}
       </div>
 
       <div className="relative flex-1 min-h-[120px]">
@@ -471,7 +453,7 @@ const QuickGraphSection = ({
                   className="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1"
                   value={liveLogger.wsUrl}
                   onChange={(e) =>
-                    setLiveLogger((p) => ({ ...p, wsUrl: e.target.value }))
+                    setLiveLogger((p: LiveLoggerConfig) => ({ ...p, wsUrl: e.target.value }))
                   }
                   placeholder="ws://127.0.0.1:8765"
                 />
@@ -484,7 +466,7 @@ const QuickGraphSection = ({
                     className="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1"
                     value={liveLogger.deviceId}
                     onChange={(e) =>
-                      setLiveLogger((p) => ({ ...p, deviceId: e.target.value }))
+                      setLiveLogger((p: LiveLoggerConfig) => ({ ...p, deviceId: e.target.value }))
                     }
                     placeholder="pi-sim-001"
                   />
@@ -496,7 +478,7 @@ const QuickGraphSection = ({
                     className="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1"
                     value={liveLogger.field}
                     onChange={(e) =>
-                      setLiveLogger((p) => ({ ...p, field: e.target.value }))
+                      setLiveLogger((p: LiveLoggerConfig) => ({ ...p, field: e.target.value }))
                     }
                     placeholder="pressure"
                   />
@@ -509,7 +491,7 @@ const QuickGraphSection = ({
                   className="rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-2 py-1"
                   value={liveLogger.timeMapping}
                   onChange={(e) =>
-                    setLiveLogger((p) => ({
+                    setLiveLogger((p: LiveLoggerConfig) => ({
                       ...p,
                       timeMapping: e.target.value as LiveLoggerConfig["timeMapping"],
                     }))
@@ -518,22 +500,22 @@ const QuickGraphSection = ({
                   <option value="midnight">
                     Midnight-based (timestamp hour:minute chart 00:00..24:00)
                   </option>
-                  <option value="rolling">
-                    Rolling (starts at Enable chart starts at 00:00)
-                  </option>
+                  <option value="rolling">Rolling (starts at Enable chart starts at 00:00)</option>
                 </select>
               </label>
 
               <div className="text-xs text-gray-500">
-                If your x-axis is 00:00..24:00, use Midnight-based.
-                If your x-axis is “start now then run”, use Rolling.
+                Midnight-based = map to local time-of-day. Rolling = map from the moment you enable.
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2">
                 <Button
                   variant="quiet"
                   onClick={() => {
-                    setLiveLogger((p) => ({ ...p, enabled: false }));
+                    // Treat Disable as Stop (clears points) per your request
+                    setLiveLogger((p: LiveLoggerConfig) => ({ ...p, enabled: false }));
+                    resetLiveSeries();
+                    rollingStartMsRef.current = null;
                     setIsLiveModalOpen(false);
                   }}
                 >
@@ -542,14 +524,12 @@ const QuickGraphSection = ({
 
                 <Button
                   onClick={() => {
-                    // Reset buffers and anchors before enabling
-                    rollingStartMsRef.current = Date.now();
-                    liveSeriesRef.current = values.length
-                      ? Array(values.length).fill(null)
-                      : [];
-                    setTick((x) => x + 1);
-
-                    setLiveLogger((p) => ({ ...p, enabled: true }));
+                    // Do NOT clear points when enabling (keep history)
+                    if (liveLogger.timeMapping === "rolling") {
+                      rollingStartMsRef.current = Date.now();
+                    }
+                    ensureSeriesLength(values.length);
+                    setLiveLogger((p: LiveLoggerConfig) => ({ ...p, enabled: true }));
                     setIsLiveModalOpen(false);
                   }}
                 >
@@ -571,9 +551,8 @@ const QuickGraphSection = ({
   );
 };
 
-export const QuickGraph = QuickGraphSection;
-
 export function useQuickGraph<T extends QuickGraphAssetType>(
+  label: string,
   assetId: number,
   assetType: T,
 ) {
@@ -589,6 +568,7 @@ export function useQuickGraph<T extends QuickGraphAssetType>(
 
   const footer = showQuickGraph ? (
     <QuickGraph
+      nodeTitle={label}
       assetId={assetId}
       assetType={assetType}
       data={data}

@@ -384,7 +384,7 @@ const JunctionEditor = ({
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
-  const { footer } = useQuickGraph(junction.id, "junction");
+  const { footer } = useQuickGraph(junction.label, junction.id, "junction");
   const { getComparison, getDirectDemandComparison, isNew } =
     useAssetComparison(junction);
   const simulation = useSimulation();
@@ -542,7 +542,7 @@ const PipeEditor = ({
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
-  const { footer } = useQuickGraph(pipe.id, "pipe");
+  const { footer } = useQuickGraph(pipe.label, pipe.id, "pipe");
   const { getComparison, isNew } = useAssetComparison(pipe);
   const simulation = useSimulation();
   const pipeSimulation = simulation?.getPipe(pipe.id);
@@ -743,7 +743,7 @@ const ReservoirEditor = ({
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
-  const { footer } = useQuickGraph(reservoir.id, "reservoir");
+  const { footer } = useQuickGraph(reservoir.label, reservoir.id, "reservoir");
   const { getComparison, isNew } = useAssetComparison(reservoir);
 
   return (
@@ -803,7 +803,7 @@ const TankEditor = ({
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
-  const { footer } = useQuickGraph(tank.id, "tank");
+  const { footer } = useQuickGraph(tank.label, tank.id, "tank");
   const { getComparison, isNew } = useAssetComparison(tank);
   const simulation = useSimulation();
   const tankSimulation = simulation?.getTank(tank.id);
@@ -964,7 +964,7 @@ const ValveEditor = ({
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
-  const { footer } = useQuickGraph(valve.id, "valve");
+  const { footer } = useQuickGraph(valve.label, valve.id, "valve");
   const { getComparison, isNew } = useAssetComparison(valve);
   const simulation = useSimulation();
   const valveSimulation = simulation?.getValve(valve.id);
@@ -1144,7 +1144,7 @@ const PumpEditor = ({
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
-  const { footer } = useQuickGraph(pump.id, "pump");
+  const { footer } = useQuickGraph(pump.label, pump.id, "pump");
   const { getComparison, getPumpCurveComparison, isNew } =
     useAssetComparison(pump);
   const simulation = useSimulation();

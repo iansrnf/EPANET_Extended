@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 import {
   Asset,
@@ -15,6 +15,7 @@ import {
   getActiveCustomerPoints,
 } from "src/hydraulic-model/customer-points";
 import { Valve } from "src/hydraulic-model/asset-types";
+import { LoggerPoint } from "src/hydraulic-model/asset-types/logger-point";
 import {
   DemandPatterns,
   JunctionDemand,
@@ -56,6 +57,7 @@ import {
 import { Section } from "src/components/form/fields";
 import { PumpDefinitionDetails } from "./pump-definition-details";
 import { useQuickGraph } from "./quick-graph";
+import { QuickGraphChart } from "./quick-graph/quick-graph-chart";
 import { useAssetComparison } from "src/hooks/use-asset-comparison";
 import { useSimulation } from "src/hooks/use-simulation";
 import type {
@@ -357,6 +359,16 @@ export function AssetPanel({
       return (
         <TankEditor
           tank={asset as Tank}
+          quantitiesMetadata={quantitiesMetadata}
+          onPropertyChange={handlePropertyChange}
+          onLabelChange={handleLabelChange}
+          readonly={readonly}
+        />
+      );
+    case "loggerPoint":
+      return (
+        <LoggerPointEditor
+          loggerPoint={asset as LoggerPoint}
           quantitiesMetadata={quantitiesMetadata}
           onPropertyChange={handlePropertyChange}
           onLabelChange={handleLabelChange}
@@ -931,6 +943,322 @@ const TankEditor = ({
           decimals={quantitiesMetadata.getDecimals("volume")}
           readOnly={true}
         />
+      </Section>
+    </AssetEditorContent>
+  );
+};
+
+const LoggerPointEditor = ({
+  loggerPoint,
+  quantitiesMetadata,
+  onPropertyChange,
+  onLabelChange,
+  readonly = false,
+}: {
+  loggerPoint: LoggerPoint;
+  quantitiesMetadata: Quantities;
+  onPropertyChange: OnPropertyChange;
+  onLabelChange: (newLabel: string) => string | undefined;
+  readonly?: boolean;
+}) => {
+  const translate = useTranslate();
+  const { getComparison, isNew } = useAssetComparison(loggerPoint);
+  const [wsUrl, setWsUrl] = useState("wss://logger-api.gscwd.app/stream");
+  const [wsDeviceId, setWsDeviceId] = useState(loggerPoint.deviceId || "");
+  const [liveEnabled, setLiveEnabled] = useState(false);
+  const [liveConnected, setLiveConnected] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [liveSeries, setLiveSeries] = useState<number[]>([]);
+  const [liveData, setLiveData] = useState<{
+    deviceId?: string;
+    status?: string;
+    timestamp?: string;
+    pressure?: number;
+    flow?: number;
+    level?: number;
+    temperature?: number;
+    batteryV?: number;
+    externalV?: number;
+    gsmPct?: number;
+  }>({});
+  const wsRef = useRef<WebSocket | null>(null);
+  const graphLength = 120;
+  const loggerFieldsReadOnly = readonly || (liveEnabled && liveConnected);
+  const wsUrlWithDeviceId = useMemo(() => {
+    const deviceId = wsDeviceId.trim();
+    if (!deviceId) return wsUrl;
+    try {
+      const parsed = new URL(wsUrl);
+      parsed.searchParams.set("deviceId", deviceId);
+      return parsed.toString();
+    } catch {
+      const sep = wsUrl.includes("?") ? "&" : "?";
+      return `${wsUrl}${sep}deviceId=${encodeURIComponent(deviceId)}`;
+    }
+  }, [wsDeviceId, wsUrl]);
+
+  useEffect(() => {
+    if (!liveEnabled) {
+      if (wsRef.current) {
+        try {
+          wsRef.current.close();
+        } catch {}
+        wsRef.current = null;
+      }
+      setLiveConnected(false);
+      return;
+    }
+
+    try {
+      const ws = new WebSocket(wsUrlWithDeviceId);
+      wsRef.current = ws;
+      setLiveError(null);
+
+      ws.onopen = () => {
+        setLiveConnected(true);
+      };
+
+      ws.onclose = () => {
+        setLiveConnected(false);
+      };
+
+      ws.onerror = () => {
+        setLiveConnected(false);
+        setLiveError("Connection error");
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (wsDeviceId && msg?.deviceId !== wsDeviceId) return;
+
+          const pressureValue =
+            typeof msg?.pressure === "number"
+              ? msg.pressure
+              : typeof msg?.pressure_kpa === "number"
+                ? msg.pressure_kpa
+                : null;
+
+          const flowValue = typeof msg?.flow === "number" ? msg.flow : undefined;
+          const levelValue = typeof msg?.level === "number" ? msg.level : undefined;
+          const temperatureValue =
+            typeof msg?.temperature === "number"
+              ? msg.temperature
+              : typeof msg?.temp_or_status === "number"
+                ? msg.temp_or_status
+                : undefined;
+          const batteryVValue =
+            typeof msg?.batteryV === "number"
+              ? msg.batteryV
+              : typeof msg?.battery_v === "number"
+                ? msg.battery_v
+                : undefined;
+          const externalVValue =
+            typeof msg?.externalV === "number"
+              ? msg.externalV
+              : typeof msg?.external_v === "number"
+                ? msg.external_v
+                : undefined;
+          const gsmPctValue =
+            typeof msg?.gsmPct === "number"
+              ? msg.gsmPct
+              : typeof msg?.gsm_pct === "number"
+                ? msg.gsm_pct
+                : undefined;
+
+          setLiveData((prev) => ({
+            ...prev,
+            deviceId:
+              typeof msg?.deviceId === "string" ? msg.deviceId : prev.deviceId,
+            status: typeof msg?.status === "string" ? msg.status : prev.status,
+            timestamp:
+              typeof msg?.timestamp === "string"
+                ? msg.timestamp
+                : prev.timestamp,
+            pressure:
+              typeof pressureValue === "number" ? pressureValue : prev.pressure,
+            flow: typeof flowValue === "number" ? flowValue : prev.flow,
+            level: typeof levelValue === "number" ? levelValue : prev.level,
+            temperature:
+              typeof temperatureValue === "number"
+                ? temperatureValue
+                : prev.temperature,
+            batteryV:
+              typeof batteryVValue === "number" ? batteryVValue : prev.batteryV,
+            externalV:
+              typeof externalVValue === "number"
+                ? externalVValue
+                : prev.externalV,
+            gsmPct: typeof gsmPctValue === "number" ? gsmPctValue : prev.gsmPct,
+          }));
+
+          const value = pressureValue;
+          if (typeof value !== "number" || !Number.isFinite(value)) return;
+
+          setLiveSeries((prev) => {
+            const next = [...prev, value];
+            if (next.length > graphLength) next.shift();
+            return next;
+          });
+        } catch {}
+      };
+    } catch {
+      setLiveConnected(false);
+      setLiveError("Invalid WebSocket URL");
+    }
+
+    return () => {
+      if (wsRef.current) {
+        try {
+          wsRef.current.close();
+        } catch {}
+        wsRef.current = null;
+      }
+      setLiveConnected(false);
+    };
+  }, [liveEnabled, wsDeviceId, wsUrlWithDeviceId]);
+
+  const liveValues = useMemo(() => {
+    const padded = Array(graphLength).fill(null) as (number | null)[];
+    const start = Math.max(graphLength - liveSeries.length, 0);
+    for (let i = 0; i < liveSeries.length && start + i < graphLength; i++) {
+      padded[start + i] = liveSeries[i];
+    }
+    return padded;
+  }, [liveSeries]);
+
+  return (
+    <AssetEditorContent
+      label={loggerPoint.label}
+      type="Logger Point"
+      isNew={isNew}
+      onLabelChange={onLabelChange}
+      readOnly={loggerFieldsReadOnly}
+      key={loggerPoint.id}
+    >
+      <Section title="Live Logger">
+        <div className="px-2 py-2 text-sm">
+          <div className="flex items-center gap-2 mb-2">
+            <input
+              className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+              value={wsUrl}
+              onChange={(e) => setWsUrl(e.target.value)}
+              placeholder="wss://logger-api.gscwd.app/stream"
+              disabled={readonly || liveConnected}
+            />
+          </div>
+          <div className="flex items-center gap-2 mb-2">
+            <input
+              className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
+              value={wsDeviceId}
+              onChange={(e) => setWsDeviceId(e.target.value)}
+              placeholder="pi-sim-001"
+              disabled={readonly || liveConnected}
+            />
+            <button
+              className="rounded-md border border-gray-300 px-3 py-1 text-sm"
+              disabled={readonly}
+              onClick={() => {
+                if (liveConnected) {
+                  setLiveEnabled(false);
+                  setLiveConnected(false);
+                } else {
+                  setLiveEnabled(true);
+                }
+              }}
+            >
+              {liveConnected ? "Disconnect" : "Connect"}
+            </button>
+          </div>
+          <div className="mb-2 text-xs text-gray-500">
+            {wsUrlWithDeviceId}
+          </div>
+          <div className="mb-2 text-xs text-gray-500">
+            Status:{" "}
+            {liveConnected ? "Connected" : liveEnabled ? "Connecting..." : "Disconnected"}
+            {liveError ? ` (${liveError})` : ""}
+          </div>
+          <div className="h-36">
+            <QuickGraphChart
+              values={Array(graphLength).fill(Number.NaN)}
+              mainValues={null}
+              mainLabel={null}
+              intervalsCount={graphLength}
+              intervalSeconds={1}
+              decimals={quantitiesMetadata.getDecimals("pressure") ?? 0}
+              currentIntervalIndex={graphLength - 1}
+              onIntevalClick={() => {}}
+              scenarioName={null}
+              liveValues={liveValues}
+              liveLabel="Live pressure"
+              liveColor="rgb(239, 68, 68)"
+            />
+          </div>
+        </div>
+      </Section>
+      <Section title={translate("activeTopology")}>
+        <SwitchRow
+          name="isActive"
+          label={translate("isEnabled")}
+          enabled={loggerPoint.isActive}
+          comparison={getComparison("isActive", loggerPoint.isActive)}
+          onChange={onPropertyChange}
+          readOnly={loggerFieldsReadOnly}
+        />
+      </Section>
+      <Section title={translate("modelAttributes")}>
+        <QuantityRow
+          name="elevation"
+          value={loggerPoint.elevation}
+          unit={quantitiesMetadata.getUnit("elevation")}
+          decimals={quantitiesMetadata.getDecimals("elevation")}
+          comparison={getComparison("elevation", loggerPoint.elevation)}
+          onChange={onPropertyChange}
+          readOnly={loggerFieldsReadOnly}
+        />
+        <TextRow name="deviceId" value={liveData.deviceId ?? loggerPoint.deviceId ?? ""} />
+        <TextRow name="status" value={liveData.status ?? loggerPoint.status ?? ""} />
+        <TextRow
+          name="timestamp"
+          value={liveData.timestamp ?? loggerPoint.timestamp ?? ""}
+        />
+        <QuantityRow
+          name="pressure"
+          value={liveData.pressure ?? loggerPoint.pressure}
+          unit={quantitiesMetadata.getUnit("pressure")}
+          decimals={quantitiesMetadata.getDecimals("pressure")}
+          onChange={onPropertyChange}
+          readOnly={loggerFieldsReadOnly}
+        />
+        <QuantityRow
+          name="flow"
+          value={liveData.flow ?? loggerPoint.flow}
+          unit={quantitiesMetadata.getUnit("flow")}
+          decimals={quantitiesMetadata.getDecimals("flow")}
+          onChange={onPropertyChange}
+          readOnly={loggerFieldsReadOnly}
+        />
+        <QuantityRow
+          name="level"
+          value={liveData.level ?? loggerPoint.level}
+          unit={quantitiesMetadata.getUnit("level")}
+          decimals={quantitiesMetadata.getDecimals("level")}
+          onChange={onPropertyChange}
+          readOnly={loggerFieldsReadOnly}
+        />
+        <TextRow
+          name="temperature"
+          value={`${liveData.temperature ?? loggerPoint.temperature ?? ""}`}
+        />
+        <TextRow
+          name="batteryV"
+          value={`${liveData.batteryV ?? loggerPoint.batteryV ?? ""}`}
+        />
+        <TextRow
+          name="externalV"
+          value={`${liveData.externalV ?? loggerPoint.externalV ?? ""}`}
+        />
+        <TextRow name="gsmPct" value={`${liveData.gsmPct ?? loggerPoint.gsmPct ?? ""}`} />
       </Section>
     </AssetEditorContent>
   );

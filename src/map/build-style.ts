@@ -77,6 +77,7 @@ import { valveIcons, valveLines } from "src/map/layers/valves";
 import { linkLabelsLayer } from "src/map/layers/link-labels";
 import { nodeLabelsLayer } from "src/map/layers/node-labels";
 import { tankLayers } from "src/map/layers/tank";
+import { loggerPointLayers } from "src/map/layers/logger-points";
 import {
   ephemeralDraftLineLayer,
   ephemeralIconHighlightLayers,
@@ -261,6 +262,7 @@ export function makeLayers({
     }),
     ...reservoirLayers({ sources: ["icons"] }),
     ...tankLayers({ sources: ["icons"] }),
+    ...loggerPointLayers({ sources: ["icons"] }),
     selectedIconsLayer({
       source: "selected-features",
       layerId: "selected-icons",

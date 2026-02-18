@@ -16,6 +16,7 @@ const labelPrefixes: Record<LabelType, string> = {
   valve: "V",
   pattern: "PAT",
   curve: "C",
+  loggerPoint: "L",
 };
 
 type LabelGroup = "pattern" | "curve" | "node" | "link";
@@ -186,7 +187,10 @@ export class LabelManager implements LabelGenerator {
 }
 
 const isNodeType = (t: LabelType) =>
-  t === "junction" || t === "reservoir" || t === "tank";
+  t === "junction" ||
+  t === "reservoir" ||
+  t === "tank" ||
+  t === "loggerPoint";
 
 const getLabelUniqueGroup = (type: LabelType): LabelGroup => {
   if (type === "pattern" || type === "curve") {

@@ -187,7 +187,7 @@ const DemandSettings = () => {
   );
 };
 
-const ONE_HOUR = 3600;
+const ONE_HOUR = 1;
 
 const TimesSettings = ({ readonly }: { readonly: boolean }) => {
   const translate = useTranslate();
@@ -218,22 +218,22 @@ const TimesSettings = ({ readonly }: { readonly: boolean }) => {
       if (!values.duration)
         void setFieldValue(
           "duration",
-          hydraulicModel.epsTiming.duration || 24 * ONE_HOUR,
+          3600,
         );
       if (!values.hydraulicTimestep)
         void setFieldValue(
           "hydraulicTimestep",
-          hydraulicModel.epsTiming.hydraulicTimestep || ONE_HOUR,
+          ONE_HOUR,
         );
       if (!values.reportTimestep)
         void setFieldValue(
           "reportTimestep",
-          hydraulicModel.epsTiming.reportTimestep || ONE_HOUR,
+          ONE_HOUR,
         );
       if (!values.patternTimestep)
         void setFieldValue(
           "patternTimestep",
-          hydraulicModel.epsTiming.patternTimestep || ONE_HOUR,
+          ONE_HOUR,
         );
     }
   };

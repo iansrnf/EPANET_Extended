@@ -226,3 +226,4 @@ export { CustomActiveTopologyEnableIcon as ActiveTopologyEnableIcon } from "./cu
 export { CustomActiveTopologyDisableIcon as ActiveTopologyDisableIcon } from "./custom-icons/active-topology-disable";
 export { CustomOperationalDataIcon as AdvancedSettingsIcon } from "./custom-icons/operational-data";
 export { CustomTableSelectAllIcon as TableSelectAllIcon } from "./custom-icons/table-select-all-icon";
+export { CustomWaterLoggerIcon as WaterLoggerIcon } from "./custom-icons/water-logger-icon";

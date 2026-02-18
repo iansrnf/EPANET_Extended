@@ -6,6 +6,7 @@ import calculateBearing from "@turf/bearing";
 import { Valve } from "src/hydraulic-model/asset-types";
 import { controlKinds } from "src/hydraulic-model/asset-types/valve";
 import { Tank } from "src/hydraulic-model/asset-types/tank";
+import { LoggerPoint } from "src/hydraulic-model/asset-types/logger-point";
 import type { ResultsReader } from "src/simulation/results-reader";
 
 export const buildIconPointsSource = (
@@ -49,6 +50,9 @@ export const buildIconPointsSource = (
       case "reservoir":
         feature = buildNodeIcon(asset as Reservoir, selectedAssets);
         break;
+      case "loggerPoint":
+        feature = buildNodeIcon(asset as LoggerPoint, selectedAssets);
+        break;
       case "junction":
         break;
     }
@@ -88,7 +92,7 @@ const buildDirectionalLinkIcon = <T extends Link<any>>(
 };
 
 const buildNodeIcon = (
-  asset: Tank | Reservoir,
+  asset: Tank | Reservoir | LoggerPoint,
   selectedAssets: Set<AssetId>,
 ): Feature => {
   const featureId = asset.id;

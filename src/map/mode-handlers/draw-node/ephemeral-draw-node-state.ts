@@ -1,6 +1,5 @@
 import { Position } from "src/types";
-
-type NodeType = "junction" | "reservoir" | "tank";
+import type { NodeType } from "src/hydraulic-model/asset-types/types";
 
 export interface EphemeralDrawNode {
   type: "drawNode";

@@ -14,6 +14,10 @@ export function useModeHandlers(handlerContext: HandlerContext) {
       ...handlerContext,
       selectionMode: "rectangular",
     }),
+    [Mode.ADD_LOGGER_POINT]: useDrawNodeHandlers({
+      ...handlerContext,
+      nodeType: "loggerPoint",
+    }),
     [Mode.SELECT_POLYGONAL]: useAreaSelectionHandlers({
       ...handlerContext,
       selectionMode: "polygonal",

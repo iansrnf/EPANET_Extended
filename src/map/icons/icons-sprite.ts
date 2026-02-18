@@ -10,6 +10,7 @@ import {
   buildPumpSvg,
   buildTankSvg,
   buildReservoirSvg,
+  buildLoggerPointSvg,
 } from "./dynamic-icons";
 import { colors } from "src/lib/constants";
 
@@ -51,7 +52,12 @@ export type IconId =
   | "tank-selected"
   | "tank-highlight"
   | "tank-disabled"
-  | "tank-disabled-selected";
+  | "tank-disabled-selected"
+  | "loggerPoint"
+  | "loggerPoint-selected"
+  | "loggerPoint-highlight"
+  | "loggerPoint-disabled"
+  | "loggerPoint-disabled-selected";
 
 export type TextureProps = {
   width: number;
@@ -403,6 +409,61 @@ const buildIconUrls = (): IconUrl[] => {
         buildReservoirSvg({
           borderColor: colors.gray500,
           fillColor: colors.fuchsia300,
+        }),
+      ),
+    },
+    {
+      id: "loggerPoint",
+      url: urlFor(
+        buildLoggerPointSvg({
+          borderColor: colors.indigo800,
+          fillColor: colors.indigo300,
+          signalColor: colors.indigo800,
+          dropletColor: colors.indigo800,
+        }),
+      ),
+    },
+    {
+      id: "loggerPoint-selected",
+      url: urlFor(
+        buildLoggerPointSvg({
+          borderColor: colors.fuchsia300,
+          fillColor: colors.fuchsia500,
+          signalColor: colors.fuchsia300,
+          dropletColor: colors.fuchsia300,
+        }),
+      ),
+    },
+    {
+      id: "loggerPoint-highlight",
+      url: urlFor(
+        buildLoggerPointSvg({
+          borderColor: colors.indigo300,
+          fillColor: colors.indigo800,
+          signalColor: colors.indigo300,
+          dropletColor: colors.indigo300,
+        }),
+      ),
+    },
+    {
+      id: "loggerPoint-disabled",
+      url: urlFor(
+        buildLoggerPointSvg({
+          borderColor: colors.gray500,
+          fillColor: colors.gray300,
+          signalColor: colors.gray500,
+          dropletColor: colors.gray500,
+        }),
+      ),
+    },
+    {
+      id: "loggerPoint-disabled-selected",
+      url: urlFor(
+        buildLoggerPointSvg({
+          borderColor: colors.gray500,
+          fillColor: colors.fuchsia300,
+          signalColor: colors.gray500,
+          dropletColor: colors.gray500,
         }),
       ),
     },

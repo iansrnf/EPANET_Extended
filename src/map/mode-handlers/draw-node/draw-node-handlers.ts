@@ -16,7 +16,7 @@ import { useElevations } from "../../elevations/use-elevations";
 import { useSnapping } from "../hooks/use-snapping";
 import { useSelection } from "src/selection";
 
-type NodeType = "junction" | "reservoir" | "tank";
+type NodeType = "junction" | "reservoir" | "tank" | "loggerPoint";
 
 export function useDrawNodeHandlers({
   hydraulicModel,

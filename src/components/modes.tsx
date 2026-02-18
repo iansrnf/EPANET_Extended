@@ -16,6 +16,7 @@ import {
   PumpIcon,
   ValveIcon,
   PipeIcon,
+  WaterLoggerIcon,
 } from "src/icons";
 
 const MODE_OPTIONS = [
@@ -48,6 +49,11 @@ const MODE_OPTIONS = [
     mode: Mode.DRAW_VALVE,
     hotkey: "7",
     Icon: () => <ValveIcon />,
+  },
+  {
+    mode: Mode.ADD_LOGGER_POINT,
+    hotkey: "8",
+    Icon: () => <WaterLoggerIcon />,
   },
 ] as const;
 

@@ -47,6 +47,7 @@ export const useSnapping = (
         "main-features-junction-results",
         "icons-tanks",
         "icons-reservoirs",
+        "icons-logger-points",
       ],
     });
     if (!pointFeatures.length) return null;

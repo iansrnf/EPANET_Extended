@@ -8,7 +8,7 @@ import { updateLinkConnections } from "../mutations/update-link-connections";
 import { isNodeAsset } from "../asset-types/type-guards";
 import { reassignCustomerPoints } from "../mutations/reassign-customer-points";
 
-type NodeType = "junction" | "reservoir" | "tank";
+type NodeType = "junction" | "reservoir" | "tank" | "loggerPoint";
 
 type InputData = {
   oldNodeId: AssetId;
@@ -99,6 +99,12 @@ const createNode = (
       });
     case "tank":
       return assetBuilder.buildTank({
+        coordinates,
+        elevation,
+        isActive,
+      });
+    case "loggerPoint":
+      return assetBuilder.buildLoggerPoint({
         coordinates,
         elevation,
         isActive,

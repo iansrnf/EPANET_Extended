@@ -4,13 +4,14 @@ import { Junction } from "./junction";
 import { Reservoir } from "./reservoir";
 import { Valve } from "./valve";
 import { Tank } from "./tank";
+import { LoggerPoint } from "./logger-point";
 
-export type Asset = Pipe | Junction | Reservoir | Pump | Valve | Tank;
+export type Asset = Pipe | Junction | Reservoir | Pump | Valve | Tank | LoggerPoint;
 export type AssetStatus = PipeStatus | PumpStatus;
-export type NodeAsset = Junction | Reservoir | Tank;
+export type NodeAsset = Junction | Reservoir | Tank | LoggerPoint;
 export type LinkAsset = Pipe | Pump | Valve;
 
-export { Pipe, Junction, Reservoir, Pump, Valve, Tank };
+export { Pipe, Junction, Reservoir, Pump, Valve, Tank, LoggerPoint };
 export type { AssetId } from "./base-asset";
 export { BaseAsset } from "./base-asset";
 export type { PipeProperties } from "./pipe";

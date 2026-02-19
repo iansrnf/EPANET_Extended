@@ -961,6 +961,10 @@ const LoggerPointEditor = ({
   onLabelChange: (newLabel: string) => string | undefined;
   readonly?: boolean;
 }) => {
+  const PSI_PER_METER = 1.42233433;
+  const PSI_PER_KPA = 0.1450377377;
+  const PSI_PER_BAR = 14.5037738;
+  const PSI_PER_FOOT = 0.4333;
   const translate = useTranslate();
   const { getComparison, isNew } = useAssetComparison(loggerPoint);
   const [wsUrl, setWsUrl] = useState("wss://logger-api.gscwd.app/stream");
@@ -1033,10 +1037,18 @@ const LoggerPointEditor = ({
           if (wsDeviceId && msg?.deviceId !== wsDeviceId) return;
 
           const pressureValue =
-            typeof msg?.pressure === "number"
-              ? msg.pressure
+            typeof msg?.pressure_psi === "number"
+              ? msg.pressure_psi
+              : typeof msg?.pressurePsi === "number"
+                ? msg.pressurePsi
+                : typeof msg?.pressure === "number"
+                  ? msg.pressure * PSI_PER_METER
+                  : typeof msg?.pressure_ft === "number"
+                    ? msg.pressure_ft * PSI_PER_FOOT
+                    : typeof msg?.pressure_bar === "number"
+                      ? msg.pressure_bar * PSI_PER_BAR
               : typeof msg?.pressure_kpa === "number"
-                ? msg.pressure_kpa
+                ? msg.pressure_kpa * PSI_PER_KPA
                 : null;
 
           const flowValue = typeof msg?.flow === "number" ? msg.flow : undefined;
@@ -1224,7 +1236,12 @@ const LoggerPointEditor = ({
         />
         <QuantityRow
           name="pressure"
-          value={liveData.pressure ?? loggerPoint.pressure}
+          value={
+            liveData.pressure ??
+            (typeof loggerPoint.pressure === "number"
+              ? loggerPoint.pressure * PSI_PER_METER
+              : loggerPoint.pressure)
+          }
           unit={quantitiesMetadata.getUnit("pressure")}
           decimals={quantitiesMetadata.getDecimals("pressure")}
           onChange={onPropertyChange}

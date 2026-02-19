@@ -88,7 +88,7 @@ const metricSpec: AssetQuantitiesSpec = {
     minorLoss: null,
     velocity: "m/s",
     elevation: "m",
-    pressure: "mwc",
+    pressure: "psi",
     head: "m",
     headloss: "m",
     unitHeadloss: "m/km",

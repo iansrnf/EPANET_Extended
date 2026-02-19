@@ -102,6 +102,27 @@ function safeNumber(x: unknown): number | null {
   return x;
 }
 
+function pressureToPsiFromPayload(msg: Record<string, unknown>): number | null {
+  const PSI_PER_METER = 1.42233433;
+  const PSI_PER_KPA = 0.1450377377;
+  const PSI_PER_BAR = 14.5037738;
+  const PSI_PER_FOOT = 0.4333;
+
+  if (typeof msg.pressure_psi === "number" && Number.isFinite(msg.pressure_psi))
+    return msg.pressure_psi;
+  if (typeof msg.pressurePsi === "number" && Number.isFinite(msg.pressurePsi))
+    return msg.pressurePsi;
+  if (typeof msg.pressure_kpa === "number" && Number.isFinite(msg.pressure_kpa))
+    return msg.pressure_kpa * PSI_PER_KPA;
+  if (typeof msg.pressure_bar === "number" && Number.isFinite(msg.pressure_bar))
+    return msg.pressure_bar * PSI_PER_BAR;
+  if (typeof msg.pressure_ft === "number" && Number.isFinite(msg.pressure_ft))
+    return msg.pressure_ft * PSI_PER_FOOT;
+  if (typeof msg.pressure === "number" && Number.isFinite(msg.pressure))
+    return msg.pressure * PSI_PER_METER;
+  return null;
+}
+
 function parseTimestampMs(ts: unknown): number {
   if (typeof ts === "number" && Number.isFinite(ts)) return ts;
   if (typeof ts === "string") {
@@ -233,7 +254,11 @@ export const QuickGraph = ({
         const deviceId = msg?.deviceId;
         if (liveLogger.deviceId && deviceId !== liveLogger.deviceId) return;
 
-        const v = safeNumber(msg?.[liveLogger.field]);
+        const isPressureField =
+          String(liveLogger.field).toLowerCase() === "pressure";
+        const v = isPressureField
+          ? pressureToPsiFromPayload(msg as Record<string, unknown>)
+          : safeNumber(msg?.[liveLogger.field]);
         if (v === null) return;
 
         if (!data || values.length === 0) return;

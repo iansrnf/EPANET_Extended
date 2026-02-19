@@ -29,6 +29,9 @@ const LINK_RESULT_FLOATS = 8;
 const PUMP_ENERGY_FLOATS = 7;
 
 const PSI_PER_FOOT = 0.4333;
+const FEET_PER_METER = 3.28084;
+const PSI_PER_KPA = 0.1450377377;
+const PSI_PER_BAR = 14.5037738;
 
 function pressureToLevel(
   pressure: number,
@@ -38,6 +41,23 @@ function pressureToLevel(
     return pressure / PSI_PER_FOOT;
   }
   return pressure;
+}
+
+function pressureToPsi(pressure: number, pressureUnits: PressureUnits): number {
+  switch (pressureUnits) {
+    case "psi":
+      return pressure;
+    case "ft":
+      return pressure * PSI_PER_FOOT;
+    case "m":
+      return pressure * FEET_PER_METER * PSI_PER_FOOT;
+    case "kPa":
+      return pressure * PSI_PER_KPA;
+    case "bar":
+      return pressure * PSI_PER_BAR;
+    default:
+      return pressure;
+  }
 }
 
 export type JunctionProperty = "demand" | "head" | "pressure" | "quality";
@@ -206,6 +226,8 @@ export class EPSResultsReader {
           assetId,
           property as LinkProperty,
         );
+      case "loggerPoint":
+        return null;
     }
   }
 
@@ -222,6 +244,7 @@ export class EPSResultsReader {
   private async _getNodePropertyTimeSeries(
     nodeId: AssetId,
     property: NodeProperty,
+    convertPressureToPsi = true,
   ): Promise<TimeSeries | null> {
     if (!this.metadata) return null;
 
@@ -247,6 +270,15 @@ export class EPSResultsReader {
       timestepBlockSize,
       simulationMetadata.reportingStepsCount,
     );
+
+    if (property === "pressure" && convertPressureToPsi) {
+      const typed = new Float32Array(values);
+      for (let i = 0; i < typed.length; i++) {
+        typed[i] = pressureToPsi(typed[i], simulationMetadata.pressureUnits);
+      }
+      return this._buildTimeSeries(typed.buffer);
+    }
+
     return this._buildTimeSeries(values);
   }
 
@@ -256,6 +288,7 @@ export class EPSResultsReader {
     const pressureSeries = await this._getNodePropertyTimeSeries(
       tankId,
       "pressure",
+      false,
     );
     if (!pressureSeries) return null;
 
@@ -765,7 +798,10 @@ class TimestepResultsReader implements ResultsReader {
 
     return {
       type: "junction",
-      pressure: nodeData.pressure,
+      pressure: pressureToPsi(
+        nodeData.pressure,
+        this.simulationMetadata.pressureUnits,
+      ),
       head: nodeData.head,
       demand: nodeData.demand,
     };
@@ -813,7 +849,10 @@ class TimestepResultsReader implements ResultsReader {
 
     return {
       type: "tank",
-      pressure: nodeData.pressure,
+      pressure: pressureToPsi(
+        nodeData.pressure,
+        this.simulationMetadata.pressureUnits,
+      ),
       head: nodeData.head,
       level,
       volume,
@@ -923,7 +962,9 @@ class TimestepResultsReader implements ResultsReader {
     const values: number[] = [];
     for (let i = 0; i < nodeCount; i++) {
       const nodeData = this.getNodeData(i);
-      values.push(nodeData.pressure);
+      values.push(
+        pressureToPsi(nodeData.pressure, this.simulationMetadata.pressureUnits),
+      );
     }
     return values;
   }

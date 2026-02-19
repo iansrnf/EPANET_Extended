@@ -26,21 +26,26 @@ export default function RootLayout({
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "epanet-js",
+  title: "GSCWD",
+  icons: {
+    icon: "/images/logo-gscwd.png",
+    shortcut: "/images/logo-gscwd.png",
+    apple: "/images/logo-gscwd.png",
+  },
   description:
-    "Run EPANET in your browser with epanet-js — no download needed. Works on Mac, Linux, or Windows. Save files locally. Modern, enhanced, and built on the trusted EPANET engine.",
+    "Run EPANET in your browser with GSCWD — no download needed. Works on Mac, Linux, or Windows. Save files locally. Modern, enhanced, and built on the trusted EPANET engine.",
   openGraph: {
     title:
-      "epanet-js: EPANET in your browser — start water modeling now, no download required.",
+      "GSCWD: EPANET in your browser — start water modeling now, no download required.",
     description:
-      "Run EPANET in your browser with epanet-js — no download needed. Works on Mac, Linux, or Windows. Save files locally. Modern, enhanced, and built on the trusted EPANET engine.",
+      "Run EPANET in your browser with GSCWD — no download needed. Works on Mac, Linux, or Windows. Save files locally. Modern, enhanced, and built on the trusted EPANET engine.",
     url: "https://app.epanetjs.com",
-    siteName: "epanet-js",
+    siteName: "GSCWD",
     images: {
       url: "https://app.epanetjs.com/banner.png",
       width: 1200,
       height: 630,
     },
   },
-  applicationName: "epanet-js",
+  applicationName: "GSCWD",
 };

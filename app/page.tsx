@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import HomePage from "./home-page";
 
 export const metadata: Metadata = {
-  title: "epanet-js",
+  title: "GSCWD",
 };
 
 export default function Page() {

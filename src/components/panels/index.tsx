@@ -78,8 +78,8 @@ const TabList = memo(function TabList({
       }}
       className="flex-0 grid h-8 flex-none
       sticky top-0 z-10
-      bg-white dark:bg-gray-800
-      divide-x divide-gray-200 dark:divide-black"
+      bg-white dark:bg-gray-800 brand-surface-subtle
+      divide-x divide-gray-200 dark:divide-black brand-divider"
     >
       <Tab
         onClick={() => setTab(TabOption.Asset)}
@@ -103,7 +103,7 @@ export const SidePanel = memo(function SidePanelInner() {
       style={{
         width: splits.right,
       }}
-      className="bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-900 relative"
+      className="bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-900 brand-panel brand-divider relative"
     >
       <Panel />
     </div>
@@ -119,7 +119,7 @@ export const BottomPanel = memo(function BottomPanelInner() {
       style={{
         height: splits.bottom,
       }}
-      className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-900 relative"
+      className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-900 brand-panel brand-divider relative"
     >
       <Panel />
     </div>
@@ -128,7 +128,7 @@ export const BottomPanel = memo(function BottomPanelInner() {
 
 export const FullPanel = memo(function FullPanelInner() {
   return (
-    <div className="flex flex-auto bg-white dark:bg-gray-800 relative">
+    <div className="flex flex-auto bg-white dark:bg-gray-800 brand-panel relative">
       <Panel />
     </div>
   );
@@ -158,7 +158,7 @@ export const LeftSidePanel = memo(function LeftSidePanelInner() {
       style={{
         width: splits.left,
       }}
-      className="bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-900 relative"
+      className="bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-900 brand-panel brand-divider relative"
     >
       <NetworkReview />
     </div>

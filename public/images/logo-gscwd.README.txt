@@ -1,0 +1,7 @@
+Place your official logo image here as:
+
+public/images/logo-gscwd.png
+
+Recommended:
+- Transparent PNG
+- Square (at least 256x256)

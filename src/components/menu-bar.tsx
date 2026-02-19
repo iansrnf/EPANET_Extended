@@ -47,9 +47,8 @@ export function MenuBarFallback() {
 
 export const HeaderLogo = () => {
   return (
-    <span className="pl-1" title="Home">
-      <LogoIconAndWordmarkIcon size={98} />
-      <span className="sr-only">epanet-js</span>
+    <span className="pl-1 text-purple-800 dark:text-purple-200" title="Home">
+      <LogoIconAndWordmarkIcon size={110} isMenuBar={true} />
     </span>
   );
 };
@@ -64,7 +63,7 @@ export const MenuBarPlay = memo(function MenuBar() {
   const isSmOrLarger = useBreakpoint("sm");
 
   return (
-    <div className="flex justify-between h-12 pr-2 text-black dark:text-white">
+    <div className="brand-surface-subtle brand-text flex justify-between h-12 pr-2 text-black dark:text-white">
       <div className="flex items-center">
         <div
           className="py-1 pl-2 pr-2 inline-flex cursor-pointer"
@@ -231,7 +230,9 @@ export function HelpDot() {
 }
 
 export const Divider = () => {
-  return <div className="border-r-2 border-gray-100 h-8 mr-1"></div>;
+  return (
+    <div className="border-r-2 border-gray-100 h-8 mr-1 brand-divider"></div>
+  );
 };
 
 export const SideMenu = () => {
@@ -258,7 +259,7 @@ export const SideMenu = () => {
       <div
         ref={menuRef}
         tabIndex={isOpen ? 0 : -1}
-        className={`fixed inset-y-0 right-0 w-full bg-white transform ${
+        className={`fixed inset-y-0 right-0 w-full bg-white brand-surface brand-text transform ${
           isOpen ? "translate-x-0" : "translate-x-full"
         } transition-transform duration-300 ease-in-out md:hidden z-40`}
       >

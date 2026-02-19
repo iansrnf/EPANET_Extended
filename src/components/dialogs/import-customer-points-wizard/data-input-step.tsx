@@ -255,7 +255,7 @@ export const DataInputStep: React.FC<{
               {/* Video title overlay */}
               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
                 <p className="text-white text-sm font-medium">
-                  epanet-js Customer Points Import Tutorial
+                  GSCWD Customer Points Import Tutorial
                 </p>
               </div>
             </div>

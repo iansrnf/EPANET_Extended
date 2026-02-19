@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-
 .mapboxgl-ctrl-bottom-right {
   display: none !important;
 }
@@ -41,17 +40,20 @@ details > summary {
 }
 
 :root {
-  --cursor-default: url('/cursors/cursor-default.svg') 10 10, auto;
-  --cursor-true-default: url('/cursors/cursor-true-default.svg') 4 2, auto;
-  --cursor-pointer: url('/cursors/cursor-pointer.svg') 8 1, pointer;
-  --cursor-not-allowed: url('/cursors/cursor-not-allowed.svg') 7 3, not-allowed;
-  --cursor-allscroll: url('/cursors/cursor-allscroll.svg') 10 10, all-scroll;
-  --cursor-crosshair: url('/cursors/cursor-crosshair.svg') 10 10, crosshair;
-  --cursor-crosshair-add: url('/cursors/cursor-crosshair-add.svg') 10 10, crosshair;
-  --cursor-crosshair-subtract: url('/cursors/cursor-crosshair-subtract.svg') 10 10, crosshair;
-  --cursor-grab: url('/cursors/cursor-grab.svg') 10 1, grab;
-  --cursor-grabbing: url('/cursors/cursor-grabbing.svg') 10 10, grab;
-  --cursor-resize-ns: url('/cursors/cursor-resize-ns.svg') 15 15, ns-resize;
+  --cursor-default: url("/cursors/cursor-default.svg") 10 10, auto;
+  --cursor-true-default: url("/cursors/cursor-true-default.svg") 4 2, auto;
+  --cursor-pointer: url("/cursors/cursor-pointer.svg") 8 1, pointer;
+  --cursor-not-allowed: url("/cursors/cursor-not-allowed.svg") 7 3, not-allowed;
+  --cursor-allscroll: url("/cursors/cursor-allscroll.svg") 10 10, all-scroll;
+  --cursor-crosshair: url("/cursors/cursor-crosshair.svg") 10 10, crosshair;
+  --cursor-crosshair-add: url("/cursors/cursor-crosshair-add.svg") 10 10,
+    crosshair;
+  --cursor-crosshair-subtract: url("/cursors/cursor-crosshair-subtract.svg") 10
+      10,
+    crosshair;
+  --cursor-grab: url("/cursors/cursor-grab.svg") 10 1, grab;
+  --cursor-grabbing: url("/cursors/cursor-grabbing.svg") 10 10, grab;
+  --cursor-resize-ns: url("/cursors/cursor-resize-ns.svg") 15 15, ns-resize;
 }
 
 .placemark-cursor-default .mapboxgl-canvas-container {
@@ -60,7 +62,9 @@ details > summary {
 
 body:has(.ff-cursor-family) html,
 body:has(.ff-cursor-family) body,
-body:has(.ff-cursor-family) .placemark-cursor-default .mapboxgl-canvas-container {
+body:has(.ff-cursor-family)
+  .placemark-cursor-default
+  .mapboxgl-canvas-container {
   cursor: var(--cursor-true-default) !important;
 }
 
@@ -72,17 +76,20 @@ body:has(.ff-cursor-family) .cursor-allscroll .mapboxgl-canvas-container {
   cursor: pointer !important;
 }
 
-body:has(.ff-cursor-family) .placemark-cursor-pointer .mapboxgl-canvas-container,
-body:has(.ff-cursor-family) :is(
-  a,
-  button,
-  [type="submit"],
-  [type="button"],
-  [type="reset"],
-  label[for],
-  select,
-  .cursor-pointer
-) {
+body:has(.ff-cursor-family)
+  .placemark-cursor-pointer
+  .mapboxgl-canvas-container,
+body:has(.ff-cursor-family)
+  :is(
+    a,
+    button,
+    [type="submit"],
+    [type="button"],
+    [type="reset"],
+    label[for],
+    select,
+    .cursor-pointer
+  ) {
   cursor: var(--cursor-pointer) !important;
 }
 
@@ -92,13 +99,14 @@ body:has(.ff-cursor-family) :is(
   cursor: not-allowed !important;
 }
 
-body:has(.ff-cursor-family) :is(
-  :disabled,
-  .disabled,
-  [data-disabled],
-  [aria-disabled="true"],
-  .cursor-not-allowed
-) {
+body:has(.ff-cursor-family)
+  :is(
+    :disabled,
+    .disabled,
+    [data-disabled],
+    [aria-disabled="true"],
+    .cursor-not-allowed
+  ) {
   cursor: var(--cursor-not-allowed) !important;
 }
 
@@ -137,7 +145,9 @@ body:has(.ff-cursor-family) .cursor-move .mapboxgl-canvas-container {
 }
 
 .placemark-cursor-replace .mapboxgl-canvas-container {
-  cursor: url("/cursors/cursor-replace.svg") 10 10, auto !important;
+  cursor:
+    url("/cursors/cursor-replace.svg") 10 10,
+    auto !important;
 }
 
 body:has(.ff-cursor-family) .cursor-ns-resize {
@@ -285,13 +295,23 @@ body.dark .mapboxgl-ctrl-attrib-button {
     /* Top shadow cover - moves with content to hide shadow at top */
     linear-gradient(to bottom, white 30%, transparent) center top,
     /* Bottom shadow cover - moves with content to hide shadow at bottom */
-    linear-gradient(to top, white 30%, transparent) center bottom,
+      linear-gradient(to top, white 30%, transparent) center bottom,
     /* Top shadow - stays fixed */
-    radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, 0.12), transparent) center top,
+      radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, 0.12), transparent)
+      center top,
     /* Bottom shadow - stays fixed */
-    radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, 0.12), transparent) center bottom;
+      radial-gradient(
+        farthest-side at 50% 100%,
+        rgba(0, 0, 0, 0.12),
+        transparent
+      )
+      center bottom;
   background-repeat: no-repeat;
-  background-size: 100% 40px, 100% 40px, 100% 10px, 100% 10px;
+  background-size:
+    100% 40px,
+    100% 40px,
+    100% 10px,
+    100% 10px;
   background-attachment: local, local, scroll, scroll;
 }
 
@@ -299,14 +319,24 @@ body.dark .mapboxgl-ctrl-attrib-button {
   background:
     /* Top shadow cover - dark mode uses gray-950 (#030712) */
     linear-gradient(to bottom, #030712 30%, transparent) center top,
-    /* Bottom shadow cover */
-    linear-gradient(to top, #030712 30%, transparent) center bottom,
+    /* Bottom shadow cover */ linear-gradient(to top, #030712 30%, transparent)
+      center bottom,
     /* Top shadow - slightly lighter for dark mode */
-    radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, 0.3), transparent) center top,
+      radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, 0.3), transparent)
+      center top,
     /* Bottom shadow */
-    radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, 0.3), transparent) center bottom;
+      radial-gradient(
+        farthest-side at 50% 100%,
+        rgba(0, 0, 0, 0.3),
+        transparent
+      )
+      center bottom;
   background-repeat: no-repeat;
-  background-size: 100% 40px, 100% 40px, 100% 10px, 100% 10px;
+  background-size:
+    100% 40px,
+    100% 40px,
+    100% 10px,
+    100% 10px;
   background-attachment: local, local, scroll, scroll;
 }
 
@@ -490,22 +520,22 @@ body.dark .mapboxgl-ctrl-attrib-button {
 
 /* Basemap thumbnail backgrounds */
 .bg-thumbnail-monochrome {
-  background-image: url('/images/basemaps/monochrome-thumbnail.png');
+  background-image: url("/images/basemaps/monochrome-thumbnail.png");
   background-size: cover;
 }
 
 .bg-thumbnail-satellite {
-  background-image: url('/images/basemaps/satellite-thumbnail.png');
+  background-image: url("/images/basemaps/satellite-thumbnail.png");
   background-size: cover;
 }
 
 .bg-thumbnail-outdoors {
-  background-image: url('/images/basemaps/outdoors-thumbnail.png');
+  background-image: url("/images/basemaps/outdoors-thumbnail.png");
   background-size: cover;
 }
 
 .bg-thumbnail-streets {
-  background-image: url('/images/basemaps/streets-thumbnail.png');
+  background-image: url("/images/basemaps/streets-thumbnail.png");
   background-size: cover;
 }
 
@@ -516,4 +546,62 @@ body.dark .mapboxgl-ctrl-attrib-button {
 .mapboxgl-ctrl-group.mapboxgl-ctrl-group button {
   width: 2rem;
   height: 2rem;
+}
+
+/* Brand theme (app chrome only, map intentionally excluded) */
+.brand-theme {
+  --brand-bg: #e4f3ff;
+  --brand-surface: #f4fbff;
+  --brand-surface-subtle: #e9f6ff;
+  --brand-border: #a9cce6;
+  --brand-text: #082a45;
+  --brand-text-muted: #24577f;
+  background: radial-gradient(
+      1200px 480px at 12% -16%,
+      rgba(58, 174, 232, 0.26),
+      transparent 62%
+    ),
+    radial-gradient(
+      1000px 500px at 88% -20%,
+      rgba(43, 123, 210, 0.2),
+      transparent 64%
+    ),
+    linear-gradient(180deg, #dff1ff 0%, #edf8ff 42%, #f7fcff 100%);
+  color: var(--brand-text);
+}
+
+.brand-theme .brand-surface {
+  background: linear-gradient(180deg, #f7fcff 0%, #ecf7ff 100%);
+  color: var(--brand-text);
+}
+
+.brand-theme .brand-surface-subtle {
+  background: linear-gradient(180deg, #edf8ff 0%, #def1ff 100%);
+  color: var(--brand-text);
+}
+
+.brand-theme .brand-panel {
+  background: linear-gradient(180deg, #f5fbff 0%, #e7f4ff 100%);
+  color: var(--brand-text);
+}
+
+.brand-theme .brand-divider {
+  border-color: var(--brand-border);
+}
+
+.brand-theme .brand-text {
+  color: var(--brand-text);
+}
+
+.brand-theme .brand-text-muted {
+  color: var(--brand-text-muted);
+}
+
+.dark .brand-theme {
+  --brand-bg: #05172a;
+  --brand-surface: #0a2742;
+  --brand-surface-subtle: #0d3252;
+  --brand-border: #28577c;
+  --brand-text: #edf7ff;
+  --brand-text-muted: #b8d4ea;
 }

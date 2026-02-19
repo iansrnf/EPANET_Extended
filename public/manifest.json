@@ -1,9 +1,9 @@
 {
-  "short_name": "epanet-js",
-  "name": "epanet-js: hydraulic network editor",
+  "short_name": "GSCWD",
+  "name": "GSCWD: hydraulic network editor",
   "icons": [
     {
-      "src": "/favicon.png",
+      "src": "/images/logo-gscwd.png",
       "type": "image/png",
       "sizes": "282x282"
     }

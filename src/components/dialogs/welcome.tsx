@@ -81,7 +81,7 @@ export const WelcomeDialog = () => {
           <div className="grid sm:grid-cols-3 gap-3 pb-8">
             <div className="col-span-1 md:w-max flex flex-col gap-6">
               <div className="pl-1">
-                <LogoIconAndWordmarkIcon size={147} />
+                <LogoIconAndWordmarkIcon size={500} isMenuBar={false}/>
               </div>
               <div className="sm:hidden">
                 <SmallDeviceWarning />

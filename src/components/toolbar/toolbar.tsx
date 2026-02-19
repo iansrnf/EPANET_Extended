@@ -83,7 +83,7 @@ export const Toolbar = ({
   return (
     <div
       className="relative flex flex-row items-center justify-between overflow-x-auto sm:overflow-visible
-          border-t border-gray-200 dark:border-gray-900 px-2 h-12"
+          border-t border-gray-200 dark:border-gray-900 brand-divider brand-surface px-2 h-12"
     >
       <div className="flex flex-row items-center justify-start">
         <CreateNewDropdown />
@@ -216,7 +216,9 @@ export const Toolbar = ({
 };
 
 const Divider = () => {
-  return <div className="border-r-2 border-gray-100 h-8 mx-1"></div>;
+  return (
+    <div className="border-r-2 border-gray-100 h-8 mx-1 brand-divider"></div>
+  );
 };
 
 const LayoutActions = () => {

@@ -565,6 +565,10 @@ const appendPipe = (
   inactiveAssets: boolean,
   pipe: Pipe,
 ) => {
+  if (!isSimulationLink(hydraulicModel, pipe)) {
+    return;
+  }
+
   if (!pipe.isActive && !inactiveAssets) {
     return;
   }
@@ -600,6 +604,10 @@ const appendPump = (
   usedCurveIds: Set<number>,
   pump: Pump,
 ) => {
+  if (!isSimulationLink(hydraulicModel, pump)) {
+    return;
+  }
+
   if (!pump.isActive && !inactiveAssets) {
     return;
   }
@@ -650,6 +658,10 @@ const appendValve = (
   inactiveAssets: boolean,
   valve: Valve,
 ) => {
+  if (!isSimulationLink(hydraulicModel, valve)) {
+    return;
+  }
+
   if (!valve.isActive && !inactiveAssets) {
     return;
   }
@@ -773,12 +785,63 @@ const appendControls = (
   };
 
   for (const control of controls.simple) {
+    if (
+      control.assetReferences.some(
+        (reference) =>
+          !isSimulationAssetReference(hydraulicModel, reference.assetId),
+      )
+    ) {
+      continue;
+    }
     sections.controls.push(formatSimpleControl(control, idResolver));
   }
 
   for (const rule of controls.rules) {
+    if (
+      rule.assetReferences.some(
+        (reference) =>
+          !isSimulationAssetReference(hydraulicModel, reference.assetId),
+      )
+    ) {
+      continue;
+    }
     sections.rules.push(formatRuleBasedControl(rule, idResolver));
   }
+};
+
+const isSimulationAssetReference = (
+  hydraulicModel: HydraulicModel,
+  assetId: AssetId,
+) => {
+  const asset = hydraulicModel.assets.get(assetId);
+  if (!asset) return true;
+
+  if (asset.isNode) {
+    return asset.type !== "loggerPoint";
+  }
+
+  if (asset.isLink) {
+    return isSimulationLink(hydraulicModel, asset as LinkAsset);
+  }
+
+  return true;
+};
+
+const isSimulationLink = (hydraulicModel: HydraulicModel, link: LinkAsset) => {
+  const [startNodeId, endNodeId] = link.connections;
+  const startNode = hydraulicModel.assets.get(startNodeId);
+  const endNode = hydraulicModel.assets.get(endNodeId);
+
+  if (!startNode || !endNode) {
+    return false;
+  }
+
+  return (
+    startNode.isNode &&
+    endNode.isNode &&
+    startNode.type !== "loggerPoint" &&
+    endNode.type !== "loggerPoint"
+  );
 };
 
 const appendCurves = (

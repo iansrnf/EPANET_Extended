@@ -25,6 +25,7 @@ import {
   PumpBuildData,
   TankBuildData,
   ValveBuildData,
+  LoggerPointBuildData,
 } from "src/hydraulic-model/asset-builder";
 import {
   ConsecutiveIdsGenerator,
@@ -214,6 +215,16 @@ export class HydraulicModelBuilder {
       ...data,
     });
     this.assets.set(id, tank);
+    this.idGenerator.addId(id);
+    return this;
+  }
+
+  aLoggerPoint(id: number, data: Partial<LoggerPointBuildData> = {}) {
+    const loggerPoint = this.assetBuilder.buildLoggerPoint({
+      id,
+      ...data,
+    });
+    this.assets.set(id, loggerPoint);
     this.idGenerator.addId(id);
     return this;
   }

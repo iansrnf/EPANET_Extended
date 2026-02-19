@@ -106,6 +106,35 @@ describe("build inp with pumps and curves", () => {
     expect(inp).toContain("7\tOpen");
   });
 
+  it("ignores links and controls that reference logger points", () => {
+    const IDS = { LOGGER: 10, JUNCTION: 66, PIPE: 155 };
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aLoggerPoint(IDS.LOGGER, { label: "L1" })
+      .aJunction(IDS.JUNCTION, { label: "J66" })
+      .aPipe(IDS.PIPE, {
+        label: "P155",
+        startNodeId: IDS.LOGGER,
+        endNodeId: IDS.JUNCTION,
+        length: 164.97,
+        diameter: 300,
+        roughness: 130,
+        initialStatus: "open",
+      })
+      .aSimpleControl({
+        template: "LINK {{0}} OPEN IF NODE {{1}} ABOVE 10",
+        assetReferences: [
+          { assetId: IDS.PIPE, isActionTarget: true },
+          { assetId: IDS.LOGGER, isActionTarget: false },
+        ],
+      })
+      .build();
+
+    const inp = buildInpWithAllCurves(hydraulicModel, { labelIds: true });
+
+    expect(inp).not.toContain("P155\tL1\tJ66");
+    expect(inp).not.toContain("LINK P155 OPEN IF NODE L1 ABOVE 10");
+  });
+
   describe("curves", () => {
     it("includes all curves by default", () => {
       const IDS = { CURVE1: 1, CURVE2: 2, CURVE3: 3 };

@@ -1069,6 +1069,7 @@ const LoggerPointEditor = ({
   const [combineWithConnectedNode, setCombineWithConnectedNode] =
     useState(false);
   const [liveSeries, setLiveSeries] = useState<number[]>([]);
+  const [liveSampleCount, setLiveSampleCount] = useState(0);
   const [liveData, setLiveData] = useState<{
     deviceId?: string;
     status?: string;
@@ -1217,6 +1218,7 @@ const LoggerPointEditor = ({
             if (next.length > graphLength) next.shift();
             return next;
           });
+          setLiveSampleCount((prev) => prev + 1);
         } catch {}
       };
     } catch {
@@ -1252,8 +1254,8 @@ const LoggerPointEditor = ({
       return null;
     }
 
-    const series: number[] = Array.from(connectedNodeSeries.values).map(
-      (value) => {
+    const simulationValues = Array.from(connectedNodeSeries.values).map(
+      (value): number => {
         const converted = toPressureInUnit(
           value,
           quantitiesMetadata.getUnit("pressure"),
@@ -1262,19 +1264,30 @@ const LoggerPointEditor = ({
         return converted ?? Number.NaN;
       },
     );
+    const simulationIntervalSeconds = Math.max(
+      connectedNodeSeries.intervalSeconds || 1,
+      1,
+    );
+    const resampled: number[] = Array(graphLength).fill(Number.NaN);
+    const windowStartSecond = Math.max(0, liveSampleCount - graphLength);
 
-    if (series.length >= graphLength) {
-      return series.slice(series.length - graphLength);
+    // Re-sample simulation series (often hourly) onto logger chart timeline (seconds).
+    for (let secondIndex = 0; secondIndex < graphLength; secondIndex++) {
+      const absoluteSecond = windowStartSecond + secondIndex;
+      const simulationStepIndex = Math.floor(
+        absoluteSecond / simulationIntervalSeconds,
+      );
+      if (simulationStepIndex < simulationValues.length) {
+        resampled[secondIndex] = simulationValues[simulationStepIndex];
+      }
     }
 
-    return [
-      ...Array<number>(graphLength - series.length).fill(Number.NaN),
-      ...series,
-    ];
+    return resampled;
   }, [
     combineWithConnectedNode,
     connectedNodeSeries,
     graphLength,
+    liveSampleCount,
     quantitiesMetadata,
   ]);
 

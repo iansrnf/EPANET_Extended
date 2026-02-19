@@ -67,6 +67,7 @@ import type {
 } from "src/simulation/results-reader";
 import { DemandsEditor } from "./demands-editor";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { Unit, convertTo } from "src/quantity";
 import {
   PumpDefinitionData,
   PumpDefinitionDetailsWithAllCurves,
@@ -79,6 +80,18 @@ type OnPropertyChange = (
 ) => void;
 type OnStatusChange<T> = (newStatus: T, oldStatus: T) => void;
 type OnTypeChange<T> = (newType: T, oldType: T) => void;
+
+const toPressureInUnit = (
+  value: number | null,
+  sourceUnit: Unit,
+  targetUnit: Unit,
+): number | null => {
+  if (value === null) return null;
+  if (sourceUnit === null || targetUnit === null || sourceUnit === targetUnit) {
+    return value;
+  }
+  return convertTo({ value, unit: sourceUnit }, targetUnit);
+};
 
 const pipeStatusLabel = (sim: Pick<PipeSimulation, "status"> | null) => {
   if (!sim) return "notAvailable";
@@ -403,6 +416,9 @@ const JunctionEditor = ({
   const junctionSimulation = simulation?.getJunction(junction.id);
 
   const simPressure = junctionSimulation?.pressure ?? null;
+  const pressureUnit = quantitiesMetadata.getUnit("pressure");
+  const pressureInMeters = toPressureInUnit(simPressure, pressureUnit, "mwc");
+  const pressureInPsi = toPressureInUnit(simPressure, pressureUnit, "psi");
   const simHead = junctionSimulation?.head ?? null;
   const simDemand = junctionSimulation?.demand ?? null;
 
@@ -500,8 +516,15 @@ const JunctionEditor = ({
       <Section title={translate("simulationResults")}>
         <QuantityRow
           name="pressure"
-          value={simPressure}
-          unit={quantitiesMetadata.getUnit("pressure")}
+          value={pressureInMeters}
+          unit="mwc"
+          decimals={quantitiesMetadata.getDecimals("pressure")}
+          readOnly={true}
+        />
+        <QuantityRow
+          name="pressure"
+          value={pressureInPsi}
+          unit="psi"
           decimals={quantitiesMetadata.getDecimals("pressure")}
           readOnly={true}
         />
@@ -821,6 +844,9 @@ const TankEditor = ({
   const tankSimulation = simulation?.getTank(tank.id);
 
   const simPressure = tankSimulation?.pressure ?? null;
+  const pressureUnit = quantitiesMetadata.getUnit("pressure");
+  const pressureInMeters = toPressureInUnit(simPressure, pressureUnit, "mwc");
+  const pressureInPsi = toPressureInUnit(simPressure, pressureUnit, "psi");
   const simHead = tankSimulation?.head ?? null;
   const simLevel = tankSimulation?.level ?? null;
   const simVolume = tankSimulation?.volume ?? null;
@@ -917,8 +943,15 @@ const TankEditor = ({
       <Section title={translate("simulationResults")}>
         <QuantityRow
           name="pressure"
-          value={simPressure}
-          unit={quantitiesMetadata.getUnit("pressure")}
+          value={pressureInMeters}
+          unit="mwc"
+          decimals={quantitiesMetadata.getDecimals("pressure")}
+          readOnly={true}
+        />
+        <QuantityRow
+          name="pressure"
+          value={pressureInPsi}
+          unit="psi"
           decimals={quantitiesMetadata.getDecimals("pressure")}
           readOnly={true}
         />
@@ -1139,6 +1172,13 @@ const LoggerPointEditor = ({
     return padded;
   }, [liveSeries]);
 
+  const loggerPressurePsi =
+    liveData.pressure ??
+    (typeof loggerPoint.pressure === "number"
+      ? loggerPoint.pressure * PSI_PER_METER
+      : loggerPoint.pressure);
+  const loggerPressureM = toPressureInUnit(loggerPressurePsi, "psi", "mwc");
+
   return (
     <AssetEditorContent
       label={loggerPoint.label}
@@ -1236,13 +1276,16 @@ const LoggerPointEditor = ({
         />
         <QuantityRow
           name="pressure"
-          value={
-            liveData.pressure ??
-            (typeof loggerPoint.pressure === "number"
-              ? loggerPoint.pressure * PSI_PER_METER
-              : loggerPoint.pressure)
-          }
-          unit={quantitiesMetadata.getUnit("pressure")}
+          value={loggerPressureM}
+          unit="mwc"
+          decimals={quantitiesMetadata.getDecimals("pressure")}
+          onChange={onPropertyChange}
+          readOnly={loggerFieldsReadOnly}
+        />
+        <QuantityRow
+          name="pressure"
+          value={loggerPressurePsi}
+          unit="psi"
           decimals={quantitiesMetadata.getDecimals("pressure")}
           onChange={onPropertyChange}
           readOnly={loggerFieldsReadOnly}

@@ -20,6 +20,7 @@ import type { AssetId, Valve } from "src/hydraulic-model/asset-types";
 import { useTimeSeries } from "./use-time-series";
 import { QuickGraphChart } from "./quick-graph-chart";
 import { useChangeTimestep } from "src/commands/change-timestep";
+import { Unit, convertTo } from "src/quantity";
 
 // ✅ Zustand store (must include liveLogger + ensureSeriesLength + resetLiveSeries)
 import { useLiveSeriesStore, type LiveLoggerConfig } from "src/store/liveSeriesStore";
@@ -29,10 +30,22 @@ const QUICK_GRAPH_PROPERTIES: {
     value: QuickGraphPropertyByAssetType[K];
     labelKey: string;
     quantityKey: QuantityProperty;
+    displayUnit?: Unit;
   }[];
 } = {
   junction: [
-    { value: "pressure", labelKey: "pressure", quantityKey: "pressure" },
+    {
+      value: "pressureMeters",
+      labelKey: "pressure",
+      quantityKey: "pressure",
+      displayUnit: "mwc",
+    },
+    {
+      value: "pressurePsi",
+      labelKey: "pressure",
+      quantityKey: "pressure",
+      displayUnit: "psi",
+    },
     { value: "head", labelKey: "head", quantityKey: "head" },
     { value: "demand", labelKey: "actualDemand", quantityKey: "actualDemand" },
   ],
@@ -54,10 +67,56 @@ const QUICK_GRAPH_PROPERTIES: {
   tank: [
     { value: "level", labelKey: "level", quantityKey: "level" },
     { value: "volume", labelKey: "volume", quantityKey: "volume" },
-    { value: "pressure", labelKey: "pressure", quantityKey: "pressure" },
+    {
+      value: "pressureMeters",
+      labelKey: "pressure",
+      quantityKey: "pressure",
+      displayUnit: "mwc",
+    },
+    {
+      value: "pressurePsi",
+      labelKey: "pressure",
+      quantityKey: "pressure",
+      displayUnit: "psi",
+    },
     { value: "head", labelKey: "head", quantityKey: "head" },
   ],
   reservoir: [{ value: "head", labelKey: "head", quantityKey: "head" }],
+};
+
+const isPressureVariant = (
+  property: QuickGraphPropertyByAssetType[QuickGraphAssetType],
+) =>
+  property === "pressure" ||
+  property === "pressureMeters" ||
+  property === "pressurePsi";
+
+const toSeriesProperty = <T extends QuickGraphAssetType>(
+  property: QuickGraphPropertyByAssetType[T],
+): QuickGraphPropertyByAssetType[T] =>
+  isPressureVariant(property)
+    ? ("pressure" as QuickGraphPropertyByAssetType[T])
+    : property;
+
+const toTargetPressureUnit = (
+  property: QuickGraphPropertyByAssetType[QuickGraphAssetType],
+): Unit | null => {
+  if (property === "pressureMeters") return "mwc";
+  if (property === "pressurePsi") return "psi";
+  return null;
+};
+
+const normalizePressurePropertySelection = <T extends QuickGraphAssetType>(
+  assetType: T,
+  property: QuickGraphPropertyByAssetType[T],
+): QuickGraphPropertyByAssetType[T] => {
+  if (
+    property === "pressure" &&
+    (assetType === "junction" || assetType === "tank")
+  ) {
+    return "pressureMeters" as QuickGraphPropertyByAssetType[T];
+  }
+  return property;
 };
 
 export const useShowQuickGraph = () => {
@@ -161,10 +220,25 @@ export const QuickGraph = ({
   const scenarioName = isInScenario ? (activeSnapshot?.name ?? null) : null;
   const mainLabel = isInScenario ? translate("scenarios.main") : null;
 
-  const selectedProperty = propertyByType[assetType];
+  const selectedProperty = normalizePressurePropertySelection(
+    assetType,
+    propertyByType[assetType],
+  );
 
   const selectedOption = QUICK_GRAPH_PROPERTIES[assetType].find(
     (opt) => opt.value === selectedProperty,
+  );
+  const pressureTargetUnit = toTargetPressureUnit(selectedProperty);
+  const pressureSourceUnit = quantities.getUnit("pressure");
+  const convertPressureIfNeeded = useCallback(
+    (value: number): number => {
+      if (!pressureTargetUnit || !isPressureVariant(selectedProperty)) return value;
+      if (!pressureSourceUnit || pressureSourceUnit === pressureTargetUnit) {
+        return value;
+      }
+      return convertTo({ value, unit: pressureSourceUnit }, pressureTargetUnit);
+    },
+    [pressureTargetUnit, pressureSourceUnit, selectedProperty],
   );
 
   const decimals = useMemo(() => {
@@ -184,10 +258,19 @@ export const QuickGraph = ({
     quantities,
   ]);
 
-  const values = useMemo(() => (data ? Array.from(data.values) : []), [data]);
+  const values = useMemo(
+    () =>
+      data
+        ? Array.from(data.values).map((value) => convertPressureIfNeeded(value))
+        : [],
+    [data, convertPressureIfNeeded],
+  );
   const mainValues = useMemo(
-    () => (mainData ? Array.from(mainData.values) : null),
-    [mainData],
+    () =>
+      mainData
+        ? Array.from(mainData.values).map((value) => convertPressureIfNeeded(value))
+        : null,
+    [mainData, convertPressureIfNeeded],
   );
 
   const timeStepIndex =
@@ -324,8 +407,16 @@ export const QuickGraph = ({
     if (!liveSeries || liveSeries.length !== values.length) {
       return Array(values.length).fill(null);
     }
-    return liveSeries;
-  }, [liveLogger.enabled, data, liveSeries, values.length]);
+    return liveSeries.map((value) =>
+      typeof value === "number" ? convertPressureIfNeeded(value) : value,
+    );
+  }, [
+    liveLogger.enabled,
+    data,
+    liveSeries,
+    values.length,
+    convertPressureIfNeeded,
+  ]);
   // ------------------------
 
   const propertyOptions = useMemo(() => {
@@ -339,7 +430,13 @@ export const QuickGraph = ({
           quantityKey = getValveSettingQuantityKey(valve) ?? opt.quantityKey;
       }
       const unit = quantities.getUnit(quantityKey);
-      return { value: opt.value, label: unit ? `${label} (${unit})` : label };
+      const effectiveUnit = opt.displayUnit ?? unit;
+      return {
+        value: opt.value,
+        label: effectiveUnit
+          ? `${label} (${effectiveUnit === "mwc" ? "m" : effectiveUnit})`
+          : label,
+      };
     });
   }, [assetType, assetId, hydraulicModel, translate, quantities]);
 
@@ -583,12 +680,15 @@ export function useQuickGraph<T extends QuickGraphAssetType>(
 ) {
   const showQuickGraph = useShowQuickGraph();
   const [propertyByType] = useAtom(quickGraphPropertyAtom);
-  const selectedProperty = propertyByType[assetType];
+  const selectedProperty = normalizePressurePropertySelection(
+    assetType,
+    propertyByType[assetType],
+  );
 
   const { data, mainData, isLoading } = useTimeSeries({
     assetId,
     assetType,
-    property: selectedProperty,
+    property: toSeriesProperty(selectedProperty),
   });
 
   const footer = showQuickGraph ? (

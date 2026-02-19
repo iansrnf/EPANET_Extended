@@ -659,6 +659,7 @@ describe("AssetPanel", () => {
       renderComponent(store);
 
       expectTextPropertyDisplayed("pressure (m)", "20");
+      expectTextPropertyDisplayed("pressure (psi)", "28.446");
       expectTextPropertyDisplayed("head (m)", "10");
       expectTextPropertyDisplayed("actual demand (l/s)", "20");
     });
@@ -975,6 +976,7 @@ describe("AssetPanel", () => {
       renderComponent(store);
 
       expectTextPropertyDisplayed("pressure (m)", "15.123");
+      expectTextPropertyDisplayed("pressure (psi)", "21.510");
       expectTextPropertyDisplayed("head (m)", "125.568");
       expectTextPropertyDisplayed("level (m)", "25.988");
       expectTextPropertyDisplayed("volume (m³)", "1,500.432");

@@ -234,8 +234,21 @@ const appendJunctionSymbologyProps = (
   if (!nodeSymbology.colorRule) return;
 
   const property = nodeSymbology.colorRule.property;
-  const convertPressureForUnit = (value: number, unit: Unit | null) =>
-    unit === "mwc" ? convertTo({ value, unit: "psi" }, "mwc") : value;
+  const elevationUnit = quantities.getUnit("elevation");
+  const convertValueForUnit = (
+    rawValue: number,
+    rawProperty: string,
+    targetUnit: Unit | null,
+  ): number => {
+    if (rawProperty === "pressure" && targetUnit === "mwc") {
+      return convertTo({ value: rawValue, unit: "psi" }, "mwc");
+    }
+    if (rawProperty === "elevation" && targetUnit === "psi") {
+      if (elevationUnit === "m") return rawValue * 1.42233433;
+      if (elevationUnit === "ft") return rawValue * 0.4333;
+    }
+    return rawValue;
+  };
 
   // Only read from simulation results if property is a simulation property
   let value: number | null;
@@ -249,23 +262,23 @@ const appendJunctionSymbologyProps = (
     value = junction[property as keyof Junction] as number | null;
   }
   const numericValue = value !== null ? value : 0;
-  const numericValueForSymbology =
-    property === "pressure"
-      ? convertPressureForUnit(numericValue, nodeSymbology.colorRule.unit)
-      : numericValue;
+  const numericValueForSymbology = convertValueForUnit(
+    numericValue,
+    property,
+    nodeSymbology.colorRule.unit,
+  );
 
   if (!!nodeSymbology.labelRule) {
     const labelProperty = nodeSymbology.labelRule;
     const unit =
-      labelProperty === "pressure"
+      labelProperty === property &&
+      (property === "pressure" || property === "elevation")
         ? nodeSymbology.colorRule.unit
         : junction.getUnit(labelProperty as JunctionQuantity);
     const localizedNumber = localizeDecimal(
-      labelProperty === "pressure"
-        ? convertPressureForUnit(numericValue, unit)
-        : numericValue,
+      convertValueForUnit(numericValue, labelProperty, unit),
       {
-      decimals: quantities.getDecimals(labelProperty as QuantityProperty),
+        decimals: quantities.getDecimals(labelProperty as QuantityProperty),
       },
     );
     const unitText = unit ? translateUnit(unit) : "";

@@ -73,10 +73,23 @@ const simulationProperties = [
 ];
 
 type SelectOption = SupportedProperty | "none";
-type ExtendedSelectOption = SelectOption | "pressureMeters";
+type ExtendedSelectOption = SelectOption | "pressureMeters" | "elevationPsi";
+
+const PSI_PER_METER = 1.42233433;
+const PSI_PER_FOOT = 0.4333;
+
+const elevationToPsi = (value: number, sourceUnit: Unit): number => {
+  if (sourceUnit === "m") return value * PSI_PER_METER;
+  if (sourceUnit === "ft") return value * PSI_PER_FOOT;
+  return value;
+};
 
 const toBaseProperty = (option: ExtendedSelectOption): SelectOption =>
-  option === "pressureMeters" ? "pressure" : option;
+  option === "pressureMeters"
+    ? "pressure"
+    : option === "elevationPsi"
+      ? "elevation"
+      : option;
 
 const toSelectOption = (
   property: SupportedProperty | null,
@@ -84,6 +97,7 @@ const toSelectOption = (
 ): ExtendedSelectOption => {
   if (property === null) return "none";
   if (property === "pressure" && unit === "mwc") return "pressureMeters";
+  if (property === "elevation" && unit === "psi") return "elevationPsi";
   return property;
 };
 
@@ -157,6 +171,29 @@ const SymbologyEditor = ({
           } else {
             updateNodeSymbology(nextSymbology);
           }
+        } else if (property === "elevation") {
+          const nextSymbology = defaultSymbologyBuilders[property](
+            hydraulicModel,
+          )();
+          if (option === "elevationPsi" && nextSymbology.colorRule) {
+            const sourceElevationUnit = hydraulicModel.units.elevation;
+            const convertElevation = (value: number) =>
+              elevationToPsi(value, sourceElevationUnit);
+            updateNodeSymbology({
+              ...nextSymbology,
+              colorRule: {
+                ...nextSymbology.colorRule,
+                unit: "psi",
+                breaks: nextSymbology.colorRule.breaks.map(convertElevation),
+                fallbackEndpoints:
+                  nextSymbology.colorRule.fallbackEndpoints.map(
+                    convertElevation,
+                  ) as [number, number],
+              },
+            });
+          } else {
+            updateNodeSymbology(nextSymbology);
+          }
         } else {
           switchNodeSymbologyTo(
             property,
@@ -216,6 +253,18 @@ const SymbologyEditor = ({
   const isSmOrLarger = useBreakpoint("sm");
   const colorByOptions = ((): ExtendedSelectOption[] => {
     const baseOptions = ["none", ...properties] as ExtendedSelectOption[];
+    if (
+      geometryType === "node" &&
+      ["m", "ft"].includes(quantities.getUnit("elevation") ?? "")
+    ) {
+      const elevationIndex = baseOptions.findIndex(
+        (option) => option === "elevation",
+      );
+      if (elevationIndex !== -1) {
+        baseOptions.splice(elevationIndex + 1, 0, "elevationPsi");
+      }
+    }
+
     const shouldShowPressureMeters =
       geometryType === "node" && quantities.getUnit("pressure") === "psi";
     if (!shouldShowPressureMeters) return baseOptions;
@@ -238,6 +287,13 @@ const SymbologyEditor = ({
                 value: type,
                 label: `${translate("pressure")} (${translateUnit("mwc")})`,
                 disabled: simulation.status === "idle",
+              };
+            }
+            if (type === "elevationPsi") {
+              return {
+                value: type,
+                label: `${translate("elevation")} (${translateUnit("psi")})`,
+                disabled: false,
               };
             }
 

@@ -634,6 +634,7 @@ describe("AssetPanel", () => {
       expect(screen.getByDisplayValue("MY_JUNCTION")).toBeInTheDocument();
       expect(screen.getByText("Junction")).toBeInTheDocument();
       expectPropertyDisplayed("elevation (m)", "10");
+      expectTextPropertyDisplayed("elevation (psi)", "14.223");
       expectTextPropertyDisplayed("direct demand (l/s)", "100");
       expect(screen.queryAllByText("Not available").length).toBeGreaterThan(0);
     });
@@ -884,6 +885,7 @@ describe("AssetPanel", () => {
       expect(screen.getByDisplayValue("MY_RESERVOIR")).toBeInTheDocument();
       expect(screen.getByText("Reservoir")).toBeInTheDocument();
       expectPropertyDisplayed("elevation (m)", "10");
+      expectTextPropertyDisplayed("elevation (psi)", "14.223");
       expectPropertyDisplayed("head (m)", "100");
     });
   });
@@ -913,6 +915,7 @@ describe("AssetPanel", () => {
       expect(screen.getByDisplayValue("MY_TANK")).toBeInTheDocument();
       expect(screen.getByText("Tank")).toBeInTheDocument();
       expectPropertyDisplayed("elevation (m)", "10");
+      expectTextPropertyDisplayed("elevation (psi)", "14.223");
       expectPropertyDisplayed("diameter (m)", "300");
       expectPropertyDisplayed("initial level (m)", "50");
       expectPropertyDisplayed("min level (m)", "0");

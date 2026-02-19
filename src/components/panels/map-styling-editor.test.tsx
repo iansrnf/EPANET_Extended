@@ -184,6 +184,7 @@ describe("Map Styling Editor", () => {
 
     await user.click(screen.getByRole("combobox", { name: /node color by/i }));
     expect(screen.getByRole("option", { name: /pressure \(m\)/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /elevation \(psi\)/i })).toBeInTheDocument();
   });
 
   describe("layers", () => {

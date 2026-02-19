@@ -37,7 +37,7 @@ import { LinkSymbology, NodeSymbology } from "src/map/symbology";
 import { getSortedValues } from "src/hydraulic-model/assets-map";
 import { notify } from "./notifications";
 import { ErrorIcon, AddIcon, DeleteIcon, RefreshIcon } from "src/icons";
-import { convertTo } from "src/quantity";
+import { Unit, convertTo } from "src/quantity";
 
 type ErrorType = "rampShouldBeAscending" | "notEnoughData";
 
@@ -47,7 +47,7 @@ export const RangeColorRuleEditor = ({
   geometryType?: "node" | "link";
 }) => {
   const translate = useTranslate();
-  const { assets } = useAtomValue(stagingModelAtom);
+  const { assets, units } = useAtomValue(stagingModelAtom);
   const {
     linkSymbology,
     nodeSymbology,
@@ -85,24 +85,33 @@ export const RangeColorRuleEditor = ({
   const sortedData = useMemo(() => {
     const property = initialColorRule.property;
     const absValues = Boolean(initialColorRule.absValues);
-    const mapPressureUnit = (values: number[]) => {
+    const elevationToPsi = (value: number, sourceUnit: Unit): number => {
+      if (sourceUnit === "m") return value * 1.42233433;
+      if (sourceUnit === "ft") return value * 0.4333;
+      return value;
+    };
+    const mapSymbologyUnit = (values: number[]) => {
       if (property === "pressure" && initialColorRule.unit === "mwc") {
         return values.map((value) => convertTo({ value, unit: "psi" }, "mwc"));
+      }
+      if (property === "elevation" && initialColorRule.unit === "psi") {
+        return values.map((value) => elevationToPsi(value, units.elevation));
       }
       return values;
     };
 
     if (simulationResults && isSimulationProperty(property)) {
-      return mapPressureUnit(
+      return mapSymbologyUnit(
         getSortedSimulationValues(simulationResults, property, {
           absValues,
         }),
       );
     }
 
-    return mapPressureUnit(getSortedValues(assets, property, { absValues }));
+    return mapSymbologyUnit(getSortedValues(assets, property, { absValues }));
   }, [
     assets,
+    units.elevation,
     initialColorRule.property,
     initialColorRule.absValues,
     initialColorRule.unit,

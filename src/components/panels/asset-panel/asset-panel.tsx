@@ -93,6 +93,17 @@ const toPressureInUnit = (
   return convertTo({ value, unit: sourceUnit }, targetUnit);
 };
 
+const toElevationInPsi = (
+  value: number | null,
+  sourceUnit: Unit,
+): number | null => {
+  if (value === null) return null;
+  if (sourceUnit === "m") return value * 1.42233433;
+  if (sourceUnit === "ft") return value * 0.4333;
+  if (sourceUnit === "psi") return value;
+  return value;
+};
+
 const pipeStatusLabel = (sim: Pick<PipeSimulation, "status"> | null) => {
   if (!sim) return "notAvailable";
   return "pipe." + sim.status;
@@ -416,6 +427,10 @@ const JunctionEditor = ({
   const junctionSimulation = simulation?.getJunction(junction.id);
 
   const simPressure = junctionSimulation?.pressure ?? null;
+  const elevationPsi = toElevationInPsi(
+    junction.elevation,
+    quantitiesMetadata.getUnit("elevation"),
+  );
   const pressureUnit = quantitiesMetadata.getUnit("pressure");
   const pressureInMeters = toPressureInUnit(simPressure, pressureUnit, "mwc");
   const pressureInPsi = toPressureInUnit(simPressure, pressureUnit, "psi");
@@ -474,6 +489,13 @@ const JunctionEditor = ({
           comparison={getComparison("elevation", junction.elevation)}
           onChange={onPropertyChange}
           readOnly={readonly}
+        />
+        <QuantityRow
+          name="elevation"
+          value={elevationPsi}
+          unit="psi"
+          decimals={quantitiesMetadata.getDecimals("elevation")}
+          readOnly={true}
         />
       </Section>
       <Section title={translate("demands")}>
@@ -780,6 +802,10 @@ const ReservoirEditor = ({
   const translate = useTranslate();
   const { footer } = useQuickGraph(reservoir.label, reservoir.id, "reservoir");
   const { getComparison, isNew } = useAssetComparison(reservoir);
+  const elevationPsi = toElevationInPsi(
+    reservoir.elevation,
+    quantitiesMetadata.getUnit("elevation"),
+  );
 
   return (
     <AssetEditorContent
@@ -809,6 +835,13 @@ const ReservoirEditor = ({
           comparison={getComparison("elevation", reservoir.elevation)}
           onChange={onPropertyChange}
           readOnly={readonly}
+        />
+        <QuantityRow
+          name="elevation"
+          value={elevationPsi}
+          unit="psi"
+          decimals={quantitiesMetadata.getDecimals("elevation")}
+          readOnly={true}
         />
         <QuantityRow
           name="head"
@@ -844,6 +877,10 @@ const TankEditor = ({
   const tankSimulation = simulation?.getTank(tank.id);
 
   const simPressure = tankSimulation?.pressure ?? null;
+  const elevationPsi = toElevationInPsi(
+    tank.elevation,
+    quantitiesMetadata.getUnit("elevation"),
+  );
   const pressureUnit = quantitiesMetadata.getUnit("pressure");
   const pressureInMeters = toPressureInUnit(simPressure, pressureUnit, "mwc");
   const pressureInPsi = toPressureInUnit(simPressure, pressureUnit, "psi");
@@ -879,6 +916,13 @@ const TankEditor = ({
           comparison={getComparison("elevation", tank.elevation)}
           onChange={onPropertyChange}
           readOnly={readonly}
+        />
+        <QuantityRow
+          name="elevation"
+          value={elevationPsi}
+          unit="psi"
+          decimals={quantitiesMetadata.getDecimals("elevation")}
+          readOnly={true}
         />
         <QuantityRow
           name="initialLevel"
@@ -1178,6 +1222,10 @@ const LoggerPointEditor = ({
       ? loggerPoint.pressure * PSI_PER_METER
       : loggerPoint.pressure);
   const loggerPressureM = toPressureInUnit(loggerPressurePsi, "psi", "mwc");
+  const loggerElevationPsi = toElevationInPsi(
+    loggerPoint.elevation,
+    quantitiesMetadata.getUnit("elevation"),
+  );
 
   return (
     <AssetEditorContent
@@ -1267,6 +1315,13 @@ const LoggerPointEditor = ({
           comparison={getComparison("elevation", loggerPoint.elevation)}
           onChange={onPropertyChange}
           readOnly={loggerFieldsReadOnly}
+        />
+        <QuantityRow
+          name="elevation"
+          value={loggerElevationPsi}
+          unit="psi"
+          decimals={quantitiesMetadata.getDecimals("elevation")}
+          readOnly={true}
         />
         <TextRow name="deviceId" value={liveData.deviceId ?? loggerPoint.deviceId ?? ""} />
         <TextRow name="status" value={liveData.status ?? loggerPoint.status ?? ""} />

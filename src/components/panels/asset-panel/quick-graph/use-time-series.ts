@@ -18,6 +18,7 @@ interface UseTimeSeriesOptions<T extends QuickGraphAssetType> {
   assetId: number;
   assetType: T;
   property: QuickGraphPropertyByAssetType[T];
+  enabled?: boolean;
 }
 
 interface UseTimeSeriesResult {
@@ -30,6 +31,7 @@ export function useTimeSeries<T extends QuickGraphAssetType>({
   assetId,
   assetType,
   property,
+  enabled = true,
 }: UseTimeSeriesOptions<T>): UseTimeSeriesResult {
   const simulation = useAtomValue(simulationAtom);
   const worktree = useAtomValue(worktreeAtom);
@@ -55,6 +57,13 @@ export function useTimeSeries<T extends QuickGraphAssetType>({
       : undefined;
 
   useEffect(() => {
+    if (!enabled) {
+      setData(null);
+      setMainData(null);
+      setIsLoading(false);
+      return;
+    }
+
     if (status === "failure") {
       setData(null);
       setMainData(null);
@@ -149,6 +158,7 @@ export function useTimeSeries<T extends QuickGraphAssetType>({
       abortControllerRef.current?.abort();
     };
   }, [
+    enabled,
     assetId,
     assetType,
     property,

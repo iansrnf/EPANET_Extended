@@ -158,10 +158,32 @@ describe("Map Styling Editor", () => {
     );
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("combobox", { name: /node color by/i }));
-    expect(screen.getByRole("option", { name: /pressure/i })).toHaveAttribute(
+    expect(
+      screen.getByRole("option", { name: /pressure \(psi\)/i }),
+    ).toHaveAttribute(
       "aria-disabled",
       "true",
     );
+    expect(screen.getByRole("option", { name: /pressure \(m\)/i })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
+  it("shows Pressure (m) as a node color option", async () => {
+    const IDS = { J1: 1, J2: 2 } as const;
+    const user = userEvent.setup();
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1)
+      .aJunction(IDS.J2)
+      .build();
+    const store = setInitialState({
+      hydraulicModel,
+    });
+    renderComponent(store);
+
+    await user.click(screen.getByRole("combobox", { name: /node color by/i }));
+    expect(screen.getByRole("option", { name: /pressure \(m\)/i })).toBeInTheDocument();
   });
 
   describe("layers", () => {

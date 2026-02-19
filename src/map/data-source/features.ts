@@ -234,6 +234,8 @@ const appendJunctionSymbologyProps = (
   if (!nodeSymbology.colorRule) return;
 
   const property = nodeSymbology.colorRule.property;
+  const convertPressureForUnit = (value: number, unit: Unit | null) =>
+    unit === "mwc" ? convertTo({ value, unit: "psi" }, "mwc") : value;
 
   // Only read from simulation results if property is a simulation property
   let value: number | null;
@@ -247,18 +249,30 @@ const appendJunctionSymbologyProps = (
     value = junction[property as keyof Junction] as number | null;
   }
   const numericValue = value !== null ? value : 0;
+  const numericValueForSymbology =
+    property === "pressure"
+      ? convertPressureForUnit(numericValue, nodeSymbology.colorRule.unit)
+      : numericValue;
 
   if (!!nodeSymbology.labelRule) {
     const labelProperty = nodeSymbology.labelRule;
-    const unit = junction.getUnit(labelProperty as JunctionQuantity);
-    const localizedNumber = localizeDecimal(numericValue, {
+    const unit =
+      labelProperty === "pressure"
+        ? nodeSymbology.colorRule.unit
+        : junction.getUnit(labelProperty as JunctionQuantity);
+    const localizedNumber = localizeDecimal(
+      labelProperty === "pressure"
+        ? convertPressureForUnit(numericValue, unit)
+        : numericValue,
+      {
       decimals: quantities.getDecimals(labelProperty as QuantityProperty),
-    });
+      },
+    );
     const unitText = unit ? translateUnit(unit) : "";
     feature.properties!.label = `${localizedNumber} ${unitText}`;
   }
 
-  const fillColor = colorFor(nodeSymbology.colorRule, numericValue);
+  const fillColor = colorFor(nodeSymbology.colorRule, numericValueForSymbology);
   const strokeColor = strokeColorFor(fillColor);
 
   feature.properties!.color = fillColor;

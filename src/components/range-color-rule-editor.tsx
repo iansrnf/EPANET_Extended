@@ -37,6 +37,7 @@ import { LinkSymbology, NodeSymbology } from "src/map/symbology";
 import { getSortedValues } from "src/hydraulic-model/assets-map";
 import { notify } from "./notifications";
 import { ErrorIcon, AddIcon, DeleteIcon, RefreshIcon } from "src/icons";
+import { convertTo } from "src/quantity";
 
 type ErrorType = "rampShouldBeAscending" | "notEnoughData";
 
@@ -84,18 +85,27 @@ export const RangeColorRuleEditor = ({
   const sortedData = useMemo(() => {
     const property = initialColorRule.property;
     const absValues = Boolean(initialColorRule.absValues);
+    const mapPressureUnit = (values: number[]) => {
+      if (property === "pressure" && initialColorRule.unit === "mwc") {
+        return values.map((value) => convertTo({ value, unit: "psi" }, "mwc"));
+      }
+      return values;
+    };
 
     if (simulationResults && isSimulationProperty(property)) {
-      return getSortedSimulationValues(simulationResults, property, {
-        absValues,
-      });
+      return mapPressureUnit(
+        getSortedSimulationValues(simulationResults, property, {
+          absValues,
+        }),
+      );
     }
 
-    return getSortedValues(assets, property, { absValues });
+    return mapPressureUnit(getSortedValues(assets, property, { absValues }));
   }, [
     assets,
     initialColorRule.property,
     initialColorRule.absValues,
+    initialColorRule.unit,
     simulationResults,
   ]);
 

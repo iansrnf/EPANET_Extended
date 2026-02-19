@@ -219,6 +219,38 @@ describe("build optimized source", () => {
       const [junction] = features;
       expect(junction.properties!.label).toEqual("10 m");
     });
+
+    it("includes converted pressure labels when unit is mwc", () => {
+      const IDS = { J1: 1 } as const;
+      const symbology: SymbologySpec = {
+        ...nullSymbologySpec,
+        node: aNodeSymbology({
+          colorRule: aRangeColorRule({
+            property: "pressure",
+            unit: "mwc",
+          }),
+          labelRule: "pressure",
+        }),
+      };
+      const { assets } = HydraulicModelBuilder.with()
+        .aJunction(IDS.J1, { elevation: 15 })
+        .build();
+      const simulationResults = createMockResultsReader({
+        junctions: { [IDS.J1]: { pressure: 14.2233433 } },
+      });
+
+      const features = buildOptimizedAssetsSource(
+        assets,
+        symbology,
+        defaultQuantities,
+        () => "m",
+        simulationResults,
+      );
+
+      const [junction] = features;
+      expect(junction.properties!.label).toContain("10");
+      expect(junction.properties!.label).toContain("m");
+    });
   });
 
   describe("link symbology", () => {

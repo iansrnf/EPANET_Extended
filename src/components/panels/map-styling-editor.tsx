@@ -27,6 +27,7 @@ import { AddLayer, LayersEditor } from "../layers/layers-editor";
 import { InlineField, Section, SectionList } from "../form/fields";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { LegendRamp } from "../legends";
+import { Unit, convertTo } from "src/quantity";
 
 const colorPropertyLabelFor = (
   property: string,
@@ -72,6 +73,19 @@ const simulationProperties = [
 ];
 
 type SelectOption = SupportedProperty | "none";
+type ExtendedSelectOption = SelectOption | "pressureMeters";
+
+const toBaseProperty = (option: ExtendedSelectOption): SelectOption =>
+  option === "pressureMeters" ? "pressure" : option;
+
+const toSelectOption = (
+  property: SupportedProperty | null,
+  unit: Unit,
+): ExtendedSelectOption => {
+  if (property === null) return "none";
+  if (property === "pressure" && unit === "mwc") return "pressureMeters";
+  return property;
+};
 
 const SymbologyEditor = ({
   geometryType,
@@ -101,11 +115,13 @@ const SymbologyEditor = ({
 
   const userTracking = useUserTracking();
 
-  const handleColorByChange = (property: SelectOption) => {
+  const handleColorByChange = (option: ExtendedSelectOption) => {
+    const property = toBaseProperty(option);
+
     userTracking.capture({
       name: "map.colorBy.changed",
       type: geometryType,
-      subtype: property,
+      subtype: option,
     });
 
     const isSimulationProperty = simulationProperties.includes(property);
@@ -118,14 +134,39 @@ const SymbologyEditor = ({
       }
 
       if (canApplySymbology) {
-        switchNodeSymbologyTo(
-          property,
-          defaultSymbologyBuilders[property](
+        if (property === "pressure") {
+          const nextSymbology = defaultSymbologyBuilders[property](
             hydraulicModel,
             quantities,
             simulationResults!,
-          ),
-        );
+          )();
+          if (option === "pressureMeters" && nextSymbology.colorRule) {
+            const convertPressure = (value: number) =>
+              convertTo({ value, unit: "psi" }, "mwc");
+            updateNodeSymbology({
+              ...nextSymbology,
+              colorRule: {
+                ...nextSymbology.colorRule,
+                unit: "mwc",
+                breaks: nextSymbology.colorRule.breaks.map(convertPressure),
+                fallbackEndpoints: nextSymbology.colorRule.fallbackEndpoints.map(
+                  convertPressure,
+                ) as [number, number],
+              },
+            });
+          } else {
+            updateNodeSymbology(nextSymbology);
+          }
+        } else {
+          switchNodeSymbologyTo(
+            property,
+            defaultSymbologyBuilders[property](
+              hydraulicModel,
+              quantities,
+              simulationResults!,
+            ),
+          );
+        }
       }
     } else {
       if (property === "none") {
@@ -173,13 +214,33 @@ const SymbologyEditor = ({
       : translate("linkSymbology");
 
   const isSmOrLarger = useBreakpoint("sm");
+  const colorByOptions = ((): ExtendedSelectOption[] => {
+    const baseOptions = ["none", ...properties] as ExtendedSelectOption[];
+    const shouldShowPressureMeters =
+      geometryType === "node" && quantities.getUnit("pressure") === "psi";
+    if (!shouldShowPressureMeters) return baseOptions;
+
+    const pressureIndex = baseOptions.findIndex((option) => option === "pressure");
+    if (pressureIndex === -1) return baseOptions;
+
+    baseOptions.splice(pressureIndex + 1, 0, "pressureMeters");
+    return baseOptions;
+  })();
 
   return (
     <Section title={title}>
       <InlineField name={translate("colorBy")}>
         <Selector
           ariaLabel={`${translate(geometryType)} ${translate("colorBy")}`}
-          options={(["none", ...properties] as SelectOption[]).map((type) => {
+          options={colorByOptions.map((type) => {
+            if (type === "pressureMeters") {
+              return {
+                value: type,
+                label: `${translate("pressure")} (${translateUnit("mwc")})`,
+                disabled: simulation.status === "idle",
+              };
+            }
+
             const unit = type !== "none" ? quantities.getUnit(type) : null;
             return {
               value: type,
@@ -190,9 +251,12 @@ const SymbologyEditor = ({
             };
           })}
           selected={
-            (symbology.colorRule
-              ? symbology.colorRule.property
-              : "none") as SelectOption
+            toSelectOption(
+              symbology.colorRule
+                ? (symbology.colorRule.property as SupportedProperty)
+                : null,
+              symbology.colorRule?.unit ?? null,
+            )
           }
           onChange={handleColorByChange}
         />

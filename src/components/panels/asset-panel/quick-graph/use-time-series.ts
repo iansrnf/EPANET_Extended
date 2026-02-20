@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useAtomValue } from "jotai";
 import { simulationAtom } from "src/state/jotai";
 import { OPFSStorage } from "src/infra/storage/opfs-storage";
@@ -24,6 +24,17 @@ interface UseTimeSeriesOptions<T extends QuickGraphAssetType> {
 interface UseTimeSeriesResult {
   data: TimeSeries | null;
   mainData: TimeSeries | null;
+  isLoading: boolean;
+}
+
+interface UseMultipleJunctionTimeSeriesOptions {
+  assetIds: number[];
+  property: JunctionProperty;
+  enabled?: boolean;
+}
+
+interface UseMultipleJunctionTimeSeriesResult {
+  dataByAssetId: Record<number, TimeSeries>;
   isLoading: boolean;
 }
 
@@ -171,4 +182,122 @@ export function useTimeSeries<T extends QuickGraphAssetType>({
   ]);
 
   return { data, mainData, isLoading };
+}
+
+export function useMultipleJunctionTimeSeries({
+  assetIds,
+  property,
+  enabled = true,
+}: UseMultipleJunctionTimeSeriesOptions): UseMultipleJunctionTimeSeriesResult {
+  const simulation = useAtomValue(simulationAtom);
+  const worktree = useAtomValue(worktreeAtom);
+  const [dataByAssetId, setDataByAssetId] = useState<
+    Record<number, TimeSeries>
+  >({});
+  const [isLoading, setIsLoading] = useState(() => {
+    return simulation.status === "success" || simulation.status === "warning";
+  });
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const sortedAssetIds = useMemo(
+    () => [...assetIds].sort((a, b) => a - b),
+    [assetIds],
+  );
+  const assetIdsKey = useMemo(() => sortedAssetIds.join(","), [sortedAssetIds]);
+
+  const status = simulation.status;
+  const metadata =
+    status === "success" || status === "warning"
+      ? simulation.metadata
+      : undefined;
+  const simulationIds =
+    status === "success" || status === "warning"
+      ? simulation.simulationIds
+      : undefined;
+
+  useEffect(() => {
+    if (!enabled || sortedAssetIds.length === 0) {
+      setDataByAssetId({});
+      setIsLoading(false);
+      return;
+    }
+
+    if (status === "failure") {
+      setDataByAssetId({});
+      setIsLoading(false);
+      return;
+    }
+
+    if (status !== "success" && status !== "warning") {
+      return;
+    }
+
+    if (!metadata || !simulationIds) {
+      return;
+    }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    abortControllerRef.current = new AbortController();
+
+    const fetchTimeSeries = async () => {
+      setIsLoading(true);
+
+      try {
+        const appId = getAppId();
+        const scenarioKey = worktree.activeSnapshotId;
+        const storage = new OPFSStorage(appId, scenarioKey);
+        const epsReader = new EPSResultsReader(storage);
+        await epsReader.initialize(metadata, simulationIds);
+
+        const resultEntries = await Promise.all(
+          sortedAssetIds.map(async (assetId) => {
+            const result = await epsReader.getTimeSeries(
+              assetId,
+              "junction",
+              property,
+            );
+            return [assetId, result] as const;
+          }),
+        );
+
+        if (abortControllerRef.current?.signal.aborted) {
+          return;
+        }
+
+        const next: Record<number, TimeSeries> = {};
+        for (const [assetId, result] of resultEntries) {
+          if (result) {
+            next[assetId] = result;
+          }
+        }
+        setDataByAssetId(next);
+      } catch (err) {
+        if (abortControllerRef.current?.signal.aborted) {
+          return;
+        }
+        captureError(err as Error);
+        setDataByAssetId({});
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    void fetchTimeSeries();
+
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, [
+    enabled,
+    assetIdsKey,
+    sortedAssetIds,
+    property,
+    status,
+    metadata,
+    simulationIds,
+    worktree.activeSnapshotId,
+  ]);
+
+  return { dataByAssetId, isLoading };
 }

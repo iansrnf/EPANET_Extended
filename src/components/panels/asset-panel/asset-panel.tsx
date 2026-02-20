@@ -58,7 +58,7 @@ import { Section } from "src/components/form/fields";
 import { PumpDefinitionDetails } from "./pump-definition-details";
 import { useQuickGraph } from "./quick-graph";
 import { QuickGraphChart } from "./quick-graph/quick-graph-chart";
-import { useTimeSeries } from "./quick-graph/use-time-series";
+import { useMultipleJunctionTimeSeries } from "./quick-graph/use-time-series";
 import { useAssetComparison } from "src/hooks/use-asset-comparison";
 import { useSimulation } from "src/hooks/use-simulation";
 import type {
@@ -73,6 +73,7 @@ import {
   PumpDefinitionData,
   PumpDefinitionDetailsWithAllCurves,
 } from "./pump-definition-details-all-curves";
+import { colors } from "src/lib/constants";
 
 type OnPropertyChange = (
   name: string,
@@ -1049,16 +1050,17 @@ const LoggerPointEditor = ({
   const translate = useTranslate();
   const simulation = useSimulation();
   const { getComparison, isNew } = useAssetComparison(loggerPoint);
-  const connectedJunction = useMemo(
-    () => getConnectedJunctionForLogger(hydraulicModel, loggerPoint.id),
+  const connectedJunctions = useMemo(
+    () => getConnectedJunctionsForLogger(hydraulicModel, loggerPoint.id),
     [hydraulicModel, loggerPoint.id],
   );
-  const junctionSimulation = connectedJunction
-    ? simulation?.getJunction(connectedJunction.id)
+  const primaryConnectedJunction = connectedJunctions[0] ?? null;
+  const junctionSimulation = primaryConnectedJunction
+    ? simulation?.getJunction(primaryConnectedJunction.id)
     : null;
   const { footer } = useQuickGraph(
     loggerPoint.label,
-    connectedJunction?.id ?? loggerPoint.id,
+    primaryConnectedJunction?.id ?? loggerPoint.id,
     "junction",
   );
   const [wsUrl, setWsUrl] = useState("wss://logger-api.gscwd.app/stream");
@@ -1068,6 +1070,9 @@ const LoggerPointEditor = ({
   const [liveError, setLiveError] = useState<string | null>(null);
   const [combineWithConnectedNode, setCombineWithConnectedNode] =
     useState(false);
+  const [selectedConnectedJunctions, setSelectedConnectedJunctions] = useState<
+    Record<number, boolean>
+  >({});
   const [liveSeries, setLiveSeries] = useState<number[]>([]);
   const [liveSampleCount, setLiveSampleCount] = useState(0);
   const [liveData, setLiveData] = useState<{
@@ -1085,13 +1090,27 @@ const LoggerPointEditor = ({
   const wsRef = useRef<WebSocket | null>(null);
   const graphLength = 120;
   const loggerFieldsReadOnly = readonly || (liveEnabled && liveConnected);
-  const { data: connectedNodeSeries, isLoading: isConnectedNodeSeriesLoading } =
-    useTimeSeries({
-      assetId: connectedJunction?.id ?? loggerPoint.id,
-      assetType: "junction",
-      property: "pressure",
-      enabled: !!connectedJunction && combineWithConnectedNode,
+  const connectedJunctionIds = useMemo(
+    () => connectedJunctions.map((junction) => junction.id),
+    [connectedJunctions],
+  );
+  const {
+    dataByAssetId: connectedNodeSeriesByAssetId,
+    isLoading: isConnectedNodeSeriesLoading,
+  } = useMultipleJunctionTimeSeries({
+    assetIds: connectedJunctionIds,
+    property: "pressure",
+    enabled: connectedJunctions.length > 0 && combineWithConnectedNode,
+  });
+  useEffect(() => {
+    setSelectedConnectedJunctions((previous) => {
+      const next: Record<number, boolean> = {};
+      for (const junction of connectedJunctions) {
+        next[junction.id] = previous[junction.id] ?? true;
+      }
+      return next;
     });
+  }, [connectedJunctions]);
   const wsUrlWithDeviceId = useMemo(() => {
     const deviceId = wsDeviceId.trim();
     if (!deviceId) return wsUrl;
@@ -1249,46 +1268,80 @@ const LoggerPointEditor = ({
     Math.min(liveSeries.length - 1, graphLength - 1),
   );
 
-  const connectedMainValues = useMemo(() => {
-    if (!combineWithConnectedNode || !connectedNodeSeries) {
+  const connectedNodeOverlaySeries = useMemo(() => {
+    if (!combineWithConnectedNode || connectedJunctions.length === 0) {
       return null;
     }
 
-    const simulationValues = Array.from(connectedNodeSeries.values).map(
-      (value): number => {
-        const converted = toPressureInUnit(
-          value,
-          quantitiesMetadata.getUnit("pressure"),
-          "psi",
-        );
-        return converted ?? Number.NaN;
-      },
-    );
-    const simulationIntervalSeconds = Math.max(
-      connectedNodeSeries.intervalSeconds || 1,
-      1,
-    );
-    const resampled: number[] = Array(graphLength).fill(Number.NaN);
     const windowStartSecond = Math.max(0, liveSampleCount - graphLength);
+    const overlayColors = [
+      colors.blue500,
+      colors.cyan700,
+      colors.indigo500,
+      colors.purple500,
+      colors.green800,
+      colors.orange500,
+    ];
 
-    // Re-sample simulation series (often hourly) onto logger chart timeline (seconds).
-    for (let secondIndex = 0; secondIndex < graphLength; secondIndex++) {
-      const absoluteSecond = windowStartSecond + secondIndex;
-      const simulationStepIndex = Math.floor(
-        absoluteSecond / simulationIntervalSeconds,
+    return connectedJunctions
+      .filter((junction) => selectedConnectedJunctions[junction.id] !== false)
+      .map((junction, index) => {
+        const series = connectedNodeSeriesByAssetId[junction.id];
+        if (!series) return null;
+
+        const simulationValues = Array.from(series.values).map(
+          (value): number => {
+            const converted = toPressureInUnit(
+              value,
+              quantitiesMetadata.getUnit("pressure"),
+              "psi",
+            );
+            return converted ?? Number.NaN;
+          },
+        );
+
+        const simulationIntervalSeconds = Math.max(
+          series.intervalSeconds || 1,
+          1,
+        );
+        const resampled: (number | null)[] = Array(graphLength).fill(
+          Number.NaN,
+        );
+
+        // Re-sample simulation series (often hourly) onto logger chart timeline (seconds).
+        for (let secondIndex = 0; secondIndex < graphLength; secondIndex++) {
+          const absoluteSecond = windowStartSecond + secondIndex;
+          const simulationStepIndex = Math.floor(
+            absoluteSecond / simulationIntervalSeconds,
+          );
+          if (simulationStepIndex < simulationValues.length) {
+            resampled[secondIndex] = simulationValues[simulationStepIndex];
+          }
+        }
+
+        return {
+          label: `${junction.label} simulation`,
+          values: resampled,
+          color: overlayColors[index % overlayColors.length],
+        };
+      })
+      .filter(
+        (
+          series,
+        ): series is {
+          label: string;
+          values: (number | null)[];
+          color: string;
+        } => series !== null,
       );
-      if (simulationStepIndex < simulationValues.length) {
-        resampled[secondIndex] = simulationValues[simulationStepIndex];
-      }
-    }
-
-    return resampled;
   }, [
     combineWithConnectedNode,
-    connectedNodeSeries,
+    connectedJunctions,
+    connectedNodeSeriesByAssetId,
     graphLength,
     liveSampleCount,
     quantitiesMetadata,
+    selectedConnectedJunctions,
   ]);
 
   const loggerPressurePsi =
@@ -1321,14 +1374,18 @@ const LoggerPointEditor = ({
       type="Logger Point"
       isNew={isNew}
       onLabelChange={onLabelChange}
-      footer={connectedJunction ? footer : undefined}
+      footer={primaryConnectedJunction ? footer : undefined}
       readOnly={loggerFieldsReadOnly}
       key={loggerPoint.id}
     >
       <Section title={translate("connections")}>
         <TextRow
           name="junction"
-          value={connectedJunction ? connectedJunction.label : "Not connected"}
+          value={
+            connectedJunctions.length > 0
+              ? connectedJunctions.map((junction) => junction.label).join(", ")
+              : "Not connected"
+          }
         />
       </Section>
       <Section title="Live Logger">
@@ -1380,10 +1437,29 @@ const LoggerPointEditor = ({
               type="checkbox"
               checked={combineWithConnectedNode}
               onChange={(e) => setCombineWithConnectedNode(e.target.checked)}
-              disabled={!connectedJunction}
+              disabled={connectedJunctions.length === 0}
             />
             Combine graph with connected node simulation
           </label>
+          {combineWithConnectedNode && connectedJunctions.length > 0 && (
+            <div className="mb-2 grid grid-cols-2 gap-1 text-xs text-gray-600 dark:text-gray-300">
+              {connectedJunctions.map((junction) => (
+                <label key={junction.id} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedConnectedJunctions[junction.id] !== false}
+                    onChange={(e) =>
+                      setSelectedConnectedJunctions((prev) => ({
+                        ...prev,
+                        [junction.id]: e.target.checked,
+                      }))
+                    }
+                  />
+                  {junction.label}
+                </label>
+              ))}
+            </div>
+          )}
           {combineWithConnectedNode && isConnectedNodeSeriesLoading && (
             <div className="mb-2 text-xs text-gray-500">
               Loading connected node simulation series...
@@ -1392,12 +1468,8 @@ const LoggerPointEditor = ({
           <div className="h-36">
             <QuickGraphChart
               values={Array(graphLength).fill(Number.NaN)}
-              mainValues={connectedMainValues}
-              mainLabel={
-                combineWithConnectedNode && connectedJunction
-                  ? `${connectedJunction.label} simulation`
-                  : null
-              }
+              mainValues={null}
+              mainLabel={null}
               intervalsCount={graphLength}
               intervalSeconds={1}
               decimals={quantitiesMetadata.getDecimals("pressure") ?? 0}
@@ -1407,6 +1479,7 @@ const LoggerPointEditor = ({
               liveValues={liveValues}
               liveLabel="Live pressure"
               liveColor="rgb(239, 68, 68)"
+              extraSeries={connectedNodeOverlaySeries}
             />
           </div>
         </div>
@@ -1499,7 +1572,7 @@ const LoggerPointEditor = ({
           value={`${liveData.gsmPct ?? loggerPoint.gsmPct ?? ""}`}
         />
       </Section>
-      {connectedJunction && (
+      {primaryConnectedJunction && (
         <Section title={translate("simulationResults")}>
           <QuantityRow
             name="pressure"
@@ -1871,10 +1944,11 @@ function getCustomerPointsPattern(
   };
 }
 
-function getConnectedJunctionForLogger(
+function getConnectedJunctionsForLogger(
   hydraulicModel: HydraulicModel,
   loggerPointId: number,
-): Junction | null {
+): Junction[] {
+  const connected = new Map<number, Junction>();
   for (const asset of hydraulicModel.assets.values()) {
     if (!asset.isLink) continue;
     const [startNodeId, endNodeId] = asset.connections;
@@ -1883,8 +1957,8 @@ function getConnectedJunctionForLogger(
     const otherNodeId = startNodeId === loggerPointId ? endNodeId : startNodeId;
     const otherNode = hydraulicModel.assets.get(otherNodeId);
     if (otherNode && otherNode.isNode && otherNode.type === "junction") {
-      return otherNode as Junction;
+      connected.set(otherNode.id, otherNode as Junction);
     }
   }
-  return null;
+  return Array.from(connected.values());
 }

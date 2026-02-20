@@ -8,6 +8,7 @@ import {
   Reservoir,
   Tank,
   NodeAsset,
+  LinkAsset,
   HydraulicModel,
 } from "src/hydraulic-model";
 import {
@@ -74,6 +75,8 @@ import {
   PumpDefinitionDetailsWithAllCurves,
 } from "./pump-definition-details-all-curves";
 import { colors } from "src/lib/constants";
+import { localizeDecimal } from "src/infra/i18n/numbers";
+import { WarningIcon } from "src/icons";
 
 type OnPropertyChange = (
   name: string,
@@ -1100,7 +1103,7 @@ const LoggerPointEditor = ({
   } = useMultipleJunctionTimeSeries({
     assetIds: connectedJunctionIds,
     property: "pressure",
-    enabled: connectedJunctions.length > 0 && combineWithConnectedNode,
+    enabled: connectedJunctions.length > 0,
   });
   useEffect(() => {
     setSelectedConnectedJunctions((previous) => {
@@ -1367,6 +1370,66 @@ const LoggerPointEditor = ({
   );
   const simulatedHead = junctionSimulation?.head ?? null;
   const simulatedDemand = junctionSimulation?.demand ?? null;
+  const pressureDecimals = quantitiesMetadata.getDecimals("pressure") ?? 2;
+  const connectedJunctionPressureComparisons = useMemo(() => {
+    const loggerPressureForComparison =
+      typeof loggerPressurePsi === "number" ? loggerPressurePsi : null;
+    const currentAbsoluteSecond = Math.max(0, liveSampleCount - 1);
+
+    return connectedJunctions.map((junction) => {
+      const series = connectedNodeSeriesByAssetId[junction.id];
+      let simulatedPressurePsi: number | null = null;
+
+      if (series && series.values.length > 0) {
+        const simulationIntervalSeconds = Math.max(
+          series.intervalSeconds || 1,
+          1,
+        );
+        const simulationStepIndex = Math.floor(
+          currentAbsoluteSecond / simulationIntervalSeconds,
+        );
+        const rawValue = series.values[simulationStepIndex];
+        if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
+          simulatedPressurePsi = toPressureInUnit(
+            rawValue,
+            quantitiesMetadata.getUnit("pressure"),
+            "psi",
+          );
+        }
+      }
+
+      if (simulatedPressurePsi === null) {
+        const junctionSimulation = simulation?.getJunction(junction.id);
+        const simulatedPressure =
+          junctionSimulation?.pressure === undefined
+            ? null
+            : junctionSimulation.pressure;
+        simulatedPressurePsi = toPressureInUnit(
+          simulatedPressure,
+          quantitiesMetadata.getUnit("pressure"),
+          "psi",
+        );
+      }
+
+      const versusPsi =
+        loggerPressureForComparison === null || simulatedPressurePsi === null
+          ? null
+          : loggerPressureForComparison - simulatedPressurePsi;
+
+      return {
+        junction,
+        simulatedPressurePsi,
+        versusPsi,
+      };
+    });
+  }, [
+    connectedJunctions,
+    connectedNodeSeriesByAssetId,
+    liveSampleCount,
+    loggerPressurePsi,
+    quantitiesMetadata,
+    simulation,
+  ]);
 
   return (
     <AssetEditorContent
@@ -1432,6 +1495,57 @@ const LoggerPointEditor = ({
                 : "Disconnected"}
             {liveError ? ` (${liveError})` : ""}
           </div>
+          {connectedJunctionPressureComparisons.length > 0 && (
+            <div className="mb-2 rounded-md border border-gray-200 px-2 py-2 text-xs text-gray-700 dark:border-gray-700 dark:text-gray-200">
+              <div className="mb-1 font-medium text-gray-600 dark:text-gray-300">
+                Live vs connected simulation (psi)
+              </div>
+              {connectedJunctionPressureComparisons.map(
+                ({ junction, simulatedPressurePsi, versusPsi }) => (
+                  <div
+                    key={junction.id}
+                    className="mb-1 last:mb-0 text-[11px] leading-5"
+                  >
+                    <div>
+                      {junction.label} simulated:{" "}
+                      {simulatedPressurePsi === null
+                        ? "N/A"
+                        : localizeDecimal(simulatedPressurePsi, {
+                            decimals: pressureDecimals,
+                          })}
+                    </div>
+                    <div>
+                      {loggerPoint.label}:{" "}
+                      {typeof loggerPressurePsi === "number"
+                        ? localizeDecimal(loggerPressurePsi, {
+                            decimals: pressureDecimals,
+                          })
+                        : "N/A"}
+                    </div>
+                    <div>
+                      {loggerPoint.label} - {junction.label} ={" "}
+                      <span className="inline-flex items-center gap-1">
+                        {versusPsi === null
+                          ? "N/A"
+                          : localizeDecimal(versusPsi, {
+                              decimals: pressureDecimals,
+                            })}
+                        {versusPsi !== null && versusPsi <= -15 && (
+                          <span
+                            title="possible leaking"
+                            className="inline-flex cursor-help text-red-600 dark:text-red-400"
+                            aria-label="possible leaking"
+                          >
+                            <WarningIcon size={12} />
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
           <label className="mb-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
             <input
               type="checkbox"
@@ -1948,9 +2062,10 @@ function getConnectedJunctionsForLogger(
   hydraulicModel: HydraulicModel,
   loggerPointId: number,
 ): Junction[] {
+  const isLinkAsset = (asset: Asset): asset is LinkAsset => asset.isLink;
   const connected = new Map<number, Junction>();
   for (const asset of hydraulicModel.assets.values()) {
-    if (!asset.isLink) continue;
+    if (!isLinkAsset(asset)) continue;
     const [startNodeId, endNodeId] = asset.connections;
     if (startNodeId !== loggerPointId && endNodeId !== loggerPointId) continue;
 

@@ -8,6 +8,7 @@ import {
   Reservoir,
   Tank,
   NodeAsset,
+  LinkAsset,
   HydraulicModel,
 } from "src/hydraulic-model";
 import {
@@ -58,6 +59,7 @@ import { Section } from "src/components/form/fields";
 import { PumpDefinitionDetails } from "./pump-definition-details";
 import { useQuickGraph } from "./quick-graph";
 import { QuickGraphChart } from "./quick-graph/quick-graph-chart";
+import { useMultipleJunctionTimeSeries } from "./quick-graph/use-time-series";
 import { useAssetComparison } from "src/hooks/use-asset-comparison";
 import { useSimulation } from "src/hooks/use-simulation";
 import type {
@@ -72,6 +74,9 @@ import {
   PumpDefinitionData,
   PumpDefinitionDetailsWithAllCurves,
 } from "./pump-definition-details-all-curves";
+import { colors } from "src/lib/constants";
+import { localizeDecimal } from "src/infra/i18n/numbers";
+import { WarningIcon } from "src/icons";
 
 type OnPropertyChange = (
   name: string,
@@ -393,6 +398,7 @@ export function AssetPanel({
       return (
         <LoggerPointEditor
           loggerPoint={asset as LoggerPoint}
+          hydraulicModel={hydraulicModel}
           quantitiesMetadata={quantitiesMetadata}
           onPropertyChange={handlePropertyChange}
           onLabelChange={handleLabelChange}
@@ -1027,12 +1033,14 @@ const TankEditor = ({
 
 const LoggerPointEditor = ({
   loggerPoint,
+  hydraulicModel,
   quantitiesMetadata,
   onPropertyChange,
   onLabelChange,
   readonly = false,
 }: {
   loggerPoint: LoggerPoint;
+  hydraulicModel: HydraulicModel;
   quantitiesMetadata: Quantities;
   onPropertyChange: OnPropertyChange;
   onLabelChange: (newLabel: string) => string | undefined;
@@ -1043,13 +1051,33 @@ const LoggerPointEditor = ({
   const PSI_PER_BAR = 14.5037738;
   const PSI_PER_FOOT = 0.4333;
   const translate = useTranslate();
+  const simulation = useSimulation();
   const { getComparison, isNew } = useAssetComparison(loggerPoint);
+  const connectedJunctions = useMemo(
+    () => getConnectedJunctionsForLogger(hydraulicModel, loggerPoint.id),
+    [hydraulicModel, loggerPoint.id],
+  );
+  const primaryConnectedJunction = connectedJunctions[0] ?? null;
+  const junctionSimulation = primaryConnectedJunction
+    ? simulation?.getJunction(primaryConnectedJunction.id)
+    : null;
+  const { footer } = useQuickGraph(
+    loggerPoint.label,
+    primaryConnectedJunction?.id ?? loggerPoint.id,
+    "junction",
+  );
   const [wsUrl, setWsUrl] = useState("wss://logger-api.gscwd.app/stream");
   const [wsDeviceId, setWsDeviceId] = useState(loggerPoint.deviceId || "");
   const [liveEnabled, setLiveEnabled] = useState(false);
   const [liveConnected, setLiveConnected] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [combineWithConnectedNode, setCombineWithConnectedNode] =
+    useState(false);
+  const [selectedConnectedJunctions, setSelectedConnectedJunctions] = useState<
+    Record<number, boolean>
+  >({});
   const [liveSeries, setLiveSeries] = useState<number[]>([]);
+  const [liveSampleCount, setLiveSampleCount] = useState(0);
   const [liveData, setLiveData] = useState<{
     deviceId?: string;
     status?: string;
@@ -1065,6 +1093,27 @@ const LoggerPointEditor = ({
   const wsRef = useRef<WebSocket | null>(null);
   const graphLength = 120;
   const loggerFieldsReadOnly = readonly || (liveEnabled && liveConnected);
+  const connectedJunctionIds = useMemo(
+    () => connectedJunctions.map((junction) => junction.id),
+    [connectedJunctions],
+  );
+  const {
+    dataByAssetId: connectedNodeSeriesByAssetId,
+    isLoading: isConnectedNodeSeriesLoading,
+  } = useMultipleJunctionTimeSeries({
+    assetIds: connectedJunctionIds,
+    property: "pressure",
+    enabled: connectedJunctions.length > 0,
+  });
+  useEffect(() => {
+    setSelectedConnectedJunctions((previous) => {
+      const next: Record<number, boolean> = {};
+      for (const junction of connectedJunctions) {
+        next[junction.id] = previous[junction.id] ?? true;
+      }
+      return next;
+    });
+  }, [connectedJunctions]);
   const wsUrlWithDeviceId = useMemo(() => {
     const deviceId = wsDeviceId.trim();
     if (!deviceId) return wsUrl;
@@ -1124,12 +1173,14 @@ const LoggerPointEditor = ({
                     ? msg.pressure_ft * PSI_PER_FOOT
                     : typeof msg?.pressure_bar === "number"
                       ? msg.pressure_bar * PSI_PER_BAR
-              : typeof msg?.pressure_kpa === "number"
-                ? msg.pressure_kpa * PSI_PER_KPA
-                : null;
+                      : typeof msg?.pressure_kpa === "number"
+                        ? msg.pressure_kpa * PSI_PER_KPA
+                        : null;
 
-          const flowValue = typeof msg?.flow === "number" ? msg.flow : undefined;
-          const levelValue = typeof msg?.level === "number" ? msg.level : undefined;
+          const flowValue =
+            typeof msg?.flow === "number" ? msg.flow : undefined;
+          const levelValue =
+            typeof msg?.level === "number" ? msg.level : undefined;
           const temperatureValue =
             typeof msg?.temperature === "number"
               ? msg.temperature
@@ -1189,6 +1240,7 @@ const LoggerPointEditor = ({
             if (next.length > graphLength) next.shift();
             return next;
           });
+          setLiveSampleCount((prev) => prev + 1);
         } catch {}
       };
     } catch {
@@ -1209,12 +1261,91 @@ const LoggerPointEditor = ({
 
   const liveValues = useMemo(() => {
     const padded = Array(graphLength).fill(null) as (number | null)[];
-    const start = Math.max(graphLength - liveSeries.length, 0);
-    for (let i = 0; i < liveSeries.length && start + i < graphLength; i++) {
-      padded[start + i] = liveSeries[i];
+    for (let i = 0; i < liveSeries.length && i < graphLength; i++) {
+      padded[i] = liveSeries[i];
     }
     return padded;
   }, [liveSeries]);
+  const liveCurrentIntervalIndex = Math.max(
+    0,
+    Math.min(liveSeries.length - 1, graphLength - 1),
+  );
+
+  const connectedNodeOverlaySeries = useMemo(() => {
+    if (!combineWithConnectedNode || connectedJunctions.length === 0) {
+      return null;
+    }
+
+    const windowStartSecond = Math.max(0, liveSampleCount - graphLength);
+    const overlayColors = [
+      colors.blue500,
+      colors.cyan700,
+      colors.indigo500,
+      colors.purple500,
+      colors.green800,
+      colors.orange500,
+    ];
+
+    return connectedJunctions
+      .filter((junction) => selectedConnectedJunctions[junction.id] !== false)
+      .map((junction, index) => {
+        const series = connectedNodeSeriesByAssetId[junction.id];
+        if (!series) return null;
+
+        const simulationValues = Array.from(series.values).map(
+          (value): number => {
+            const converted = toPressureInUnit(
+              value,
+              quantitiesMetadata.getUnit("pressure"),
+              "psi",
+            );
+            return converted ?? Number.NaN;
+          },
+        );
+
+        const simulationIntervalSeconds = Math.max(
+          series.intervalSeconds || 1,
+          1,
+        );
+        const resampled: (number | null)[] = Array(graphLength).fill(
+          Number.NaN,
+        );
+
+        // Re-sample simulation series (often hourly) onto logger chart timeline (seconds).
+        for (let secondIndex = 0; secondIndex < graphLength; secondIndex++) {
+          const absoluteSecond = windowStartSecond + secondIndex;
+          const simulationStepIndex = Math.floor(
+            absoluteSecond / simulationIntervalSeconds,
+          );
+          if (simulationStepIndex < simulationValues.length) {
+            resampled[secondIndex] = simulationValues[simulationStepIndex];
+          }
+        }
+
+        return {
+          label: `${junction.label} simulation`,
+          values: resampled,
+          color: overlayColors[index % overlayColors.length],
+        };
+      })
+      .filter(
+        (
+          series,
+        ): series is {
+          label: string;
+          values: (number | null)[];
+          color: string;
+        } => series !== null,
+      );
+  }, [
+    combineWithConnectedNode,
+    connectedJunctions,
+    connectedNodeSeriesByAssetId,
+    graphLength,
+    liveSampleCount,
+    quantitiesMetadata,
+    selectedConnectedJunctions,
+  ]);
 
   const loggerPressurePsi =
     liveData.pressure ??
@@ -1226,6 +1357,79 @@ const LoggerPointEditor = ({
     loggerPoint.elevation,
     quantitiesMetadata.getUnit("elevation"),
   );
+  const simulatedPressure = junctionSimulation?.pressure ?? null;
+  const simulatedPressureM = toPressureInUnit(
+    simulatedPressure,
+    quantitiesMetadata.getUnit("pressure"),
+    "mwc",
+  );
+  const simulatedPressurePsi = toPressureInUnit(
+    simulatedPressure,
+    quantitiesMetadata.getUnit("pressure"),
+    "psi",
+  );
+  const simulatedHead = junctionSimulation?.head ?? null;
+  const simulatedDemand = junctionSimulation?.demand ?? null;
+  const pressureDecimals = quantitiesMetadata.getDecimals("pressure") ?? 2;
+  const connectedJunctionPressureComparisons = useMemo(() => {
+    const loggerPressureForComparison =
+      typeof loggerPressurePsi === "number" ? loggerPressurePsi : null;
+    const currentAbsoluteSecond = Math.max(0, liveSampleCount - 1);
+
+    return connectedJunctions.map((junction) => {
+      const series = connectedNodeSeriesByAssetId[junction.id];
+      let simulatedPressurePsi: number | null = null;
+
+      if (series && series.values.length > 0) {
+        const simulationIntervalSeconds = Math.max(
+          series.intervalSeconds || 1,
+          1,
+        );
+        const simulationStepIndex = Math.floor(
+          currentAbsoluteSecond / simulationIntervalSeconds,
+        );
+        const rawValue = series.values[simulationStepIndex];
+        if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
+          simulatedPressurePsi = toPressureInUnit(
+            rawValue,
+            quantitiesMetadata.getUnit("pressure"),
+            "psi",
+          );
+        }
+      }
+
+      if (simulatedPressurePsi === null) {
+        const junctionSimulation = simulation?.getJunction(junction.id);
+        const simulatedPressure =
+          junctionSimulation?.pressure === undefined
+            ? null
+            : junctionSimulation.pressure;
+        simulatedPressurePsi = toPressureInUnit(
+          simulatedPressure,
+          quantitiesMetadata.getUnit("pressure"),
+          "psi",
+        );
+      }
+
+      const versusPsi =
+        loggerPressureForComparison === null || simulatedPressurePsi === null
+          ? null
+          : loggerPressureForComparison - simulatedPressurePsi;
+
+      return {
+        junction,
+        simulatedPressurePsi,
+        versusPsi,
+      };
+    });
+  }, [
+    connectedJunctions,
+    connectedNodeSeriesByAssetId,
+    liveSampleCount,
+    loggerPressurePsi,
+    quantitiesMetadata,
+    simulation,
+  ]);
 
   return (
     <AssetEditorContent
@@ -1233,9 +1437,20 @@ const LoggerPointEditor = ({
       type="Logger Point"
       isNew={isNew}
       onLabelChange={onLabelChange}
+      footer={primaryConnectedJunction ? footer : undefined}
       readOnly={loggerFieldsReadOnly}
       key={loggerPoint.id}
     >
+      <Section title={translate("connections")}>
+        <TextRow
+          name="junction"
+          value={
+            connectedJunctions.length > 0
+              ? connectedJunctions.map((junction) => junction.label).join(", ")
+              : "Not connected"
+          }
+        />
+      </Section>
       <Section title="Live Logger">
         <div className="px-2 py-2 text-sm">
           <div className="flex items-center gap-2 mb-2">
@@ -1270,14 +1485,100 @@ const LoggerPointEditor = ({
               {liveConnected ? "Disconnect" : "Connect"}
             </button>
           </div>
-          <div className="mb-2 text-xs text-gray-500">
-            {wsUrlWithDeviceId}
-          </div>
+          <div className="mb-2 text-xs text-gray-500">{wsUrlWithDeviceId}</div>
           <div className="mb-2 text-xs text-gray-500">
             Status:{" "}
-            {liveConnected ? "Connected" : liveEnabled ? "Connecting..." : "Disconnected"}
+            {liveConnected
+              ? "Connected"
+              : liveEnabled
+                ? "Connecting..."
+                : "Disconnected"}
             {liveError ? ` (${liveError})` : ""}
           </div>
+          {connectedJunctionPressureComparisons.length > 0 && (
+            <div className="mb-2 rounded-md border border-gray-200 px-2 py-2 text-xs text-gray-700 dark:border-gray-700 dark:text-gray-200">
+              <div className="mb-1 font-medium text-gray-600 dark:text-gray-300">
+                Live vs connected simulation (psi)
+              </div>
+              {connectedJunctionPressureComparisons.map(
+                ({ junction, simulatedPressurePsi, versusPsi }) => (
+                  <div
+                    key={junction.id}
+                    className="mb-1 last:mb-0 text-[11px] leading-5"
+                  >
+                    <div>
+                      {junction.label} simulated:{" "}
+                      {simulatedPressurePsi === null
+                        ? "N/A"
+                        : localizeDecimal(simulatedPressurePsi, {
+                            decimals: pressureDecimals,
+                          })}
+                    </div>
+                    <div>
+                      {loggerPoint.label}:{" "}
+                      {typeof loggerPressurePsi === "number"
+                        ? localizeDecimal(loggerPressurePsi, {
+                            decimals: pressureDecimals,
+                          })
+                        : "N/A"}
+                    </div>
+                    <div>
+                      {loggerPoint.label} - {junction.label} ={" "}
+                      <span className="inline-flex items-center gap-1">
+                        {versusPsi === null
+                          ? "N/A"
+                          : localizeDecimal(versusPsi, {
+                              decimals: pressureDecimals,
+                            })}
+                        {versusPsi !== null && versusPsi <= -15 && (
+                          <span
+                            title="possible leaking"
+                            className="inline-flex cursor-help text-red-600 dark:text-red-400"
+                            aria-label="possible leaking"
+                          >
+                            <WarningIcon size={12} />
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+          )}
+          <label className="mb-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+            <input
+              type="checkbox"
+              checked={combineWithConnectedNode}
+              onChange={(e) => setCombineWithConnectedNode(e.target.checked)}
+              disabled={connectedJunctions.length === 0}
+            />
+            Combine graph with connected node simulation
+          </label>
+          {combineWithConnectedNode && connectedJunctions.length > 0 && (
+            <div className="mb-2 grid grid-cols-2 gap-1 text-xs text-gray-600 dark:text-gray-300">
+              {connectedJunctions.map((junction) => (
+                <label key={junction.id} className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedConnectedJunctions[junction.id] !== false}
+                    onChange={(e) =>
+                      setSelectedConnectedJunctions((prev) => ({
+                        ...prev,
+                        [junction.id]: e.target.checked,
+                      }))
+                    }
+                  />
+                  {junction.label}
+                </label>
+              ))}
+            </div>
+          )}
+          {combineWithConnectedNode && isConnectedNodeSeriesLoading && (
+            <div className="mb-2 text-xs text-gray-500">
+              Loading connected node simulation series...
+            </div>
+          )}
           <div className="h-36">
             <QuickGraphChart
               values={Array(graphLength).fill(Number.NaN)}
@@ -1286,12 +1587,13 @@ const LoggerPointEditor = ({
               intervalsCount={graphLength}
               intervalSeconds={1}
               decimals={quantitiesMetadata.getDecimals("pressure") ?? 0}
-              currentIntervalIndex={graphLength - 1}
+              currentIntervalIndex={liveCurrentIntervalIndex}
               onIntevalClick={() => {}}
               scenarioName={null}
               liveValues={liveValues}
               liveLabel="Live pressure"
               liveColor="rgb(239, 68, 68)"
+              extraSeries={connectedNodeOverlaySeries}
             />
           </div>
         </div>
@@ -1323,8 +1625,14 @@ const LoggerPointEditor = ({
           decimals={quantitiesMetadata.getDecimals("elevation")}
           readOnly={true}
         />
-        <TextRow name="deviceId" value={liveData.deviceId ?? loggerPoint.deviceId ?? ""} />
-        <TextRow name="status" value={liveData.status ?? loggerPoint.status ?? ""} />
+        <TextRow
+          name="deviceId"
+          value={liveData.deviceId ?? loggerPoint.deviceId ?? ""}
+        />
+        <TextRow
+          name="status"
+          value={liveData.status ?? loggerPoint.status ?? ""}
+        />
         <TextRow
           name="timestamp"
           value={liveData.timestamp ?? loggerPoint.timestamp ?? ""}
@@ -1373,8 +1681,43 @@ const LoggerPointEditor = ({
           name="externalV"
           value={`${liveData.externalV ?? loggerPoint.externalV ?? ""}`}
         />
-        <TextRow name="gsmPct" value={`${liveData.gsmPct ?? loggerPoint.gsmPct ?? ""}`} />
+        <TextRow
+          name="gsmPct"
+          value={`${liveData.gsmPct ?? loggerPoint.gsmPct ?? ""}`}
+        />
       </Section>
+      {primaryConnectedJunction && (
+        <Section title={translate("simulationResults")}>
+          <QuantityRow
+            name="pressure"
+            value={simulatedPressureM}
+            unit="mwc"
+            decimals={quantitiesMetadata.getDecimals("pressure")}
+            readOnly={true}
+          />
+          <QuantityRow
+            name="pressure"
+            value={simulatedPressurePsi}
+            unit="psi"
+            decimals={quantitiesMetadata.getDecimals("pressure")}
+            readOnly={true}
+          />
+          <QuantityRow
+            name="head"
+            value={simulatedHead}
+            unit={quantitiesMetadata.getUnit("head")}
+            decimals={quantitiesMetadata.getDecimals("head")}
+            readOnly={true}
+          />
+          <QuantityRow
+            name="actualDemand"
+            value={simulatedDemand}
+            unit={quantitiesMetadata.getUnit("actualDemand")}
+            decimals={quantitiesMetadata.getDecimals("actualDemand")}
+            readOnly={true}
+          />
+        </Section>
+      )}
     </AssetEditorContent>
   );
 };
@@ -1713,4 +2056,24 @@ function getCustomerPointsPattern(
     value: patternId,
     label: pattern.label,
   };
+}
+
+function getConnectedJunctionsForLogger(
+  hydraulicModel: HydraulicModel,
+  loggerPointId: number,
+): Junction[] {
+  const isLinkAsset = (asset: Asset): asset is LinkAsset => asset.isLink;
+  const connected = new Map<number, Junction>();
+  for (const asset of hydraulicModel.assets.values()) {
+    if (!isLinkAsset(asset)) continue;
+    const [startNodeId, endNodeId] = asset.connections;
+    if (startNodeId !== loggerPointId && endNodeId !== loggerPointId) continue;
+
+    const otherNodeId = startNodeId === loggerPointId ? endNodeId : startNodeId;
+    const otherNode = hydraulicModel.assets.get(otherNodeId);
+    if (otherNode && otherNode.isNode && otherNode.type === "junction") {
+      connected.set(otherNode.id, otherNode as Junction);
+    }
+  }
+  return Array.from(connected.values());
 }

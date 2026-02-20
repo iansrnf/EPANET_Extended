@@ -25,6 +25,7 @@ import {
   satelliteModeOnAtom,
   currentZoomAtom,
   stagingModelAtom,
+  layerConfigAtom,
 } from "src/state/jotai";
 import { MapEngine } from "./map-engine";
 import { EmptyIndex } from "src/lib/generate-flatbush-instance";
@@ -130,6 +131,7 @@ export const MapCanvas = memo(function MapCanvas({
   const selection = data.selection;
   const mode = useAtomValue(modeAtom);
   const cursor = useAtomValue(cursorStyleAtom);
+  const layerConfigs = useAtomValue(layerConfigAtom);
   const isSnapshotLocked = useIsSnapshotLocked();
   const [initError, setInitError] = useState<boolean>(false);
 
@@ -184,6 +186,15 @@ export const MapCanvas = memo(function MapCanvas({
       mapRef.current = null;
     };
   }, [mapRef, mapDivRef, setMap, onControlClick]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const isMapboxBasemap = [...layerConfigs.values()].some(
+      (layer) => layer.isBasemap && layer.type === "MAPBOX",
+    );
+    map.setMapboxLogoVisibility(isMapboxBasemap);
+  }, [layerConfigs]);
 
   if (isDebugOn) (window as any).mapEngine = mapRef.current;
 

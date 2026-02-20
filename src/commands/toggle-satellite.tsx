@@ -6,7 +6,7 @@ import { useLayerConfigState } from "src/map/layer-config";
 import { layerConfigAtom } from "src/state/jotai";
 import { useAuth } from "src/auth";
 import { ILayerConfig } from "src/types";
-import { maybeDeleteOldMapboxLayer } from "src/components/layers/popover";
+import { maybeDeleteOldBasemap } from "src/components/layers/popover";
 
 export const satelliteLimitedZoom = 16;
 
@@ -20,11 +20,11 @@ export const useToggleSatellite = () => {
   const toggleSatellite = useCallback(() => {
     const items = [...layerConfigs.values()];
 
-    const { deleteLayerConfigs, oldAt, oldMapboxLayer } =
-      maybeDeleteOldMapboxLayer(items);
+    const { deleteLayerConfigs, oldAt, oldBasemapLayer } =
+      maybeDeleteOldBasemap(items);
 
     const newBaseMap =
-      oldMapboxLayer && oldMapboxLayer.name === basemaps.monochrome.name
+      oldBasemapLayer && oldBasemapLayer.name === basemaps.monochrome.name
         ? basemaps.satellite
         : basemaps.monochrome;
 
@@ -35,7 +35,7 @@ export const useToggleSatellite = () => {
       opacity: newBaseMap.opacity,
       at: oldAt || "a0",
       id: newFeatureId(),
-      labelVisibility: oldMapboxLayer ? oldMapboxLayer.labelVisibility : true,
+      labelVisibility: oldBasemapLayer ? oldBasemapLayer.labelVisibility : true,
       sourceMaxZoom:
         !isSignedIn && newBaseMap.name === basemaps.satellite.name
           ? { "mapbox-satellite": satelliteLimitedZoom }

@@ -550,23 +550,23 @@ body.dark .mapboxgl-ctrl-attrib-button {
 
 /* Brand theme (app chrome only, map intentionally excluded) */
 .brand-theme {
-  --brand-bg: #e4f3ff;
-  --brand-surface: #f4fbff;
-  --brand-surface-subtle: #e9f6ff;
-  --brand-border: #a9cce6;
-  --brand-text: #082a45;
-  --brand-text-muted: #24577f;
+  --brand-bg: #d9eeff;
+  --brand-surface: #edf7ff;
+  --brand-surface-subtle: #e0f1ff;
+  --brand-border: #97c3e8;
+  --brand-text: #072744;
+  --brand-text-muted: #1d5482;
   background: radial-gradient(
       1200px 480px at 12% -16%,
-      rgba(58, 174, 232, 0.26),
+      rgba(45, 153, 234, 0.28),
       transparent 62%
     ),
     radial-gradient(
       1000px 500px at 88% -20%,
-      rgba(43, 123, 210, 0.2),
+      rgba(33, 111, 209, 0.24),
       transparent 64%
     ),
-    linear-gradient(180deg, #dff1ff 0%, #edf8ff 42%, #f7fcff 100%);
+    linear-gradient(180deg, #d3eaff 0%, #e6f3ff 42%, #f4faff 100%);
   color: var(--brand-text);
 }
 
@@ -598,10 +598,10 @@ body.dark .mapboxgl-ctrl-attrib-button {
 }
 
 .dark .brand-theme {
-  --brand-bg: #05172a;
-  --brand-surface: #0a2742;
-  --brand-surface-subtle: #0d3252;
-  --brand-border: #28577c;
+  --brand-bg: #041628;
+  --brand-surface: #08284a;
+  --brand-surface-subtle: #0b3460;
+  --brand-border: #2a6091;
   --brand-text: #edf7ff;
-  --brand-text-muted: #b8d4ea;
+  --brand-text-muted: #b7d6f2;
 }

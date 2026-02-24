@@ -63,6 +63,8 @@ import {
   Save,
   SaveAll,
   Settings,
+  Pause,
+  Play,
   SquareDashed,
   SquareStack,
   Star,
@@ -194,6 +196,8 @@ export const ControlsIcon = icon(FileCode);
 export const PatternsIcon = icon(ChartColumn);
 export const RenameIcon = icon(TextCursorInput);
 export const DuplicateIcon = icon(Copy);
+export const PlayIcon = icon(Play);
+export const PauseIcon = icon(Pause);
 
 export const ReverseIcon: React.FC<IconProps> = ({
   size: rawSize = "md",

@@ -13,6 +13,8 @@ import {
   PanelLeftActiveIcon,
   PanelRightActiveIcon,
   PanelRightIcon,
+  PlayIcon,
+  PauseIcon,
 } from "src/icons";
 import Modes from "../modes";
 import { useAtomValue } from "jotai";
@@ -51,6 +53,7 @@ import {
   toggleSidePanelShortcut,
   useToggleSidePanel,
 } from "src/commands/toggle-side-panel";
+import { useLiveSeriesStore } from "src/store/liveSeriesStore";
 
 export const Toolbar = ({
   readonly = false,
@@ -70,6 +73,8 @@ export const Toolbar = ({
   const { undo, redo } = useHistoryControl();
 
   const simulation = useAtomValue(simulationAtom);
+  const liveLogger = useLiveSeriesStore((s) => s.liveLogger);
+  const setLiveLogger = useLiveSeriesStore((s) => s.setLiveLogger);
   const selectedWrappedFeatures = useAtomValue(selectedFeaturesAtom);
   const selection = useAtomValue(selectionAtom);
 
@@ -164,6 +169,18 @@ export const Toolbar = ({
             <Divider />
           </>
         )}
+        <MenuAction
+          label={liveLogger.enabled ? "Pause live websocket" : "Play live websocket"}
+          role="button"
+          onClick={() => {
+            setLiveLogger((prev) => ({
+              ...prev,
+              enabled: !prev.enabled,
+            }));
+          }}
+        >
+          {liveLogger.enabled ? <PauseIcon /> : <PlayIcon />}
+        </MenuAction>
         <MenuAction
           label={translate("simulate")}
           role="button"

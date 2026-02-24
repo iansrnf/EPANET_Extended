@@ -8,11 +8,18 @@ import { controlKinds } from "src/hydraulic-model/asset-types/valve";
 import { Tank } from "src/hydraulic-model/asset-types/tank";
 import { LoggerPoint } from "src/hydraulic-model/asset-types/logger-point";
 import type { ResultsReader } from "src/simulation/results-reader";
+import type { NodeSymbology } from "src/map/symbology";
+import { colorFor } from "src/map/symbology/range-color-rule";
+import { convertTo } from "src/quantity";
+import type { LiveLoggerReading } from "src/store/liveLoggerReadingsStore";
 
 export const buildIconPointsSource = (
   assets: AssetsMap,
   selectedAssets: Set<AssetId>,
   simulationResults?: ResultsReader | null,
+  nodeSymbology?: NodeSymbology,
+  liveReadingsByDeviceId: Record<string, LiveLoggerReading> = {},
+  loggerPanelStateById: Record<number, { wsDeviceId?: string }> = {},
 ): Feature[] => {
   const strippedFeatures = [];
 
@@ -51,7 +58,13 @@ export const buildIconPointsSource = (
         feature = buildNodeIcon(asset as Reservoir, selectedAssets);
         break;
       case "loggerPoint":
-        feature = buildNodeIcon(asset as LoggerPoint, selectedAssets);
+        feature = buildNodeIcon(
+          asset as LoggerPoint,
+          selectedAssets,
+          nodeSymbology,
+          liveReadingsByDeviceId,
+          loggerPanelStateById,
+        );
         break;
       case "junction":
         break;
@@ -94,8 +107,20 @@ const buildDirectionalLinkIcon = <T extends Link<any>>(
 const buildNodeIcon = (
   asset: Tank | Reservoir | LoggerPoint,
   selectedAssets: Set<AssetId>,
+  nodeSymbology?: NodeSymbology,
+  liveReadingsByDeviceId: Record<string, LiveLoggerReading> = {},
+  loggerPanelStateById: Record<number, { wsDeviceId?: string }> = {},
 ): Feature => {
   const featureId = asset.id;
+  const loggerLiveProperties =
+    asset.type === "loggerPoint"
+      ? getLoggerLiveProperties(
+          asset as LoggerPoint,
+          nodeSymbology,
+          liveReadingsByDeviceId,
+          loggerPanelStateById,
+        )
+      : {};
 
   return {
     type: "Feature",
@@ -104,9 +129,70 @@ const buildNodeIcon = (
       type: asset.type,
       isActive: asset.isActive,
       selected: selectedAssets.has(asset.id),
+      ...loggerLiveProperties,
     },
     geometry: asset.feature.geometry,
   };
+};
+
+const getLoggerLiveProperties = (
+  loggerPoint: LoggerPoint,
+  nodeSymbology: NodeSymbology | undefined,
+  liveReadingsByDeviceId: Record<string, LiveLoggerReading>,
+  loggerPanelStateById: Record<number, { wsDeviceId?: string }>,
+) => {
+  const deviceId = loggerPoint.deviceId?.trim();
+  const panelDeviceId = loggerPanelStateById[loggerPoint.id]?.wsDeviceId?.trim();
+  const loggerLabel = loggerPoint.label?.trim();
+  const liveReading =
+    (deviceId && liveReadingsByDeviceId[deviceId]) ||
+    (panelDeviceId && liveReadingsByDeviceId[panelDeviceId]) ||
+    (loggerLabel && liveReadingsByDeviceId[loggerLabel]);
+  if (typeof liveReading?.pressurePsi === "number") {
+    const livePressurePsi = liveReading.pressurePsi;
+    const livePressureLabel = `${livePressurePsi.toFixed(2)} psi`;
+    const livePressureColor = getLivePressureColor(
+      livePressurePsi,
+      nodeSymbology,
+    );
+
+    return {
+      liveConnected: Boolean(liveReading.connected),
+      livePressurePsi,
+      livePressureLabel,
+      livePressureColor,
+    };
+  }
+
+  if (!liveReading?.connected) {
+    return {
+      liveConnected: false,
+      livePressurePsi: null,
+      livePressureLabel: "N/A",
+    };
+  }
+  return {
+    liveConnected: true,
+    livePressurePsi: null,
+    livePressureLabel: "N/A",
+  };
+};
+
+const getLivePressureColor = (
+  pressurePsi: number,
+  nodeSymbology?: NodeSymbology,
+) => {
+  const colorRule = nodeSymbology?.colorRule;
+  if (!colorRule || colorRule.property !== "pressure") {
+    return "#3b82f6";
+  }
+
+  const pressureForRule =
+    colorRule.unit === "mwc"
+      ? convertTo({ value: pressurePsi, unit: "psi" }, "mwc")
+      : pressurePsi;
+
+  return colorFor(colorRule, pressureForRule);
 };
 
 const buildPumpIcon = (

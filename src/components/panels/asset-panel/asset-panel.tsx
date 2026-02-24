@@ -77,6 +77,9 @@ import {
 import { colors } from "src/lib/constants";
 import { localizeDecimal } from "src/infra/i18n/numbers";
 import { WarningIcon } from "src/icons";
+import { useLiveLoggerReadingsStore } from "src/store/liveLoggerReadingsStore";
+import { useLiveSeriesStore, LiveLoggerConfig } from "src/store/liveSeriesStore";
+import { useLoggerPointPanelStore } from "src/store/loggerPointPanelStore";
 
 type OnPropertyChange = (
   name: string,
@@ -108,6 +111,8 @@ const toElevationInPsi = (
   if (sourceUnit === "psi") return value;
   return value;
 };
+
+const LOGGER_PANEL_MAX_STORED_POINTS = 300;
 
 const pipeStatusLabel = (sim: Pick<PipeSimulation, "status"> | null) => {
   if (!sim) return "notAvailable";
@@ -1066,18 +1071,28 @@ const LoggerPointEditor = ({
     primaryConnectedJunction?.id ?? loggerPoint.id,
     "junction",
   );
-  const [wsUrl, setWsUrl] = useState("wss://logger-api.gscwd.app/stream");
-  const [wsDeviceId, setWsDeviceId] = useState(loggerPoint.deviceId || "");
-  const [liveEnabled, setLiveEnabled] = useState(false);
+  const getLoggerPanelState = useLoggerPointPanelStore((s) => s.getOrCreate);
+  const setLoggerPanelState = useLoggerPointPanelStore((s) => s.update);
+  const persistedPanelState = useMemo(
+    () => getLoggerPanelState(loggerPoint.id, loggerPoint.deviceId || ""),
+    [getLoggerPanelState, loggerPoint.id, loggerPoint.deviceId],
+  );
+  const [wsUrl, setWsUrl] = useState(persistedPanelState.wsUrl);
+  const [wsDeviceId, setWsDeviceId] = useState(persistedPanelState.wsDeviceId);
+  const [liveEnabled, setLiveEnabled] = useState(persistedPanelState.liveEnabled);
   const [liveConnected, setLiveConnected] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [combineWithConnectedNode, setCombineWithConnectedNode] =
-    useState(false);
+    useState(persistedPanelState.combineWithConnectedNode);
   const [selectedConnectedJunctions, setSelectedConnectedJunctions] = useState<
     Record<number, boolean>
-  >({});
-  const [liveSeries, setLiveSeries] = useState<number[]>([]);
-  const [liveSampleCount, setLiveSampleCount] = useState(0);
+  >(persistedPanelState.selectedConnectedJunctions);
+  const [liveSeries, setLiveSeries] = useState<number[]>(
+    persistedPanelState.liveSeries.slice(-LOGGER_PANEL_MAX_STORED_POINTS),
+  );
+  const [liveSampleCount, setLiveSampleCount] = useState(
+    persistedPanelState.liveSampleCount,
+  );
   const [liveData, setLiveData] = useState<{
     deviceId?: string;
     status?: string;
@@ -1089,9 +1104,20 @@ const LoggerPointEditor = ({
     batteryV?: number;
     externalV?: number;
     gsmPct?: number;
-  }>({});
+  }>(persistedPanelState.liveData);
   const wsRef = useRef<WebSocket | null>(null);
+  const connectedDeviceIdRef = useRef<string | null>(null);
+  const upsertLiveReading = useLiveLoggerReadingsStore((s) => s.upsertReading);
+  const setLiveConnection = useLiveLoggerReadingsStore((s) => s.setConnection);
+  const passiveReadingsByDeviceId = useLiveLoggerReadingsStore(
+    (s) => s.readingsByDeviceId,
+  );
+  const passivePointsByDeviceId = useLiveLoggerReadingsStore(
+    (s) => s.pointsByDeviceId,
+  );
+  const setGlobalLiveLogger = useLiveSeriesStore((s) => s.setLiveLogger);
   const graphLength = 120;
+  const maxStoredPoints = LOGGER_PANEL_MAX_STORED_POINTS;
   const loggerFieldsReadOnly = readonly || (liveEnabled && liveConnected);
   const connectedJunctionIds = useMemo(
     () => connectedJunctions.map((junction) => junction.id),
@@ -1105,6 +1131,50 @@ const LoggerPointEditor = ({
     property: "pressure",
     enabled: connectedJunctions.length > 0,
   });
+  useEffect(() => {
+    const nextState = getLoggerPanelState(loggerPoint.id, loggerPoint.deviceId || "");
+    setWsUrl(nextState.wsUrl);
+    setWsDeviceId(nextState.wsDeviceId);
+    setLiveEnabled(nextState.liveEnabled);
+    setCombineWithConnectedNode(nextState.combineWithConnectedNode);
+    setSelectedConnectedJunctions(nextState.selectedConnectedJunctions);
+    setLiveSeries(nextState.liveSeries.slice(-LOGGER_PANEL_MAX_STORED_POINTS));
+    setLiveSampleCount(nextState.liveSampleCount);
+    setLiveData(nextState.liveData);
+  }, [getLoggerPanelState, loggerPoint.id, loggerPoint.deviceId]);
+
+  useEffect(() => {
+    setLoggerPanelState(loggerPoint.id, { wsUrl });
+  }, [loggerPoint.id, setLoggerPanelState, wsUrl]);
+
+  useEffect(() => {
+    setLoggerPanelState(loggerPoint.id, { wsDeviceId });
+  }, [loggerPoint.id, setLoggerPanelState, wsDeviceId]);
+
+  useEffect(() => {
+    setLoggerPanelState(loggerPoint.id, { liveEnabled });
+  }, [liveEnabled, loggerPoint.id, setLoggerPanelState]);
+
+  useEffect(() => {
+    setLoggerPanelState(loggerPoint.id, { combineWithConnectedNode });
+  }, [combineWithConnectedNode, loggerPoint.id, setLoggerPanelState]);
+
+  useEffect(() => {
+    setLoggerPanelState(loggerPoint.id, { selectedConnectedJunctions });
+  }, [loggerPoint.id, selectedConnectedJunctions, setLoggerPanelState]);
+
+  useEffect(() => {
+    setLoggerPanelState(loggerPoint.id, { liveSeries });
+  }, [liveSeries, loggerPoint.id, setLoggerPanelState]);
+
+  useEffect(() => {
+    setLoggerPanelState(loggerPoint.id, { liveSampleCount });
+  }, [liveSampleCount, loggerPoint.id, setLoggerPanelState]);
+
+  useEffect(() => {
+    setLoggerPanelState(loggerPoint.id, { liveData });
+  }, [liveData, loggerPoint.id, setLoggerPanelState]);
+
   useEffect(() => {
     setSelectedConnectedJunctions((previous) => {
       const next: Record<number, boolean> = {};
@@ -1127,7 +1197,64 @@ const LoggerPointEditor = ({
     }
   }, [wsDeviceId, wsUrl]);
 
+  const passiveDeviceCandidates = useMemo(
+    () =>
+      [loggerPoint.deviceId, wsDeviceId, loggerPoint.label]
+        .map((value) => value?.trim() ?? "")
+        .filter((value, index, array) => value.length > 0 && array.indexOf(value) === index),
+    [loggerPoint.deviceId, loggerPoint.label, wsDeviceId],
+  );
+
+  const resolvedPassiveDeviceId = useMemo(() => {
+    for (const candidate of passiveDeviceCandidates) {
+      if ((passivePointsByDeviceId[candidate]?.length ?? 0) > 0) return candidate;
+    }
+    return passiveDeviceCandidates[0] ?? null;
+  }, [passiveDeviceCandidates, passivePointsByDeviceId]);
+
+  const passiveSeries = useMemo(() => {
+    if (!resolvedPassiveDeviceId) return [];
+    return passivePointsByDeviceId[resolvedPassiveDeviceId] ?? [];
+  }, [passivePointsByDeviceId, resolvedPassiveDeviceId]);
+
+  const resolvedLiveReadingDeviceId = useMemo(() => {
+    for (const candidate of passiveDeviceCandidates) {
+      if (passiveReadingsByDeviceId[candidate]) return candidate;
+    }
+    return resolvedPassiveDeviceId;
+  }, [
+    passiveDeviceCandidates,
+    passiveReadingsByDeviceId,
+    resolvedPassiveDeviceId,
+  ]);
+
+  const resolvedLiveReading = useMemo(() => {
+    if (!resolvedLiveReadingDeviceId) return null;
+    return passiveReadingsByDeviceId[resolvedLiveReadingDeviceId] ?? null;
+  }, [passiveReadingsByDeviceId, resolvedLiveReadingDeviceId]);
+
   useEffect(() => {
+    if (liveEnabled) return;
+    if (passiveSeries.length === 0) return;
+    setLiveSeries((prev) => {
+      const trimmedPassive = passiveSeries.slice(-maxStoredPoints);
+      const isSame =
+        prev.length === trimmedPassive.length &&
+        prev.every((value, index) => value === trimmedPassive[index]);
+      return isSame ? prev : trimmedPassive;
+    });
+    setLiveSampleCount((prev) => Math.max(prev, passiveSeries.length));
+  }, [liveEnabled, maxStoredPoints, passiveSeries]);
+
+  useEffect(() => {
+    const markDisconnected = () => {
+      const connectedDeviceId = connectedDeviceIdRef.current;
+      if (connectedDeviceId) {
+        setLiveConnection(connectedDeviceId, false);
+      }
+      connectedDeviceIdRef.current = null;
+    };
+
     if (!liveEnabled) {
       if (wsRef.current) {
         try {
@@ -1136,6 +1263,7 @@ const LoggerPointEditor = ({
         wsRef.current = null;
       }
       setLiveConnected(false);
+      markDisconnected();
       return;
     }
 
@@ -1146,15 +1274,22 @@ const LoggerPointEditor = ({
 
       ws.onopen = () => {
         setLiveConnected(true);
+        const initialDeviceId = wsDeviceId.trim() || loggerPoint.deviceId?.trim();
+        if (initialDeviceId) {
+          connectedDeviceIdRef.current = initialDeviceId;
+          setLiveConnection(initialDeviceId, true);
+        }
       };
 
       ws.onclose = () => {
         setLiveConnected(false);
+        markDisconnected();
       };
 
       ws.onerror = () => {
         setLiveConnected(false);
         setLiveError("Connection error");
+        markDisconnected();
       };
 
       ws.onmessage = (event) => {
@@ -1176,6 +1311,31 @@ const LoggerPointEditor = ({
                       : typeof msg?.pressure_kpa === "number"
                         ? msg.pressure_kpa * PSI_PER_KPA
                         : null;
+
+          const messageDeviceId =
+            typeof msg?.deviceId === "string" ? msg.deviceId.trim() : "";
+          const effectiveDeviceId =
+            messageDeviceId ||
+            connectedDeviceIdRef.current ||
+            wsDeviceId.trim() ||
+            loggerPoint.deviceId?.trim();
+
+          if (effectiveDeviceId) {
+            if (
+              connectedDeviceIdRef.current &&
+              connectedDeviceIdRef.current !== effectiveDeviceId
+            ) {
+              setLiveConnection(connectedDeviceIdRef.current, false);
+            }
+            connectedDeviceIdRef.current = effectiveDeviceId;
+            setLiveConnection(effectiveDeviceId, true);
+            upsertLiveReading(effectiveDeviceId, {
+              pressurePsi:
+                typeof pressureValue === "number" ? pressureValue : null,
+              timestamp:
+                typeof msg?.timestamp === "string" ? msg.timestamp : undefined,
+            });
+          }
 
           const flowValue =
             typeof msg?.flow === "number" ? msg.flow : undefined;
@@ -1237,7 +1397,9 @@ const LoggerPointEditor = ({
 
           setLiveSeries((prev) => {
             const next = [...prev, value];
-            if (next.length > graphLength) next.shift();
+            if (next.length > maxStoredPoints) {
+              return next.slice(-maxStoredPoints);
+            }
             return next;
           });
           setLiveSampleCount((prev) => prev + 1);
@@ -1246,6 +1408,7 @@ const LoggerPointEditor = ({
     } catch {
       setLiveConnected(false);
       setLiveError("Invalid WebSocket URL");
+      markDisconnected();
     }
 
     return () => {
@@ -1256,16 +1419,25 @@ const LoggerPointEditor = ({
         wsRef.current = null;
       }
       setLiveConnected(false);
+      markDisconnected();
     };
-  }, [liveEnabled, wsDeviceId, wsUrlWithDeviceId]);
+  }, [
+    liveEnabled,
+    loggerPoint.deviceId,
+    setLiveConnection,
+    upsertLiveReading,
+    wsDeviceId,
+    wsUrlWithDeviceId,
+  ]);
 
   const liveValues = useMemo(() => {
+    const visibleSeries = liveSeries.slice(-graphLength);
     const padded = Array(graphLength).fill(null) as (number | null)[];
-    for (let i = 0; i < liveSeries.length && i < graphLength; i++) {
-      padded[i] = liveSeries[i];
+    for (let i = 0; i < visibleSeries.length; i++) {
+      padded[i] = visibleSeries[i];
     }
     return padded;
-  }, [liveSeries]);
+  }, [graphLength, liveSeries]);
   const liveCurrentIntervalIndex = Math.max(
     0,
     Math.min(liveSeries.length - 1, graphLength - 1),
@@ -1349,6 +1521,7 @@ const LoggerPointEditor = ({
 
   const loggerPressurePsi =
     liveData.pressure ??
+    resolvedLiveReading?.pressurePsi ??
     (typeof loggerPoint.pressure === "number"
       ? loggerPoint.pressure * PSI_PER_METER
       : loggerPoint.pressure);
@@ -1475,9 +1648,20 @@ const LoggerPointEditor = ({
               disabled={readonly}
               onClick={() => {
                 if (liveConnected) {
+                  setGlobalLiveLogger((prev: LiveLoggerConfig) => ({
+                    ...prev,
+                    enabled: false,
+                  }));
                   setLiveEnabled(false);
                   setLiveConnected(false);
                 } else {
+                  setGlobalLiveLogger((prev: LiveLoggerConfig) => ({
+                    ...prev,
+                    enabled: true,
+                    wsUrl,
+                    deviceId: wsDeviceId,
+                    field: "pressure",
+                  }));
                   setLiveEnabled(true);
                 }
               }}
@@ -1627,15 +1811,33 @@ const LoggerPointEditor = ({
         />
         <TextRow
           name="deviceId"
-          value={liveData.deviceId ?? loggerPoint.deviceId ?? ""}
+          value={
+            liveData.deviceId ??
+            resolvedLiveReadingDeviceId ??
+            loggerPoint.deviceId ??
+            ""
+          }
         />
         <TextRow
           name="status"
-          value={liveData.status ?? loggerPoint.status ?? ""}
+          value={
+            liveData.status ??
+            (resolvedLiveReading
+              ? resolvedLiveReading.connected
+                ? "Connected"
+                : "Disconnected"
+              : loggerPoint.status) ??
+            ""
+          }
         />
         <TextRow
           name="timestamp"
-          value={liveData.timestamp ?? loggerPoint.timestamp ?? ""}
+          value={
+            liveData.timestamp ??
+            resolvedLiveReading?.timestamp ??
+            loggerPoint.timestamp ??
+            ""
+          }
         />
         <QuantityRow
           name="pressure"

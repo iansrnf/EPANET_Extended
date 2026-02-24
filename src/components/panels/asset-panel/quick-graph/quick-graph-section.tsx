@@ -24,6 +24,7 @@ import { Unit, convertTo } from "src/quantity";
 
 // ✅ Zustand store (must include liveLogger + ensureSeriesLength + resetLiveSeries)
 import { useLiveSeriesStore, type LiveLoggerConfig } from "src/store/liveSeriesStore";
+import { useLiveLoggerReadingsStore } from "src/store/liveLoggerReadingsStore";
 
 const QUICK_GRAPH_PROPERTIES: {
   [K in QuickGraphAssetType]: {
@@ -293,6 +294,9 @@ export const QuickGraph = ({
 
   const wsRef = useRef<WebSocket | null>(null);
   const rollingStartMsRef = useRef<number | null>(null);
+  const connectedDeviceIdRef = useRef<string | null>(null);
+  const upsertLiveReading = useLiveLoggerReadingsStore((s) => s.upsertReading);
+  const setLiveConnection = useLiveLoggerReadingsStore((s) => s.setConnection);
 
   // Keep series length aligned to chart length WITHOUT wiping existing points
   useEffect(() => {
@@ -308,6 +312,14 @@ export const QuickGraph = ({
 
   // Connect/disconnect websocket based on liveLogger.enabled
   useEffect(() => {
+    const markDisconnected = () => {
+      const connectedDeviceId = connectedDeviceIdRef.current;
+      if (connectedDeviceId) {
+        setLiveConnection(connectedDeviceId, false);
+      }
+      connectedDeviceIdRef.current = null;
+    };
+
     // If disabled: close any existing socket (but DO NOT clear points here)
     if (!liveLogger.enabled) {
       if (wsRef.current) {
@@ -316,6 +328,7 @@ export const QuickGraph = ({
         } catch {}
         wsRef.current = null;
       }
+      markDisconnected();
       return;
     }
 
@@ -329,6 +342,19 @@ export const QuickGraph = ({
 
     const ws = new WebSocket(liveLogger.wsUrl);
     wsRef.current = ws;
+    ws.onopen = () => {
+      const initialDeviceId = liveLogger.deviceId.trim();
+      if (initialDeviceId) {
+        connectedDeviceIdRef.current = initialDeviceId;
+        setLiveConnection(initialDeviceId, true);
+      }
+    };
+    ws.onclose = () => {
+      markDisconnected();
+    };
+    ws.onerror = () => {
+      markDisconnected();
+    };
 
     ws.onmessage = (event) => {
       try {
@@ -336,13 +362,38 @@ export const QuickGraph = ({
 
         const deviceId = msg?.deviceId;
         if (liveLogger.deviceId && deviceId !== liveLogger.deviceId) return;
+        const effectiveDeviceId =
+          (typeof deviceId === "string" ? deviceId.trim() : "") ||
+          connectedDeviceIdRef.current ||
+          liveLogger.deviceId.trim();
 
+        const normalizedLiveField = String(liveLogger.field).toLowerCase();
         const isPressureField =
-          String(liveLogger.field).toLowerCase() === "pressure";
+          normalizedLiveField === "pressure" ||
+          normalizedLiveField === "pressurepsi" ||
+          normalizedLiveField === "pressuremeters" ||
+          normalizedLiveField.includes("pressure");
         const v = isPressureField
           ? pressureToPsiFromPayload(msg as Record<string, unknown>)
           : safeNumber(msg?.[liveLogger.field]);
         if (v === null) return;
+
+        if (effectiveDeviceId) {
+          if (
+            connectedDeviceIdRef.current &&
+            connectedDeviceIdRef.current !== effectiveDeviceId
+          ) {
+            setLiveConnection(connectedDeviceIdRef.current, false);
+          }
+          connectedDeviceIdRef.current = effectiveDeviceId;
+          setLiveConnection(effectiveDeviceId, true);
+          upsertLiveReading(effectiveDeviceId, {
+            pressurePsi:
+              isPressureField && Number.isFinite(v) ? v : null,
+            timestamp:
+              typeof msg?.timestamp === "string" ? msg.timestamp : undefined,
+          });
+        }
 
         if (!data || values.length === 0) return;
 
@@ -386,6 +437,7 @@ export const QuickGraph = ({
         ws.close();
       } catch {}
       wsRef.current = null;
+      markDisconnected();
     };
   }, [
     liveLogger.enabled,
@@ -395,6 +447,8 @@ export const QuickGraph = ({
     liveLogger.timeMapping,
     ensureSeriesLength,
     setLiveSeries,
+    setLiveConnection,
+    upsertLiveReading,
     data,
     values.length,
   ]);

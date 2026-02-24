@@ -57,6 +57,7 @@ import { supportEmail } from "src/global-config";
 import { MapHandlers } from "./types";
 import { PipeDrawingFloatingPanel } from "src/components/pipe-drawing-floating-panel";
 import { useIsSnapshotLocked } from "src/hooks/use-is-snapshot-locked";
+import { useLiveLoggerConnection } from "./use-live-logger-connection";
 mapboxgl.accessToken = env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 mapboxgl.setRTLTextPlugin(
@@ -158,6 +159,7 @@ export const MapCanvas = memo(function MapCanvas({
   );
 
   useMapStateUpdates(mapRef.current);
+  useLiveLoggerConnection();
 
   useEffect(() => {
     if (mapRef.current) return;

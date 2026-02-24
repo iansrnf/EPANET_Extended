@@ -57,6 +57,9 @@ import { CustomerPoints } from "src/hydraulic-model/customer-points";
 import { DEFAULT_ZOOM } from "./map-engine";
 import { junctionsSymbologyFilterExpression } from "./layers/junctions";
 import { mapSyncMomentAtom } from "src/state/map";
+import { useLiveLoggerReadingsStore } from "src/store/liveLoggerReadingsStore";
+import type { LiveLoggerReading } from "src/store/liveLoggerReadingsStore";
+import { useLoggerPointPanelStore } from "src/store/loggerPointPanelStore";
 
 const SELECTION_LAYERS: LayerId[] = [
   "selected-pipes",
@@ -224,14 +227,24 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
   const translateUnit = useTranslateUnit();
 
   const resultsReader = simulationResults;
+  const liveLoggerReadings = useLiveLoggerReadingsStore(
+    (s) => s.readingsByDeviceId,
+  );
+  const liveLoggerRevision = useLiveLoggerReadingsStore((s) => s.revision);
+  const loggerPanelStateById = useLoggerPointPanelStore((s) => s.byLoggerId);
+  const previousLiveLoggerRevisionRef = useRef(-1);
 
   const doUpdates = useCallback(() => {
     if (!map) return;
-
-    if (mapState === previousMapStateRef.current) return;
+    const hasNewLiveLoggerReadings =
+      previousLiveLoggerRevisionRef.current !== liveLoggerRevision;
+    if (mapState === previousMapStateRef.current && !hasNewLiveLoggerReadings) {
+      return;
+    }
 
     const previousMapState = previousMapStateRef.current;
     previousMapStateRef.current = mapState;
+    previousLiveLoggerRevisionRef.current = liveLoggerRevision;
 
     const changes = detectChanges(mapState, previousMapState, map);
     const {
@@ -317,12 +330,16 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           hasNewStyles ||
           hasNewSymbology ||
           hasNewSelection ||
-          (hasNewSimulation && mapState.simulation.status !== "running")
+          (hasNewSimulation && mapState.simulation.status !== "running") ||
+          hasNewLiveLoggerReadings
         ) {
           await updateIconsSource(
             map,
             assets,
             mapState.selection,
+            mapState.symbology.node,
+            liveLoggerReadings,
+            loggerPanelStateById,
             resultsReader,
           );
         }
@@ -469,6 +486,9 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
     translate,
     translateUnit,
     hydraulicModel,
+    liveLoggerReadings,
+    liveLoggerRevision,
+    loggerPanelStateById,
     resultsReader,
   ]);
 
@@ -537,6 +557,9 @@ const updateIconsSource = withDebugInstrumentation(
     map: MapEngine,
     assets: AssetsMap,
     selection: Sel,
+    nodeSymbology: SymbologySpec["node"],
+    liveReadingsByDeviceId: Record<string, LiveLoggerReading>,
+    loggerPanelStateById: Record<number, { wsDeviceId?: string }>,
     simulationResults?: ResultsReader | null,
   ): Promise<void> => {
     const selectionSet = new Set(USelection.toIds(selection));
@@ -544,6 +567,9 @@ const updateIconsSource = withDebugInstrumentation(
       assets,
       selectionSet,
       simulationResults,
+      nodeSymbology,
+      liveReadingsByDeviceId,
+      loggerPanelStateById,
     );
     await map.setSource("icons", features);
   },

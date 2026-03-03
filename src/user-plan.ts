@@ -26,6 +26,6 @@ export const limits = {
     return ["pro", "education", "personal"].includes(plan);
   },
   canUseScenarios: (plan: Plan) => {
-    return ["pro", "education", "personal"].includes(plan);
+    return true;
   },
 };

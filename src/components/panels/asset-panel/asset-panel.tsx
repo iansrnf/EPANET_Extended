@@ -28,13 +28,6 @@ import {
   CustomerPoint,
   getActiveCustomerPoints,
 } from "src/hydraulic-model/customer-points";
-import { Valve } from "src/hydraulic-model/asset-types";
-import { LoggerPoint } from "src/hydraulic-model/asset-types/logger-point";
-import {
-  DemandPatterns,
-  JunctionDemand,
-  calculateAverageDemand,
-} from "src/hydraulic-model/demands";
 import { Quantities } from "src/model-metadata/quantities-spec";
 import { useTranslate } from "src/hooks/use-translate";
 import { usePersistence } from "src/lib/persistence";

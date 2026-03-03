@@ -1,4 +1,4 @@
-import { AnyLayer, SymbolLayer } from "mapbox-gl";
+import { AnyLayer } from "mapbox-gl";
 import { DataSource } from "../data-source";
 
 export const loggerPointLayers = ({
@@ -40,37 +40,35 @@ export const loggerPointLayers = ({
       (source) =>
         ({
           id: `${source}-logger-points`,
-          type: "symbol",
+          type: "circle",
           source,
-          layout: {
-            "symbol-placement": "point",
-            "icon-image": [
-              "case",
-              ["==", ["get", "isActive"], false],
-              "loggerPoint-disabled",
-              "loggerPoint",
-            ],
-            "icon-size": [
+          filter: ["==", ["get", "type"], "loggerPoint"],
+          paint: {
+            "circle-radius": [
               "interpolate",
               ["linear"],
               ["zoom"],
               13,
-              0.2,
+              4,
               20,
-              0.45,
+              7,
             ],
-            "icon-allow-overlap": true,
-          },
-          filter: ["==", ["get", "type"], "loggerPoint"],
-          paint: {
-            "icon-opacity": [
+            "circle-color": [
+              "case",
+              ["==", ["get", "isActive"], false],
+              "#9ca3af",
+              "#0ea5e9",
+            ],
+            "circle-stroke-color": "#ffffff",
+            "circle-stroke-width": 1.2,
+            "circle-opacity": [
               "case",
               ["!=", ["feature-state", "hidden"], true],
               1,
               0,
             ],
           },
-        }) as SymbolLayer,
+        }) as AnyLayer,
     ),
     ...sources.map(
       (source) =>

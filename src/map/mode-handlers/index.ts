@@ -35,6 +35,10 @@ export function useModeHandlers(handlerContext: HandlerContext) {
       ...handlerContext,
       nodeType: "tank",
     }),
+    [Mode.ADD_LOGGER_POINT]: useDrawNodeHandlers({
+      ...handlerContext,
+      nodeType: "loggerPoint",
+    }),
     [Mode.DRAW_PIPE]: useDrawLinkHandlers({
       ...handlerContext,
       linkType: "pipe",

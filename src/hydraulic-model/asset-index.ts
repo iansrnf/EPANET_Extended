@@ -178,12 +178,18 @@ const ASSET_INDEX_BIT_ENCODING_MASK = 0x7fffffff;
 const ASSET_INDEX_CUSTOM_HEADER_SIZE = DataSize.number * 2; // linkCount + nodeCount
 const ASSET_TYPE_SIZE = DataSize.type;
 
-const NODE_TYPE_MAP = { junction: 1, tank: 2, reservoir: 3 } as const;
+const NODE_TYPE_MAP = {
+  junction: 1,
+  tank: 2,
+  reservoir: 3,
+  loggerPoint: 4,
+} as const;
 
 const NODE_TYPE_REVERSE_MAP: Record<number, NodeType> = {
   [NODE_TYPE_MAP.junction]: "junction",
   [NODE_TYPE_MAP.tank]: "tank",
   [NODE_TYPE_MAP.reservoir]: "reservoir",
+  [NODE_TYPE_MAP.loggerPoint]: "loggerPoint",
 } as const;
 
 function toNodeTypeId(type: NodeType) {

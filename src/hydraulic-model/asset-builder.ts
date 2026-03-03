@@ -1,4 +1,4 @@
-import { AssetId, Junction, Pump } from "./asset-types";
+import { AssetId, Junction, Pump, LoggerPoint } from "./asset-types";
 import { JunctionQuantity } from "./asset-types/junction";
 import { Pipe, PipeQuantity, PipeStatus } from "./asset-types/pipe";
 import { LinkConnections, nullConnections } from "./asset-types/link";
@@ -81,6 +81,24 @@ export type TankBuildData = {
   overflow?: boolean;
   isActive?: boolean;
   volumeCurveId?: CurveId;
+};
+
+export type LoggerPointBuildData = {
+  id?: AssetId;
+  label?: string;
+  coordinates?: Position;
+  elevation?: number;
+  deviceId?: string;
+  status?: string;
+  timestamp?: string;
+  pressure?: number;
+  flow?: number;
+  level?: number;
+  temperature?: number;
+  batteryV?: number;
+  externalV?: number;
+  gsmPct?: number;
+  isActive?: boolean;
 };
 
 import { UnitsSpec } from "src/model-metadata/quantities-spec";
@@ -354,6 +372,50 @@ export class AssetBuilder {
         volumeCurveId,
         overflow: overflow ?? false,
         isActive,
+      },
+      this.units,
+    );
+  }
+
+  buildLoggerPoint({
+    id,
+    label,
+    coordinates = [0, 0],
+    elevation = 0,
+    deviceId = "",
+    status = "offline",
+    timestamp = "",
+    pressure = 0,
+    flow = 0,
+    level = 0,
+    temperature = 0,
+    batteryV = 0,
+    externalV = 0,
+    gsmPct = 0,
+    isActive = true,
+  }: LoggerPointBuildData = {}) {
+    const internalId = id ?? this._idGenerator.newId();
+    return new LoggerPoint(
+      internalId,
+      coordinates,
+      {
+        type: "loggerPoint",
+        label:
+          label !== undefined
+            ? label
+            : this.labelGenerator.generateFor("loggerPoint", internalId),
+        elevation,
+        isActive,
+        deviceId,
+        status,
+        timestamp,
+        pressure,
+        flow,
+        level,
+        temperature,
+        batteryV,
+        externalV,
+        gsmPct,
       },
       this.units,
     );

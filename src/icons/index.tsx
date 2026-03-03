@@ -230,6 +230,7 @@ export { CustomActiveTopologyEnableIcon as ActiveTopologyEnableIcon } from "./cu
 export { CustomActiveTopologyDisableIcon as ActiveTopologyDisableIcon } from "./custom-icons/active-topology-disable";
 export { CustomOperationalDataIcon as AdvancedSettingsIcon } from "./custom-icons/operational-data";
 export { CustomTableSelectAllIcon as TableSelectAllIcon } from "./custom-icons/table-select-all-icon";
+export { CustomWaterLoggerIcon as WaterLoggerIcon } from "./custom-icons/water-logger-icon";
 export { CustomUpstreamTraceIcon as UpstreamTraceIcon } from "./custom-icons/trace-upstream-icon";
 export { CustomDownstreamTraceIcon as DownstreamTraceIcon } from "./custom-icons/trace-downstream-icon";
 export { CustomBoundaryTraceIcon as BoundaryTraceIcon } from "./custom-icons/trace-boundary-icon";

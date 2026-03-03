@@ -201,20 +201,21 @@ export const MapCanvas = memo(function MapCanvas({
   };
 
   const HANDLERS = useModeHandlers(handlerContext);
+  const activeHandler = HANDLERS[mode.mode] ?? HANDLERS[Mode.NONE];
 
   const leftClick = 0;
   const newHandlers: MapHandlers = {
     onClick: (e: mapboxgl.MapMouseEvent) => {
       debug(e, mode.mode, selection, dragTargetRef, "click");
-      HANDLERS[mode.mode].click(e);
+      activeHandler.click(e);
     },
     onMapMouseDown: (e: mapboxgl.MapMouseEvent) => {
       debug(e, mode.mode, selection, dragTargetRef, "onMapMouseDown");
-      if (e.originalEvent.button === leftClick) HANDLERS[mode.mode].down(e);
+      if (e.originalEvent.button === leftClick) activeHandler.down(e);
     },
     onMapTouchStart: (e: mapboxgl.MapTouchEvent) => {
       debug(e, mode.mode, selection, dragTargetRef, "onMapTouchStart");
-      const handler = HANDLERS[mode.mode];
+      const handler = activeHandler;
       if (handler.touchstart) {
         handler.touchstart(e);
       } else {
@@ -223,12 +224,12 @@ export const MapCanvas = memo(function MapCanvas({
     },
     onMapMouseUp: (e: mapboxgl.MapMouseEvent) => {
       debug(e, mode.mode, selection, dragTargetRef, "onMapMouseUp");
-      if (e.originalEvent.button === leftClick) HANDLERS[mode.mode].up(e);
+      if (e.originalEvent.button === leftClick) activeHandler.up(e);
     },
     onMapTouchEnd: (e: mapboxgl.MapTouchEvent) => {
       debug(e, mode.mode, selection, dragTargetRef, "onMapTouchEnd");
 
-      const handler = HANDLERS[mode.mode];
+      const handler = activeHandler;
       if (handler.touchend) {
         handler.touchend(e);
       } else {
@@ -238,7 +239,7 @@ export const MapCanvas = memo(function MapCanvas({
     onMapTouchMove: (e: mapboxgl.MapTouchEvent) => {
       debug(e, mode.mode, selection, dragTargetRef, "onMapTouchMove");
 
-      const handler = HANDLERS[mode.mode];
+      const handler = activeHandler;
       if (handler.touchmove) {
         handler.touchmove(e);
       } else {
@@ -248,7 +249,7 @@ export const MapCanvas = memo(function MapCanvas({
     onMapMouseMove: (e: mapboxgl.MapMouseEvent) => {
       debug(e, mode.mode, selection, dragTargetRef, "onMapMouseMove");
 
-      HANDLERS[mode.mode].move(e);
+      activeHandler.move(e);
       const map = mapRef.current?.map;
       if (!map) return;
       lastCursor.current = {
@@ -259,7 +260,7 @@ export const MapCanvas = memo(function MapCanvas({
     onDoubleClick: (e: mapboxgl.MapMouseEvent) => {
       debug(e, mode.mode, selection, dragTargetRef, "doubleClick");
 
-      HANDLERS[mode.mode].double(e);
+      activeHandler.double(e);
     },
     onMoveEnd(e: mapboxgl.MapboxEvent & mapboxgl.EventData) {
       debug(e, mode.mode, selection, dragTargetRef, "onMouseMoveEnd");
@@ -282,30 +283,30 @@ export const MapCanvas = memo(function MapCanvas({
   useHotkeys(
     ["esc"],
     () => {
-      HANDLERS[mode.mode].exit();
+      activeHandler.exit();
     },
-    [HANDLERS, mode],
+    [activeHandler],
     "EXIT MODE",
   );
 
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {
-      const handler = HANDLERS[mode.mode];
+      const handler = activeHandler;
       if (handler.keydown) {
         handler.keydown(e);
       }
     },
-    [HANDLERS, mode],
+    [activeHandler],
   );
 
   const onKeyUp = useCallback(
     (e: KeyboardEvent) => {
-      const handler = HANDLERS[mode.mode];
+      const handler = activeHandler;
       if (handler.keyup) {
         handler.keyup(e);
       }
     },
-    [HANDLERS, mode],
+    [activeHandler],
   );
 
   useEffect(() => {

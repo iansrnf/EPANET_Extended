@@ -35,6 +35,7 @@ export type {
   Pump,
   Tank,
   Valve,
+  LoggerPoint,
 } from "./asset-types";
 export { calculateAverageHead } from "./asset-types";
 export { Topology } from "./topology";

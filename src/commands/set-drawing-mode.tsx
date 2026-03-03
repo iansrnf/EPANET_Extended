@@ -28,6 +28,7 @@ export const drawingModeShorcuts: { [key in Mode]: string } = {
   [Mode.DRAW_PIPE]: "5",
   [Mode.DRAW_PUMP]: "6",
   [Mode.DRAW_VALVE]: "7",
+  [Mode.ADD_LOGGER_POINT]: "8",
   [Mode.CONNECT_CUSTOMER_POINTS]: "",
   [Mode.REDRAW_LINK]: "",
   [Mode.BOUNDARY_TRACE_SELECT]: "",

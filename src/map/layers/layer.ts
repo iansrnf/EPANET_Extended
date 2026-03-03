@@ -22,7 +22,9 @@ export type LayerId =
   | "selected-icons"
   | "selected-icons-halo"
   | "icons-tanks"
-  | "icons-reservoirs";
+  | "icons-reservoirs"
+  | "main-features-logger-points"
+  | "delta-features-logger-points";
 
 export const assetLayers: LayerId[] = [
   "delta-features-pipes",
@@ -40,6 +42,8 @@ export const assetLayers: LayerId[] = [
   "main-features-valve-lines",
   "delta-features-valve-lines",
   "icons-tanks",
+  "main-features-logger-points",
+  "delta-features-logger-points",
 ];
 
 export const clickableLayers: LayerId[] = assetLayers;

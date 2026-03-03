@@ -1,6 +1,6 @@
 import { Position } from "src/types";
 
-type NodeType = "junction" | "reservoir" | "tank";
+type NodeType = "junction" | "reservoir" | "tank" | "loggerPoint";
 
 export interface EphemeralDrawNode {
   type: "drawNode";

@@ -9,7 +9,7 @@ import { isNodeAsset } from "../asset-types/type-guards";
 import { reassignCustomerPoints } from "../mutations/reassign-customer-points";
 import { getJunctionDemands } from "../demands";
 
-type NodeType = "junction" | "reservoir" | "tank";
+type NodeType = "junction" | "reservoir" | "tank" | "loggerPoint";
 
 type InputData = {
   oldNodeId: AssetId;
@@ -111,6 +111,12 @@ const createNode = (
       });
     case "tank":
       return assetBuilder.buildTank({
+        coordinates,
+        elevation,
+        isActive,
+      });
+    case "loggerPoint":
+      return assetBuilder.buildLoggerPoint({
         coordinates,
         elevation,
         isActive,

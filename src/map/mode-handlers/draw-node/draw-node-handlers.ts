@@ -16,7 +16,7 @@ import { useElevations } from "../../elevations/use-elevations";
 import { useSnapping } from "../hooks/use-snapping";
 import { useSelection } from "src/selection";
 
-type NodeType = "junction" | "reservoir" | "tank";
+type NodeType = "junction" | "reservoir" | "tank" | "loggerPoint";
 
 export function useDrawNodeHandlers({
   hydraulicModel,
@@ -60,11 +60,16 @@ export function useDrawNodeHandlers({
   return {
     click: async (e) => {
       if (readonly) return;
+      const isLoggerPointMode = nodeType === "loggerPoint";
 
       const mouseCoord = getMapCoord(e);
       const snappingCandidate = findSnappingCandidate(e, mouseCoord);
 
-      if (snappingCandidate && snappingCandidate.type !== "pipe") {
+      if (
+        !isLoggerPointMode &&
+        snappingCandidate &&
+        snappingCandidate.type !== "pipe"
+      ) {
         const moment = replaceNode(hydraulicModel, {
           oldNodeId: snappingCandidate.id,
           newNodeType: nodeType,
@@ -89,6 +94,7 @@ export function useDrawNodeHandlers({
       let pipeIdToSplit: number | undefined;
 
       if (
+        !isLoggerPointMode &&
         ephemeralState.type === "drawNode" &&
         ephemeralState.pipeSnappingPosition
       ) {
@@ -103,10 +109,13 @@ export function useDrawNodeHandlers({
     },
     move: throttle(
       (e) => {
+        const isLoggerPointMode = nodeType === "loggerPoint";
         prefetchTile(e.lngLat);
 
         const mouseCoord = getMapCoord(e);
-        const snappingCandidate = findSnappingCandidate(e, mouseCoord);
+        const snappingCandidate = isLoggerPointMode
+          ? null
+          : findSnappingCandidate(e, mouseCoord);
 
         const isNodeSnapping =
           snappingCandidate && snappingCandidate.type !== "pipe";

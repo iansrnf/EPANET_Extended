@@ -27,29 +27,20 @@ const roadmapUrls = {
   waterQuality:
     "https://roadmap.epanetjs.com/simulation-engine/p/standard-water-quality-analysis",
   gpv: "https://roadmap.epanetjs.com/network-elements/p/gpv-general-purpose-valve",
-  patterns:
-    "https://roadmap.epanetjs.com/data-libraries/p/manage-time-series-patterns",
-  reservoirPatterns:
-    "https://roadmap.epanetjs.com/element-properties/p/define-reservoir-patterns",
   tankCurves:
     "https://roadmap.epanetjs.com/element-properties/p/define-tank-curves",
-  pumpCurves:
-    "https://roadmap.epanetjs.com/element-properties/p/define-pump-curves",
   pcv: "https://roadmap.epanetjs.com/network-elements/p/pcv-positional-control-valve",
 } as const;
 
 export const GeocodingNotSupportedDialog = ({
   onClose: _onClose,
+  onImportNonProjected,
 }: {
   onClose: () => void;
+  onImportNonProjected: () => void;
 }) => {
   const translate = useTranslate();
-  const showWelcome = useShowWelcome();
   const userTracking = useUserTracking();
-
-  const goToWelcome = () => {
-    showWelcome({ source: "geocodeError" });
-  };
 
   const handleReprojectNetwork = () => {
     userTracking.capture({
@@ -93,8 +84,8 @@ export const GeocodingNotSupportedDialog = ({
         >
           {translate("reprojectNetwork")}
         </Button>
-        <Button type="button" variant="default" onClick={goToWelcome}>
-          {translate("seeDemoNetworks")}
+        <Button type="button" variant="default" onClick={onImportNonProjected}>
+          {translate("loadInXYGrid")}
         </Button>
       </SimpleDialogButtons>
     </>
@@ -433,20 +424,6 @@ const IssuesSummary = ({ issues }: { issues: ParserIssues }) => {
               </div>
             </div>
           )}
-          {issues.hasReservoirPatterns && (
-            <div>
-              <p>{translate("ignoredValuesDetected", "[RESERVOIRS]")}:</p>
-              <div className="flex flex-col gap-y-1 items-start">
-                <RoadmapLink href={roadmapUrls.reservoirPatterns}>
-                  -{" "}
-                  {translate(
-                    "reservoirPatterns",
-                    String(issues.hasReservoirPatterns),
-                  )}
-                </RoadmapLink>
-              </div>
-            </div>
-          )}
           {issues.hasTankCurves && (
             <div>
               <p>{translate("ignoredValuesDetected", "[TANKS]")}:</p>
@@ -457,30 +434,16 @@ const IssuesSummary = ({ issues }: { issues: ParserIssues }) => {
               </div>
             </div>
           )}
-          {(issues.hasPumpPatterns || issues.hasPumpCurves) && (
+          {issues.hasUndefinedPumpCurve && (
             <div>
               <p>{translate("ignoredValuesDetected", "[PUMPS]")}:</p>
               <div className="flex flex-col gap-y-1 items-start">
-                {issues.hasPumpPatterns && (
-                  <RoadmapLink href={roadmapUrls.patterns}>
-                    -{" "}
-                    {translate("pumpPatterns", String(issues.hasPumpPatterns))}
-                  </RoadmapLink>
-                )}
-                {issues.hasPumpCurves && (
-                  <RoadmapLink href={roadmapUrls.pumpCurves}>
-                    - {translate("pumpCurves", String(issues.hasPumpCurves))}
-                  </RoadmapLink>
-                )}
-              </div>
-            </div>
-          )}
-          {issues.hasUnusedCurves && (
-            <div>
-              <p>{translate("ignoredValuesDetected", "[CURVES]")}:</p>
-              <div className="flex flex-col gap-y-1 items-start">
                 <span>
-                  - {translate("unusedCurves", String(issues.hasUnusedCurves))}
+                  -{" "}
+                  {translate(
+                    "undefinedPumpCurves",
+                    String(issues.hasUndefinedPumpCurve),
+                  )}
                 </span>
               </div>
             </div>

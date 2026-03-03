@@ -1,5 +1,6 @@
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
-import { buildInpWithAllCurves } from "./build-inp-with-all-curves";
+import { buildInp } from "./build-inp";
+import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 
 describe("build inp with pumps and curves", () => {
   it("adds pumps with a local curve", () => {
@@ -22,7 +23,10 @@ describe("build inp with pumps and curves", () => {
       })
       .build();
 
-    const inp = buildInpWithAllCurves(hydraulicModel, { labelIds: true });
+    const inp = buildInp(hydraulicModel, {
+      simulationSettings: defaultSimulationSettings,
+      labelIds: true,
+    });
 
     expect(inp).toContain("[PUMPS]");
     expect(inp).toContain("PU1\tJ1\tJ2\tHEAD PU1\tSPEED 0.8");
@@ -47,7 +51,9 @@ describe("build inp with pumps and curves", () => {
       })
       .build();
 
-    const inp = buildInpWithAllCurves(hydraulicModel);
+    const inp = buildInp(hydraulicModel, {
+      simulationSettings: defaultSimulationSettings,
+    });
 
     expect(inp).toContain("[PUMPS]");
     expect(inp).toContain("4\t1\t2\tPOWER 100\tSPEED 0.7");
@@ -94,7 +100,9 @@ describe("build inp with pumps and curves", () => {
       })
       .build();
 
-    const inp = buildInpWithAllCurves(hydraulicModel);
+    const inp = buildInp(hydraulicModel, {
+      simulationSettings: defaultSimulationSettings,
+    });
 
     expect(inp).toContain("[PUMPS]");
     expect(inp).toContain("5\t1\t2\tPOWER 10\tSPEED 0.7");
@@ -104,35 +112,6 @@ describe("build inp with pumps and curves", () => {
     expect(inp).toContain("5\t0.7");
     expect(inp).toContain("6\tClosed");
     expect(inp).toContain("7\tOpen");
-  });
-
-  it("ignores links and controls that reference logger points", () => {
-    const IDS = { LOGGER: 10, JUNCTION: 66, PIPE: 155 };
-    const hydraulicModel = HydraulicModelBuilder.with()
-      .aLoggerPoint(IDS.LOGGER, { label: "L1" })
-      .aJunction(IDS.JUNCTION, { label: "J66" })
-      .aPipe(IDS.PIPE, {
-        label: "P155",
-        startNodeId: IDS.LOGGER,
-        endNodeId: IDS.JUNCTION,
-        length: 164.97,
-        diameter: 300,
-        roughness: 130,
-        initialStatus: "open",
-      })
-      .aSimpleControl({
-        template: "LINK {{0}} OPEN IF NODE {{1}} ABOVE 10",
-        assetReferences: [
-          { assetId: IDS.PIPE, isActionTarget: true },
-          { assetId: IDS.LOGGER, isActionTarget: false },
-        ],
-      })
-      .build();
-
-    const inp = buildInpWithAllCurves(hydraulicModel, { labelIds: true });
-
-    expect(inp).not.toContain("P155\tL1\tJ66");
-    expect(inp).not.toContain("LINK P155 OPEN IF NODE L1 ABOVE 10");
   });
 
   describe("curves", () => {
@@ -165,7 +144,9 @@ describe("build inp with pumps and curves", () => {
         })
         .build();
 
-      const inp = buildInpWithAllCurves(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).toContain("[CURVES]");
       expect(inp).toContain("design.point\t20\t40");
@@ -201,7 +182,10 @@ describe("build inp with pumps and curves", () => {
         })
         .build();
 
-      const inp = buildInpWithAllCurves(hydraulicModel, { usedCurves: true });
+      const inp = buildInp(hydraulicModel, {
+        simulationSettings: defaultSimulationSettings,
+        usedCurves: true,
+      });
 
       expect(inp).toContain("[CURVES]");
       expect(inp).toContain("used\t20\t40");
@@ -238,14 +222,17 @@ describe("build inp with pumps and curves", () => {
         })
         .build();
 
-      const inp = buildInpWithAllCurves(hydraulicModel, { labelIds: true });
+      const inp = buildInp(hydraulicModel, {
+        simulationSettings: defaultSimulationSettings,
+        labelIds: true,
+      });
 
       expect(inp).toContain("[PUMPS]");
-      expect(inp).toContain("PU1\tJ1\tJ2\tHEAD PU1\tSPEED 0.8");
-      expect(inp).toContain("PU2\tJ1\tJ2\tHEAD PU1.1\tSPEED 0.8");
+      expect(inp).toContain("PU1\tJ1\tJ2\tHEAD PU1.1\tSPEED 0.8");
+      expect(inp).toContain("PU2\tJ1\tJ2\tHEAD PU1\tSPEED 0.8");
       // Pump curve definition
-      expect(inp).toContain("PU1\t20\t40");
-      expect(inp).toContain("PU1.1\t40\t60");
+      expect(inp).toContain("PU1.1\t20\t40");
+      expect(inp).toContain("PU1\t40\t60");
     });
 
     it("keeps curve ID when curve is used by multiple pumps", () => {
@@ -278,7 +265,10 @@ describe("build inp with pumps and curves", () => {
         })
         .build();
 
-      const inp = buildInpWithAllCurves(hydraulicModel, { labelIds: true });
+      const inp = buildInp(hydraulicModel, {
+        simulationSettings: defaultSimulationSettings,
+        labelIds: true,
+      });
 
       expect(inp).toContain("[PUMPS]");
       expect(inp).toContain("PU1\tJ1\tJ2\tHEAD CURVE\tSPEED 0.8");

@@ -183,9 +183,9 @@ export const selectedIconsLayer = ({
         ["linear"],
         ["zoom"],
         13,
-        ["match", ["get", "type"], "reservoir", 0.2, "loggerPoint", 0.2, 0.2],
+        ["match", ["get", "type"], "reservoir", 0.2, 0.2],
         20,
-        ["match", ["get", "type"], "reservoir", 0.5, "loggerPoint", 0.45, 0.4],
+        ["match", ["get", "type"], "reservoir", 0.5, 0.4],
       ],
       "icon-allow-overlap": true,
       "icon-rotation-alignment": "map",
@@ -194,12 +194,7 @@ export const selectedIconsLayer = ({
     filter: [
       "all",
       ["has", "icon"],
-      [
-        "any",
-        ["==", "type", "tank"],
-        ["==", "type", "reservoir"],
-        ["==", "type", "loggerPoint"],
-      ],
+      ["any", ["==", "type", "tank"], ["==", "type", "reservoir"]],
     ],
     paint: {
       "icon-opacity": 1,

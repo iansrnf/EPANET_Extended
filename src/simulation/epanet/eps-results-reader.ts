@@ -5,6 +5,7 @@ import {
   PumpSimulation,
   JunctionSimulation,
   TankSimulation,
+  ReservoirSimulation,
 } from "../results-reader";
 import { IPrivateAppStorage } from "src/infra/storage/private-app-storage";
 import { RESULTS_OUT_KEY, TANK_VOLUMES_KEY, PUMP_STATUS_KEY } from "./worker";
@@ -63,6 +64,7 @@ function pressureToPsi(pressure: number, pressureUnits: PressureUnits): number {
 export type JunctionProperty = "demand" | "head" | "pressure" | "quality";
 export type TankProperty = "head" | "pressure" | "level" | "volume";
 export type ReservoirProperty = "head";
+export type ReservoirProperty = "head" | "pressure";
 export type PipeProperty = "flow" | "velocity" | "headloss" | "status";
 export type PumpProperty = "flow" | "headloss" | "status";
 export type ValveProperty =
@@ -859,6 +861,19 @@ class TimestepResultsReader implements ResultsReader {
     };
   }
 
+  getReservoir(reservoirId: number): ReservoirSimulation | null {
+    const nodeIndex = this.simulationIds.nodeIdToIndex.get(String(reservoirId));
+    if (nodeIndex === undefined) return null;
+
+    const nodeData = this.getNodeData(nodeIndex);
+
+    return {
+      type: "reservoir",
+      pressure: nodeData.pressure,
+      head: nodeData.head,
+    };
+  }
+
   private getNodeData(nodeIndex: number): {
     demand: number;
     head: number;
@@ -1034,6 +1049,9 @@ class NullResultsReader implements ResultsReader {
     return null;
   }
   getTank(_tankId: number): TankSimulation | null {
+    return null;
+  }
+  getReservoir(_reservoirId: number): ReservoirSimulation | null {
     return null;
   }
   getAllPressures(): number[] {

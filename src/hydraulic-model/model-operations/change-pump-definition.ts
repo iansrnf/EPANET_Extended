@@ -25,14 +25,16 @@ export const changePumpDefinition: ModelOperation<InputData> = (
 
   if (data.type === "power") {
     updatedPump.setProperty("power", data.power);
-    return { note: "Change pump curve", putAssets: [updatedPump] };
-  }
-
-  if (data.type === "curve") {
+    delete updatedPump.feature.properties.curveId;
+  } else if (data.type === "curve") {
     updatedPump.feature.properties.curve = data.curve.map((p) => ({ ...p }));
-    return { note: "Change pump curve", putAssets: [updatedPump] };
+    delete updatedPump.feature.properties.curveId;
+  } else {
+    updatedPump.setProperty("curveId", data.curveId);
   }
 
-  updatedPump.setProperty("curveId", data.curveId);
-  return { note: "Change pump curve", putAssets: [updatedPump] };
+  return {
+    note: "Change pump curve",
+    putAssets: [updatedPump],
+  };
 };

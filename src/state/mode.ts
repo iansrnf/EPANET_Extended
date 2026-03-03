@@ -18,6 +18,9 @@ export enum Mode {
   CONNECT_CUSTOMER_POINTS = "CONNECT_CUSTOMER_POINTS",
   REDRAW_LINK = "REDRAW_LINK",
   ADD_LOGGER_POINT = "ADD_LOGGER_POINT",
+  BOUNDARY_TRACE_SELECT = "BOUNDARY_TRACE_SELECT",
+  UPSTREAM_TRACE_SELECT = "UPSTREAM_TRACE_SELECT",
+  DOWNSTREAM_TRACE_SELECT = "DOWNSTREAM_TRACE_SELECT",
 }
 
 export enum CIRCLE_TYPE {
@@ -68,6 +71,9 @@ export const MODE_INFO: Record<
   [Mode.CONNECT_CUSTOMER_POINTS]: { name: "connect customer points" },
   [Mode.REDRAW_LINK]: { name: "redraw link" },
   [Mode.ADD_LOGGER_POINT]: { name: "add logger point" },
+  [Mode.BOUNDARY_TRACE_SELECT]: { name: "boundary trace" },
+  [Mode.UPSTREAM_TRACE_SELECT]: { name: "upstream trace" },
+  [Mode.DOWNSTREAM_TRACE_SELECT]: { name: "downstream trace" },
 };
 
 export type ModeWithOptions = {
@@ -80,3 +86,4 @@ export const modeAtom = atom<ModeWithOptions>({
 });
 
 export const lastSelectionModeAtom = atom<Mode>(Mode.SELECT_POLYGONAL);
+export const lastTraceSelectModeAtom = atom<Mode>(Mode.BOUNDARY_TRACE_SELECT);

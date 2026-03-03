@@ -6,6 +6,7 @@ import { useDrawLinkHandlers } from "./draw-link";
 import { useConnectCustomerPointsHandlers } from "./connect-customer-points";
 import { useRedrawLinkHandlers } from "./redraw-link";
 import { useAreaSelectionHandlers } from "./area-selection";
+import { useTraceSelectHandlers } from "./trace-select";
 
 export function useModeHandlers(handlerContext: HandlerContext) {
   const HANDLERS: Record<Mode, Handlers> = {
@@ -13,10 +14,6 @@ export function useModeHandlers(handlerContext: HandlerContext) {
     [Mode.SELECT_RECTANGULAR]: useAreaSelectionHandlers({
       ...handlerContext,
       selectionMode: "rectangular",
-    }),
-    [Mode.ADD_LOGGER_POINT]: useDrawNodeHandlers({
-      ...handlerContext,
-      nodeType: "loggerPoint",
     }),
     [Mode.SELECT_POLYGONAL]: useAreaSelectionHandlers({
       ...handlerContext,
@@ -53,6 +50,9 @@ export function useModeHandlers(handlerContext: HandlerContext) {
     [Mode.CONNECT_CUSTOMER_POINTS]:
       useConnectCustomerPointsHandlers(handlerContext),
     [Mode.REDRAW_LINK]: useRedrawLinkHandlers(handlerContext),
+    [Mode.BOUNDARY_TRACE_SELECT]: useTraceSelectHandlers(handlerContext),
+    [Mode.UPSTREAM_TRACE_SELECT]: useTraceSelectHandlers(handlerContext),
+    [Mode.DOWNSTREAM_TRACE_SELECT]: useTraceSelectHandlers(handlerContext),
   };
   return HANDLERS;
 }

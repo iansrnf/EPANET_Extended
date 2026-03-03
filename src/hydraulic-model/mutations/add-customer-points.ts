@@ -1,15 +1,15 @@
 import {
   HydraulicModel,
-  AssetsMap,
   updateHydraulicModelAssets,
 } from "src/hydraulic-model/hydraulic-model";
 import { CustomerPoint } from "src/hydraulic-model/customer-points";
-import { Junction } from "src/hydraulic-model/asset-types/junction";
 import { CustomerPointsLookup } from "src/hydraulic-model/customer-points-lookup";
+import { Demand } from "src/hydraulic-model/demands";
 
 type AddCustomerPointsOptions = {
   preserveJunctionDemands?: boolean;
   overrideExisting?: boolean;
+  customerPointDemands?: Map<number, Demand[]>;
 };
 
 export const addCustomerPoints = (
@@ -26,7 +26,7 @@ export const addCustomerPoints = (
     ? new CustomerPointsLookup()
     : hydraulicModel.customerPointsLookup.copy();
 
-  const modifiedJunctions = new Set<number>();
+  const junctionsToClearDemands = new Set<number>();
 
   for (const customerPoint of customerPointsToAdd) {
     updatedCustomerPoints.set(customerPoint.id, customerPoint);
@@ -40,12 +40,7 @@ export const addCustomerPoints = (
     }
 
     if (!preserveJunctionDemands) {
-      removeJunctionDemands(
-        customerPoint,
-        hydraulicModel,
-        updatedAssets,
-        modifiedJunctions,
-      );
+      junctionsToClearDemands.add(customerPoint.connection.junctionId);
     }
   }
 
@@ -54,31 +49,41 @@ export const addCustomerPoints = (
     updatedAssets,
   );
 
+  const updatedJunctionDemands =
+    junctionsToClearDemands.size > 0
+      ? new Map(hydraulicModel.demands.junctions)
+      : hydraulicModel.demands.junctions;
+
+  for (const junctionId of junctionsToClearDemands) {
+    updatedJunctionDemands.delete(junctionId);
+  }
+
+  const updatedCustomerDemands = overrideExisting
+    ? new Map<number, Demand[]>()
+    : new Map(hydraulicModel.demands.customerPoints);
+
+  if (options.customerPointDemands) {
+    for (const [cpId, demands] of options.customerPointDemands) {
+      updatedCustomerDemands.set(cpId, demands);
+    }
+  }
+
+  const demandsChanged =
+    junctionsToClearDemands.size > 0 ||
+    (options.customerPointDemands && options.customerPointDemands.size > 0) ||
+    overrideExisting;
+
   return {
     ...updatedHydraulicModel,
     version: hydraulicModel.version,
     customerPoints: updatedCustomerPoints,
     customerPointsLookup: updatedLookup,
+    demands: demandsChanged
+      ? {
+          ...hydraulicModel.demands,
+          junctions: updatedJunctionDemands,
+          customerPoints: updatedCustomerDemands,
+        }
+      : hydraulicModel.demands,
   };
-};
-
-const removeJunctionDemands = (
-  customerPoint: CustomerPoint,
-  hydraulicModel: HydraulicModel,
-  updatedAssets: AssetsMap,
-  modifiedJunctions: Set<number>,
-): void => {
-  const junctionId = customerPoint.connection!.junctionId;
-  const originalJunction = hydraulicModel.assets.get(junctionId) as Junction;
-
-  if (!originalJunction) {
-    return;
-  }
-
-  if (!modifiedJunctions.has(junctionId)) {
-    const junctionCopy = originalJunction.copy();
-    junctionCopy.setDemands([]);
-    updatedAssets.set(junctionId, junctionCopy);
-    modifiedJunctions.add(junctionId);
-  }
 };

@@ -5,12 +5,12 @@ import {
   buildFcvSvg,
   buildGpvSvg,
   buildPbvSvg,
+  buildPcvSvg,
   buildPrvSvg,
   buildPsvSvg,
   buildPumpSvg,
   buildTankSvg,
   buildReservoirSvg,
-  buildLoggerPointSvg,
 } from "./dynamic-icons";
 import { colors } from "src/lib/constants";
 
@@ -45,6 +45,14 @@ export type IconId =
   | "valve-pbv-open"
   | "valve-pbv-closed"
   | "valve-pbv-disabled"
+  | "valve-gpv-active"
+  | "valve-gpv-open"
+  | "valve-gpv-closed"
+  | "valve-gpv-disabled"
+  | "valve-pcv-active"
+  | "valve-pcv-open"
+  | "valve-pcv-closed"
+  | "valve-pcv-disabled"
   | "pipe-cv-open"
   | "pipe-cv-closed"
   | "pipe-cv-disabled"
@@ -52,12 +60,7 @@ export type IconId =
   | "tank-selected"
   | "tank-highlight"
   | "tank-disabled"
-  | "tank-disabled-selected"
-  | "loggerPoint"
-  | "loggerPoint-selected"
-  | "loggerPoint-highlight"
-  | "loggerPoint-disabled"
-  | "loggerPoint-disabled-selected";
+  | "tank-disabled-selected";
 
 export type TextureProps = {
   width: number;
@@ -296,6 +299,78 @@ const buildIconUrls = (): IconUrl[] => {
       ),
     },
     {
+      id: "valve-gpv-active",
+      url: urlFor(
+        buildGpvSvg({
+          triangleColor: colors.green800,
+          fillColor: colors.green300,
+        }),
+      ),
+    },
+    {
+      id: "valve-gpv-open",
+      url: urlFor(
+        buildGpvSvg({
+          triangleColor: colors.gray700,
+          fillColor: colors.gray300,
+        }),
+      ),
+    },
+    {
+      id: "valve-gpv-closed",
+      url: urlFor(
+        buildGpvSvg({
+          triangleColor: colors.red700,
+          fillColor: colors.red300,
+        }),
+      ),
+    },
+    {
+      id: "valve-gpv-disabled",
+      url: urlFor(
+        buildGpvSvg({
+          triangleColor: colors.gray500,
+          fillColor: colors.gray300,
+        }),
+      ),
+    },
+    {
+      id: "valve-pcv-active",
+      url: urlFor(
+        buildPcvSvg({
+          triangleColor: colors.green800,
+          fillColor: colors.green300,
+        }),
+      ),
+    },
+    {
+      id: "valve-pcv-open",
+      url: urlFor(
+        buildPcvSvg({
+          triangleColor: colors.gray700,
+          fillColor: colors.gray300,
+        }),
+      ),
+    },
+    {
+      id: "valve-pcv-closed",
+      url: urlFor(
+        buildPcvSvg({
+          triangleColor: colors.red700,
+          fillColor: colors.red300,
+        }),
+      ),
+    },
+    {
+      id: "valve-pcv-disabled",
+      url: urlFor(
+        buildPcvSvg({
+          triangleColor: colors.gray500,
+          fillColor: colors.gray300,
+        }),
+      ),
+    },
+    {
       id: "pipe-cv-open",
       url: urlFor(
         buildCheckValveSvg({
@@ -409,61 +484,6 @@ const buildIconUrls = (): IconUrl[] => {
         buildReservoirSvg({
           borderColor: colors.gray500,
           fillColor: colors.fuchsia300,
-        }),
-      ),
-    },
-    {
-      id: "loggerPoint",
-      url: urlFor(
-        buildLoggerPointSvg({
-          borderColor: colors.indigo800,
-          fillColor: colors.indigo300,
-          signalColor: colors.indigo800,
-          dropletColor: colors.indigo800,
-        }),
-      ),
-    },
-    {
-      id: "loggerPoint-selected",
-      url: urlFor(
-        buildLoggerPointSvg({
-          borderColor: colors.fuchsia300,
-          fillColor: colors.fuchsia500,
-          signalColor: colors.fuchsia300,
-          dropletColor: colors.fuchsia300,
-        }),
-      ),
-    },
-    {
-      id: "loggerPoint-highlight",
-      url: urlFor(
-        buildLoggerPointSvg({
-          borderColor: colors.indigo300,
-          fillColor: colors.indigo800,
-          signalColor: colors.indigo300,
-          dropletColor: colors.indigo300,
-        }),
-      ),
-    },
-    {
-      id: "loggerPoint-disabled",
-      url: urlFor(
-        buildLoggerPointSvg({
-          borderColor: colors.gray500,
-          fillColor: colors.gray300,
-          signalColor: colors.gray500,
-          dropletColor: colors.gray500,
-        }),
-      ),
-    },
-    {
-      id: "loggerPoint-disabled-selected",
-      url: urlFor(
-        buildLoggerPointSvg({
-          borderColor: colors.gray500,
-          fillColor: colors.fuchsia300,
-          signalColor: colors.gray500,
-          dropletColor: colors.gray500,
         }),
       ),
     },

@@ -291,6 +291,43 @@ export const buildPbvSvg = ({
 `;
 };
 
+export const buildPcvSvg = ({
+  width = 64,
+  height = 64,
+  borderColor = "none",
+  fillColor = "white",
+  triangleColor = "black",
+}: {
+  width?: number;
+  height?: number;
+  borderColor?: string;
+  triangleColor?: string;
+  fillColor?: string;
+} = {}) => {
+  return `
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 815.5 815.5" version="1.1">
+  <g transform="rotate(-90,407.75,390)" style="stroke-width:62.4">
+    <rect
+      x="31.2"
+      y="31.2"
+      width="717.6"
+      height="717.6"
+      ry="171.86"
+      style="fill:${fillColor};stroke:${borderColor};stroke-width:35.5;stroke-linecap:round;stroke-linejoin:round"
+    />
+    <path
+      d="M390.38,388.66L592.8,206.83v362.57z"
+      style="fill:${fillColor};stroke:${triangleColor};stroke-width:35.5;stroke-linecap:butt;stroke-linejoin:round"
+    />
+    <path
+      d="M386.44,390L184.02,571.83V209.26z"
+      style="fill:${fillColor};stroke:${triangleColor};stroke-width:35.5;stroke-linecap:butt;stroke-linejoin:round"
+    />
+  </g>
+</svg>
+`;
+};
+
 export const buildTankSvg = ({
   width = 64,
   height = 64,
@@ -374,34 +411,6 @@ export const buildReservoirSvg = ({
         stroke-width="2"
         fill="${fillColor}"
       />
-    </svg>
-  `;
-};
-
-export const buildLoggerPointSvg = ({
-  width = 64,
-  height = 64,
-  borderColor = "black",
-  fillColor = "white",
-  signalColor = "black",
-  dropletColor = "black",
-}: {
-  width?: number;
-  height?: number;
-  borderColor?: string;
-  fillColor?: string;
-  signalColor?: string;
-  dropletColor?: string;
-}) => {
-  return `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${width}" height="${height}" fill="none">
-      <circle cx="12" cy="12" r="10" fill="${fillColor}" stroke="${borderColor}" stroke-width="2" />
-      <rect x="9" y="7" width="6" height="8" rx="1.5" fill="none" stroke="${borderColor}" stroke-width="1.5" />
-      <rect x="10" y="8" width="4" height="2" rx="0.5" fill="${signalColor}" opacity="0.4" />
-      <path fill="${dropletColor}" d="M12 11 C11.2 12.2, 10.2 13.4, 10.2 14.4 A1.8 1.8 0 0 0 13.8 14.4 C13.8 13.4, 12.8 12.2, 12 11 Z" />
-      <path d="M16.5 9.5 Q17.5 12 16.5 14.5" stroke="${signalColor}" stroke-width="1.5" stroke-linecap="round" />
-      <path d="M18.5 8 Q20 12 18.5 16" stroke="${signalColor}" stroke-width="1.5" stroke-linecap="round" opacity="0.7" />
-      <line x1="12" y1="15" x2="12" y2="17" stroke="${borderColor}" stroke-width="1.5" stroke-linecap="round" />
     </svg>
   `;
 };

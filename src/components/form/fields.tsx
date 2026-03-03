@@ -1,11 +1,72 @@
 import clsx from "clsx";
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import * as C from "@radix-ui/react-collapsible";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { ChevronDownIcon, ChevronRightIcon } from "src/icons";
 import { FooterResizer, useBigScreen } from "src/components/resizer";
-import { TContent } from "src/components/elements";
+import { TContent, StyledTooltipArrow } from "src/components/elements";
 import { useTranslate } from "src/hooks/use-translate";
+
+export const NestedSectionContext = createContext(false);
+
+const ComparisonTooltip = ({
+  hasChanged,
+  baseDisplayValue,
+  children,
+}: {
+  hasChanged: boolean;
+  baseDisplayValue?: React.ReactNode;
+  children: React.ReactNode;
+}) => {
+  const translate = useTranslate();
+
+  if (hasChanged && baseDisplayValue !== undefined) {
+    return (
+      <Tooltip.Root delayDuration={200}>
+        <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
+        <Tooltip.Portal>
+          <TContent side="left" sideOffset={15}>
+            <StyledTooltipArrow />
+            {translate("scenarios.main")}: {baseDisplayValue}
+          </TContent>
+        </Tooltip.Portal>
+      </Tooltip.Root>
+    );
+  }
+
+  return children;
+};
+
+export const BlockComparisonField = ({
+  hasChanged,
+  baseDisplayValue,
+  children,
+}: {
+  hasChanged: boolean;
+  baseDisplayValue?: React.ReactNode;
+  children: React.ReactNode;
+}) => {
+  const isNested = useContext(NestedSectionContext);
+
+  return (
+    <ComparisonTooltip
+      hasChanged={hasChanged}
+      baseDisplayValue={baseDisplayValue}
+    >
+      <div className="relative">
+        {hasChanged && (
+          <div
+            className={clsx(
+              "absolute top-0 bottom-0 w-1 bg-purple-500 rounded-full",
+              isNested ? "-left-[26px]" : "-left-4",
+            )}
+          />
+        )}
+        {children}
+      </div>
+    </ComparisonTooltip>
+  );
+};
 
 export const FieldList = ({ children }: { children: React.ReactNode }) => {
   return <div className="flex flex-col gap-y-1">{children}</div>;
@@ -25,11 +86,9 @@ export const InlineField = ({
   labelSize?: "sm" | "md";
   align?: "start" | "center";
   hasChanged?: boolean;
-  baseDisplayValue?: string;
+  baseDisplayValue?: React.ReactNode;
   children: React.ReactNode;
 }) => {
-  const translate = useTranslate();
-
   const labelClasses = clsx("text-sm text-gray-500", {
     "max-w-[67px] w-full flex-shrink-0":
       layout === "fixed-label" && labelSize === "sm",
@@ -45,50 +104,23 @@ export const InlineField = ({
 
   const spacingClass = labelSize === "md" ? "gap-1" : "space-x-4";
 
-  const labelElement = (
-    <label className={labelClasses} aria-label={`label: ${name}`}>
-      {name}
-    </label>
-  );
-
-  const purpleLine = hasChanged ? (
-    <div className="absolute -left-4 top-0 bottom-0 w-1 bg-purple-500 rounded-full" />
-  ) : null;
-
-  const triggerContent = (
-    <>
-      {purpleLine}
-      {labelElement}
-    </>
-  );
-
-  const wrappedLabel =
-    hasChanged && baseDisplayValue !== undefined ? (
-      <Tooltip.Root delayDuration={200}>
-        <Tooltip.Trigger asChild>
-          <div className="flex items-center">{triggerContent}</div>
-        </Tooltip.Trigger>
-        <Tooltip.Portal>
-          <TContent side="left" sideOffset={4}>
-            {translate("scenarios.main")}: {baseDisplayValue}
-          </TContent>
-        </Tooltip.Portal>
-      </Tooltip.Root>
-    ) : (
-      triggerContent
-    );
-
   return (
-    <div
-      className={clsx("flex relative", spacingClass, {
-        "items-start": align === "start",
-        "items-center": align === "center",
-      })}
+    <BlockComparisonField
+      hasChanged={hasChanged}
+      baseDisplayValue={baseDisplayValue}
     >
-      {wrappedLabel}
-
-      <div className={inputWrapperClasses}>{children}</div>
-    </div>
+      <div
+        className={clsx("flex", spacingClass, {
+          "items-start": align === "start",
+          "items-center": align === "center",
+        })}
+      >
+        <label className={labelClasses} aria-label={`label: ${name}`}>
+          {name}
+        </label>
+        <div className={inputWrapperClasses}>{children}</div>
+      </div>
+    </BlockComparisonField>
   );
 };
 
@@ -248,6 +280,7 @@ export const CollapsibleSection = ({
   onOpenChange,
   className,
   children,
+  action,
 }: {
   title: string;
   variant?: "primary" | "secondary";
@@ -256,6 +289,7 @@ export const CollapsibleSection = ({
   onOpenChange?: (open: boolean) => void;
   className?: string;
   children: React.ReactNode;
+  action?: React.ReactNode;
 }) => {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
 
@@ -266,20 +300,29 @@ export const CollapsibleSection = ({
   return (
     <C.Root open={open} onOpenChange={handleOpenChange}>
       <div className={clsx("flex flex-col", className)}>
-        <C.Trigger
-          className={clsx(
-            "flex items-center text-sm font-semibold cursor-pointer hover:text-gray-700 dark:hover:text-gray-100",
-            "p-2 -mx-2 -mt-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800",
-            {
-              "text-gray-500": variant === "secondary",
-              "mb-1": open,
-            },
-          )}
-        >
-          <span>{title}</span>
-          <div className="flex-1 border-b border-gray-200 mx-3 mb-1" />
-          {open ? <ChevronDownIcon /> : <ChevronRightIcon />}
-        </C.Trigger>
+        <div className="flex items-center gap-1">
+          <C.Trigger asChild>
+            <div
+              className={clsx(
+                "flex-1 flex items-center text-sm font-semibold cursor-pointer hover:text-gray-700 dark:hover:text-gray-100",
+                "p-2 -mx-2 -mt-2 rounded hover:bg-gray-100 dark:hover:bg-gray-800",
+                {
+                  "text-gray-500": variant === "secondary",
+                  "mb-1": open,
+                },
+              )}
+              role="button"
+              tabIndex={0}
+            >
+              <span>{title}</span>
+              <div className="flex-1 border-b border-gray-200 mx-3 mb-1" />
+              {action && <div className="h-8 w-8 -my-1">{action}</div>}
+              <div className="ml-1">
+                {open ? <ChevronDownIcon /> : <ChevronRightIcon />}
+              </div>
+            </div>
+          </C.Trigger>
+        </div>
         <C.Content className="flex flex-col gap-1">{children}</C.Content>
       </div>
     </C.Root>

@@ -27,6 +27,7 @@ export const NumericField = ({
   readOnly = false,
   disabled = false,
   isNullable = true,
+  placeholder,
   styleOptions = {},
   tabIndex = 1,
 }: {
@@ -37,6 +38,7 @@ export const NumericField = ({
   positiveOnly?: boolean;
   readOnly?: boolean;
   disabled?: boolean;
+  placeholder?: string;
   styleOptions?: Partial<StyleOptions>;
   tabIndex?: number;
 }) => {
@@ -143,6 +145,7 @@ export const NumericField = ({
       aria-label={`Value for: ${label}`}
       readOnly={readOnly}
       disabled={disabled}
+      placeholder={placeholder}
       onBlur={handleBlur}
       ref={inputRef}
       value={inputValue}
@@ -163,7 +166,7 @@ function styledInput({
 }: StyleOptions = {}) {
   return clsx(
     disabled
-      ? "text-gray-400 dark:text-gray-500 cursor-not-allowed"
+      ? "text-gray-500 dark:text-gray-500 cursor-not-allowed bg-gray-100 dark:bg-gray-800"
       : "text-gray-700 dark:text-gray-100",
     {
       "p-1": padding === "sm",
@@ -178,7 +181,7 @@ function styledInput({
       : variant === "warning"
         ? "border-orange-500 dark:border-orange-700"
         : "border-gray-300 hover:border-gray-200",
-    !ghostBorder && variant !== "warning" && "bg-white",
+    !disabled && !ghostBorder && variant !== "warning" && "bg-white",
     !disabled && {
       "focus-visible:bg-purple-300/10 dark:focus-visible:bg-purple-700/40 dark:focus-visible:ring-purple-700 focus-visible:ring-purple-500":
         variant === "default",
@@ -191,6 +194,6 @@ function styledInput({
       "text-md": textSize === "md",
     },
 
-    "rounded-sm block tabular-nums overflow-hidden whitespace-nowrap text-ellipsis focus-visible:ring-inset w-full",
+    "rounded-sm block tabular-nums overflow-hidden whitespace-nowrap text-ellipsis focus-visible:ring-inset w-full placeholder:italic placeholder:text-gray-500",
   );
 }

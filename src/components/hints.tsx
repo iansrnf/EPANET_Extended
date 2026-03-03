@@ -156,6 +156,14 @@ export function Hints() {
           );
         }
       }
+      if (selection.type === "singleCustomerPoint" && !isSnapshotLocked) {
+        return (
+          <Hint
+            hintId={"DRAG_CUSTOMER_POINT"}
+            text={translate("onboardingMoveCustomerPoint")}
+          />
+        );
+      }
       break;
     }
     case Mode.DRAW_PIPE: {
@@ -371,6 +379,31 @@ export function Hints() {
             localizeKeybinding("shift"),
             localizeKeybinding("alt"),
           )}
+        />
+      );
+    }
+    case Mode.BOUNDARY_TRACE_SELECT: {
+      return (
+        <Hint
+          hintId={"TRACE_BOUNDARY"}
+          text={translate("traceSelection.boundaryHint")}
+          secondaryText={translate("traceSelection.boundarySecondaryHint")}
+        />
+      );
+    }
+    case Mode.UPSTREAM_TRACE_SELECT: {
+      return (
+        <Hint
+          hintId={"TRACE_UPSTREAM"}
+          text={translate("traceSelection.upstreamHint")}
+        />
+      );
+    }
+    case Mode.DOWNSTREAM_TRACE_SELECT: {
+      return (
+        <Hint
+          hintId={"TRACE_DOWNSTREAM"}
+          text={translate("traceSelection.downstreamHint")}
         />
       );
     }

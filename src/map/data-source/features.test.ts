@@ -8,63 +8,7 @@ import {
   aRangeColorRule,
 } from "src/__helpers__/state";
 import { getColors } from "src/map/symbology/range-color-rule";
-import type { ResultsReader } from "src/simulation/results-reader";
-
-const createMockResultsReader = (
-  data: {
-    pipes?: Record<
-      number,
-      { flow?: number; velocity?: number; status?: "open" | "closed" }
-    >;
-    junctions?: Record<
-      number,
-      { pressure?: number; head?: number; demand?: number }
-    >;
-    pumps?: Record<number, { status?: "on" | "off" }>;
-  } = {},
-): ResultsReader => ({
-  getPipe: (id) => {
-    const sim = data.pipes?.[id];
-    if (!sim) return null;
-    return {
-      type: "pipe",
-      flow: sim.flow ?? 0,
-      velocity: sim.velocity ?? 0,
-      headloss: 0,
-      unitHeadloss: 0,
-      status: sim.status ?? "open",
-    };
-  },
-  getJunction: (id) => {
-    const sim = data.junctions?.[id];
-    if (!sim) return null;
-    return {
-      type: "junction",
-      pressure: sim.pressure ?? 0,
-      head: sim.head ?? 0,
-      demand: sim.demand ?? 0,
-    };
-  },
-  getPump: (id) => {
-    const sim = data.pumps?.[id];
-    if (!sim) return null;
-    return {
-      type: "pump",
-      flow: 0,
-      headloss: 0,
-      status: sim.status ?? "on",
-      statusWarning: null,
-    };
-  },
-  getValve: () => null,
-  getTank: () => null,
-  getAllPressures: () => [],
-  getAllHeads: () => [],
-  getAllDemands: () => [],
-  getAllFlows: () => [],
-  getAllVelocities: () => [],
-  getAllUnitHeadlosses: () => [],
-});
+import { createMockResultsReader } from "src/__helpers__/state";
 
 describe("build optimized source", () => {
   const defaultQuantities = new Quantities(presets.LPS);
@@ -218,65 +162,6 @@ describe("build optimized source", () => {
 
       const [junction] = features;
       expect(junction.properties!.label).toEqual("10 m");
-    });
-
-    it("includes converted elevation labels when symbology unit is psi", () => {
-      const IDS = { J1: 1 } as const;
-      const symbology: SymbologySpec = {
-        ...nullSymbologySpec,
-        node: aNodeSymbology({
-          colorRule: aRangeColorRule({
-            property: "elevation",
-            unit: "psi",
-          }),
-          labelRule: "elevation",
-        }),
-      };
-      const { assets } = HydraulicModelBuilder.with()
-        .aJunction(IDS.J1, { elevation: 10 })
-        .build();
-
-      const features = buildOptimizedAssetsSource(
-        assets,
-        symbology,
-        defaultQuantities,
-        () => "psi",
-      );
-
-      const [junction] = features;
-      expect(junction.properties!.label).toEqual("14.223 psi");
-    });
-
-    it("includes converted pressure labels when unit is mwc", () => {
-      const IDS = { J1: 1 } as const;
-      const symbology: SymbologySpec = {
-        ...nullSymbologySpec,
-        node: aNodeSymbology({
-          colorRule: aRangeColorRule({
-            property: "pressure",
-            unit: "mwc",
-          }),
-          labelRule: "pressure",
-        }),
-      };
-      const { assets } = HydraulicModelBuilder.with()
-        .aJunction(IDS.J1, { elevation: 15 })
-        .build();
-      const simulationResults = createMockResultsReader({
-        junctions: { [IDS.J1]: { pressure: 14.2233433 } },
-      });
-
-      const features = buildOptimizedAssetsSource(
-        assets,
-        symbology,
-        defaultQuantities,
-        () => "m",
-        simulationResults,
-      );
-
-      const [junction] = features;
-      expect(junction.properties!.label).toContain("10");
-      expect(junction.properties!.label).toContain("m");
     });
   });
 

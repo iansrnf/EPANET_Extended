@@ -4,20 +4,19 @@ import { useScenarioOperations } from "src/hooks/use-scenario-operations";
 import { scenariosListAtom } from "src/state/scenarios";
 import {
   dialogAtom,
-  fileInfoAtom,
+  isDemoNetworkAtom,
   simulationAtom,
   stagingModelAtom,
 } from "src/state/jotai";
 import { useAuth } from "src/auth";
-import { limits } from "src/user-plan";
+import { isTrialActive, limits } from "src/user-plan";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
 import { notify } from "src/components/notifications";
 import { SuccessIcon } from "src/icons";
 import { useRunSimulation } from "./run-simulation";
 import { userSettingsAtom } from "src/state/user-settings";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
-
 export const createScenarioShortcut = "alt+y";
 
 export const useCreateScenario = () => {
@@ -25,14 +24,14 @@ export const useCreateScenario = () => {
   const scenariosList = useAtomValue(scenariosListAtom);
   const setDialog = useSetAtom(dialogAtom);
   const { user } = useAuth();
+  const isActivateTrialOn = useFeatureFlag("FLAG_ACTIVATE_TRIAL");
   const userTracking = useUserTracking();
   const translate = useTranslate();
   const simulation = useAtomValue(simulationAtom);
   const hydraulicModel = useAtomValue(stagingModelAtom);
   const runSimulation = useRunSimulation();
   const userSettings = useAtomValue(userSettingsAtom);
-  const isDemoTrialOn = useFeatureFlag("FLAG_DEMO_TRIAL");
-  const fileInfo = useAtomValue(fileInfoAtom);
+  const isDemoNetwork = useAtomValue(isDemoNetworkAtom);
 
   return useCallback(
     ({ source: _source }: { source: string }) => {
@@ -62,6 +61,7 @@ export const useCreateScenario = () => {
           name: "scenario.created",
           scenarioId,
           scenarioName,
+          isDemoNetwork,
         });
 
         notify({
@@ -112,14 +112,14 @@ export const useCreateScenario = () => {
       scenariosList,
       setDialog,
       user,
+      isActivateTrialOn,
       userTracking,
       translate,
       simulation,
       hydraulicModel,
       runSimulation,
       userSettings,
-      isDemoTrialOn,
-      fileInfo,
+      isDemoNetwork,
     ],
   );
 };

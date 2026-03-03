@@ -1,10 +1,12 @@
-import { useAtomValue, useSetAtom } from "jotai";
+import { useSetAtom } from "jotai";
+import { useAtomCallback } from "jotai/utils";
 import { useCallback } from "react";
 import { buildInp } from "src/simulation/build-inp";
 import {
   dialogAtom,
   simulationAtom,
   simulationResultsAtom,
+  simulationSettingsAtom,
   stagingModelAtom,
 } from "src/state/jotai";
 import {
@@ -12,121 +14,113 @@ import {
   runSimulation as runSimulationWorker,
   EPSResultsReader,
 } from "src/simulation";
-import { useDrawingMode } from "./set-drawing-mode";
-import { Mode } from "src/state/mode";
 import { getAppId } from "src/infra/app-instance";
 import { OPFSStorage } from "src/infra/storage";
 import { worktreeAtom } from "src/state/scenarios";
 import { usePersistenceWithSnapshots } from "src/lib/persistence";
-import { buildInpWithAllCurves } from "src/simulation/build-inp-with-all-curves";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
-
 export const runSimulationShortcut = "shift+enter";
 
 export const useRunSimulation = () => {
   const setSimulationState = useSetAtom(simulationAtom);
   const setDialogState = useSetAtom(dialogAtom);
-  const hydraulicModel = useAtomValue(stagingModelAtom);
-  const setDrawingMode = useDrawingMode();
-  const worktree = useAtomValue(worktreeAtom);
   const persistence = usePersistenceWithSnapshots();
   const setSimulationResults = useSetAtom(simulationResultsAtom);
-  const isPumpCurvesEnabled = useFeatureFlag("FLAG_PUMP_CURVES");
 
-  const runSimulation = useCallback(
-    async (options?: {
-      onContinue?: () => void;
-      onIgnore?: () => void;
-      ignoreLabel?: string;
-    }) => {
-      setDrawingMode(Mode.NONE);
-      setSimulationState((prev) => ({ ...prev, status: "running" }));
-      const buildInpFn = isPumpCurvesEnabled ? buildInpWithAllCurves : buildInp;
-      const inp = buildInpFn(hydraulicModel, {
-        customerDemands: true,
-        usedPatterns: true,
-        usedCurves: true,
-      });
-      const start = performance.now();
+  const runSimulation = useAtomCallback(
+    useCallback(
+      async (
+        get,
+        _set,
+        options?: {
+          onContinue?: () => void;
+          onIgnore?: () => void;
+          ignoreLabel?: string;
+        },
+      ) => {
+        const hydraulicModel = get(stagingModelAtom);
+        const simulationSettings = get(simulationSettingsAtom);
+        const worktree = get(worktreeAtom);
 
-      let isCompleted = false;
+        setSimulationState((prev) => ({ ...prev, status: "running" }));
+        const inp = buildInp(hydraulicModel, {
+          customerDemands: true,
+          usedPatterns: true,
+          usedCurves: true,
+          simulationSettings,
+        });
+        const start = performance.now();
 
-      setDialogState({
-        type: "simulationProgress",
-        currentTime: 0,
-        totalDuration: 0,
-      });
+        let isCompleted = false;
 
-      const reportProgress: ProgressCallback = (progress) => {
-        if (isCompleted) return;
         setDialogState({
           type: "simulationProgress",
-          ...progress,
+          currentTime: 0,
+          totalDuration: 0,
         });
-      };
 
-      const appId = getAppId();
-      const scenarioKey = worktree.activeSnapshotId;
-      const { report, status, metadata } = await runSimulationWorker(
-        inp,
-        appId,
-        reportProgress,
-        {},
-        scenarioKey,
-      );
+        const reportProgress: ProgressCallback = (progress) => {
+          if (isCompleted) return;
+          setDialogState({
+            type: "simulationProgress",
+            ...progress,
+          });
+        };
 
-      isCompleted = true;
+        const appId = getAppId();
+        const scenarioKey = worktree.activeSnapshotId;
+        const { report, status, metadata } = await runSimulationWorker(
+          inp,
+          appId,
+          reportProgress,
+          {},
+          scenarioKey,
+        );
 
-      let simulationIds;
-      if (status === "success" || status === "warning") {
-        const storage = new OPFSStorage(appId, scenarioKey);
-        const epsReader = new EPSResultsReader(storage);
-        await epsReader.initialize(metadata);
-        simulationIds = epsReader.simulationIds;
-        const resultsReader = await epsReader.getResultsForTimestep(0);
-        setSimulationResults(resultsReader);
-      } else {
-        setSimulationResults(null);
-      }
+        isCompleted = true;
 
-      const simulationResult = {
-        status,
-        report,
-        modelVersion: hydraulicModel.version,
-        metadata,
-        simulationIds,
-        currentTimestepIndex: 0,
-      };
-      setSimulationState(simulationResult);
-      persistence.syncSnapshotSimulation(simulationResult);
-      const end = performance.now();
-      const duration = end - start;
+        let simulationIds;
+        if (status === "success" || status === "warning") {
+          const storage = new OPFSStorage(appId, scenarioKey);
+          const epsReader = new EPSResultsReader(storage);
+          await epsReader.initialize(metadata);
+          simulationIds = epsReader.simulationIds;
+          const resultsReader = await epsReader.getResultsForTimestep(0);
+          setSimulationResults(resultsReader);
+        } else {
+          setSimulationResults(null);
+        }
 
-      if (options?.onContinue && status === "success") {
-        setDialogState(null);
-        options.onContinue();
-        return;
-      }
+        const simulationResult = {
+          status,
+          report,
+          modelVersion: hydraulicModel.version,
+          settingsVersion: simulationSettings.version,
+          metadata,
+          simulationIds,
+          currentTimestepIndex: 0,
+        };
+        setSimulationState(simulationResult);
+        persistence.syncSnapshotSimulation(simulationResult);
+        const end = performance.now();
+        const duration = end - start;
 
-      setDialogState({
-        type: "simulationSummary",
-        status,
-        duration,
-        onContinue: options?.onContinue,
-        onIgnore: options?.onIgnore,
-        ignoreLabel: options?.ignoreLabel,
-      });
-    },
-    [
-      setDrawingMode,
-      setSimulationState,
-      isPumpCurvesEnabled,
-      hydraulicModel,
-      setDialogState,
-      worktree.activeSnapshotId,
-      persistence,
-      setSimulationResults,
-    ],
+        if (options?.onContinue && status === "success") {
+          setDialogState(null);
+          options.onContinue();
+          return;
+        }
+
+        setDialogState({
+          type: "simulationSummary",
+          status,
+          duration,
+          onContinue: options?.onContinue,
+          onIgnore: options?.onIgnore,
+          ignoreLabel: options?.ignoreLabel,
+        });
+      },
+      [setSimulationState, setDialogState, persistence, setSimulationResults],
+    ),
   );
 
   return runSimulation;

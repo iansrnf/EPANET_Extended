@@ -1,18 +1,17 @@
-import { AssetId, Junction, LoggerPoint, Pump } from "./asset-types";
+import { AssetId, Junction, Pump } from "./asset-types";
 import { JunctionQuantity } from "./asset-types/junction";
 import { Pipe, PipeQuantity, PipeStatus } from "./asset-types/pipe";
 import { LinkConnections, nullConnections } from "./asset-types/link";
 import { Position } from "geojson";
 import { Reservoir, ReservoirQuantity } from "./asset-types/reservoir";
 import { Tank, TankQuantity } from "./asset-types/tank";
-import { JunctionDemand } from "./demands";
 
 export type JunctionBuildData = {
   id?: AssetId;
   label?: string;
   coordinates?: Position;
   elevation?: number;
-  demands?: JunctionDemand[];
+  emitterCoefficient?: number;
   isActive?: boolean;
 };
 
@@ -40,6 +39,7 @@ export type PumpBuildData = {
   curve?: CurvePoint[];
   curveId?: CurveId;
   speed?: number;
+  speedPatternId?: PatternId;
   isActive?: boolean;
 };
 
@@ -54,6 +54,7 @@ export type ValveBuildData = {
   setting?: number;
   initialStatus?: ValveStatus;
   isActive?: boolean;
+  curveId?: CurveId;
 };
 
 export type ReservoirBuildData = {
@@ -63,6 +64,7 @@ export type ReservoirBuildData = {
   head?: number;
   relativeHead?: number;
   elevation?: number;
+  headPatternId?: PatternId;
   isActive?: boolean;
 };
 
@@ -78,24 +80,7 @@ export type TankBuildData = {
   diameter?: number;
   overflow?: boolean;
   isActive?: boolean;
-};
-
-export type LoggerPointBuildData = {
-  id?: AssetId;
-  label?: string;
-  coordinates?: Position;
-  elevation?: number;
-  deviceId?: string;
-  status?: string;
-  timestamp?: string;
-  pressure?: number;
-  flow?: number;
-  level?: number;
-  temperature?: number;
-  batteryV?: number;
-  externalV?: number;
-  gsmPct?: number;
-  isActive?: boolean;
+  volumeCurveId?: CurveId;
 };
 
 import { UnitsSpec } from "src/model-metadata/quantities-spec";
@@ -113,6 +98,7 @@ import {
   ValveKind,
 } from "./asset-types/valve";
 import { CurveId, CurvePoint, defaultCurvePoints } from "./curves";
+import { PatternId } from "./patterns";
 
 export type DefaultQuantities = {
   pipe: Partial<Record<PipeQuantity, number>>;
@@ -196,6 +182,7 @@ export class AssetBuilder {
     setting,
     initialStatus = "active",
     isActive = true,
+    curveId,
   }: ValveBuildData = {}) {
     const internalId = id ?? this._idGenerator.newId();
     return new Valve(
@@ -215,6 +202,7 @@ export class AssetBuilder {
         setting: this.getValveSetting(kind, setting),
         initialStatus,
         isActive,
+        curveId,
       },
       this.units,
     );
@@ -234,6 +222,7 @@ export class AssetBuilder {
     curve,
     power,
     speed = 1,
+    speedPatternId,
     isActive = true,
   }: PumpBuildData = {}) {
     const internalId = id ?? this._idGenerator.newId();
@@ -252,6 +241,7 @@ export class AssetBuilder {
         definitionType,
         power: this.getPumpValue("power", power),
         speed,
+        speedPatternId,
         curveId,
         curve: curve
           ? curve
@@ -269,7 +259,7 @@ export class AssetBuilder {
     label,
     coordinates = [0, 0],
     elevation,
-    demands,
+    emitterCoefficient,
     isActive = true,
   }: JunctionBuildData = {}) {
     const internalId = id ?? this._idGenerator.newId();
@@ -283,7 +273,7 @@ export class AssetBuilder {
             ? label
             : this.labelGenerator.generateFor("junction", internalId),
         elevation: this.getJunctionValue("elevation", elevation),
-        demands: demands ?? [],
+        emitterCoefficient: emitterCoefficient ?? 0,
         isActive,
       },
       this.units,
@@ -297,6 +287,7 @@ export class AssetBuilder {
     elevation,
     head,
     relativeHead,
+    headPatternId,
     isActive = true,
   }: ReservoirBuildData = {}) {
     const internalId = id ?? this._idGenerator.newId();
@@ -322,6 +313,7 @@ export class AssetBuilder {
             ? label
             : this.labelGenerator.generateFor("reservoir", internalId),
         head: headValue,
+        headPatternId,
         elevation: elevationValue,
         isActive,
       },
@@ -341,6 +333,7 @@ export class AssetBuilder {
     diameter,
     overflow,
     isActive = true,
+    volumeCurveId,
   }: TankBuildData = {}) {
     const internalId = id ?? this._idGenerator.newId();
     return new Tank(
@@ -358,51 +351,8 @@ export class AssetBuilder {
         maxLevel: this.getTankValue("maxLevel", maxLevel),
         minVolume: this.getTankValue("minVolume", minVolume),
         diameter: this.getTankValue("diameter", diameter),
+        volumeCurveId,
         overflow: overflow ?? false,
-        isActive,
-      },
-      this.units,
-    );
-  }
-
-  buildLoggerPoint({
-    id,
-    label,
-    coordinates = [0, 0],
-    elevation = 0,
-    deviceId = "",
-    status = "unknown",
-    timestamp = "",
-    pressure = 0,
-    flow = 0,
-    level = 0,
-    temperature = 0,
-    batteryV = 0,
-    externalV = 0,
-    gsmPct = 0,
-    isActive = true,
-  }: LoggerPointBuildData = {}) {
-    const internalId = id ?? this._idGenerator.newId();
-    return new LoggerPoint(
-      internalId,
-      coordinates,
-      {
-        type: "loggerPoint",
-        label:
-          label !== undefined
-            ? label
-            : this.labelGenerator.generateFor("loggerPoint", internalId),
-        elevation,
-        deviceId,
-        status,
-        timestamp,
-        pressure,
-        flow,
-        level,
-        temperature,
-        batteryV,
-        externalV,
-        gsmPct,
         isActive,
       },
       this.units,

@@ -6,7 +6,7 @@ import { Position } from "src/types";
 import { HydraulicModel } from "../hydraulic-model";
 import { splitPipe } from "./split-pipe";
 
-type NodeType = "junction" | "reservoir" | "tank" | "loggerPoint";
+type NodeType = "junction" | "reservoir" | "tank";
 
 type InputData = {
   nodeType: NodeType;
@@ -67,12 +67,6 @@ const createNode = (
       });
     case "tank":
       return assetBuilder.buildTank({
-        coordinates,
-        elevation,
-        isActive,
-      });
-    case "loggerPoint":
-      return assetBuilder.buildLoggerPoint({
         coordinates,
         elevation,
         isActive,

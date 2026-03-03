@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import {
   Sel,
   SimulationFinished,
@@ -143,6 +144,7 @@ describe("openInpFromFs", () => {
       status: "failure",
       report: "ERROR",
       modelVersion: "10",
+      settingsVersion: "",
     };
     const previousSelection: Sel = {
       type: "single",
@@ -384,6 +386,7 @@ const anInpMadeByTheApp = ({ junctionId }: { junctionId: number }) => {
     .aJunction(junctionId, { coordinates: [10, 10] })
     .build();
   const inp = buildInp(hydraulicModel, {
+    simulationSettings: defaultSimulationSettings,
     madeBy: true,
     geolocation: true,
   });

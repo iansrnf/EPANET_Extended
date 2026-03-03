@@ -7,11 +7,11 @@ import {
   GridColumn,
 } from "src/components/data-grid";
 import { Button } from "src/components/elements";
-import { JunctionDemand, DemandPatterns, PatternId } from "src/hydraulic-model";
+import { Patterns, PatternId } from "src/hydraulic-model";
 import { useTranslate } from "src/hooks/use-translate";
 import { DeleteIcon, AddIcon } from "src/icons";
 import { PropertyComparison } from "src/hooks/use-asset-comparison";
-import { calculateAverageDemand } from "src/hydraulic-model/demands";
+import { calculateAverageDemand, Demand } from "src/hydraulic-model/demands";
 import { Quantities } from "src/model-metadata/quantities-spec";
 import { QuantityRow } from "./ui-components";
 
@@ -21,19 +21,16 @@ type DemandCategoryRow = {
 };
 
 type Props = {
-  demands: JunctionDemand[];
-  patterns: DemandPatterns;
-  onDemandsChange: (newDemands: JunctionDemand[]) => void;
+  demands: Demand[];
+  patterns: Patterns;
+  onDemandsChange: (newDemands: Demand[]) => void;
   comparison?: PropertyComparison;
   readOnly?: boolean;
 };
 
 const CONSTANT_PATTERN_ID = 0;
 
-const toRow = (
-  demand: JunctionDemand,
-  patterns: DemandPatterns,
-): DemandCategoryRow => {
+const toRow = (demand: Demand, patterns: Patterns): DemandCategoryRow => {
   if (demand.patternId) {
     const pattern = patterns.get(demand.patternId);
     if (pattern) {
@@ -49,7 +46,7 @@ const toRow = (
   };
 };
 
-const fromRow = (row: DemandCategoryRow): JunctionDemand => {
+const fromRow = (row: DemandCategoryRow): Demand => {
   return {
     baseDemand: row.baseDemand ?? 0,
     patternId:
@@ -110,11 +107,13 @@ export const DemandCategoriesEditor = ({
     const options: { value: number; label: string }[] = [
       {
         value: CONSTANT_PATTERN_ID,
-        label: translate("constant").toUpperCase(),
+        label: translate("constant"),
       },
     ];
-    for (const [patternId, { label }] of patterns.entries()) {
-      options.push({ value: patternId, label });
+    for (const [patternId, { label, type }] of patterns.entries()) {
+      if (type === "demand") {
+        options.push({ value: patternId, label });
+      }
     }
     return options;
   }, [patterns, translate]);
@@ -303,11 +302,11 @@ export const DemandsEditor = ({
   demandComparator,
   readOnly,
 }: {
-  demands: JunctionDemand[];
-  patterns: DemandPatterns;
+  demands: Demand[];
+  patterns: Patterns;
   quantitiesMetadata: Quantities;
   name: string;
-  onChange: (demands: JunctionDemand[]) => void;
+  onChange: (demands: Demand[]) => void;
   demandComparator: (demands: number) => PropertyComparison;
   readOnly: boolean;
 }) => {

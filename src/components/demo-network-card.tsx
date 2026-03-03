@@ -1,6 +1,7 @@
 import { useOpenInpFromUrl } from "src/commands/open-inp-from-url";
 import { useTranslate } from "src/hooks/use-translate";
 import { useUserTracking } from "src/infra/user-tracking";
+import { DRUMCHAPEL, WATERDOWN } from "src/demo/demo-networks";
 import Image from "next/image";
 
 type DemoModel = {
@@ -14,16 +15,16 @@ export const DemoNetworksList = () => {
   const translate = useTranslate();
   const demoModels: DemoModel[] = [
     {
-      name: "Drumchapel",
+      name: DRUMCHAPEL.name,
       description: translate("demoUKStyleDescription"),
-      url: "/example-models/01-uk-style.inp",
-      thumbnailUrl: "/example-models/01-uk-style.png",
+      url: DRUMCHAPEL.url,
+      thumbnailUrl: DRUMCHAPEL.thumbnailUrl,
     },
     {
-      name: "Waterdown",
+      name: WATERDOWN.name,
       description: translate("demoUSStyleDescription"),
-      url: "/example-models/02-us-style.inp",
-      thumbnailUrl: "/example-models/02-us-style.png",
+      url: WATERDOWN.url,
+      thumbnailUrl: WATERDOWN.thumbnailUrl,
     },
   ];
 
@@ -53,7 +54,7 @@ export const DemoNetworkCard = ({
   };
   return (
     <div
-      className="flex flex-col max-w-[250px] items-center gap-x-2 bg-w smhite shadow-md  rounded-lg border cursor-pointer hover:bg-gray-400 hover:bg-opacity-10"
+      className="flex flex-col max-w-[250px] items-center gap-x-2 bg-white shadow-md rounded-lg border cursor-pointer hover:bg-gray-400 hover:bg-opacity-10"
       onClick={handleOpenDemoModel}
     >
       <div className="flex-shrink-0">
@@ -63,7 +64,7 @@ export const DemoNetworkCard = ({
           width={247}
           height={200}
           quality={90}
-          className="rounded-md object-cover"
+          className="rounded-tl-md rounded-tr-md object-cover"
         />
       </div>
       <div className="flex flex-col p-3">

@@ -1,5 +1,5 @@
 import { atom, useAtomValue, useSetAtom } from "jotai";
-import { useCallback, useRef } from "react";
+import { type MutableRefObject, useCallback, useRef } from "react";
 import { Unit } from "src/quantity";
 import { Moment } from "src/lib/persistence/moment";
 import {
@@ -19,6 +19,7 @@ import {
   simulationResultsAtom,
   currentZoomAtom,
   customerPointsAtom,
+  isUnprojectedAtom,
   stagingModelAtom,
 } from "src/state/jotai";
 import type { ResultsReader } from "src/simulation/results-reader";
@@ -30,6 +31,8 @@ import {
   buildSelectionSource,
   FeatureSources,
 } from "./data-source";
+import mapboxgl from "mapbox-gl";
+import { Grid } from "./grid";
 import { ISymbology, LayerConfigMap, SYMBOLIZATION_NONE } from "src/types";
 import { buildBaseStyle, makeLayers } from "./build-style";
 import { LayerId } from "./layers";
@@ -51,15 +54,13 @@ import {
   buildCustomerPointsHighlightOverlay,
   buildCustomerPointsSelectionOverlay,
   buildConnectCustomerPointsPreviewOverlay,
+  buildMovingCustomerPointOverlay,
   updateCustomerPointsOverlayVisibility,
 } from "./overlays/customer-points";
 import { CustomerPoints } from "src/hydraulic-model/customer-points";
 import { DEFAULT_ZOOM } from "./map-engine";
 import { junctionsSymbologyFilterExpression } from "./layers/junctions";
 import { mapSyncMomentAtom } from "src/state/map";
-import { useLiveLoggerReadingsStore } from "src/store/liveLoggerReadingsStore";
-import type { LiveLoggerReading } from "src/store/liveLoggerReadingsStore";
-import { useLoggerPointPanelStore } from "src/store/loggerPointPanelStore";
 
 const SELECTION_LAYERS: LayerId[] = [
   "selected-pipes",
@@ -77,6 +78,7 @@ const getAssetIdsInMoments = (moments: Moment[]): Set<AssetId> => {
       assetIds.add(assetId);
     });
     moment.putAssets.forEach((asset) => assetIds.add(asset.id));
+    moment.patchAssetsAttributes.forEach((patch) => assetIds.add(patch.id));
   });
   return assetIds;
 };
@@ -126,7 +128,8 @@ const nullMapState: MapState = {
 } as const;
 
 const stylesConfigAtom = atom<StylesConfig>((get) => {
-  const layerConfigs = get(layerConfigAtom);
+  const isUnprojected = get(isUnprojectedAtom);
+  const layerConfigs = isUnprojected ? new Map() : get(layerConfigAtom);
   const { symbology, label } = get(memoryMetaAtom);
 
   return {
@@ -217,34 +220,27 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
   const {
     modelMetadata: { quantities },
   } = useAtomValue(dataAtom);
+  const isUnprojected = useAtomValue(isUnprojectedAtom);
   const simulationResults = useAtomValue(simulationResultsAtom);
   const lastHiddenFeatures = useRef<Set<AssetId>>(new Set([]));
   const previousMapStateRef = useRef<MapState>(nullMapState);
   const customerPointsOverlayRef = useRef<CustomerPointsOverlay>([]);
   const selectionDeckLayersRef = useRef<CustomerPointsOverlay>([]);
   const ephemeralDeckLayersRef = useRef<CustomerPointsOverlay>([]);
+  const gridRef = useRef<Grid | null>(null);
+  const scaleControlRef = useRef<mapboxgl.ScaleControl | null>(null);
   const translate = useTranslate();
   const translateUnit = useTranslateUnit();
 
   const resultsReader = simulationResults;
-  const liveLoggerReadings = useLiveLoggerReadingsStore(
-    (s) => s.readingsByDeviceId,
-  );
-  const liveLoggerRevision = useLiveLoggerReadingsStore((s) => s.revision);
-  const loggerPanelStateById = useLoggerPointPanelStore((s) => s.byLoggerId);
-  const previousLiveLoggerRevisionRef = useRef(-1);
 
   const doUpdates = useCallback(() => {
     if (!map) return;
-    const hasNewLiveLoggerReadings =
-      previousLiveLoggerRevisionRef.current !== liveLoggerRevision;
-    if (mapState === previousMapStateRef.current && !hasNewLiveLoggerReadings) {
-      return;
-    }
+
+    if (mapState === previousMapStateRef.current) return;
 
     const previousMapState = previousMapStateRef.current;
     previousMapStateRef.current = mapState;
-    previousLiveLoggerRevisionRef.current = liveLoggerRevision;
 
     const changes = detectChanges(mapState, previousMapState, map);
     const {
@@ -310,6 +306,16 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           });
         }
 
+        if (hasNewImport || hasNewStyles) {
+          updateGrid({
+            map,
+            isUnprojected,
+            lengthUnit: quantities.getUnit("length") === "ft" ? "ft" : "m",
+            gridRef,
+            scaleControlRef,
+          });
+        }
+
         if (hasNewEditions && !hasSyncMomentChanged) {
           const { editedAssetIds } = await syncSourcesWithEdits(
             map,
@@ -330,30 +336,43 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           hasNewStyles ||
           hasNewSymbology ||
           hasNewSelection ||
-          (hasNewSimulation && mapState.simulation.status !== "running") ||
-          hasNewLiveLoggerReadings
+          (hasNewSimulation && mapState.simulation.status !== "running")
         ) {
           await updateIconsSource(
             map,
             assets,
             mapState.selection,
-            mapState.symbology.node,
-            liveLoggerReadings,
-            loggerPanelStateById,
             resultsReader,
           );
         }
+
+        const movingCustomerPointId =
+          mapState.ephemeralState.type === "moveCustomerPoint"
+            ? mapState.ephemeralState.customerPoint.id
+            : null;
+        const prevMovingCustomerPointId =
+          previousMapState.ephemeralState.type === "moveCustomerPoint"
+            ? previousMapState.ephemeralState.customerPoint.id
+            : null;
+        const customerPointExclusionChanged =
+          movingCustomerPointId !== prevMovingCustomerPointId;
 
         if (
           hasNewImport ||
           hasNewEditions ||
           hasNewStyles ||
-          hasNewCustomerPoints
+          hasNewCustomerPoints ||
+          customerPointExclusionChanged
         ) {
+          const excludedCustomerPointIds = movingCustomerPointId
+            ? new Set([movingCustomerPointId])
+            : undefined;
+
           customerPointsOverlayRef.current = buildCustomerPointsOverlay(
             hydraulicModel.customerPoints,
             assets,
             mapState.currentZoom,
+            excludedCustomerPointIds,
           );
         }
 
@@ -389,7 +408,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           );
         }
 
-        if (hasNewSelection) {
+        if (hasNewSelection || hasNewCustomerPoints) {
           selectionDeckLayersRef.current =
             buildSelectionOverlayForCustomerPoints(
               mapState.selection,
@@ -459,11 +478,17 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           const isCustomerPointsVisible =
             mapState.symbology.customerPoints.visible;
 
+          const shouldHideSelectionDuringMove =
+            mapState.ephemeralState.type === "moveCustomerPoint" &&
+            mapState.ephemeralState.moveActivated;
+
           const combinedOverlay = [
             ...(shouldHideCustomerPointsOverlay || !isCustomerPointsVisible
               ? []
               : customerPointsOverlayRef.current),
-            ...selectionDeckLayersRef.current,
+            ...(shouldHideSelectionDuringMove
+              ? []
+              : selectionDeckLayersRef.current),
             ...ephemeralDeckLayersRef.current,
           ];
           map.setOverlay(combinedOverlay);
@@ -486,10 +511,8 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
     translate,
     translateUnit,
     hydraulicModel,
-    liveLoggerReadings,
-    liveLoggerRevision,
-    loggerPanelStateById,
     resultsReader,
+    isUnprojected,
   ]);
 
   doUpdates();
@@ -557,9 +580,6 @@ const updateIconsSource = withDebugInstrumentation(
     map: MapEngine,
     assets: AssetsMap,
     selection: Sel,
-    nodeSymbology: SymbologySpec["node"],
-    liveReadingsByDeviceId: Record<string, LiveLoggerReading>,
-    loggerPanelStateById: Record<number, { wsDeviceId?: string }>,
     simulationResults?: ResultsReader | null,
   ): Promise<void> => {
     const selectionSet = new Set(USelection.toIds(selection));
@@ -567,9 +587,6 @@ const updateIconsSource = withDebugInstrumentation(
       assets,
       selectionSet,
       simulationResults,
-      nodeSymbology,
-      liveReadingsByDeviceId,
-      loggerPanelStateById,
     );
     await map.setSource("icons", features);
   },
@@ -790,6 +807,8 @@ const getMovedAssets = (
         : noMoved;
     case "drawNode":
       return noMoved;
+    case "moveCustomerPoint":
+      return noMoved;
     case "customerPointsHighlight":
       return noMoved;
     case "connectCustomerPoints":
@@ -817,6 +836,8 @@ const buildCustomerPointsEphemeralOverlay = (
       zoom,
       "highlight",
     );
+  } else if (ephemeralState.type === "moveCustomerPoint") {
+    return buildMovingCustomerPointOverlay(ephemeralState, zoom);
   }
   return [];
 };
@@ -845,3 +866,41 @@ const buildSelectionOverlayForCustomerPoints = (
   }
   return [];
 };
+
+function updateGrid({
+  map,
+  isUnprojected,
+  lengthUnit,
+  gridRef,
+  scaleControlRef,
+}: {
+  map: MapEngine;
+  isUnprojected: boolean;
+  lengthUnit: "ft" | "m";
+  gridRef: MutableRefObject<Grid | null>;
+  scaleControlRef: MutableRefObject<mapboxgl.ScaleControl | null>;
+}) {
+  if (isUnprojected && !gridRef.current) {
+    gridRef.current = new Grid(map.map, lengthUnit);
+    gridRef.current.attach();
+  } else if (isUnprojected && gridRef.current) {
+    gridRef.current.setLengthUnit(lengthUnit);
+    gridRef.current.forceUpdate();
+  } else if (!isUnprojected && gridRef.current) {
+    gridRef.current.detach();
+    gridRef.current = null;
+  }
+  if (isUnprojected) {
+    const scaleUnit = lengthUnit === "ft" ? "imperial" : "metric";
+    if (scaleControlRef.current) {
+      map.map.removeControl(scaleControlRef.current);
+    }
+    scaleControlRef.current = new mapboxgl.ScaleControl({
+      unit: scaleUnit,
+    });
+    map.map.addControl(scaleControlRef.current, "bottom-left");
+  } else if (scaleControlRef.current) {
+    map.map.removeControl(scaleControlRef.current);
+    scaleControlRef.current = null;
+  }
+}

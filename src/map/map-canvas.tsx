@@ -25,7 +25,6 @@ import {
   satelliteModeOnAtom,
   currentZoomAtom,
   stagingModelAtom,
-  layerConfigAtom,
 } from "src/state/jotai";
 import { MapEngine } from "./map-engine";
 import { EmptyIndex } from "src/lib/generate-flatbush-instance";
@@ -57,7 +56,6 @@ import { supportEmail } from "src/global-config";
 import { MapHandlers } from "./types";
 import { PipeDrawingFloatingPanel } from "src/components/pipe-drawing-floating-panel";
 import { useIsSnapshotLocked } from "src/hooks/use-is-snapshot-locked";
-import { useLiveLoggerConnection } from "./use-live-logger-connection";
 mapboxgl.accessToken = env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 mapboxgl.setRTLTextPlugin(
@@ -132,7 +130,6 @@ export const MapCanvas = memo(function MapCanvas({
   const selection = data.selection;
   const mode = useAtomValue(modeAtom);
   const cursor = useAtomValue(cursorStyleAtom);
-  const layerConfigs = useAtomValue(layerConfigAtom);
   const isSnapshotLocked = useIsSnapshotLocked();
   const [initError, setInitError] = useState<boolean>(false);
 
@@ -159,7 +156,6 @@ export const MapCanvas = memo(function MapCanvas({
   );
 
   useMapStateUpdates(mapRef.current);
-  useLiveLoggerConnection();
 
   useEffect(() => {
     if (mapRef.current) return;
@@ -188,15 +184,6 @@ export const MapCanvas = memo(function MapCanvas({
       mapRef.current = null;
     };
   }, [mapRef, mapDivRef, setMap, onControlClick]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const isMapboxBasemap = [...layerConfigs.values()].some(
-      (layer) => layer.isBasemap && layer.type === "MAPBOX",
-    );
-    map.setMapboxLogoVisibility(isMapboxBasemap);
-  }, [layerConfigs]);
 
   if (isDebugOn) (window as any).mapEngine = mapRef.current;
 
@@ -387,9 +374,18 @@ export const MapCanvas = memo(function MapCanvas({
     if (cursor === "crosshair-add") return "cursor-crosshair-add";
     if (cursor === "crosshair-subtract") return "cursor-crosshair-subtract";
 
+    if (cursor === "pointer-add") return "cursor-pointer-add";
+    if (cursor === "pointer-subtract") return "cursor-pointer-subtract";
+
     if (cursor === "move") return "cursor-move";
 
-    if (mode.mode !== Mode.NONE) return "cursor-crosshair";
+    if (
+      mode.mode !== Mode.NONE &&
+      mode.mode !== Mode.BOUNDARY_TRACE_SELECT &&
+      mode.mode !== Mode.UPSTREAM_TRACE_SELECT &&
+      mode.mode !== Mode.DOWNSTREAM_TRACE_SELECT
+    )
+      return "cursor-crosshair";
 
     if (cursor === "pointer") return "placemark-cursor-pointer";
 

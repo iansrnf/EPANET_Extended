@@ -23,6 +23,7 @@ export type QuantityProperty =
   | "actualDemand"
   | "customerDemand"
   | "customerDemandPerDay"
+  | "emitterCoefficient"
   | "pressure"
   | "headloss"
   | "unitHeadloss"
@@ -36,7 +37,10 @@ export type QuantityProperty =
   | "minVolume"
   | "level"
   | "volume"
-  | "tankDiameter";
+  | "tankDiameter"
+  | "tankArea"
+  | "valveFlowCoeffRatio"
+  | "efficiency";
 
 export type UnitsSpec = Record<QuantityProperty, Unit>;
 export type DecimalsSpec = Partial<Record<keyof UnitsSpec, number>>;
@@ -69,6 +73,7 @@ const allFlowUnits = (unit: Unit) => ({
   baseDemand: unit,
   directDemand: unit,
   actualDemand: unit,
+  emitterCoefficient: null as Unit,
 });
 
 const allLevelUnits = (unit: Unit) => ({
@@ -88,7 +93,7 @@ const metricSpec: AssetQuantitiesSpec = {
     minorLoss: null,
     velocity: "m/s",
     elevation: "m",
-    pressure: "psi",
+    pressure: "mwc",
     head: "m",
     headloss: "m",
     unitHeadloss: "m/km",
@@ -99,6 +104,9 @@ const metricSpec: AssetQuantitiesSpec = {
     level: "m",
     volume: "m^3",
     tankDiameter: "m",
+    tankArea: "m^2",
+    valveFlowCoeffRatio: "Kv/Kvo",
+    efficiency: "%",
     customerDemand: "l/s",
     customerDemandPerDay: "l/d",
     ...allLevelUnits("m"),
@@ -123,8 +131,6 @@ const metricSpec: AssetQuantitiesSpec = {
       minVolume: 0,
     },
     pump: {
-      designHead: 1,
-      designFlow: 1,
       power: 20,
     },
     valve: { diameter: 300 },
@@ -157,6 +163,9 @@ const usCustomarySpec: AssetQuantitiesSpec = {
     level: "ft",
     volume: "ft^3",
     tankDiameter: "ft",
+    tankArea: "ft^2",
+    valveFlowCoeffRatio: "Cv/Cvo",
+    efficiency: "%",
     customerDemand: "gal/min",
     customerDemandPerDay: "gal/d",
     ...allLevelUnits("ft"),
@@ -183,8 +192,6 @@ const usCustomarySpec: AssetQuantitiesSpec = {
       minVolume: 0,
     },
     pump: {
-      designHead: 1,
-      designFlow: 1,
       power: 20,
     },
     valve: { diameter: 12 },

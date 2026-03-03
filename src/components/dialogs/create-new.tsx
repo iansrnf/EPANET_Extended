@@ -7,12 +7,15 @@ import {
   Quantities,
   presets,
 } from "src/model-metadata/quantities-spec";
+import { ModelMetadata } from "src/model-metadata";
+import { createProjectionMapper } from "src/projections";
 import {
   HeadlossFormula,
   headlossFormulas,
   initializeHydraulicModel,
 } from "src/hydraulic-model";
 import { usePersistence } from "src/lib/persistence";
+import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import { useTranslate } from "src/hooks/use-translate";
 import { Selector } from "../form/selector";
 import {
@@ -75,13 +78,21 @@ export const CreateNew = ({ onClose }: { onClose: () => void }) => {
   const handleSubmit = useCallback(
     ({ unitsSpec, headlossFormula, location }: SubmitProps) => {
       const quantities = new Quantities(presets[unitsSpec]);
-      const modelMetadata = { quantities };
+      const modelMetadata: ModelMetadata = {
+        quantities,
+        projectionMapper: createProjectionMapper({ type: "wgs84" }),
+      };
       const hydraulicModel = initializeHydraulicModel({
         units: quantities.units,
         defaults: quantities.defaults,
         headlossFormula,
       });
-      transactImport(hydraulicModel, modelMetadata, "Untitled");
+      transactImport(
+        hydraulicModel,
+        modelMetadata,
+        "Untitled",
+        defaultSimulationSettings,
+      );
       userTracking.capture({
         name: "newModel.completed",
         units: unitsSpec,

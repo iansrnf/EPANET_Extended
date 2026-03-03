@@ -30,8 +30,8 @@ import {
 } from "src/commands/show-shortcuts";
 import {
   deleteSelectedShortcuts,
-  useDeleteSelectedAssets,
-} from "src/commands/delete-selected-assets";
+  useDeleteSelection,
+} from "src/commands/delete-selection";
 import { selectAllShortcut, useSelectAll } from "src/commands/select-all";
 import {
   openInpFromFsShortcut,
@@ -43,6 +43,7 @@ import {
 } from "src/commands/toggle-satellite";
 import { useAtomValue } from "jotai";
 import { simulationAtom } from "src/state/jotai";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useIsSnapshotLocked } from "src/hooks/use-is-snapshot-locked";
 import {
   showSimulationSettingsShortcut,
@@ -71,6 +72,10 @@ import {
   useCycleSelectionMode,
   selectionModeShortcut,
 } from "src/commands/set-area-selection-mode";
+import {
+  useCycleTraceSelectMode,
+  traceSelectModeShortcut,
+} from "src/commands/set-trace-select-mode";
 import {
   changeActiveTopologyShortcut,
   useChangeSelectedAssetsActiveTopologyStatus,
@@ -107,7 +112,7 @@ export const CommandShortcuts = () => {
   const { undo, redo } = useHistoryControl();
   const userTracking = useUserTracking();
   const setDrawingMode = useDrawingMode();
-  const deleteSelectedAssets = useDeleteSelectedAssets();
+  const deleteSelection = useDeleteSelection();
   const selectAll = useSelectAll();
   const toggleSatellite = useToggleSatellite();
   const showSimulationSettings = useShowSimulationSettings();
@@ -119,6 +124,8 @@ export const CommandShortcuts = () => {
   const toggleNetworkReview = useToggleNetworkReview();
   const toggleSidePanel = useToggleSidePanel();
   const cycleSelectionMode = useCycleSelectionMode();
+  const isTraceSelectEnabled = useFeatureFlag("FLAG_TRACE_SELECT");
+  const cycleTraceSelectMode = useCycleTraceSelectMode();
   const { changeSelectedAssetsActiveTopologyStatus } =
     useChangeSelectedAssetsActiveTopologyStatus();
   const showControls = useShowControls();
@@ -270,9 +277,9 @@ export const CommandShortcuts = () => {
       if (isSnapshotLocked) return;
 
       e.preventDefault();
-      void deleteSelectedAssets({ source: "shortcut" });
+      void deleteSelection({ source: "shortcut" });
     },
-    [deleteSelectedAssets, isSnapshotLocked],
+    [deleteSelection, isSnapshotLocked],
     "DELETE",
   );
 
@@ -397,6 +404,22 @@ export const CommandShortcuts = () => {
     },
     [cycleSelectionMode],
     "Set selection mode",
+  );
+
+  useHotkeys(
+    traceSelectModeShortcut,
+    (e) => {
+      e.preventDefault();
+      const mode = cycleTraceSelectMode();
+      userTracking.capture({
+        name: "drawingMode.enabled",
+        source: "shortcut",
+        type: MODE_INFO[mode as Mode].name,
+      });
+    },
+    [cycleTraceSelectMode],
+    "Set trace select mode",
+    !isTraceSelectEnabled,
   );
 
   useHotkeys(

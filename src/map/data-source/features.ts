@@ -234,21 +234,6 @@ const appendJunctionSymbologyProps = (
   if (!nodeSymbology.colorRule) return;
 
   const property = nodeSymbology.colorRule.property;
-  const elevationUnit = quantities.getUnit("elevation");
-  const convertValueForUnit = (
-    rawValue: number,
-    rawProperty: string,
-    targetUnit: Unit | null,
-  ): number => {
-    if (rawProperty === "pressure" && targetUnit === "mwc") {
-      return convertTo({ value: rawValue, unit: "psi" }, "mwc");
-    }
-    if (rawProperty === "elevation" && targetUnit === "psi") {
-      if (elevationUnit === "m") return rawValue * 1.42233433;
-      if (elevationUnit === "ft") return rawValue * 0.4333;
-    }
-    return rawValue;
-  };
 
   // Only read from simulation results if property is a simulation property
   let value: number | null;
@@ -262,30 +247,18 @@ const appendJunctionSymbologyProps = (
     value = junction[property as keyof Junction] as number | null;
   }
   const numericValue = value !== null ? value : 0;
-  const numericValueForSymbology = convertValueForUnit(
-    numericValue,
-    property,
-    nodeSymbology.colorRule.unit,
-  );
 
   if (!!nodeSymbology.labelRule) {
     const labelProperty = nodeSymbology.labelRule;
-    const unit =
-      labelProperty === property &&
-      (property === "pressure" || property === "elevation")
-        ? nodeSymbology.colorRule.unit
-        : junction.getUnit(labelProperty as JunctionQuantity);
-    const localizedNumber = localizeDecimal(
-      convertValueForUnit(numericValue, labelProperty, unit),
-      {
-        decimals: quantities.getDecimals(labelProperty as QuantityProperty),
-      },
-    );
+    const unit = junction.getUnit(labelProperty as JunctionQuantity);
+    const localizedNumber = localizeDecimal(numericValue, {
+      decimals: quantities.getDecimals(labelProperty as QuantityProperty),
+    });
     const unitText = unit ? translateUnit(unit) : "";
     feature.properties!.label = `${localizedNumber} ${unitText}`;
   }
 
-  const fillColor = colorFor(nodeSymbology.colorRule, numericValueForSymbology);
+  const fillColor = colorFor(nodeSymbology.colorRule, numericValue);
   const strokeColor = strokeColorFor(fillColor);
 
   feature.properties!.color = fillColor;

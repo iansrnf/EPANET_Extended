@@ -81,6 +81,20 @@ type AssetPropertyEdited = {
   oldValue: number | string | null;
 };
 
+type AssetPropertyBatchEdited = {
+  name: "assetProperty.batchEdited";
+  type: Asset["type"];
+  property: string;
+  newValue: number | string | null;
+  count: number;
+};
+
+type AssetPropertiesEdited = {
+  name: "assetProperties.edited";
+  type: Asset["type"];
+  properties: string[];
+};
+
 type AssetStatusEdited = {
   name: "assetStatus.edited";
   type: Asset["type"];
@@ -117,6 +131,19 @@ type MultiSelectUpdated = {
     | "new"
     | "single_add"
     | "single_remove";
+};
+
+type SelectionNarrowedToAssetType = {
+  name: "selection.narrowedToAssetType";
+  type: Asset["type"];
+  count: number;
+};
+
+type SelectionNarrowedToPropertyValue = {
+  name: "selection.narrowedToPropertyValue";
+  type: Asset["type"];
+  property: string;
+  count: number;
 };
 
 type FullSelectionEnabled = {
@@ -237,21 +264,17 @@ export type ImportInpCompleted = {
   headlossFormula: HeadlossFormula;
   units: EpanetUnitSystem;
   issues: (
-    | "unsupportedSections"
+    | `unsupportedSection-${string}`
     | "nodesMissingCoordinates"
     | "invalidVertices"
     | "invalidCoordinates"
-    | "nonDefaultOptions"
-    | "nonDefaultTimes"
+    | `nonDefaultOption-${string}`
+    | `nonDefaultTime-${string}`
     | "unbalancedDiff"
-    | "hasReservoirPatterns"
     | "hasTankCurves"
-    | "hasPumpPatterns"
-    | "hasPumpCurves"
+    | "hasInvalidPumpCurves"
+    | "hasUndefinedPumpCurve"
     | "hasPCVCurves"
-    | "hasUnusedCurves"
-    | "hasControls"
-    | "hasRules"
     | "hasWaterAge"
     | "hasWaterChemical"
     | "hasWaterTrace"
@@ -319,6 +342,15 @@ type CoordinatesIssuesExpanded = {
 type GeocodingNotSupportedSeen = {
   name: "geocodingNotSupported.seen";
 };
+type InpProjectionChoiceSeen = {
+  name: "inpProjectionChoice.seen";
+};
+type InpProjectionChoiceProjected = {
+  name: "inpProjectionChoice.projected";
+};
+type InpProjectionChoiceNonProjected = {
+  name: "inpProjectionChoice.nonProjected";
+};
 type MissingCoordinatesSeen = {
   name: "missingCoordinates.seen";
 };
@@ -365,6 +397,11 @@ type UtilitiesVisited = {
 type RepoVisited = {
   name: "repo.visited";
   source: "welcome" | "menu";
+};
+
+type FoundersPartnerLinkVisited = {
+  name: "foundersPartner.visited";
+  link: "optimatics" | "foundersPartners";
 };
 
 type SignInStarted = {
@@ -581,6 +618,12 @@ type CustomerPointsDisconnected = {
   source: string;
 };
 
+type CustomerPointsRemoved = {
+  name: "customerPointActions.removed";
+  count: number;
+  source: string;
+};
+
 type CustomerPointsConnectedCompleted = {
   name: "customerPoints.connected";
   count: number;
@@ -652,6 +695,7 @@ type ScenarioCreated = {
   name: "scenario.created";
   scenarioId: string;
   scenarioName: string;
+  isDemoNetwork: boolean;
 };
 
 type ScenarioSwitched = {
@@ -689,7 +733,7 @@ type ScenarioCycled = {
 
 type PatternChanged = {
   name: "pattern.changed";
-  property: "label" | "multipliers";
+  property: "label" | "multipliers" | "type";
 };
 
 type PatternAdded = {
@@ -714,32 +758,48 @@ type PatternsDiscarded = {
   name: "patterns.discarded";
 };
 
+type PatternsUncategorized = {
+  name: "patterns.uncategorized";
+  count: number;
+};
+
 type PumpLibraryOpened = {
   name: "pumpLibrary.opened";
   source: "toolbar" | "pump";
 };
 
-type PumpCurvesUpdated = {
-  name: "pumpCurves.updated";
+type CurveLibraryOpened = {
+  name: "curveLibrary.opened";
+  source: "toolbar" | "valve" | "tank";
+};
+
+type CurvesUpdated = {
+  name: "curves.updated";
+  count: number;
+  withWarnings: boolean;
+};
+
+type CurvesDiscarded = {
+  name: "curves.discarded";
+};
+
+type CurvesUncategorized = {
+  name: "curves.uncategorized";
   count: number;
 };
 
-type PumpCurvesDiscarded = {
-  name: "pumpCurves.discarded";
-};
-
-type PumpCurveAdded = {
-  name: "pumpCurve.added";
+type CurveAdded = {
+  name: "curve.added";
   source: "new" | "clone";
 };
 
-type PumpCurveDeleted = {
-  name: "pumpCurve.deleted";
+type CurveDeleted = {
+  name: "curve.deleted";
 };
 
-type PumpCurveChanged = {
-  name: "pumpCurve.changed";
-  property: "label" | "points";
+type CurveChanged = {
+  name: "curve.changed";
+  property: "label" | "points" | "type";
 };
 
 export type UserEvent =
@@ -750,6 +810,8 @@ export type UserEvent =
   | AssetSelected
   | AssetDeselected
   | AssetPropertyEdited
+  | AssetPropertyBatchEdited
+  | AssetPropertiesEdited
   | AssetStatusEdited
   | AssetDefinitionTypeEdited
   | PumpCurveEdited
@@ -779,6 +841,8 @@ export type UserEvent =
   | OperationRedone
   | DrawingModeEnabled
   | MultiSelectUpdated
+  | SelectionNarrowedToAssetType
+  | SelectionNarrowedToPropertyValue
   | FullSelectionEnabled
   | SelectionCleared
   | InpIssuesSeen
@@ -786,6 +850,9 @@ export type UserEvent =
   | CoordinatesIssuesExpanded
   | MissingCoordinatesSeen
   | GeocodingNotSupportedSeen
+  | InpProjectionChoiceSeen
+  | InpProjectionChoiceProjected
+  | InpProjectionChoiceNonProjected
   | SimulationSummarySeen
   | ShortcutsOpened
   | PropertyAggregateOpened
@@ -794,6 +861,7 @@ export type UserEvent =
   | RoadmapVisited
   | UtilitiesVisited
   | RepoVisited
+  | FoundersPartnerLinkVisited
   | SignUpStarted
   | SignInStarted
   | LogOutCompleted
@@ -829,6 +897,7 @@ export type UserEvent =
   | CustomerPointsConnectStarted
   | CustomerPointsReconnectStarted
   | CustomerPointsDisconnected
+  | CustomerPointsRemoved
   | CustomerPointsConnectedCompleted
   | SimulationReportAssetClicked
   | ModelBuilderOpened
@@ -895,7 +964,7 @@ export type UserEvent =
     }
   | { name: "simulationSettings.opened"; source: string }
   | { name: "controls.opened"; source: string }
-  | { name: "curvesAndPatterns.opened"; source: string }
+  | { name: "patternsLibrary.opened"; source: string }
   | { name: "assetControls.opened"; source: string }
   | {
       name: "simulationSetting.changed";
@@ -926,6 +995,9 @@ export type UserEvent =
   | { name: "scenariosPaywall.triggered" }
   | { name: "scenariosPaywall.clickedChoosePlan" }
   | { name: "scenariosPaywall.clickedPersonal" }
+  | { name: "scenariosPaywall.clickedTryDemo" }
+  | { name: "scenariosPaywall.clickedExplorePlans" }
+  | { name: "trial.activated"; source: string }
   | { name: "firstScenario.dialogEnabled" }
   | { name: "firstScenario.dialogHidden" }
   | PatternChanged
@@ -934,12 +1006,15 @@ export type UserEvent =
   | PatternLabelDuplicate
   | PatternsUpdated
   | PatternsDiscarded
+  | PatternsUncategorized
   | PumpLibraryOpened
-  | PumpCurvesUpdated
-  | PumpCurvesDiscarded
-  | PumpCurveAdded
-  | PumpCurveDeleted
-  | PumpCurveChanged;
+  | CurveLibraryOpened
+  | CurvesUpdated
+  | CurvesDiscarded
+  | CurvesUncategorized
+  | CurveAdded
+  | CurveDeleted
+  | CurveChanged;
 
 const debugPostHog = {
   capture: (...data: any[]) => {

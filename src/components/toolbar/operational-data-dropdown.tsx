@@ -6,7 +6,8 @@ import {
   ChevronDownIcon,
   ControlsIcon,
   PatternsIcon,
-  PumpCurvesIcon,
+  PumpLibraryIcon,
+  CurveLibraryIcon,
 } from "src/icons";
 import { useTranslate } from "src/hooks/use-translate";
 import {
@@ -17,18 +18,18 @@ import {
   StyledTooltipArrow,
 } from "../elements";
 import { useShowControls } from "src/commands/show-controls";
-import { useShowCurvesAndPatterns } from "src/commands/show-curves-and-patterns";
-import { useShowPumpLibrary } from "src/commands/show-pump-curves";
+import { useShowPatternsLibrary } from "src/commands/show-patterns-library";
+import { useShowPumpLibrary } from "src/commands/show-pump-library";
+import { useShowCurveLibrary } from "src/commands/show-curve-library";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
-
-const FLAG_PUMP_CURVES = "FLAG_PUMP_CURVES";
 
 export const OperationalDataDropdown = () => {
   const translate = useTranslate();
   const showControls = useShowControls();
-  const showCurvesAndPatterns = useShowCurvesAndPatterns();
+  const showPatternsLibrary = useShowPatternsLibrary();
   const showPumpLibrary = useShowPumpLibrary();
-  const isPumpCurvesEnabled = useFeatureFlag(FLAG_PUMP_CURVES);
+  const showCurveLibrary = useShowCurveLibrary();
+  const isCurvesEnabled = useFeatureFlag("FLAG_ALL_CURVES");
 
   return (
     <Tooltip.Root delayDuration={200}>
@@ -45,18 +46,25 @@ export const OperationalDataDropdown = () => {
           <DD.Portal>
             <DDContent align="start" side="bottom">
               <StyledItem
-                onSelect={() => showCurvesAndPatterns({ source: "toolbar" })}
+                onSelect={() => showPatternsLibrary({ source: "toolbar" })}
               >
                 <PatternsIcon />
-                {translate("curvesAndPatterns")}
+                {translate("patterns.title")}
               </StyledItem>
 
-              {isPumpCurvesEnabled && (
+              <StyledItem
+                onSelect={() => showPumpLibrary({ source: "toolbar" })}
+              >
+                <PumpLibraryIcon />
+                {translate("pumpLibrary")}
+              </StyledItem>
+
+              {isCurvesEnabled && (
                 <StyledItem
-                  onSelect={() => showPumpLibrary({ source: "toolbar" })}
+                  onSelect={() => showCurveLibrary({ source: "toolbar" })}
                 >
-                  <PumpCurvesIcon />
-                  {translate("pumpLibrary")}
+                  <CurveLibraryIcon />
+                  {translate("curves.title")}
                 </StyledItem>
               )}
 

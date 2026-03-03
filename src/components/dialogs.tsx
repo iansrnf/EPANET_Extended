@@ -16,6 +16,17 @@ import { useUserTracking } from "src/infra/user-tracking";
 import { SimulationSettingsDialog } from "./dialogs/simulation-settings";
 import { LoadingDialog } from "./dialog";
 import { WelcomeDialog } from "./dialogs/welcome";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
+
+const SimulationSettingsNewDialog = dynamic(
+  () =>
+    import("src/components/dialogs/simulation-settings-new").then(
+      (r) => r.SimulationSettingsNewDialog,
+    ),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
 
 const UpgradeDialog = dynamic<{
   onClose: () => void;
@@ -52,6 +63,7 @@ const InpIssuesDialog = dynamic<{
 
 const GeocodingNotSupportedDialog = dynamic<{
   onClose: () => void;
+  onImportNonProjected: () => void;
 }>(
   () =>
     import("src/components/dialogs/inp-issues").then(
@@ -59,6 +71,18 @@ const GeocodingNotSupportedDialog = dynamic<{
     ),
   {
     loading: () => <Loading />,
+  },
+);
+
+const InpProjectionChoiceDialog = dynamic<{
+  onImportNonProjected: () => void;
+}>(
+  () =>
+    import("src/components/dialogs/inp-projection-choice").then(
+      (r) => r.InpProjectionChoiceDialog,
+    ),
+  {
+    loading: () => <LoadingDialog />,
   },
 );
 
@@ -249,21 +273,35 @@ const ControlsDialog = dynamic(
   },
 );
 
-const CurvesAndPatternsDialog = dynamic(
+const PatternsDialog = dynamic<{
+  initialPatternId?: number;
+  initialSection?: "demand" | "reservoirHead" | "pumpSpeed";
+}>(
+  () => import("src/components/dialogs/patterns").then((r) => r.PatternsDialog),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
+const PumpLibraryDialog = dynamic<{
+  initialCurveId?: number;
+  initialSection?: "pump" | "efficiency";
+}>(
   () =>
-    import("src/components/dialogs/curves-and-patterns").then(
-      (r) => r.CurvesAndPatternsDialog,
+    import("src/components/dialogs/pump-library").then(
+      (r) => r.PumpLibraryDialog,
     ),
   {
     loading: () => <LoadingDialog />,
   },
 );
 
-const PumpCurvesDialog = dynamic(
+const CurveLibraryDialog = dynamic<{
+  initialCurveId?: number;
+  initialSection?: "volume" | "valve" | "headloss";
+}>(
   () =>
-    import("src/components/dialogs/pump-curves").then(
-      (r) => r.PumpCurvesDialog,
-    ),
+    import("src/components/dialogs/curves").then((r) => r.CurveLibraryDialog),
   {
     loading: () => <LoadingDialog />,
   },
@@ -311,6 +349,16 @@ const ScenariosPaywallDialog = dynamic<{
   },
 );
 
+const ActivatingTrialDialog = dynamic(
+  () =>
+    import("src/components/dialogs/activating-trial").then(
+      (r) => r.ActivatingTrialDialog,
+    ),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
 const FirstScenarioDialog = dynamic<{
   onConfirm: () => void;
   onClose: () => void;
@@ -327,6 +375,7 @@ const FirstScenarioDialog = dynamic<{
 export const Dialogs = memo(function Dialogs() {
   const [dialog, setDialogState] = useAtom(dialogAtom);
   const userTracking = useUserTracking();
+  const isOptionsOn = useFeatureFlag("FLAG_OPTIONS");
 
   const onClose = useCallback(() => {
     setDialogState(null);
@@ -349,6 +398,9 @@ export const Dialogs = memo(function Dialogs() {
       }
       if (dialog.type === "inpGeocodingNotSupported") {
         userTracking.capture({ name: "geocodingNotSupported.seen" });
+      }
+      if (dialog.type === "inpProjectionChoice") {
+        userTracking.capture({ name: "inpProjectionChoice.seen" });
       }
       if (dialog.type === "inpIssues") {
         userTracking.capture({ name: "inpIssues.seen" });
@@ -374,7 +426,11 @@ export const Dialogs = memo(function Dialogs() {
     return <SimulationReportDialog />;
   }
   if (dialog.type === "simulationSettings") {
-    return <SimulationSettingsDialog />;
+    return isOptionsOn ? (
+      <SimulationSettingsNewDialog />
+    ) : (
+      <SimulationSettingsDialog />
+    );
   }
   if (dialog.type === "simulationSummary") {
     return <SimulationSummaryDialog modal={dialog} onClose={onClose} />;
@@ -400,11 +456,29 @@ export const Dialogs = memo(function Dialogs() {
   if (dialog.type === "controls") {
     return <ControlsDialog />;
   }
-  if (dialog.type === "curvesAndPatterns") {
-    return <CurvesAndPatternsDialog />;
+  if (dialog.type === "patternsLibrary") {
+    return (
+      <PatternsDialog
+        initialPatternId={dialog.initialPatternId}
+        initialSection={dialog.initialSection}
+      />
+    );
   }
   if (dialog.type === "pumpLibrary") {
-    return <PumpCurvesDialog />;
+    return (
+      <PumpLibraryDialog
+        initialCurveId={dialog.initialCurveId}
+        initialSection={dialog.initialSection}
+      />
+    );
+  }
+  if (dialog.type === "curveLibrary") {
+    return (
+      <CurveLibraryDialog
+        initialCurveId={dialog.initialCurveId}
+        initialSection={dialog.initialSection}
+      />
+    );
   }
 
   if (dialog.type === "upgrade") {
@@ -415,9 +489,21 @@ export const Dialogs = memo(function Dialogs() {
     return <ScenariosPaywallDialog onClose={onClose} />;
   }
 
+  if (dialog.type === "activatingTrial") {
+    return <ActivatingTrialDialog />;
+  }
+
   if (dialog.type === "firstScenario") {
     return (
       <FirstScenarioDialog onConfirm={dialog.onConfirm} onClose={onClose} />
+    );
+  }
+
+  if (dialog.type === "inpProjectionChoice") {
+    return (
+      <InpProjectionChoiceDialog
+        onImportNonProjected={dialog.onImportNonProjected}
+      />
     );
   }
 
@@ -454,8 +540,11 @@ export const Dialogs = memo(function Dialogs() {
     .with({ type: "inpIssues" }, ({ issues }) => (
       <InpIssuesDialog issues={issues} onClose={onClose} />
     ))
-    .with({ type: "inpGeocodingNotSupported" }, () => (
-      <GeocodingNotSupportedDialog onClose={onClose} />
+    .with({ type: "inpGeocodingNotSupported" }, ({ onImportNonProjected }) => (
+      <GeocodingNotSupportedDialog
+        onClose={onClose}
+        onImportNonProjected={onImportNonProjected}
+      />
     ))
     .with({ type: "inpMissingCoordinates" }, ({ issues }) => (
       <MissingCoordinatesDialog issues={issues} onClose={onClose} />

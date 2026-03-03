@@ -188,15 +188,6 @@ export class MapEngine {
     }
   }
 
-  setMapboxLogoVisibility(isVisible: boolean) {
-    const container = this.map.getContainer();
-    const logo = container.querySelector(
-      ".mapboxgl-ctrl-logo",
-    ) as HTMLElement | null;
-    if (!logo) return;
-    logo.style.display = isVisible ? "" : "none";
-  }
-
   addLayer(layer: mapboxgl.AnyLayer, beforeId?: string) {
     this.map.addLayer(layer, beforeId);
   }

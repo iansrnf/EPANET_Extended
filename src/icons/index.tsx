@@ -7,6 +7,7 @@ import {
   ArrowUpNarrowWide,
   Bell,
   ChartColumn,
+  ChartSpline,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -45,6 +46,7 @@ import {
   Link2Off,
   Lock,
   MapIcon,
+  MapPinned,
   Menu,
   MousePointer2,
   MousePointerClick,
@@ -63,8 +65,6 @@ import {
   Save,
   SaveAll,
   Settings,
-  Pause,
-  Play,
   SquareDashed,
   SquareStack,
   Star,
@@ -117,6 +117,7 @@ const icon = (Icon: LucideIcon): React.FC<IconProps> => {
 
 export const HelpIcon = icon(CircleQuestionMark);
 export const RoadmapIcon = icon(MapIcon);
+export const MapPinnedIcon = icon(MapPinned);
 export const UtilitiesIcon = icon(ToolCase);
 export const InfoIcon = icon(Info);
 export const SuccessIcon = icon(CircleCheck);
@@ -194,10 +195,9 @@ export const AddScenarioIcon = icon(GitBranchPlus);
 export const MainModelIcon = icon(Lock);
 export const ControlsIcon = icon(FileCode);
 export const PatternsIcon = icon(ChartColumn);
+export const CurveLibraryIcon = icon(ChartSpline);
 export const RenameIcon = icon(TextCursorInput);
 export const DuplicateIcon = icon(Copy);
-export const PlayIcon = icon(Play);
-export const PauseIcon = icon(Pause);
 
 export const ReverseIcon: React.FC<IconProps> = ({
   size: rawSize = "md",
@@ -218,7 +218,7 @@ export { CustomUnsavedChangesIcon as UnsavedChangesIcon } from "./custom-icons/u
 export { CustomGithubIcon as GithubIcon } from "./custom-icons/github-icon";
 export { CustomPipeIcon as PipeIcon } from "./custom-icons/pipe-icon";
 export { CustomPumpIcon as PumpIcon } from "./custom-icons/pump-icon";
-export { CustomPumpCurvesIcon as PumpCurvesIcon } from "./custom-icons/pump-curves-icon";
+export { CustomCurvesIcon as PumpLibraryIcon } from "./custom-icons/curves-icon";
 export { CustomTypeOffIcon as TypeOffIcon } from "./custom-icons/type-off-icon";
 export { CustomValveIcon as ValveIcon } from "./custom-icons/valve-icon";
 export { CustomPipesCrossingIcon as PipesCrossinIcon } from "./custom-icons/pipes-crossing-icon";
@@ -230,4 +230,6 @@ export { CustomActiveTopologyEnableIcon as ActiveTopologyEnableIcon } from "./cu
 export { CustomActiveTopologyDisableIcon as ActiveTopologyDisableIcon } from "./custom-icons/active-topology-disable";
 export { CustomOperationalDataIcon as AdvancedSettingsIcon } from "./custom-icons/operational-data";
 export { CustomTableSelectAllIcon as TableSelectAllIcon } from "./custom-icons/table-select-all-icon";
-export { CustomWaterLoggerIcon as WaterLoggerIcon } from "./custom-icons/water-logger-icon";
+export { CustomUpstreamTraceIcon as UpstreamTraceIcon } from "./custom-icons/trace-upstream-icon";
+export { CustomDownstreamTraceIcon as DownstreamTraceIcon } from "./custom-icons/trace-downstream-icon";
+export { CustomBoundaryTraceIcon as BoundaryTraceIcon } from "./custom-icons/trace-boundary-icon";

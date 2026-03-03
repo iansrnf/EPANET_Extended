@@ -7,8 +7,9 @@ import { Position } from "src/types";
 import { updateLinkConnections } from "../mutations/update-link-connections";
 import { isNodeAsset } from "../asset-types/type-guards";
 import { reassignCustomerPoints } from "../mutations/reassign-customer-points";
+import { getJunctionDemands } from "../demands";
 
-type NodeType = "junction" | "reservoir" | "tank" | "loggerPoint";
+type NodeType = "junction" | "reservoir" | "tank";
 
 type InputData = {
   oldNodeId: AssetId;
@@ -66,6 +67,16 @@ export const replaceNode: ModelOperation<InputData> = (
     }
   }
 
+  const putDemands =
+    oldNode.type === "junction" && newNodeType !== "junction"
+      ? (() => {
+          const demands = getJunctionDemands(hydraulicModel.demands, oldNodeId);
+          return demands.length > 0
+            ? { assignments: [{ junctionId: oldNodeId, demands: [] }] }
+            : undefined;
+        })()
+      : undefined;
+
   return {
     note: `Replace ${oldNode.type} with ${newNodeType}`,
     putAssets: [newNode, ...updatedLinks],
@@ -74,6 +85,7 @@ export const replaceNode: ModelOperation<InputData> = (
       updatedCustomerPoints.size > 0
         ? [...updatedCustomerPoints.values()]
         : undefined,
+    ...(putDemands && { putDemands }),
   };
 };
 
@@ -99,12 +111,6 @@ const createNode = (
       });
     case "tank":
       return assetBuilder.buildTank({
-        coordinates,
-        elevation,
-        isActive,
-      });
-    case "loggerPoint":
-      return assetBuilder.buildLoggerPoint({
         coordinates,
         elevation,
         isActive,

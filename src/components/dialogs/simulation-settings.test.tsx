@@ -4,6 +4,7 @@ import { render } from "@testing-library/react";
 import { Provider as JotaiProvider } from "jotai";
 import { setInitialState } from "src/__helpers__/state";
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { SimulationSettingsBuilder } from "src/__helpers__/simulation-settings-builder";
 import { stubUserTracking } from "src/__helpers__/user-tracking";
 import { Persistence } from "src/lib/persistence/persistence";
 import { PersistenceContext } from "src/lib/persistence/context";
@@ -29,8 +30,9 @@ describe("SimulationSettingsDialog", () => {
   describe("switching from Steady State to EPS", () => {
     it("sets default values when switching to EPS with no previous values", async () => {
       const store = setInitialState({
-        hydraulicModel: HydraulicModelBuilder.with()
-          .eps({
+        hydraulicModel: HydraulicModelBuilder.with().build(),
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({
             duration: undefined,
             hydraulicTimestep: undefined,
             reportTimestep: undefined,
@@ -57,8 +59,9 @@ describe("SimulationSettingsDialog", () => {
 
     it("sets default values when switching to EPS with zero values", async () => {
       const store = setInitialState({
-        hydraulicModel: HydraulicModelBuilder.with()
-          .eps({
+        hydraulicModel: HydraulicModelBuilder.with().build(),
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({
             duration: 0,
             hydraulicTimestep: 0,
             reportTimestep: 0,
@@ -85,8 +88,9 @@ describe("SimulationSettingsDialog", () => {
 
     it("preserves existing values when switching to EPS", async () => {
       const store = setInitialState({
-        hydraulicModel: HydraulicModelBuilder.with()
-          .eps({
+        hydraulicModel: HydraulicModelBuilder.with().build(),
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({
             duration: 43200, // 12 hours
             hydraulicTimestep: 7200, // 2 hours
             reportTimestep: 1800, // 30 minutes
@@ -113,8 +117,9 @@ describe("SimulationSettingsDialog", () => {
 
     it("recovers model values when switching back to EPS after going to Steady State", async () => {
       const store = setInitialState({
-        hydraulicModel: HydraulicModelBuilder.with()
-          .eps({
+        hydraulicModel: HydraulicModelBuilder.with().build(),
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({
             duration: 43200, // 12 hours
             hydraulicTimestep: 7200, // 2 hours
             reportTimestep: 1800, // 30 minutes
@@ -169,8 +174,9 @@ describe("SimulationSettingsDialog", () => {
   describe("switching from EPS to Steady State", () => {
     it("disables time inputs when switching to Steady State", async () => {
       const store = setInitialState({
-        hydraulicModel: HydraulicModelBuilder.with()
-          .eps({
+        hydraulicModel: HydraulicModelBuilder.with().build(),
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({
             duration: 86400,
             hydraulicTimestep: 3600,
             reportTimestep: 3600,
@@ -200,8 +206,9 @@ describe("SimulationSettingsDialog", () => {
   describe("validation", () => {
     it("shows error when EPS fields are empty", async () => {
       const store = setInitialState({
-        hydraulicModel: HydraulicModelBuilder.with()
-          .eps({
+        hydraulicModel: HydraulicModelBuilder.with().build(),
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({
             duration: 86400,
             hydraulicTimestep: 3600,
             reportTimestep: 3600,
@@ -227,8 +234,9 @@ describe("SimulationSettingsDialog", () => {
 
     it("shows error when EPS fields are zero", async () => {
       const store = setInitialState({
-        hydraulicModel: HydraulicModelBuilder.with()
-          .eps({
+        hydraulicModel: HydraulicModelBuilder.with().build(),
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({
             duration: 86400,
             hydraulicTimestep: 3600,
             reportTimestep: 3600,
@@ -255,8 +263,9 @@ describe("SimulationSettingsDialog", () => {
 
     it("enables save button when all EPS fields are valid", () => {
       const store = setInitialState({
-        hydraulicModel: HydraulicModelBuilder.with()
-          .eps({
+        hydraulicModel: HydraulicModelBuilder.with().build(),
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({
             duration: 86400,
             hydraulicTimestep: 3600,
             reportTimestep: 3600,

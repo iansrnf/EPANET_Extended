@@ -72,3 +72,6 @@ specs/
 
 # Benchmark data files
 **/.benchmark/
+From_Source/public/cursors/cursor-crosshair.svg
+From_Source/
+.codex_preserve_backup/

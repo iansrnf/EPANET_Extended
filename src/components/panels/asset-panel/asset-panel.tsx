@@ -2,6 +2,7 @@ import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
 import {
   Asset,
+  Demand,
   Junction,
   Pipe,
   Pump,
@@ -10,6 +11,9 @@ import {
   NodeAsset,
   LinkAsset,
   HydraulicModel,
+  calculateAverageDemand,
+  getCustomerPointDemands,
+  getJunctionDemands,
 } from "src/hydraulic-model";
 import {
   CustomerPoint,
@@ -17,11 +21,6 @@ import {
 } from "src/hydraulic-model/customer-points";
 import { Valve } from "src/hydraulic-model/asset-types";
 import { LoggerPoint } from "src/hydraulic-model/asset-types/logger-point";
-import {
-  DemandPatterns,
-  JunctionDemand,
-  calculateAverageDemand,
-} from "src/hydraulic-model/demands";
 import { Quantities } from "src/model-metadata/quantities-spec";
 import { useTranslate } from "src/hooks/use-translate";
 import { usePersistence } from "src/lib/persistence";
@@ -30,7 +29,7 @@ import { stagingModelAtom } from "src/state/jotai";
 import {
   changePumpDefinition,
   changeProperty,
-  changeJunctionDemands,
+  changeDemandAssignment,
   changeLabel,
 } from "src/hydraulic-model/model-operations";
 import { activateAssets } from "src/hydraulic-model/model-operations/activate-assets";
@@ -86,6 +85,7 @@ type OnPropertyChange = (
   value: number | boolean,
   oldValue: number | boolean | null,
 ) => void;
+type JunctionDemand = Demand;
 type OnStatusChange<T> = (newStatus: T, oldStatus: T) => void;
 type OnTypeChange<T> = (newType: T, oldType: T) => void;
 
@@ -260,11 +260,10 @@ export function AssetPanel({
 
   const handleDemandsChange = useCallback(
     (newDemands: JunctionDemand[]) => {
-      const oldDemands = (asset as Junction).demands;
-      const moment = changeJunctionDemands(hydraulicModel, {
-        junctionId: asset.id,
-        demands: newDemands,
-      });
+      const oldDemands = getJunctionDemands(hydraulicModel.demands, asset.id);
+      const moment = changeDemandAssignment(hydraulicModel, [
+        { junctionId: asset.id, demands: newDemands },
+      ]);
       transact(moment);
       userTracking.capture({
         name: "assetProperty.edited",
@@ -457,19 +456,25 @@ const JunctionEditor = ({
   }, [junction.id, hydraulicModel]);
 
   const customerCount = customerPoints.length;
+  const junctionDemands = useMemo(
+    () => getJunctionDemands(hydraulicModel.demands, junction.id),
+    [hydraulicModel.demands, junction.id],
+  );
   const totalDemand = useMemo(() => {
     return customerPoints.reduce(
       (sum, cp) =>
         sum +
-        calculateAverageDemand(cp.demands, hydraulicModel.demands.patterns),
+        calculateAverageDemand(
+          getCustomerPointDemands(hydraulicModel.demands, cp.id),
+          hydraulicModel.patterns,
+        ),
       0,
     );
-  }, [customerPoints, hydraulicModel.demands.patterns]);
+  }, [customerPoints, hydraulicModel.demands, hydraulicModel.patterns]);
 
   const customerDemandPattern = useMemo(
-    () =>
-      getCustomerPointsPattern(customerPoints, hydraulicModel.demands.patterns),
-    [customerPoints, hydraulicModel.demands.patterns],
+    () => getCustomerPointsPattern(customerPoints, hydraulicModel),
+    [customerPoints, hydraulicModel],
   );
 
   return (
@@ -511,8 +516,8 @@ const JunctionEditor = ({
       </Section>
       <Section title={translate("demands")}>
         <DemandsEditor
-          demands={junction.demands}
-          patterns={hydraulicModel.demands.patterns}
+          demands={junctionDemands}
+          patterns={hydraulicModel.patterns}
           quantitiesMetadata={quantitiesMetadata}
           name="directDemand"
           onChange={onDemandsChange}
@@ -541,7 +546,8 @@ const JunctionEditor = ({
               customerPoints={customerPoints}
               aggregateUnit={quantitiesMetadata.getUnit("customerDemand")}
               customerUnit={quantitiesMetadata.getUnit("customerDemandPerDay")}
-              patterns={hydraulicModel.demands.patterns}
+              demands={hydraulicModel.demands}
+              patterns={hydraulicModel.patterns}
             />
           </>
         )}
@@ -634,15 +640,17 @@ const PipeEditor = ({
     return customerPoints.reduce(
       (sum, cp) =>
         sum +
-        calculateAverageDemand(cp.demands, hydraulicModel.demands.patterns),
+        calculateAverageDemand(
+          getCustomerPointDemands(hydraulicModel.demands, cp.id),
+          hydraulicModel.patterns,
+        ),
       0,
     );
-  }, [customerPoints, hydraulicModel.demands.patterns]);
+  }, [customerPoints, hydraulicModel.demands, hydraulicModel.patterns]);
 
   const customerDemandPattern = useMemo(
-    () =>
-      getCustomerPointsPattern(customerPoints, hydraulicModel.demands.patterns),
-    [customerPoints, hydraulicModel.demands.patterns],
+    () => getCustomerPointsPattern(customerPoints, hydraulicModel),
+    [customerPoints, hydraulicModel],
   );
 
   const pipeStatusOptions = useMemo(() => {
@@ -758,7 +766,8 @@ const PipeEditor = ({
             customerPoints={customerPoints}
             aggregateUnit={quantitiesMetadata.getUnit("customerDemand")}
             customerUnit={quantitiesMetadata.getUnit("customerDemandPerDay")}
-            patterns={hydraulicModel.demands.patterns}
+            demands={hydraulicModel.demands}
+            patterns={hydraulicModel.patterns}
           />
         </Section>
       )}
@@ -2197,6 +2206,7 @@ const PumpEditor = ({
           <PumpDefinitionDetails
             pump={pump}
             quantities={quantitiesMetadata}
+            curves={hydraulicModel.curves}
             onChange={onDefinitionChange}
             readonly={readonly}
             getComparison={getComparison}
@@ -2243,16 +2253,21 @@ const PumpEditor = ({
 
 function getCustomerPointsPattern(
   customerPoints: CustomerPoint[],
-  patterns: DemandPatterns,
+  hydraulicModel: HydraulicModel,
 ) {
   if (!customerPoints.length) return;
-  const firstCustomerPointWithDemand = customerPoints.find(
-    (customerPoint) => customerPoint.demands?.[0],
-  );
+  const firstCustomerPointWithDemand = customerPoints.find((customerPoint) => {
+    const demands = getCustomerPointDemands(hydraulicModel.demands, customerPoint.id);
+    return demands[0] !== undefined;
+  });
   if (!firstCustomerPointWithDemand) return;
-  const patternId = firstCustomerPointWithDemand.demands[0].patternId;
+  const firstDemand = getCustomerPointDemands(
+    hydraulicModel.demands,
+    firstCustomerPointWithDemand.id,
+  )[0];
+  const patternId = firstDemand?.patternId;
   if (!patternId) return;
-  const pattern = patterns.get(patternId);
+  const pattern = hydraulicModel.patterns.get(patternId);
   if (!pattern) return;
   return {
     value: patternId,

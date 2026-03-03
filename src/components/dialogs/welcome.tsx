@@ -28,6 +28,8 @@ import { DialogCloseX, DialogContainer } from "../dialog";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { Message } from "../message";
 import { DemoNetworkCard } from "../demo-network-card";
+import { DRUMCHAPEL, WATERDOWN } from "src/demo/demo-networks";
+import optimaticsLogoUrl from "src/assets/images/logos/optimatics-logo-black.webp";
 
 type DemoModel = {
   name: string;
@@ -39,16 +41,16 @@ const getDemoModels = (
   translate: ReturnType<typeof useTranslate>,
 ): DemoModel[] => [
   {
-    name: "Drumchapel",
+    name: DRUMCHAPEL.name,
     description: translate("demoUKStyleDescription"),
-    url: "/example-models/01-uk-style.inp",
-    thumbnailUrl: "/example-models/01-uk-style.png",
+    url: DRUMCHAPEL.url,
+    thumbnailUrl: DRUMCHAPEL.thumbnailUrl,
   },
   {
-    name: "Waterdown",
+    name: WATERDOWN.name,
     description: translate("demoUSStyleDescription"),
-    url: "/example-models/02-us-style.inp",
-    thumbnailUrl: "/example-models/02-us-style.png",
+    url: WATERDOWN.url,
+    thumbnailUrl: WATERDOWN.thumbnailUrl,
   },
 ];
 
@@ -72,27 +74,34 @@ export const WelcomeDialog = () => {
   return (
     <DialogContainer size="md">
       <LocaleProvider>
-        <div className="w-full flex flex-col">
+        <div
+          className="bg-white w-full flex flex-col"
+          style={{ margin: "-2rem", width: "calc(100% + 4rem)" }}
+        >
           {isMdOrLarger && (
-            <div className="flex justify-end">
+            <div
+              className="flex justify-end p-6 z-10"
+              style={{ marginBottom: "-4rem" }}
+            >
               <DialogCloseX />
             </div>
           )}
-          <div className="grid sm:grid-cols-3 gap-3 pb-8">
-            <div className="col-span-1 md:w-max flex flex-col gap-6">
+          <div className="grid sm:grid-cols-[min-content_1fr]">
+            <div className="bg-gray-50 border-r border-gray-200 col-span-1 md:w-max flex flex-col p-6 gap-6">
               <div className="pl-1">
-                <LogoIconAndWordmarkIcon size={500} isMenuBar={false}/>
+                <LogoIconAndWordmarkIcon size={147} />
               </div>
               <div className="sm:hidden">
                 <SmallDeviceWarning />
               </div>
-              <div className="flex items-start flex-col gap-2">
+              <div className="h-full flex flex-col gap-2">
                 {isMdOrLarger && (
                   <Button
                     variant="quiet"
                     onClick={() => {
                       void createNew({ source: "welcome" });
                     }}
+                    style={{ width: "100%" }}
                   >
                     <FileIcon />
                     {translate("startBlankProject")}
@@ -103,6 +112,7 @@ export const WelcomeDialog = () => {
                   onClick={() => {
                     void openInpFromFs({ source: "welcome" });
                   }}
+                  style={{ width: "100%" }}
                 >
                   <FileSpreadsheetIcon />
                   {translate("openProject")}
@@ -112,29 +122,30 @@ export const WelcomeDialog = () => {
                   onClick={() => {
                     openModelBuilder({ source: "welcome" });
                   }}
+                  style={{ width: "100%" }}
                 >
                   <GlobeIcon />
                   {translate("importFromGIS")}
                   <EarlyAccessIcon size="sm" />
                 </Button>
-              </div>
-              <div className="flex items-start flex-col gap-2">
-                <a
-                  href={helpCenterUrl}
-                  target="_blank"
-                  onClick={() => {
-                    userTracking.capture({
-                      name: "helpCenter.visited",
-                      source: "welcome",
-                    });
-                  }}
-                >
-                  <Button variant="quiet">
-                    <HelpIcon />
-                    {translate("helpCenter")}
-                  </Button>
-                </a>
-                <p className="text-sm">
+
+                <div className="mt-4 flex items-start flex-col gap-2">
+                  <a
+                    href={helpCenterUrl}
+                    target="_blank"
+                    onClick={() => {
+                      userTracking.capture({
+                        name: "helpCenter.visited",
+                        source: "welcome",
+                      });
+                    }}
+                    style={{ width: "100%" }}
+                  >
+                    <Button variant="quiet" style={{ width: "100%" }}>
+                      <HelpIcon />
+                      {translate("helpCenter")}
+                    </Button>
+                  </a>
                   <a
                     href={quickStartTutorialUrl}
                     target="_blank"
@@ -144,16 +155,54 @@ export const WelcomeDialog = () => {
                         source: "welcome",
                       });
                     }}
+                    style={{ width: "100%" }}
                   >
-                    <Button variant="primary">
+                    <Button variant="primary" style={{ width: "100%" }}>
                       <ArrowRightIcon />
                       {translate("quickStartTutorial")}
                     </Button>
                   </a>
-                </p>
+                </div>
+
+                <div className="flex flex-col gap-2 mt-auto text-xs">
+                  {isMdOrLarger && (
+                    <div className="mb-4 text-xs flex items-center gap-x-2">
+                      <Checkbox
+                        checked={userSettings.showWelcomeOnStart}
+                        onChange={() => {
+                          userSettings.showWelcomeOnStart
+                            ? userTracking.capture({ name: "welcome.hidden" })
+                            : userTracking.capture({ name: "welcome.enabled" });
+                          setUserSettings((prev) => ({
+                            ...prev,
+                            showWelcomeOnStart: !prev.showWelcomeOnStart,
+                          }));
+                        }}
+                      />
+                      {translate("alwaysShowAtStart")}
+                    </div>
+                  )}
+                  <a href={termsAndConditionsUrl} target="_blank">
+                    {translate("termsAndConditions")}
+                  </a>
+                  <a href={privacyPolicyUrl} target="_blank">
+                    {translate("privacyPolicy")}
+                  </a>
+                </div>
               </div>
             </div>
-            <div className="sm:col-span-2">
+            <div className="p-6">
+              {isExperimental && (
+                <div className="mt-7 mb-3">
+                  <Message
+                    variant="info"
+                    title={translate("startNotificationLanguageTitle")}
+                  >
+                    {translate("startNotificationLanguageDescription")}
+                  </Message>
+                </div>
+              )}
+
               <h2 className="mt-[.2rem] pt-2 pb-2 font-bold text-gray-500">
                 {translate("demoNetworksTitle")}
               </h2>
@@ -162,48 +211,48 @@ export const WelcomeDialog = () => {
                   <DemoNetworkCard key={i} demoNetwork={demoModel} />
                 ))}
               </div>
+              <div className="bg-gray-50 rounded-lg p-4 mt-6 text-xs text-center">
+                <h3 className="text-gray-600 font-bold">
+                  {translate("foundersPartnerTitle")}
+                </h3>
+                <a
+                  href="https://optimatics.com/"
+                  target="_blank"
+                  onClick={() => {
+                    userTracking.capture({
+                      name: "foundersPartner.visited",
+                      link: "optimatics",
+                    });
+                  }}
+                >
+                  <img
+                    src={optimaticsLogoUrl.src}
+                    className="block m-auto h-16"
+                    height="64"
+                  />
+                </a>
+                <p className="text-gray-600">
+                  {translate("foundersPartnerDescription")}{" "}
+                  <a
+                    href="https://help.epanetjs.com/Founding-Partner-program-2f6e18c9f0f680d8be27c05c0b5844bb"
+                    target="_blank"
+                    className="underline text-violet-500"
+                    onClick={() => {
+                      userTracking.capture({
+                        name: "foundersPartner.visited",
+                        link: "foundersPartners",
+                      });
+                    }}
+                  >
+                    {translate("foundersPartnerLearnMore")}
+                  </a>
+                  .
+                </p>
+              </div>
             </div>
           </div>
           <div className="hidden sm:max-md:block mb-2">
             <SmallDeviceWarning />
-          </div>
-          {isExperimental && (
-            <div className="mb-6">
-              <Message
-                variant="info"
-                title={translate("startNotificationLanguageTitle")}
-              >
-                {translate("startNotificationLanguageDescription")}
-              </Message>
-            </div>
-          )}
-          <div className="flex pt-4 items-center justify-around md:justify-between mt-auto">
-            {isMdOrLarger && (
-              <div className="text-xs flex items-center gap-x-2">
-                <Checkbox
-                  checked={userSettings.showWelcomeOnStart}
-                  onChange={() => {
-                    userSettings.showWelcomeOnStart
-                      ? userTracking.capture({ name: "welcome.hidden" })
-                      : userTracking.capture({ name: "welcome.enabled" });
-                    setUserSettings((prev) => ({
-                      ...prev,
-                      showWelcomeOnStart: !prev.showWelcomeOnStart,
-                    }));
-                  }}
-                />
-                {translate("alwaysShowAtStart")}
-              </div>
-            )}
-            <div className="flex flex-row items-center text-xs gap-x-1">
-              <a href={termsAndConditionsUrl} target="_blank">
-                {translate("termsAndConditions")}
-              </a>
-              <span>|</span>
-              <a href={privacyPolicyUrl} target="_blank">
-                {translate("privacyPolicy")}
-              </a>
-            </div>
           </div>
         </div>
       </LocaleProvider>

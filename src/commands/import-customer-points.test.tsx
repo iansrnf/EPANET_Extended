@@ -2,6 +2,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
 import { Store, stagingModelAtom } from "src/state/jotai";
 import { Junction } from "src/hydraulic-model/asset-types/junction";
+import {
+  getCustomerPointDemands,
+  getJunctionDemands,
+  getTotalCustomerDemand,
+} from "src/hydraulic-model/demands";
 import userEvent from "@testing-library/user-event";
 import { aTestFile } from "src/__helpers__/file";
 import { setInitialState } from "src/__helpers__/state";
@@ -93,11 +98,13 @@ describe.skip("importCustomerPoints", () => {
 
     expect(customerPoint1).toBeDefined();
     expect(customerPoint1?.coordinates).toEqual([0.0003, 0.0003]);
-    expect(customerPoint1?.baseDemand).toBeCloseTo(0.000295, 6);
+    const cp1Demands = getCustomerPointDemands(hydraulicModel.demands, IDS.CP1);
+    expect(cp1Demands[0]?.baseDemand).toBeCloseTo(0.000295, 6);
 
     expect(customerPoint2).toBeDefined();
     expect(customerPoint2?.coordinates).toEqual([0.0007, 0.0007]);
-    expect(customerPoint2?.baseDemand).toBeCloseTo(0.00174, 5);
+    const cp2Demands = getCustomerPointDemands(hydraulicModel.demands, IDS.CP2);
+    expect(cp2Demands[0]?.baseDemand).toBeCloseTo(0.00174, 5);
   });
 
   it("assigns IDs starting from 1 for empty model", async () => {
@@ -185,12 +192,12 @@ describe.skip("importCustomerPoints", () => {
       hydraulicModel: HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           coordinates: [0, 0],
-          demands: [{ baseDemand: 30 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 30 }])
         .aJunction(IDS.J2, {
           coordinates: [0.001, 0.001],
-          demands: [{ baseDemand: 45 }],
         })
+        .aJunctionDemand(IDS.J2, [{ baseDemand: 45 }])
         .aPipe(IDS.P1, {
           startNodeId: IDS.J1,
           endNodeId: IDS.J2,
@@ -248,15 +255,19 @@ describe.skip("importCustomerPoints", () => {
     const hydraulicModel = store.get(stagingModelAtom);
     const junction = hydraulicModel.assets.get(IDS.J1) as Junction;
 
-    expect(junction.demands).toBe([{ baseDemand: 30 }]);
+    expect(getJunctionDemands(hydraulicModel.demands, junction.id)).toBe([
+      { baseDemand: 30 },
+    ]);
 
     const junctionCustomerPoints =
       hydraulicModel.customerPointsLookup.getCustomerPoints(IDS.J1);
     expect(junctionCustomerPoints?.size).toBe(1);
     expect(
-      junction.getTotalCustomerDemand(
+      getTotalCustomerDemand(
+        junction.id,
         hydraulicModel.customerPointsLookup,
-        hydraulicModel.demands.patterns,
+        hydraulicModel.demands,
+        hydraulicModel.patterns,
       ),
     ).toBeCloseTo(0.000231, 6);
   });
@@ -267,12 +278,12 @@ describe.skip("importCustomerPoints", () => {
       hydraulicModel: HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           coordinates: [0, 0],
-          demands: [{ baseDemand: 40 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 40 }])
         .aJunction(IDS.J2, {
           coordinates: [0.001, 0.001],
-          demands: [{ baseDemand: 60 }],
         })
+        .aJunctionDemand(IDS.J2, [{ baseDemand: 60 }])
         .aPipe(IDS.P1, {
           startNodeId: IDS.J1,
           endNodeId: IDS.J2,
@@ -326,15 +337,17 @@ describe.skip("importCustomerPoints", () => {
     const hydraulicModel = store.get(stagingModelAtom);
     const junction = hydraulicModel.assets.get(IDS.J1) as Junction;
 
-    expect(junction.demands).toBe([]);
+    expect(getJunctionDemands(hydraulicModel.demands, junction.id)).toBe([]);
 
     const junctionCustomerPoints =
       hydraulicModel.customerPointsLookup.getCustomerPoints(IDS.J1);
     expect(junctionCustomerPoints?.size).toBe(1);
     expect(
-      junction.getTotalCustomerDemand(
+      getTotalCustomerDemand(
+        junction.id,
         hydraulicModel.customerPointsLookup,
-        hydraulicModel.demands.patterns,
+        hydraulicModel.demands,
+        hydraulicModel.patterns,
       ),
     ).toBeCloseTo(0.000289, 6);
   });
@@ -406,8 +419,8 @@ describe.skip("importCustomerPoints", () => {
           .aJunction(IDS.J1, { coordinates: [0, 0] })
           .aCustomerPoint(IDS.EXISTING, {
             coordinates: [5, 5],
-            demands: [{ baseDemand: 100 }],
           })
+          .aCustomerPointDemand(IDS.EXISTING, [{ baseDemand: 100 }])
           .build(),
       });
 

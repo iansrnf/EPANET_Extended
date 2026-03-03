@@ -1,4 +1,5 @@
 import { CurveId, CurvePoint, Curves, ICurve } from "../curves";
+import { PatternId } from "../patterns";
 import { Link, LinkProperties } from "./link";
 import { Unit } from "src/quantity";
 
@@ -15,18 +16,12 @@ export type PumpProperties = {
   definitionType: PumpDefintionType;
   power: number;
   speed: number;
+  speedPatternId?: PatternId;
   curveId?: CurveId;
   curve?: CurvePoint[];
 } & LinkProperties;
 
-export const pumpQuantities = [
-  "flow",
-  "head",
-  "designFlow",
-  "designHead",
-  "power",
-  "speed",
-];
+export const pumpQuantities = ["flow", "head", "power", "speed"];
 export type PumpQuantity = (typeof pumpQuantities)[number];
 
 export class Pump extends Link<PumpProperties> {
@@ -48,6 +43,10 @@ export class Pump extends Link<PumpProperties> {
 
   get speed() {
     return this.properties.speed;
+  }
+
+  get speedPatternId() {
+    return this.properties.speedPatternId;
   }
 
   get curveId() {

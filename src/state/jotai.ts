@@ -25,6 +25,7 @@ import { EphemeralMoveAssets } from "src/map/mode-handlers/none/move-state";
 import { MomentLog } from "src/lib/persistence/moment-log";
 import { Quantities, presets } from "src/model-metadata/quantities-spec";
 import { ModelMetadata } from "src/model-metadata";
+import { createProjectionMapper } from "src/projections";
 import { EphemeralDrawNode } from "src/map/mode-handlers/draw-node/ephemeral-draw-node-state";
 import { DEFAULT_ZOOM } from "src/map/map-engine";
 import { EphemeralDrawLink } from "src/map/mode-handlers/draw-link/ephemeral-link-state";
@@ -40,6 +41,7 @@ export {
 } from "src/state/hydraulic-model";
 
 export { simulationResultsAtom } from "src/state/simulation";
+export { simulationSettingsAtom } from "src/state/simulation-settings";
 
 export type Store = ReturnType<typeof createStore>;
 
@@ -79,6 +81,7 @@ export type SimulationFinished = {
   status: "success" | "failure" | "warning";
   report: string;
   modelVersion: string;
+  settingsVersion: string;
   metadata?: ArrayBuffer;
   simulationIds?: SimulationIds;
   currentTimestepIndex?: number;
@@ -108,7 +111,10 @@ export interface Data {
 }
 
 const quantities = new Quantities(presets.LPS);
-const modelMetadata = { quantities };
+const modelMetadata: ModelMetadata = {
+  quantities,
+  projectionMapper: createProjectionMapper({ type: "wgs84" }),
+};
 export const nullData: Data = {
   folderMap: new Map(),
   selection: {
@@ -117,6 +123,10 @@ export const nullData: Data = {
   modelMetadata,
 };
 export const dataAtom = atom<Data>(nullData);
+
+export const isUnprojectedAtom = atom((get) => {
+  return get(dataAtom).modelMetadata.projectionMapper.projection === "xy-grid";
+});
 
 export const layerConfigAtom = atom<LayerConfigMap>(new Map());
 
@@ -336,6 +346,14 @@ export interface EphemeralDragState {
 export type CursorValue = React.CSSProperties["cursor"];
 export const cursorStyleAtom = atom<CursorValue>("default");
 
+export type EphemeralMoveCustomerPoint = {
+  type: "moveCustomerPoint";
+  customerPoint: CustomerPoint;
+  movedCoordinates: Position;
+  startPoint?: { x: number; y: number };
+  moveActivated: boolean;
+};
+
 export type EphemeralCustomerPointsHighlight = {
   type: "customerPointsHighlight";
   customerPoints: CustomerPoint[];
@@ -353,6 +371,7 @@ export type EphemeralEditingState =
   | EphemeralDrawLink
   | EphemeralDrawNode
   | EphemeralMoveAssets
+  | EphemeralMoveCustomerPoint
   | EphemeralCustomerPointsHighlight
   | EphemeralConnectCustomerPoints
   | EphemeralEditingStateAreaSelection
@@ -368,6 +387,9 @@ export const lastSearchResultAtom = atom<QItemAddable | null>(null);
  * File info
  */
 export const fileInfoAtom = atom<FileInfo | null>(null);
+export const isDemoNetworkAtom = atom(
+  (get) => get(fileInfoAtom)?.isDemoNetwork ?? false,
+);
 
 const fileInfoMachine = createMachine({
   predictableActionArguments: true,
@@ -494,3 +516,5 @@ export const pipeDrawingDefaultsAtom = atom<{
   diameter?: number;
   roughness?: number;
 }>({});
+
+export const autoElevationsAtom = atom<boolean>(true);

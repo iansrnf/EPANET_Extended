@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAtomValue } from "jotai";
 import { simulationAtom } from "src/state/jotai";
 import { OPFSStorage } from "src/infra/storage/opfs-storage";
@@ -13,12 +13,12 @@ import type {
   QuickGraphPropertyByAssetType,
 } from "src/state/quick-graph";
 import { worktreeAtom } from "src/state/scenarios";
+import type { JunctionProperty } from "src/simulation/epanet/eps-results-reader";
 
 interface UseTimeSeriesOptions<T extends QuickGraphAssetType> {
   assetId: number;
   assetType: T;
   property: QuickGraphPropertyByAssetType[T];
-  enabled?: boolean;
 }
 
 interface UseTimeSeriesResult {
@@ -29,12 +29,13 @@ interface UseTimeSeriesResult {
 
 interface UseMultipleJunctionTimeSeriesOptions {
   assetIds: number[];
-  property: JunctionProperty;
+  property: QuickGraphPropertyByAssetType["junction"];
   enabled?: boolean;
 }
 
 interface UseMultipleJunctionTimeSeriesResult {
-  dataByAssetId: Record<number, TimeSeries>;
+  dataByAssetId: Record<number, TimeSeries | null>;
+  mainDataByAssetId: Record<number, TimeSeries | null>;
   isLoading: boolean;
 }
 
@@ -42,7 +43,6 @@ export function useTimeSeries<T extends QuickGraphAssetType>({
   assetId,
   assetType,
   property,
-  enabled = true,
 }: UseTimeSeriesOptions<T>): UseTimeSeriesResult {
   const simulation = useAtomValue(simulationAtom);
   const worktree = useAtomValue(worktreeAtom);
@@ -68,13 +68,6 @@ export function useTimeSeries<T extends QuickGraphAssetType>({
       : undefined;
 
   useEffect(() => {
-    if (!enabled) {
-      setData(null);
-      setMainData(null);
-      setIsLoading(false);
-      return;
-    }
-
     if (status === "failure") {
       setData(null);
       setMainData(null);
@@ -169,7 +162,6 @@ export function useTimeSeries<T extends QuickGraphAssetType>({
       abortControllerRef.current?.abort();
     };
   }, [
-    enabled,
     assetId,
     assetType,
     property,
@@ -192,17 +184,24 @@ export function useMultipleJunctionTimeSeries({
   const simulation = useAtomValue(simulationAtom);
   const worktree = useAtomValue(worktreeAtom);
   const [dataByAssetId, setDataByAssetId] = useState<
-    Record<number, TimeSeries>
+    Record<number, TimeSeries | null>
+  >({});
+  const [mainDataByAssetId, setMainDataByAssetId] = useState<
+    Record<number, TimeSeries | null>
   >({});
   const [isLoading, setIsLoading] = useState(() => {
     return simulation.status === "success" || simulation.status === "warning";
   });
   const abortControllerRef = useRef<AbortController | null>(null);
-  const sortedAssetIds = useMemo(
-    () => [...assetIds].sort((a, b) => a - b),
-    [assetIds],
-  );
-  const assetIdsKey = useMemo(() => sortedAssetIds.join(","), [sortedAssetIds]);
+
+  const isInScenario = worktree.activeSnapshotId !== worktree.mainId;
+  const mainSnapshot = worktree.snapshots.get(worktree.mainId);
+  const mainSimulation = mainSnapshot?.simulation ?? null;
+  const assetIdsKey = assetIds.join(",");
+  const requestedProperty: JunctionProperty =
+    property === "pressureMeters" || property === "pressurePsi"
+      ? "pressure"
+      : property;
 
   const status = simulation.status;
   const metadata =
@@ -215,14 +214,26 @@ export function useMultipleJunctionTimeSeries({
       : undefined;
 
   useEffect(() => {
-    if (!enabled || sortedAssetIds.length === 0) {
+    if (!enabled) {
       setDataByAssetId({});
+      setMainDataByAssetId({});
+      setIsLoading(false);
+      return;
+    }
+
+    const uniqueAssetIds = Array.from(new Set(assetIds)).filter(
+      (id) => typeof id === "number" && Number.isFinite(id),
+    );
+    if (uniqueAssetIds.length === 0) {
+      setDataByAssetId({});
+      setMainDataByAssetId({});
       setIsLoading(false);
       return;
     }
 
     if (status === "failure") {
       setDataByAssetId({});
+      setMainDataByAssetId({});
       setIsLoading(false);
       return;
     }
@@ -242,7 +253,6 @@ export function useMultipleJunctionTimeSeries({
 
     const fetchTimeSeries = async () => {
       setIsLoading(true);
-
       try {
         const appId = getAppId();
         const scenarioKey = worktree.activeSnapshotId;
@@ -250,34 +260,67 @@ export function useMultipleJunctionTimeSeries({
         const epsReader = new EPSResultsReader(storage);
         await epsReader.initialize(metadata, simulationIds);
 
-        const resultEntries = await Promise.all(
-          sortedAssetIds.map(async (assetId) => {
-            const result = await epsReader.getTimeSeries(
+        const seriesEntries = await Promise.all(
+          uniqueAssetIds.map(async (assetId) => [
+            assetId,
+            await epsReader.getTimeSeries(
               assetId,
               "junction",
-              property,
-            );
-            return [assetId, result] as const;
-          }),
+              requestedProperty,
+            ),
+          ]),
         );
 
         if (abortControllerRef.current?.signal.aborted) {
           return;
         }
 
-        const next: Record<number, TimeSeries> = {};
-        for (const [assetId, result] of resultEntries) {
-          if (result) {
-            next[assetId] = result;
+        setDataByAssetId(Object.fromEntries(seriesEntries));
+
+        if (
+          isInScenario &&
+          mainSimulation &&
+          (mainSimulation.status === "success" ||
+            mainSimulation.status === "warning") &&
+          mainSimulation.metadata &&
+          mainSimulation.simulationIds
+        ) {
+          try {
+            const mainStorage = new OPFSStorage(appId, "main");
+            const mainReader = new EPSResultsReader(mainStorage);
+            await mainReader.initialize(
+              mainSimulation.metadata,
+              mainSimulation.simulationIds,
+            );
+
+            const mainSeriesEntries = await Promise.all(
+              uniqueAssetIds.map(async (assetId) => [
+                assetId,
+                await mainReader.getTimeSeries(
+                  assetId,
+                  "junction",
+                  requestedProperty,
+                ),
+              ]),
+            );
+
+            if (abortControllerRef.current?.signal.aborted) {
+              return;
+            }
+            setMainDataByAssetId(Object.fromEntries(mainSeriesEntries));
+          } catch {
+            setMainDataByAssetId({});
           }
+        } else {
+          setMainDataByAssetId({});
         }
-        setDataByAssetId(next);
       } catch (err) {
         if (abortControllerRef.current?.signal.aborted) {
           return;
         }
         captureError(err as Error);
         setDataByAssetId({});
+        setMainDataByAssetId({});
       } finally {
         setIsLoading(false);
       }
@@ -289,15 +332,17 @@ export function useMultipleJunctionTimeSeries({
       abortControllerRef.current?.abort();
     };
   }, [
-    enabled,
+    assetIds,
     assetIdsKey,
-    sortedAssetIds,
-    property,
-    status,
+    enabled,
+    isInScenario,
+    mainSimulation,
     metadata,
+    requestedProperty,
     simulationIds,
+    status,
     worktree.activeSnapshotId,
   ]);
 
-  return { dataByAssetId, isLoading };
+  return { dataByAssetId, mainDataByAssetId, isLoading };
 }

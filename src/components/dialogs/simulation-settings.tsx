@@ -1,4 +1,5 @@
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
+import { nanoid } from "nanoid";
 import { useCallback } from "react";
 
 import { DialogContainer, DialogHeader, useDialogState } from "../dialog";
@@ -6,16 +7,13 @@ import { useTranslate } from "src/hooks/use-translate";
 import { Form, Formik, useFormikContext } from "formik";
 import { NumericField } from "../form/numeric-field";
 import { TimeField } from "../form/time-field";
-import { stagingModelAtom } from "src/state/jotai";
+import { simulationSettingsAtom } from "src/state/jotai";
 import { localizeDecimal } from "src/infra/i18n/numbers";
 import { SimpleDialogActions } from "src/components/dialog";
-import { usePersistence } from "src/lib/persistence";
 import { Section } from "../form/fields";
 import { useUserTracking } from "src/infra/user-tracking";
 import { SettingsIcon } from "src/icons";
 import { Selector } from "../form/selector";
-import { changeDemandSettings } from "src/hydraulic-model/model-operations/change-demand-settings";
-import { changeEPSTiming } from "src/hydraulic-model/model-operations/change-eps-timing";
 import { formatSecondsToDisplay } from "../form/time-field";
 import { worktreeAtom } from "src/state/scenarios";
 
@@ -34,59 +32,69 @@ export const SimulationSettingsDialog = () => {
   const translate = useTranslate();
   const { closeDialog } = useDialogState();
 
-  const hydraulicModel = useAtomValue(stagingModelAtom);
-  const rep = usePersistence();
-  const transact = rep.useTransact();
+  const simulationSettings = useAtomValue(simulationSettingsAtom);
+  const setSimulationSettings = useSetAtom(simulationSettingsAtom);
   const userTracking = useUserTracking();
+
+  const { timing, globalDemandMultiplier } = simulationSettings;
 
   const handleSubmit = useCallback(
     (values: FormValues) => {
-      if (values.demandMultiplier !== hydraulicModel.demands.multiplier) {
+      if (values.demandMultiplier !== globalDemandMultiplier) {
         userTracking.capture({
           name: "simulationSetting.changed",
           settingName: "demandMultiplier",
           newValue: values.demandMultiplier,
-          oldValue: hydraulicModel.demands.multiplier,
+          oldValue: globalDemandMultiplier,
         });
-
-        const demandMoment = changeDemandSettings(hydraulicModel, {
-          demandMultiplier: values.demandMultiplier,
-        });
-        transact(demandMoment);
       }
 
       const newDuration =
         values.simulationMode === "steadyState" ? 0 : values.duration;
       const hasTimingChanges =
-        newDuration !== hydraulicModel.epsTiming.duration ||
-        values.hydraulicTimestep !==
-          hydraulicModel.epsTiming.hydraulicTimestep ||
-        values.reportTimestep !== hydraulicModel.epsTiming.reportTimestep ||
-        values.patternTimestep !== hydraulicModel.epsTiming.patternTimestep;
+        newDuration !== timing.duration ||
+        values.hydraulicTimestep !== timing.hydraulicTimestep ||
+        values.reportTimestep !== timing.reportTimestep ||
+        values.patternTimestep !== timing.patternTimestep;
+      const hasDemandChanges =
+        values.demandMultiplier !== globalDemandMultiplier;
 
-      if (hasTimingChanges) {
-        const timingMoment = changeEPSTiming(hydraulicModel, {
-          duration: newDuration,
-          hydraulicTimestep: values.hydraulicTimestep,
-          reportTimestep: values.reportTimestep,
-          patternTimestep: values.patternTimestep,
+      if (hasTimingChanges || hasDemandChanges) {
+        setSimulationSettings({
+          ...simulationSettings,
+          version: nanoid(),
+          timing: {
+            duration: newDuration ?? 0,
+            hydraulicTimestep:
+              values.hydraulicTimestep ?? timing.hydraulicTimestep,
+            reportTimestep: values.reportTimestep ?? timing.reportTimestep,
+            patternTimestep: values.patternTimestep ?? timing.patternTimestep,
+            qualityTimestep: timing.qualityTimestep,
+            ruleTimestep: timing.ruleTimestep,
+          },
+          globalDemandMultiplier: values.demandMultiplier,
         });
-        transact(timingMoment);
       }
 
       closeDialog();
     },
-    [hydraulicModel, transact, closeDialog, userTracking],
+    [
+      closeDialog,
+      userTracking,
+      timing,
+      globalDemandMultiplier,
+      setSimulationSettings,
+      simulationSettings,
+    ],
   );
 
   const initialValues: FormValues = {
-    demandMultiplier: hydraulicModel.demands.multiplier,
-    simulationMode:
-      (hydraulicModel.epsTiming.duration ?? 0) > 0 ? "eps" : "steadyState",
-    duration: hydraulicModel.epsTiming.duration,
-    hydraulicTimestep: hydraulicModel.epsTiming.hydraulicTimestep,
-    reportTimestep: hydraulicModel.epsTiming.reportTimestep,
-    patternTimestep: hydraulicModel.epsTiming.patternTimestep,
+    demandMultiplier: globalDemandMultiplier,
+    simulationMode: timing.duration > 0 ? "eps" : "steadyState",
+    duration: timing.duration,
+    hydraulicTimestep: timing.hydraulicTimestep,
+    reportTimestep: timing.reportTimestep,
+    patternTimestep: timing.patternTimestep,
   };
 
   return (
@@ -187,11 +195,11 @@ const DemandSettings = () => {
   );
 };
 
-const ONE_HOUR = 1;
+const ONE_HOUR = 3600;
 
 const TimesSettings = ({ readonly }: { readonly: boolean }) => {
   const translate = useTranslate();
-  const hydraulicModel = useAtomValue(stagingModelAtom);
+  const { timing } = useAtomValue(simulationSettingsAtom);
   const { values, setFieldValue } = useFormikContext<FormValues>();
   const { hasMissingValues, hasZeroValues, fieldErrors } =
     useTimeSettingsValidation();
@@ -216,24 +224,18 @@ const TimesSettings = ({ readonly }: { readonly: boolean }) => {
     void setFieldValue("simulationMode", newValue);
     if (newValue === "eps") {
       if (!values.duration)
-        void setFieldValue(
-          "duration",
-          3600,
-        );
+        void setFieldValue("duration", timing.duration || 24 * ONE_HOUR);
       if (!values.hydraulicTimestep)
         void setFieldValue(
           "hydraulicTimestep",
-          ONE_HOUR,
+          timing.hydraulicTimestep || ONE_HOUR,
         );
       if (!values.reportTimestep)
-        void setFieldValue(
-          "reportTimestep",
-          ONE_HOUR,
-        );
+        void setFieldValue("reportTimestep", timing.reportTimestep || ONE_HOUR);
       if (!values.patternTimestep)
         void setFieldValue(
           "patternTimestep",
-          ONE_HOUR,
+          timing.patternTimestep || ONE_HOUR,
         );
     }
   };

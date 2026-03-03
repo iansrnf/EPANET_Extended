@@ -1,4 +1,11 @@
-import { dialogAtom, fileInfoAtom, stagingModelAtom } from "src/state/jotai";
+import {
+  dataAtom,
+  dialogAtom,
+  fileInfoAtom,
+  isDemoNetworkAtom,
+  simulationSettingsAtom,
+  stagingModelAtom,
+} from "src/state/jotai";
 import { baseModelAtom } from "src/state/hydraulic-model";
 import { ExportOptions } from "src/types/export";
 import { useAtomCallback } from "jotai/utils";
@@ -10,9 +17,6 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { notifyPromiseState } from "src/components/notifications";
 import { useUserTracking } from "src/infra/user-tracking";
 import { worktreeAtom } from "src/state/scenarios";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { buildInpWithAllCurves } from "src/simulation/build-inp-with-all-curves";
-
 const getDefaultFsAccess = async () => {
   const { fileSave } = await import("browser-fs-access");
   return { fileSave };
@@ -32,7 +36,6 @@ export const useSaveInp = ({
   const setDialogState = useSetAtom(dialogAtom);
   const fileInfo = useAtomValue(fileInfoAtom);
   const userTracking = useUserTracking();
-  const isPumpCurvesEnabled = useFeatureFlag("FLAG_PUMP_CURVES");
 
   const saveInp = useAtomCallback(
     useCallback(
@@ -56,6 +59,8 @@ export const useSaveInp = ({
           const hydraulicModel = hasScenarios
             ? get(baseModelAtom)
             : get(stagingModelAtom);
+          const { modelMetadata } = get(dataAtom);
+          const simulationSettings = get(simulationSettingsAtom);
           const buildOptions = {
             geolocation: true,
             madeBy: true,
@@ -64,11 +69,10 @@ export const useSaveInp = ({
             customerPoints: true,
             inactiveAssets: true,
             reservoirElevations: true,
+            projectionMapper: modelMetadata.projectionMapper,
+            simulationSettings,
           };
-          const buildInpFn = isPumpCurvesEnabled
-            ? buildInpWithAllCurves
-            : buildInp;
-          const inp = buildInpFn(hydraulicModel, buildOptions);
+          const inp = buildInp(hydraulicModel, buildOptions);
           const inpBlob = new Blob([inp], { type: "text/plain" });
 
           const newHandle = await fileSave(
@@ -90,7 +94,7 @@ export const useSaveInp = ({
               handle: newHandle,
               options: exportOptions,
               isMadeByApp: true,
-              isDemoNetwork: fileInfo?.isDemoNetwork ?? false,
+              isDemoNetwork: get(isDemoNetworkAtom),
             });
           }
         };
@@ -107,7 +111,7 @@ export const useSaveInp = ({
           return false;
         }
       },
-      [userTracking, getFsAccess, isPumpCurvesEnabled, translate],
+      [userTracking, getFsAccess, translate],
     ),
   );
 

@@ -2,19 +2,19 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DemandCategoriesEditor } from "./demands-editor";
 import {
-  DemandPattern,
-  DemandPatterns,
-  JunctionDemand,
+  Demand,
+  Pattern,
+  Patterns,
   PatternId,
   PatternMultipliers,
-} from "src/hydraulic-model/demands";
+} from "src/hydraulic-model";
 
 const aPatterns = (
   ...patterns: [PatternId, string, PatternMultipliers][]
-): Map<PatternId, DemandPattern> => {
-  const demandPatterns: DemandPatterns = new Map();
+): Map<PatternId, Pattern> => {
+  const demandPatterns: Patterns = new Map();
   (patterns || []).forEach(([id, label, multipliers]) => {
-    demandPatterns.set(id, { id, label, multipliers });
+    demandPatterns.set(id, { id, label, multipliers, type: "demand" });
   });
   return demandPatterns;
 };
@@ -82,7 +82,7 @@ describe("DemandCategoriesEditor", () => {
 
       // Grid should be shown with default row
       expect(getFloatCellValue(getBaseDemandCell(0))).toBe("0");
-      expect(getPatternCell(0)).toHaveTextContent("CONSTANT");
+      expect(getPatternCell(0)).toHaveTextContent("Constant");
 
       // onDemandsChange should not be called until actual changes are made
       expect(onDemandsChange).not.toHaveBeenCalled();
@@ -167,7 +167,7 @@ describe("DemandCategoriesEditor", () => {
 
     it("displays existing demands", () => {
       const PATTERN_ID = 1;
-      const demands: JunctionDemand[] = [
+      const demands: Demand[] = [
         { baseDemand: 100, patternId: PATTERN_ID },
         { baseDemand: 50 },
       ];
@@ -184,7 +184,7 @@ describe("DemandCategoriesEditor", () => {
       expect(getFloatCellValue(getBaseDemandCell(0))).toBe("100");
       expect(getPatternCell(0)).toHaveTextContent("Pattern1");
       expect(getFloatCellValue(getBaseDemandCell(1))).toBe("50");
-      expect(getPatternCell(1)).toHaveTextContent("CONSTANT");
+      expect(getPatternCell(1)).toHaveTextContent("Constant");
     });
 
     it("shows all available patterns in the dropdown", async () => {
@@ -586,7 +586,7 @@ describe("DemandCategoriesEditor", () => {
 
       // Values should be displayed
       expect(getFloatCellValue(getBaseDemandCell(0))).toBe("100");
-      expect(getPatternCell(0)).toHaveTextContent("CONSTANT");
+      expect(getPatternCell(0)).toHaveTextContent("Constant");
 
       // Click cell to select, then double-click should not enable editing
       const baseDemandCell = getBaseDemandCell(0);

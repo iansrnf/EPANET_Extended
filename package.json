@@ -157,7 +157,7 @@
     "jsonwebtoken": "^9.0.2",
     "lodash": "^4.17.21",
     "lucide-react": "^0.542.0",
-    "mapbox-gl": "^3.18.1",
+    "mapbox-gl": "^3.4.0",
     "memoize-one": "^6.0.0",
     "mousetrap": "^1.6.5",
     "mproj": "^0.0.35",
@@ -210,8 +210,7 @@
     "uuid": "^9.0.1",
     "xlsx": "^0.18.5",
     "xstate": "^4.38.3",
-    "zod": "^3.23.8",
-    "zustand": "^5.0.11"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@mapbox/mapbox-gl-style-spec": "^13.28.0",

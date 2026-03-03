@@ -1,16 +1,31 @@
 import { useTranslate } from "src/hooks/use-translate";
 import { Section, SectionList } from "src/components/form/fields";
+import { ReadOnlyMultiValueRow } from "./readonly-multi-value-row";
 import { MultiValueRow } from "./multi-value-row";
 import { AssetPropertySections } from "./data";
+import type { EditableProperties } from "./batch-edit-property-config";
+import { AssetId } from "src/hydraulic-model";
+import type { ChangeableProperty } from "src/hydraulic-model/model-operations/change-property";
 
 type SectionProps = {
   sections: AssetPropertySections;
+  editableProperties: EditableProperties;
   hasSimulation?: boolean;
+  onPropertyChange: (
+    modelProperty: ChangeableProperty,
+    value: number | string | boolean,
+  ) => void;
+  readonly?: boolean;
+  onSelectAssets?: (assetIds: AssetId[], property: string) => void;
 };
 
 export function AssetTypeSections({
   sections,
+  editableProperties,
   hasSimulation = false,
+  onPropertyChange,
+  readonly = false,
+  onSelectAssets,
 }: SectionProps) {
   const translate = useTranslate();
 
@@ -36,15 +51,34 @@ export function AssetTypeSections({
             title={translate(sectionKey)}
             variant="secondary"
           >
-            {stats.map((stat) => (
-              <MultiValueRow
-                key={stat.property}
-                name={stat.property}
-                propertyStats={stat}
-                unit={stat.type === "quantity" ? stat.unit : undefined}
-                decimals={stat.type === "quantity" ? stat.decimals : undefined}
-              />
-            ))}
+            {stats.map((stat) => {
+              const config =
+                sectionKey === "modelAttributes" ||
+                sectionKey === "activeTopology"
+                  ? editableProperties[stat.property]
+                  : undefined;
+
+              if (config) {
+                return (
+                  <MultiValueRow
+                    key={stat.property}
+                    propertyStats={stat}
+                    config={config}
+                    onPropertyChange={onPropertyChange}
+                    readonly={readonly}
+                    onSelectAssets={onSelectAssets}
+                  />
+                );
+              }
+
+              return (
+                <ReadOnlyMultiValueRow
+                  key={stat.property}
+                  propertyStats={stat}
+                  onSelectAssets={onSelectAssets}
+                />
+              );
+            })}
           </Section>
         );
       })}

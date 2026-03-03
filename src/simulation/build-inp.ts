@@ -7,7 +7,6 @@ import {
   Reservoir,
   Pump,
   Tank,
-  EPSTiming,
   PatternId,
 } from "src/hydraulic-model";
 import {
@@ -15,6 +14,10 @@ import {
   getActiveCustomerPoints,
 } from "src/hydraulic-model/customer-points";
 import { CustomerPointsLookup } from "src/hydraulic-model/customer-points-lookup";
+import {
+  getCustomerPointDemands,
+  getJunctionDemands,
+} from "src/hydraulic-model/demands";
 import { Valve, AssetId } from "src/hydraulic-model/asset-types";
 import { checksum } from "src/infra/checksum";
 import { withDebugInstrumentation } from "src/infra/with-instrumentation";
@@ -23,7 +26,7 @@ import {
   formatRuleBasedControl,
   IdResolver,
 } from "src/hydraulic-model/controls";
-import { DemandPattern, DemandPatterns } from "src/hydraulic-model/demands";
+import { Pattern, Patterns } from "src/hydraulic-model/patterns";
 
 type SimulationPipeStatus = "Open" | "Closed" | "CV";
 type SimulationPumpStatus = "Open" | "Closed";
@@ -46,6 +49,19 @@ export const defaultAccuracy = 0.001;
 export const defaultUnbalanced = "CONTINUE 10";
 export const defaultCustomersPatternId = "epanetjs_customers";
 const defaultConstantPatternId = 0;
+type EPSTimingLike = {
+  duration?: number;
+  hydraulicTimestep?: number;
+  reportTimestep?: number;
+  patternTimestep?: number;
+};
+
+const defaultEpsTiming: Required<EPSTimingLike> = {
+  duration: 0,
+  hydraulicTimestep: 3600,
+  reportTimestep: 3600,
+  patternTimestep: 3600,
+};
 
 const formatSecondsToTime = (seconds: number): string => {
   const hours = Math.floor(seconds / 3600);
@@ -61,27 +77,31 @@ const formatSecondsToTime = (seconds: number): string => {
   return `${hours}`;
 };
 
-const buildTimesSection = (epsTiming: EPSTiming): string[] => {
+const buildTimesSection = (epsTiming?: EPSTimingLike): string[] => {
   const section = ["[TIMES]"];
+  const timing = {
+    ...defaultEpsTiming,
+    ...(epsTiming ?? {}),
+  };
 
-  const duration = epsTiming.duration ?? 0;
+  const duration = timing.duration ?? 0;
   section.push(`Duration\t${formatSecondsToTime(duration)}`);
 
-  if (epsTiming.hydraulicTimestep !== undefined) {
+  if (timing.hydraulicTimestep !== undefined) {
     section.push(
-      `Hydraulic Timestep\t${formatSecondsToTime(epsTiming.hydraulicTimestep)}`,
+      `Hydraulic Timestep\t${formatSecondsToTime(timing.hydraulicTimestep)}`,
     );
   }
 
-  if (epsTiming.reportTimestep !== undefined) {
+  if (timing.reportTimestep !== undefined) {
     section.push(
-      `Report Timestep\t${formatSecondsToTime(epsTiming.reportTimestep)}`,
+      `Report Timestep\t${formatSecondsToTime(timing.reportTimestep)}`,
     );
   }
 
-  if (epsTiming.patternTimestep !== undefined) {
+  if (timing.patternTimestep !== undefined) {
     section.push(
-      `Pattern Timestep\t${formatSecondsToTime(epsTiming.patternTimestep)}`,
+      `Pattern Timestep\t${formatSecondsToTime(timing.patternTimestep)}`,
     );
   }
 
@@ -155,7 +175,7 @@ class EpanetIds {
     return curveId;
   }
 
-  registerPatternId(pattern: Pick<DemandPattern, "id" | "label">) {
+  registerPatternId(pattern: Pick<Pattern, "id" | "label">) {
     if (this.patternIds.has(pattern.id))
       return this.patternIds.get(pattern.id)!;
     const label = this.ensureUnique(this.patternLabels, pattern.label);
@@ -234,6 +254,15 @@ export const buildInp = withDebugInstrumentation(
     const idMap = new EpanetIds({ strategy: opts.labelIds ? "label" : "id" });
     const units = chooseUnitSystem(hydraulicModel.units);
     const headlossFormula = hydraulicModel.headlossFormula;
+    const legacyDemandSettings = hydraulicModel.demands as unknown as
+      | {
+          multiplier?: number;
+          patterns?: Patterns;
+        }
+      | undefined;
+    const demandMultiplier = legacyDemandSettings?.multiplier ?? 1;
+    const demandPatterns =
+      hydraulicModel.patterns ?? legacyDemandSettings?.patterns ?? new Map();
     const sections: InpSections = {
       junctions: ["[JUNCTIONS]", ";Id\tElevation"],
       reservoirs: ["[RESERVOIRS]", ";Id\tHead\tPattern"],
@@ -248,7 +277,10 @@ export const buildInp = withDebugInstrumentation(
       pumps: ["[PUMPS]", ";Id\tStart\tEnd\tProperties"],
       valves: ["[VALVES]", ";Id\tStart\tEnd\tDiameter\tSetting\tMinorLoss"],
       demands: ["[DEMANDS]", ";Id\tDemand\tPattern\tCategory"],
-      times: buildTimesSection(hydraulicModel.epsTiming),
+      times: buildTimesSection(
+        (hydraulicModel as HydraulicModel & { epsTiming?: EPSTimingLike })
+          .epsTiming,
+      ),
       report: ["[REPORT]", "Status\tFULL", "Summary\tNo", "Page\t0"],
       status: ["[STATUS]", ";Id\tStatus"],
       curves: ["[CURVES]", ";Id\tX\tY"],
@@ -260,7 +292,7 @@ export const buildInp = withDebugInstrumentation(
         `Accuracy\t${defaultAccuracy}`,
         `Units\t${units}`,
         `Headloss\t${headlossFormula}`,
-        `Demand Multiplier\t${hydraulicModel.demands.multiplier}`,
+        `Demand Multiplier\t${demandMultiplier}`,
         `Pattern\t${idMap.registerPatternId({ id: defaultConstantPatternId, label: "constant" })}`,
       ],
       backdrop: ["[BACKDROP]", "Units\tDEGREES"],
@@ -278,7 +310,7 @@ export const buildInp = withDebugInstrumentation(
     const usedCurveIds = new Set<number>();
     const usedPatternIds = new Set<number>();
 
-    for (const pattern of hydraulicModel.demands.patterns.values()) {
+    for (const pattern of demandPatterns.values()) {
       idMap.registerPatternId(pattern); // Ensure pattern IDs are registered
     }
 
@@ -312,6 +344,7 @@ export const buildInp = withDebugInstrumentation(
           opts.customerDemands,
           opts.inactiveAssets,
           asset as Junction,
+          hydraulicModel.demands,
           hydraulicModel.customerPointsLookup,
           hydraulicModel.assets,
           usedPatternIds,
@@ -370,7 +403,7 @@ export const buildInp = withDebugInstrumentation(
 
     appendDemandPatterns(
       sections,
-      hydraulicModel.demands.patterns,
+      demandPatterns,
       usedPatternIds,
       idMap,
       opts.usedPatterns,
@@ -490,6 +523,7 @@ const appendJunction = (
   customerDemands: boolean,
   inactiveAssets: boolean,
   junction: Junction,
+  demands: HydraulicModel["demands"],
   customerPointsLookup: CustomerPointsLookup,
   assets: HydraulicModel["assets"],
   usedPatternIds: Set<number>,
@@ -505,7 +539,13 @@ const appendJunction = (
     commentPrefix + [junctionId, junction.elevation].join("\t"),
   );
 
-  for (const demand of junction.demands) {
+  const legacyJunctionDemands = (junction as Junction & {
+    demands?: ReturnType<typeof getJunctionDemands>;
+  }).demands;
+  const junctionDemands =
+    legacyJunctionDemands ?? getJunctionDemands(demands, junction.id);
+
+  for (const demand of junctionDemands) {
     if (demand.baseDemand === 0) continue;
 
     const demandLine = demand.patternId
@@ -528,7 +568,13 @@ const appendJunction = (
 
     const demandsByPattern = new Map<number | undefined, number>();
     for (const cp of customerPoints) {
-      for (const demand of cp.demands) {
+      const legacyCustomerDemands = (cp as CustomerPoint & {
+        demands?: ReturnType<typeof getCustomerPointDemands>;
+      }).demands;
+      const customerDemandsForPoint =
+        legacyCustomerDemands ?? getCustomerPointDemands(demands, cp.id);
+
+      for (const demand of customerDemandsForPoint) {
         if (demand.baseDemand === 0) continue;
         const currentTotal = demandsByPattern.get(demand.patternId) ?? 0;
         demandsByPattern.set(
@@ -862,7 +908,7 @@ const appendCurves = (
 
 const appendDemandPatterns = (
   sections: InpSections,
-  patterns: DemandPatterns,
+  patterns: Patterns,
   usedPatternIds: Set<number>,
   idMap: EpanetIds,
   usedPatternsOnly: boolean,
@@ -918,7 +964,14 @@ const appendCustomerPoint = (
     );
   }
 
-  for (const demand of customerPoint.demands) {
+  const legacyCustomerDemands = (customerPoint as CustomerPoint & {
+    demands?: ReturnType<typeof getCustomerPointDemands>;
+  }).demands;
+  const customerDemands =
+    legacyCustomerDemands ??
+    getCustomerPointDemands(hydraulicModel.demands, customerPoint.id);
+
+  for (const demand of customerDemands) {
     const mappedPatternId = demand.patternId
       ? idMap.patternId(demand.patternId)
       : undefined;

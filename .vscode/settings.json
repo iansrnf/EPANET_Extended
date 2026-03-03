@@ -2,5 +2,6 @@
     "search.exclude": {
         "**/node_modules": false
     },
-    "search.useIgnoreFiles": true
+    "search.useIgnoreFiles": true,
+    "chatgpt.openOnStartup": true
 }

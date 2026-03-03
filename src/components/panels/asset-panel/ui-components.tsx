@@ -10,18 +10,24 @@ import { NumericField } from "src/components/form/numeric-field";
 import { Checkbox } from "src/components/form/Checkbox";
 import { PipeStatus } from "src/hydraulic-model/asset-types/pipe";
 import { PumpStatus } from "src/hydraulic-model/asset-types/pump";
-import type { PumpDefinitionMode } from "./pump-definition-details-all-curves";
+import type { PumpDefinitionMode } from "./pump-definition-details";
 import { ValveKind, ValveStatus } from "src/hydraulic-model/asset-types/valve";
 import { PanelActions } from "./actions";
-import { InlineField, SectionList } from "src/components/form/fields";
+import {
+  InlineField,
+  NestedSectionContext,
+  SectionList,
+} from "src/components/form/fields";
 import clsx from "clsx";
 import * as P from "@radix-ui/react-popover";
 import { StyledPopoverArrow, StyledPopoverContent } from "../../elements";
 import { CustomerPoint } from "src/hydraulic-model/customer-points";
 import {
-  DemandPatterns,
+  Patterns,
   calculateAverageDemand,
-} from "src/hydraulic-model/demands";
+  getCustomerPointDemands,
+  Demands,
+} from "src/hydraulic-model";
 import { useSetAtom, useAtom } from "jotai";
 import { ephemeralStateAtom } from "src/state/jotai";
 import { assetPanelFooterAtom } from "src/state/quick-graph";
@@ -144,17 +150,21 @@ const Header = ({
 export const TextField = ({
   children,
   padding = "md",
+  className,
 }: {
   children: React.ReactNode;
   padding?: "sm" | "md";
+  className?: string;
 }) => (
   <span
     className={clsx(
-      "block w-full text-sm text-gray-700 border border-transparent tabular-nums",
+      "block w-full text-sm border border-transparent tabular-nums",
+      !className && "text-gray-700",
       {
         "p-1": padding === "sm",
         "p-2": padding === "md",
       },
+      className,
     )}
   >
     {children}
@@ -190,7 +200,7 @@ export const TextRow = ({
   );
 };
 
-export const QuantityRow = ({
+export const QuantityRow = <P extends string>({
   name,
   value,
   unit,
@@ -198,18 +208,20 @@ export const QuantityRow = ({
   positiveOnly = false,
   readOnly = false,
   isNullable = true,
+  placeholder,
   comparison,
   onChange,
 }: {
-  name: string;
+  name: P;
   value: number | null;
   unit: Unit;
   positiveOnly?: boolean;
   isNullable?: boolean;
   readOnly?: boolean;
   decimals?: number;
+  placeholder?: string;
   comparison?: PropertyComparison;
-  onChange?: (name: string, newValue: number, oldValue: number | null) => void;
+  onChange?: (name: P, newValue: number, oldValue: number | null) => void;
 }) => {
   const translate = useTranslate();
   const translateUnit = useTranslateUnit();
@@ -251,6 +263,7 @@ export const QuantityRow = ({
           isNullable={isNullable}
           readOnly={readOnly}
           displayValue={displayValue}
+          placeholder={placeholder}
           onChangeValue={handleChange}
           styleOptions={{
             padding: "md",
@@ -263,65 +276,87 @@ export const QuantityRow = ({
   );
 };
 
+export const NestedSection = ({ children }: { children: React.ReactNode }) => (
+  <NestedSectionContext.Provider value={true}>
+    <div className="bg-gray-50 p-2 py-1 mt-1 -mr-2 border-l-2 border-gray-400 rounded-sm flex flex-col gap-1">
+      {children}
+    </div>
+  </NestedSectionContext.Provider>
+);
+
+export type TankDefinitionMode =
+  | "diameterBased"
+  | "areaBased"
+  | "volumeBased"
+  | "curveBased";
+
 type SelectRowValue =
   | PipeStatus
   | ValveKind
   | ValveStatus
   | PumpDefinitionMode
   | PumpStatus
+  | TankDefinitionMode
   | number;
 
-type SelectRowPropsBase<T extends SelectRowValue> = {
-  name: string;
+type SelectRowPropsBase<P extends string, T extends SelectRowValue> = {
+  name: P;
   label?: string;
   options: SelectorOption<T>[] | SelectorOption<T>[][];
   listClassName?: string;
+  stickyFirstGroup?: boolean;
   comparison?: PropertyComparison;
   readOnly?: boolean;
 };
 
-type SelectRowPropsNonNullable<T extends SelectRowValue> =
-  SelectRowPropsBase<T> & {
-    selected: T;
-    nullable?: false;
-    onChange?: (name: string, newValue: T, oldValue: T) => void;
-    placeholder?: undefined;
-  };
+type SelectRowPropsNonNullable<
+  P extends string,
+  T extends SelectRowValue,
+> = SelectRowPropsBase<P, T> & {
+  selected: T;
+  nullable?: false;
+  onChange?: (name: P, newValue: T, oldValue: T) => void;
+  placeholder?: undefined;
+};
 
-type SelectRowPropsNullable<T extends SelectRowValue> =
-  SelectRowPropsBase<T> & {
-    selected: T | null;
-    nullable: true;
-    placeholder: string;
-    onChange?: (name: string, newValue: T | null, oldValue: T | null) => void;
-  };
+type SelectRowPropsNullable<
+  P extends string,
+  T extends SelectRowValue,
+> = SelectRowPropsBase<P, T> & {
+  selected: T | null;
+  nullable: true;
+  placeholder: string;
+  onChange?: (name: P, newValue: T | null, oldValue: T | null) => void;
+};
 
-type SelectorRowProps<T extends SelectRowValue> =
-  | SelectRowPropsNullable<T>
-  | SelectRowPropsNonNullable<T>;
+type SelectorRowProps<P extends string, T extends SelectRowValue> =
+  | SelectRowPropsNullable<P, T>
+  | SelectRowPropsNonNullable<P, T>;
 
-export function SelectRow<T extends SelectRowValue>({
+export function SelectRow<P extends string, T extends SelectRowValue>({
   name,
   label,
   selected,
   options,
   listClassName,
+  stickyFirstGroup,
   comparison,
   readOnly,
   nullable = false,
   placeholder = undefined,
   onChange,
-}: SelectorRowProps<T>) {
+}: SelectorRowProps<P, T>) {
   const translate = useTranslate();
   const actualLabel = label || translate(name);
 
   const flatOptions = options.flat();
 
-  const baseDisplayValue =
-    comparison?.hasChanged && comparison.baseValue != null
+  const baseDisplayValue = comparison?.hasChanged
+    ? comparison.baseValue != null
       ? (flatOptions.find((o) => o.value === comparison.baseValue)?.label ??
         String(comparison.baseValue))
-      : undefined;
+      : `(${translate("none").toLocaleLowerCase()})`
+    : undefined;
 
   const selectedOption = flatOptions.find((o) => o.value === selected);
 
@@ -346,6 +381,7 @@ export function SelectRow<T extends SelectRowValue>({
             }
             placeholder={placeholder as string}
             listClassName={listClassName}
+            stickyFirstGroup={stickyFirstGroup}
             disableFocusOnClose={true}
             styleOptions={{
               border: true,
@@ -359,7 +395,7 @@ export function SelectRow<T extends SelectRowValue>({
   );
 }
 
-export const SwitchRow = ({
+export const SwitchRow = <P extends string>({
   name,
   label,
   enabled,
@@ -367,12 +403,12 @@ export const SwitchRow = ({
   readOnly = false,
   onChange,
 }: {
-  name: string;
+  name: P;
   label?: string;
   enabled: boolean;
   comparison?: PropertyComparison;
   readOnly?: boolean;
-  onChange?: (property: string, newValue: boolean, oldValue: boolean) => void;
+  onChange?: (property: P, newValue: boolean, oldValue: boolean) => void;
 }) => {
   const translate = useTranslate();
   const actualLabel = label || translate(name);
@@ -412,13 +448,17 @@ export const ConnectedCustomersRow = ({
   customerPoints,
   aggregateUnit,
   customerUnit,
+  demands,
   patterns,
+  comparison,
 }: {
   customerCount: number;
   customerPoints: CustomerPoint[];
   aggregateUnit: Unit;
   customerUnit: Unit;
-  patterns: DemandPatterns;
+  demands: Demands;
+  patterns: Patterns;
+  comparison?: PropertyComparison<number>;
 }) => {
   const translate = useTranslate();
   const [isOpen, setIsOpen] = useState(false);
@@ -438,8 +478,18 @@ export const ConnectedCustomersRow = ({
     }
   };
 
+  const baseDisplayValue =
+    comparison?.hasChanged && comparison.baseValue != null
+      ? String(comparison.baseValue)
+      : undefined;
+
   return (
-    <InlineField name={translate("connectedCustomers")} labelSize="md">
+    <InlineField
+      name={translate("connectedCustomers")}
+      labelSize="md"
+      hasChanged={comparison?.hasChanged}
+      baseDisplayValue={baseDisplayValue}
+    >
       <P.Root
         open={isOpen}
         onOpenChange={(open) => {
@@ -469,6 +519,7 @@ export const ConnectedCustomersRow = ({
               customerPoints={customerPoints}
               aggregateUnit={aggregateUnit}
               customerUnit={customerUnit}
+              demands={demands}
               patterns={patterns}
               onClose={handleClose}
             />
@@ -485,13 +536,15 @@ const CustomerPointsPopover = ({
   customerPoints,
   aggregateUnit,
   customerUnit,
+  demands,
   patterns,
   onClose,
 }: {
   customerPoints: CustomerPoint[];
   aggregateUnit: Unit;
   customerUnit: Unit;
-  patterns: DemandPatterns;
+  demands: Demands;
+  patterns: Patterns;
   onClose: () => void;
 }) => {
   const parentRef = useRef<HTMLDivElement | null>(null);
@@ -561,7 +614,7 @@ const CustomerPointsPopover = ({
           {rowVirtualizer.getVirtualItems().map((virtualRow) => {
             const customerPoint = customerPoints[virtualRow.index];
             const demand = calculateAverageDemand(
-              customerPoint.demands,
+              getCustomerPointDemands(demands, customerPoint.id),
               patterns,
             );
 

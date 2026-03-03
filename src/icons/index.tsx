@@ -218,7 +218,7 @@ export { CustomUnsavedChangesIcon as UnsavedChangesIcon } from "./custom-icons/u
 export { CustomGithubIcon as GithubIcon } from "./custom-icons/github-icon";
 export { CustomPipeIcon as PipeIcon } from "./custom-icons/pipe-icon";
 export { CustomPumpIcon as PumpIcon } from "./custom-icons/pump-icon";
-export { CustomPumpCurvesIcon as PumpCurvesIcon } from "./custom-icons/pump-curves-icon";
+export { CustomCurvesIcon as PumpCurvesIcon } from "./custom-icons/curves-icon";
 export { CustomTypeOffIcon as TypeOffIcon } from "./custom-icons/type-off-icon";
 export { CustomValveIcon as ValveIcon } from "./custom-icons/valve-icon";
 export { CustomPipesCrossingIcon as PipesCrossinIcon } from "./custom-icons/pipes-crossing-icon";
@@ -231,3 +231,6 @@ export { CustomActiveTopologyDisableIcon as ActiveTopologyDisableIcon } from "./
 export { CustomOperationalDataIcon as AdvancedSettingsIcon } from "./custom-icons/operational-data";
 export { CustomTableSelectAllIcon as TableSelectAllIcon } from "./custom-icons/table-select-all-icon";
 export { CustomWaterLoggerIcon as WaterLoggerIcon } from "./custom-icons/water-logger-icon";
+export { CustomUpstreamTraceIcon as UpstreamTraceIcon } from "./custom-icons/trace-upstream-icon";
+export { CustomDownstreamTraceIcon as DownstreamTraceIcon } from "./custom-icons/trace-downstream-icon";
+export { CustomBoundaryTraceIcon as BoundaryTraceIcon } from "./custom-icons/trace-boundary-icon";

@@ -125,28 +125,6 @@ export function maybeDeleteOldMapboxLayer(items: ILayerConfig[]): {
   };
 }
 
-export function maybeDeleteOldBasemap(items: ILayerConfig[]): {
-  deleteLayerConfigs: ILayerConfig["id"][];
-  oldAt: string | undefined;
-  oldBasemapLayer: ILayerConfig | undefined;
-} {
-  let oldAt: string | undefined;
-  const oldBasemapLayer = items.find((layer) => layer.isBasemap);
-
-  const deleteLayerConfigs: string[] = [];
-
-  if (oldBasemapLayer) {
-    oldAt = oldBasemapLayer.at;
-    deleteLayerConfigs.push(oldBasemapLayer.id);
-  }
-
-  return {
-    oldAt,
-    deleteLayerConfigs,
-    oldBasemapLayer,
-  };
-}
-
 const MapboxStyleSkeleton = z.object({
   version: z.number(),
   name: z.string(),
@@ -182,7 +160,7 @@ function LayerFormHeader({
       {isEditing ? (
         <P.Close asChild>
           <E.Button type="button" size="xs">
-            {translate("cancel")}
+            {translate("dialog.cancel")}
           </E.Button>
         </P.Close>
       ) : (
@@ -786,62 +764,45 @@ const LabelsToggle = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
 
 const BaseMapItem = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
   const translate = useTranslate();
-  const isRaster =
-    layerConfig.type === "MAPBOX" && layerConfig.name.includes("Satellite");
+  const isRaster = layerConfig.name.includes("Satellite");
   const { applyChanges } = useLayerConfigState();
   const layerConfigs = useAtomValue(layerConfigAtom);
   const items = [...layerConfigs.values()];
   const nextAt = getNextAt(items);
   const userTracking = useUserTracking();
-  const mapboxBasemapOptions = Object.values(basemaps)
-    .filter((layer) => layer.type === "MAPBOX")
-    .map((mapboxLayer) => ({
-      value: mapboxLayer.name,
-      label: mapboxLayer.name,
-    }));
-  const osmBasemapOptions = Object.values(basemaps)
-    .filter(
-      (layer) =>
-        layer.type === "XYZ" &&
-        layer.isBasemap &&
-        layer.name.startsWith("OpenStreetMap"),
-    )
-    .map((osmLayer) => ({
-      value: osmLayer.name,
-      label: osmLayer.name.replace("OpenStreetMap ", ""),
-    }));
-  const basemapOptions =
-    layerConfig.type === "MAPBOX" ? mapboxBasemapOptions : osmBasemapOptions;
 
   const namePopover = (
     <div className="flex items-center justify-start  gap-x-2 cursor-pointer">
       <span className="select-none truncate text-sm w-auto">
         <Selector
           ariaLabel="basemaps"
-          options={basemapOptions}
+          options={Object.entries(basemaps).map(([, mapboxLayer]) => ({
+            value: mapboxLayer.name,
+            label: mapboxLayer.name,
+          }))}
           selected={layerConfig.name}
           onChange={(name) => {
-            const newBasemap = Object.values(basemaps).find(
-              (l) => l.type === layerConfig.type && l.name === name,
+            const newMapboxLayer = Object.values(basemaps).find(
+              (l) => l.name === name,
             );
-            if (!newBasemap) return;
+            if (!newMapboxLayer) return;
 
-            const { deleteLayerConfigs, oldAt, oldBasemapLayer } =
-              maybeDeleteOldBasemap(items);
+            const { deleteLayerConfigs, oldAt, oldMapboxLayer } =
+              maybeDeleteOldMapboxLayer(items);
             userTracking.capture({
               name: "baseMap.changed",
               newBasemap: name,
-              oldBasemap: oldBasemapLayer ? oldBasemapLayer.name : "",
+              oldBasemap: oldMapboxLayer ? oldMapboxLayer.name : "",
               source: "dropdown",
             });
             applyChanges({
               deleteLayerConfigs,
               putLayerConfigs: [
                 {
-                  ...newBasemap,
+                  ...newMapboxLayer,
                   visibility: true,
                   tms: false,
-                  opacity: newBasemap.opacity,
+                  opacity: newMapboxLayer.opacity,
                   at: oldAt || nextAt,
                   id: newFeatureId(),
                   labelVisibility: layerConfig
@@ -1063,13 +1024,13 @@ function SortableLayerConfig({ layerConfig }: { layerConfig: ILayerConfig }) {
       >
         <Draggable />
       </div>
-      {layerConfig.isBasemap && <BaseMapItem layerConfig={layerConfig} />}
+      {layerConfig.type === "MAPBOX" && layerConfig.isBasemap && (
+        <BaseMapItem layerConfig={layerConfig} />
+      )}
       {layerConfig.type === "MAPBOX" && !layerConfig.isBasemap && (
         <MapboxItem layerConfig={layerConfig} />
       )}
-      {layerConfig.type === "XYZ" && !layerConfig.isBasemap && (
-        <XYZItem layerConfig={layerConfig} />
-      )}
+      {layerConfig.type === "XYZ" && <XYZItem layerConfig={layerConfig} />}
       {layerConfig.type === "TILEJSON" && (
         <TileJSONItem layerConfig={layerConfig} />
       )}

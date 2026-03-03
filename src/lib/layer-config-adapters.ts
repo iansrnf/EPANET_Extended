@@ -14,22 +14,6 @@ const warnOffline = (translate: (key: string) => string) =>
     id: "map-offline-mode",
   });
 
-export function addOSMStyle(
-  style: mapboxgl.Style,
-  layer: ILayerConfig,
-  id: number,
-) {
-  const osm: ILayerConfig = {
-    ...layer,
-    url: layer.url || "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    tms: false,
-  };
-
-  return addXYZStyle(style, osm, id);
-}
-
-
-
 export async function addMapboxStyle(
   base: mapboxgl.Style,
   layer: ILayerConfig,

@@ -6,7 +6,9 @@ import {
   SimulationState,
   dataAtom,
   simulationAtom,
+  simulationSettingsAtom,
   stagingModelAtom,
+  autoElevationsAtom,
 } from "src/state/jotai";
 import * as Popover from "@radix-ui/react-popover";
 import { Button, StyledPopoverArrow, StyledPopoverContent } from "../elements";
@@ -26,43 +28,44 @@ export const Footer = () => {
   const translate = useTranslate();
   const { modelMetadata } = useAtomValue(dataAtom);
   const hydraulicModel = useAtomValue(stagingModelAtom);
+  const simulationSettings = useAtomValue(simulationSettingsAtom);
   const isLgOrLarger = useBreakpoint("lg");
   const isSmOrLarger = useBreakpoint("sm");
 
   return (
-    <nav className="fixed bottom-0 left-0 w-full bg-gray-50 border-t border-gray-300 shadow-lg z-10 brand-surface-subtle brand-divider brand-text">
-      <div className="flex flex-row items-center text-sm text-gray-500 space-x-1 brand-text-muted">
+    <nav className="fixed bottom-0 left-0 w-full bg-gray-50 border-t border-gray-300 shadow-lg z-10">
+      <div className="flex flex-row items-center text-sm text-gray-500 space-x-1">
         {!isLgOrLarger && (
           <div className="px-2">
             <CollapsedPopover
               unitsSpecName={modelMetadata.quantities.specName}
-              demandMultiplier={hydraulicModel.demands.multiplier}
+              demandMultiplier={simulationSettings.globalDemandMultiplier}
               headlossFormula={hydraulicModel.headlossFormula}
             />
           </div>
         )}
-        <div className="border-r-2 border-gray-100 h-10 brand-divider"></div>
+        <div className="border-r-2 border-gray-100 h-10"></div>
         <ScenarioSwitcher />
-        <div className="border-r-2 border-gray-150 h-10 brand-divider"></div>
+        <div className="border-r-2 border-gray-150 h-10"></div>
         {isLgOrLarger && (
           <>
             <span className="px-4 py-2">
               {translate("units")}: {modelMetadata.quantities.specName}
             </span>
-            <div className="border-r-2 border-gray-150 h-10 brand-divider"></div>
+            <div className="border-r-2 border-gray-150 h-10"></div>
             <span className="px-4 py-2">
               {translate("headlossShort")}: {hydraulicModel.headlossFormula}
             </span>
-            <div className="border-r-2 border-gray-150 h-10 brand-divider"></div>
+            <div className="border-r-2 border-gray-150 h-10"></div>
           </>
         )}
         {isSmOrLarger && (
           <>
             <span className="px-4 py-2">
               {translate("demandMultiplier")}:{" "}
-              {localizeDecimal(hydraulicModel.demands.multiplier)}
+              {localizeDecimal(simulationSettings.globalDemandMultiplier)}
             </span>
-            <div className="border-r-2 border-gray-150 h-10 brand-divider"></div>
+            <div className="border-r-2 border-gray-150 h-10"></div>
           </>
         )}
         <span className="px-1">
@@ -83,6 +86,7 @@ const CollapsedPopover = ({
   demandMultiplier: number;
 }) => {
   const translate = useTranslate();
+  const autoElevations = useAtomValue(autoElevationsAtom);
   const isLgOrLarger = useBreakpoint("lg");
   const isSmOrLarger = useBreakpoint("sm");
   return (
@@ -99,7 +103,9 @@ const CollapsedPopover = ({
             <span className="text-gray-700">{translate("on")}</span>
 
             <span>{translate("autoElevations")}</span>
-            <span className="text-gray-700">{translate("on")}</span>
+            <span className="text-gray-700">
+              {translate(autoElevations ? "on" : "off")}
+            </span>
 
             {!isLgOrLarger && (
               <>
@@ -126,9 +132,18 @@ const CollapsedPopover = ({
   );
 };
 
+const isOutdated = (
+  simulation: { modelVersion: string; settingsVersion: string },
+  hydraulicModel: HydraulicModel,
+  settingsVersion: string,
+) =>
+  hydraulicModel.version !== simulation.modelVersion ||
+  settingsVersion !== simulation.settingsVersion;
+
 const buildSimulationStatusStyles = (
   simulation: SimulationState,
   hydraulicModel: HydraulicModel,
+  settingsVersion: string,
   translate: (key: string, ...variables: string[]) => string,
 ) => {
   switch (simulation.status) {
@@ -145,7 +160,7 @@ const buildSimulationStatusStyles = (
         text: translate("simulationRunning"),
       };
     case "success":
-      if (hydraulicModel.version !== simulation.modelVersion) {
+      if (isOutdated(simulation, hydraulicModel, settingsVersion)) {
         return {
           Icon: OutdatedSimulationIcon,
           colorClass: "text-orange-500",
@@ -159,7 +174,7 @@ const buildSimulationStatusStyles = (
         text: translate("simulationSuccess"),
       };
     case "failure":
-      if (hydraulicModel.version !== simulation.modelVersion) {
+      if (isOutdated(simulation, hydraulicModel, settingsVersion)) {
         return {
           Icon: OutdatedSimulationIcon,
           colorClass: "text-orange-500",
@@ -173,7 +188,7 @@ const buildSimulationStatusStyles = (
         text: translate("simulationFailure"),
       };
     case "warning":
-      if (hydraulicModel.version !== simulation.modelVersion) {
+      if (isOutdated(simulation, hydraulicModel, settingsVersion)) {
         return {
           Icon: OutdatedSimulationIcon,
           colorClass: "text-orange-500",
@@ -193,10 +208,12 @@ export const SimulationStatusText = () => {
   const translate = useTranslate();
   const simulation = useAtomValue(simulationAtom);
   const hydraulicModel = useAtomValue(stagingModelAtom);
+  const simulationSettings = useAtomValue(simulationSettingsAtom);
 
   const { Icon, colorClass, text } = buildSimulationStatusStyles(
     simulation,
     hydraulicModel,
+    simulationSettings.version,
     translate,
   );
 

@@ -2,6 +2,7 @@ import { Junction, Pipe, Reservoir } from "src/hydraulic-model";
 import { parseInp } from "./parse-inp";
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
 import { buildInp } from "src/simulation/build-inp";
+import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import { getByLabel } from "src/__helpers__/asset-queries";
 import { Valve } from "src/hydraulic-model/asset-types";
 
@@ -30,7 +31,9 @@ describe("Parse inp with", () => {
       String(IDS.J1),
     ) as Junction;
     expect(junction.elevation).toEqual(elevation);
-    expect(junction.demands[0].baseDemand).toEqual(demand);
+    expect(
+      hydraulicModel.demands.junctions.get(junction.id)![0].baseDemand,
+    ).toEqual(demand);
     expect(junction.coordinates).toEqual([20, 10]);
   });
 
@@ -68,7 +71,9 @@ describe("Parse inp with", () => {
       String(IDS.J1),
     ) as Junction;
     expect(junction.elevation).toEqual(elevation);
-    expect(junction.demands[0].baseDemand).toEqual(demand);
+    expect(
+      hydraulicModel.demands.junctions.get(junction.id)![0].baseDemand,
+    ).toEqual(demand);
     expect(junction.coordinates).toEqual([20, 10]);
 
     const otherJunction = getByLabel(
@@ -76,7 +81,9 @@ describe("Parse inp with", () => {
       String(IDS.J2),
     ) as Junction;
     expect(otherJunction.elevation).toEqual(otherElevation);
-    expect(otherJunction.demands[0].baseDemand).toEqual(otherDemand);
+    expect(
+      hydraulicModel.demands.junctions.get(otherJunction.id)![0].baseDemand,
+    ).toEqual(otherDemand);
     expect(otherJunction.coordinates).toEqual([40, 30]);
   });
 
@@ -401,6 +408,7 @@ describe("Parse inp with", () => {
       .aJunction(IDS.J1, { coordinates: [10, 1] })
       .build();
     let inp = buildInp(hydraulicModel, {
+      simulationSettings: defaultSimulationSettings,
       madeBy: true,
     });
 
@@ -492,7 +500,9 @@ describe("Parse inp with", () => {
     ) as Junction;
     expect(junction).toBeDefined();
     expect(junction.elevation).toEqual(100);
-    expect(junction.demands[0].baseDemand).toEqual(0.5);
+    expect(
+      hydraulicModel.demands.junctions.get(junction.id)![0].baseDemand,
+    ).toEqual(0.5);
 
     const pipe = getByLabel(hydraulicModel.assets, String(IDS.P1)) as Pipe;
     expect(pipe).toBeDefined();
@@ -539,7 +549,9 @@ describe("Parse inp with", () => {
     ) as Junction;
     expect(junction).toBeDefined();
     expect(junction.elevation).toEqual(100);
-    expect(junction.demands[0].baseDemand).toEqual(0.5);
+    expect(
+      hydraulicModel.demands.junctions.get(junction.id)![0].baseDemand,
+    ).toEqual(0.5);
 
     const reservoir = getByLabel(
       hydraulicModel.assets,
@@ -610,15 +622,27 @@ describe("Parse inp with", () => {
       expect(issues?.unsupportedSections?.has("[EMITTERS]")).toBeFalsy();
     });
 
-    it("reports [EMITTERS] section with non-zero values", () => {
+    it("parses [EMITTERS] section", () => {
       const inp = `
+      [JUNCTIONS]
+      J1  100
+      J2  200
+
+      [COORDINATES]
+      J1  10  20
+      J2  30  40
+
       [EMITTERS]
       J1  0.5
       `;
 
-      const { issues } = parseInp(inp);
+      const { hydraulicModel, issues } = parseInp(inp);
+      const j1 = getByLabel(hydraulicModel.assets, "J1") as Junction;
+      const j2 = getByLabel(hydraulicModel.assets, "J2") as Junction;
 
-      expect(issues?.unsupportedSections?.has("[EMITTERS]")).toBe(true);
+      expect(j1.emitterCoefficient).toBe(0.5);
+      expect(j2.emitterCoefficient).toBe(0);
+      expect(issues?.unsupportedSections?.has("[EMITTERS]")).toBeFalsy();
     });
 
     it("ignores [REACTIONS] section with default values", () => {
@@ -736,6 +760,78 @@ describe("Parse inp with", () => {
       const { issues } = parseInp(inp);
 
       expect(issues?.hasPCVCurves).toBe(2);
+    });
+  });
+
+  describe("non-projected import", () => {
+    it("imports non-projected coordinates centered near origin", () => {
+      const inp = `
+      [JUNCTIONS]
+      J1  100
+      J2  200
+
+      [PIPES]
+      P1  J1  J2  1000  100  100  0  Open
+
+      [COORDINATES]
+      J1  500000  200000
+      J2  501000  201000
+      `;
+
+      const withoutFlag = parseInp(inp);
+      expect(withoutFlag.issues?.invalidCoordinates).toBeDefined();
+
+      const result = parseInp(inp, { sourceProjection: "xy-grid" });
+      expect(result.issues?.invalidCoordinates).toBeUndefined();
+      expect(result.hydraulicModel.assets.size).toBe(3);
+
+      const j1 = getByLabel(result.hydraulicModel.assets, "J1") as Junction;
+      expect(j1).toBeDefined();
+      expect(Math.abs(j1.coordinates[0])).toBeLessThan(1);
+      expect(Math.abs(j1.coordinates[1])).toBeLessThan(1);
+    });
+
+    it("preserves other issues when using xy-grid projection", () => {
+      const inp = `
+      [JUNCTIONS]
+      J1  100
+
+      [COORDINATES]
+      J1  500000  200000
+
+      [MIXING]
+      ANYTHING
+      `;
+
+      const result = parseInp(inp, { sourceProjection: "xy-grid" });
+      expect(result.issues?.invalidCoordinates).toBeUndefined();
+      expect(result.issues?.unsupportedSections).toBeDefined();
+    });
+
+    it("sets projection to xy-grid for non-projected import", () => {
+      const inp = `
+      [JUNCTIONS]
+      J1  100
+
+      [COORDINATES]
+      J1  500000  200000
+      `;
+
+      const result = parseInp(inp, { sourceProjection: "xy-grid" });
+      expect(result.modelMetadata.projectionMapper.projection).toBe("xy-grid");
+    });
+
+    it("sets projection to wgs84 for standard import", () => {
+      const inp = `
+      [JUNCTIONS]
+      J1  100
+
+      [COORDINATES]
+      J1  10  20
+      `;
+
+      const result = parseInp(inp);
+      expect(result.modelMetadata.projectionMapper.projection).toBe("wgs84");
     });
   });
 });

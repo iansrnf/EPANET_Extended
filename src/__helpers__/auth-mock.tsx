@@ -16,6 +16,9 @@ export const aUser = (attributes: Partial<User> = {}): User => {
     firstName: "John",
     lastName: "Doe",
     plan: "free",
+    trialActivatedAt: null,
+    trialEndsAt: null,
+    hasUsedTrial: false,
   };
   return { ...defaults, ...attributes };
 };
@@ -45,5 +48,12 @@ export const AuthMockProvider = ({
 export const useAuthMock: UseAuthHook = () => {
   const { isSignedIn, user, signOut, isLoaded } = useContext(AuthMockContext);
 
-  return { isSignedIn, user, userId: user.id, signOut, isLoaded };
+  return {
+    isSignedIn,
+    user,
+    userId: user.id,
+    signOut,
+    isLoaded,
+    reload: async () => {},
+  };
 };

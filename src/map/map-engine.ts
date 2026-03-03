@@ -188,15 +188,6 @@ export class MapEngine {
     }
   }
 
-  setMapboxLogoVisibility(isVisible: boolean) {
-    const container = this.map.getContainer();
-    const logo = container.querySelector(
-      ".mapboxgl-ctrl-logo",
-    ) as HTMLElement | null;
-    if (!logo) return;
-    logo.style.display = isVisible ? "" : "none";
-  }
-
   addLayer(layer: mapboxgl.AnyLayer, beforeId?: string) {
     this.map.addLayer(layer, beforeId);
   }
@@ -232,6 +223,17 @@ export class MapEngine {
     if (!this.map || !(this.map as any).style) return;
 
     this.map.setFilter(layerId, filter);
+  }
+
+  setMapboxLogoVisibility(visible: boolean): void {
+    // mapbox-gl v3 no longer exposes a stable public API for toggling the logo,
+    // so we fall back to toggling the logo control DOM element.
+    const container = this.map.getContainer();
+    const logo = container.querySelector(
+      ".mapboxgl-ctrl-logo",
+    ) as HTMLElement | null;
+    if (!logo) return;
+    logo.style.display = visible ? "" : "none";
   }
 
   setOverlay(layers: LayersList) {

@@ -81,7 +81,7 @@ const exposeAppStateInWindow = (
 const noop = () => null;
 const debug = isDebugOn
   ? (
-      e: mapboxgl.MapboxEvent<any>,
+      e: mapboxgl.MapboxEvent,
       mode: Mode,
       selection: Sel,
       dragTargetRef: MutableRefObject<DragTarget | null>,
@@ -274,13 +274,15 @@ export const MapCanvas = memo(function MapCanvas({
 
       HANDLERS[mode.mode].double(e);
     },
-    onMoveEnd(e: mapboxgl.MapboxEvent & mapboxgl.EventData) {
+    onMoveEnd(e: mapboxgl.MapboxEvent) {
       debug(e, mode.mode, selection, dragTargetRef, "onMouseMoveEnd");
     },
-    onMove: throttle((e: mapboxgl.MapboxEvent & mapboxgl.EventData) => {
+    onMove: throttle((e: mapboxgl.MapboxEvent) => {
       debug(e, mode.mode, selection, dragTargetRef, "onMove");
       const center = e.target.getCenter().toArray();
-      const bounds = e.target.getBounds().toArray();
+      const boundsObj = e.target.getBounds();
+      if (!boundsObj) return;
+      const bounds = boundsObj.toArray();
       return {
         center,
         bounds,

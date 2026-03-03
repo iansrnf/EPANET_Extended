@@ -151,8 +151,8 @@ export function EpanetApp() {
     <main
       className={
         isCursorFamilyEnabled
-          ? "ff-cursor-family brand-theme h-dvh flex flex-col bg-white dark:bg-gray-800"
-          : "brand-theme h-dvh flex flex-col bg-white dark:bg-gray-800"
+          ? "ff-cursor-family h-dvh flex flex-col bg-white dark:bg-gray-800"
+          : "h-dvh flex flex-col bg-white dark:bg-gray-800"
       }
     >
       <MapContext.Provider value={map}>
@@ -166,7 +166,7 @@ export function EpanetApp() {
         <div
           className={clsx(
             layout === "VERTICAL" && "flex-col h-full",
-            "flex flex-grow relative border-t border-gray-200 dark:border-gray-900 brand-divider",
+            "flex flex-grow relative border-t border-gray-200 dark:border-gray-900",
             "pb-10",
           )}
         >

@@ -1,5 +1,3 @@
-import { useRef } from "react";
-
 export const helpCenterUrl = "https://help.epanetjs.com";
 export const roadmapUrl = "https://roadmap.epanetjs.com";
 export const utilitiesUrl = "https://utils.epanetjs.com";

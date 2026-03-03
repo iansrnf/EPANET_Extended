@@ -4,6 +4,8 @@ import {
   PipeStatus,
 } from "src/hydraulic-model/asset-types/pipe";
 import { ValveKind } from "src/hydraulic-model/asset-types/valve";
+import { CurveType } from "src/hydraulic-model/curves";
+import { PatternType } from "src/hydraulic-model/patterns";
 import { EpanetUnitSystem } from "src/simulation/build-inp";
 
 export type PipeData = {
@@ -67,18 +69,19 @@ export type ValveData = {
   setting: number;
   minorLoss: number;
   curveId?: string;
-  headlossCurveId?: string;
   isActive: boolean;
 };
 
 export type CurveData = {
   label: string;
   points: { x: number; y: number }[];
+  fallbackType?: CurveType;
 };
 
 export type PatternData = {
   label: string;
   multipliers: number[];
+  fallbackType?: PatternType;
 };
 
 export type DemandData = {
@@ -118,21 +121,31 @@ export type InpData = {
   vertices: ItemData<Position[]>;
   demands: ItemData<DemandData[]>;
   customerDemands: ItemData<DemandData[]>;
+  emitters: ItemData<number>;
   patterns: ItemData<PatternData>;
   status: ItemData<string>;
   curves: ItemData<CurveData>;
   energyEfficiencyCurves: ItemData<string>;
+  sourcePatterns: Set<string>;
+  energyPatterns: Set<string>;
   options: {
     units: EpanetUnitSystem;
     headlossFormula: HeadlossFormula;
     demandMultiplier: number;
     defaultPattern?: string;
+    demandModel?: "DDA" | "PDA";
+    minimumPressure?: number;
+    requiredPressure?: number;
+    pressureExponent?: number;
+    emitterExponent?: number;
   };
   times: {
     duration?: number;
     hydraulicTimestep?: number;
     reportTimestep?: number;
     patternTimestep?: number;
+    qualityTimestep?: number;
+    ruleTimestep?: number;
     patternStart?: number;
     reportStart?: number;
     startClocktime?: number;
@@ -198,10 +211,13 @@ export const nullInpData = (): InpData => {
     vertices: new ItemData(),
     demands: new ItemData(),
     customerDemands: new ItemData(),
+    emitters: new ItemData(),
     patterns: new ItemData(),
     status: new ItemData(),
     curves: new ItemData(),
     energyEfficiencyCurves: new ItemData(),
+    sourcePatterns: new Set(),
+    energyPatterns: new Set(),
     options: { units: "GPM", headlossFormula: "H-W", demandMultiplier: 1 },
     times: {},
     controls: { simple: "", ruleBased: "" },

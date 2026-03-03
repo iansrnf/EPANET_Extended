@@ -1,5 +1,6 @@
 import { atomWithReset } from "jotai/utils";
 import { ParserIssues } from "src/import/inp";
+import { CurveId } from "src/hydraulic-model/curves";
 
 export type InvalidFilesErrorDialogState = {
   type: "invalidFilesError";
@@ -29,6 +30,12 @@ export type WelcomeDialogState = {
 
 export type GeocodingNotSupportedDialogState = {
   type: "inpGeocodingNotSupported";
+  onImportNonProjected: () => void;
+};
+
+export type InpProjectionChoiceDialogState = {
+  type: "inpProjectionChoice";
+  onImportNonProjected: () => void;
 };
 
 export type MissingCoordinatesDialogState = {
@@ -80,12 +87,22 @@ export type SimulationProgressDialogState = {
   totalDuration: number;
 };
 
-export type CurvesAndPatternsDialogState = {
-  type: "curvesAndPatterns";
+export type PatternsLibraryDialog = {
+  type: "patternsLibrary";
+  initialPatternId?: number;
+  initialSection?: "demand" | "reservoirHead" | "pumpSpeed";
 };
 
-export type PumpCurvesDialogState = {
+export type PumpLibraryDialogState = {
   type: "pumpLibrary";
+  initialCurveId?: CurveId;
+  initialSection?: "pump" | "efficiency";
+};
+
+export type CurveLibraryDialogState = {
+  type: "curveLibrary";
+  initialCurveId?: CurveId;
+  initialSection?: "volume" | "valve" | "headloss";
 };
 
 export type DeleteScenarioConfirmationDialogState = {
@@ -120,6 +137,10 @@ export type AlertNetworkRequiredState = {
   type: "alertNetworkRequired";
 };
 
+export type ActivatingTrialDialogState = {
+  type: "activatingTrial";
+};
+
 export type DialogState =
   | InvalidFilesErrorDialogState
   | {
@@ -134,6 +155,7 @@ export type DialogState =
   | { type: "loading" }
   | AlertInpOutputState
   | GeocodingNotSupportedDialogState
+  | InpProjectionChoiceDialogState
   | MissingCoordinatesDialogState
   | UpgradeDialogState
   | ImportCustomerPointsWizardState
@@ -144,14 +166,16 @@ export type DialogState =
   | SimulationProgressDialogState
   | { type: "simulationSettings" }
   | { type: "controls" }
-  | CurvesAndPatternsDialogState
-  | PumpCurvesDialogState
+  | PatternsLibraryDialog
+  | PumpLibraryDialogState
+  | CurveLibraryDialogState
   | DeleteScenarioConfirmationDialogState
   | RenameScenarioDialogState
   | ScenariosPaywallDialogState
   | FirstScenarioDialogState
   | AlertScenariosNotSavedState
   | AlertNetworkRequiredState
+  | ActivatingTrialDialogState
   | null;
 
 export const dialogFromUrl = (): DialogState => {

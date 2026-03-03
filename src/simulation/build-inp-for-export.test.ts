@@ -1,9 +1,14 @@
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
 import { buildInp } from "./build-inp";
 import { presets } from "src/model-metadata/quantities-spec";
+import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 
 describe("build inp export ", () => {
-  const exportOptions = { labelIds: true, geolocation: true };
+  const exportOptions = {
+    labelIds: true,
+    geolocation: true,
+    simulationSettings: defaultSimulationSettings,
+  };
 
   it("adds reservoirs", () => {
     const IDS = { R1: 1, R2: 2 } as const;
@@ -35,13 +40,13 @@ describe("build inp export ", () => {
       .aJunction(IDS.J1, {
         label: "J_1",
         elevation: 10,
-        demands: [{ baseDemand: 1 }],
       })
+      .aJunctionDemand(IDS.J1, [{ baseDemand: 1 }])
       .aJunction(IDS.J2, {
         label: "J_2",
         elevation: 20,
-        demands: [{ baseDemand: 2 }],
       })
+      .aJunctionDemand(IDS.J2, [{ baseDemand: 2 }])
       .build();
 
     const inp = buildInp(
@@ -178,7 +183,9 @@ describe("build inp export ", () => {
       })
       .build();
 
-    const without = buildInp(hydraulicModel);
+    const without = buildInp(hydraulicModel, {
+      simulationSettings: defaultSimulationSettings,
+    });
     expect(rowsFrom(without)).not.toContain("[COORDINATES]");
     expect(rowsFrom(without)).not.toContain("[VERTICES]");
 

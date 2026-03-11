@@ -286,7 +286,11 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             translate,
           );
           addEditingLayersToMap(map, mapState.stylesConfig);
-          toggleAnalysisLayers(map, mapState.symbology);
+          toggleAnalysisLayers(
+            map,
+            mapState.symbology,
+            mapState.simulation,
+          );
         }
 
         if (
@@ -439,7 +443,11 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           hasNewSelection ||
           hasNewEditions
         ) {
-          toggleAnalysisLayers(map, mapState.symbology);
+          toggleAnalysisLayers(
+            map,
+            mapState.symbology,
+            mapState.simulation,
+          );
         }
 
         if (
@@ -519,19 +527,21 @@ const buildBaseStyleAndSetOnMap = withDebugInstrumentation(
 );
 
 const toggleAnalysisLayers = withDebugInstrumentation(
-  (map: MapEngine, symbology: SymbologySpec) => {
-    const arrowProperties = ["flow", "velocity", "unitHeadloss"];
-    const showArrows =
-      symbology.link.colorRule &&
-      arrowProperties.includes(symbology.link.colorRule.property);
-    if (!showArrows) {
-      map.hideLayers([
+  (
+    map: MapEngine,
+    symbology: SymbologySpec,
+    simulation: SimulationState,
+  ) => {
+    const hasSimulationData =
+      simulation.status === "success" || simulation.status === "warning";
+    if (hasSimulationData) {
+      map.showLayers([
         "main-features-pipe-arrows",
         "delta-features-pipe-arrows",
         "selected-pipe-arrows",
       ]);
     } else {
-      map.showLayers([
+      map.hideLayers([
         "main-features-pipe-arrows",
         "delta-features-pipe-arrows",
         "selected-pipe-arrows",

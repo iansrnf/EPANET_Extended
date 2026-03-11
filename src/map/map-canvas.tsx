@@ -81,7 +81,7 @@ const exposeAppStateInWindow = (
 const noop = () => null;
 const debug = isDebugOn
   ? (
-      e: mapboxgl.MapboxEvent<any>,
+      e: mapboxgl.MapboxEvent,
       mode: Mode,
       selection: Sel,
       dragTargetRef: MutableRefObject<DragTarget | null>,
@@ -99,6 +99,12 @@ const debug = isDebugOn
       );
     }
   : noop;
+
+const PIPE_FLOW_ARROW_LAYERS = [
+  "main-features-pipe-arrows",
+  "delta-features-pipe-arrows",
+  "selected-pipe-arrows",
+] as const;
 
 export const MapCanvas = memo(function MapCanvas({
   setMap,
@@ -164,6 +170,7 @@ export const MapCanvas = memo(function MapCanvas({
   useEffect(() => {
     if (mapRef.current) return;
     if (!mapDivRef.current || !mapHandlers) return;
+    let animationFrameId: number | null = null;
 
     try {
       mapRef.current = new MapEngine({
@@ -172,6 +179,28 @@ export const MapCanvas = memo(function MapCanvas({
         onControlClick,
       });
       setMap(mapRef.current);
+
+      const map = mapRef.current.map;
+      let iconOffset = 0;
+      const animatePipeFlow = () => {
+        iconOffset += 0.1;
+        if (iconOffset > 2.5) iconOffset = -2.5;
+
+        const iconOffsetExpression: mapboxgl.Expression = [
+          "case",
+          ["<", ["coalesce", ["get", "rotation"], 0], 0],
+          ["literal", [-iconOffset, 0]],
+          ["literal", [iconOffset, 0]],
+        ];
+
+        for (const layerId of PIPE_FLOW_ARROW_LAYERS) {
+          if (map.getLayer(layerId)) {
+            map.setLayoutProperty(layerId, "icon-offset", iconOffsetExpression);
+          }
+        }
+        animationFrameId = requestAnimationFrame(animatePipeFlow);
+      };
+      animationFrameId = requestAnimationFrame(animatePipeFlow);
     } catch (error) {
       if (error && (error as Error).message.match(/webgl/i)) {
         setInitError(true);
@@ -181,6 +210,9 @@ export const MapCanvas = memo(function MapCanvas({
     }
 
     return () => {
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+      }
       setMap(null);
       if (mapRef.current && "remove" in mapRef.current) {
         mapRef.current.remove();
@@ -274,13 +306,15 @@ export const MapCanvas = memo(function MapCanvas({
 
       HANDLERS[mode.mode].double(e);
     },
-    onMoveEnd(e: mapboxgl.MapboxEvent & mapboxgl.EventData) {
+    onMoveEnd(e: mapboxgl.MapboxEvent) {
       debug(e, mode.mode, selection, dragTargetRef, "onMouseMoveEnd");
     },
-    onMove: throttle((e: mapboxgl.MapboxEvent & mapboxgl.EventData) => {
+    onMove: throttle((e: mapboxgl.MapboxEvent) => {
       debug(e, mode.mode, selection, dragTargetRef, "onMove");
       const center = e.target.getCenter().toArray();
-      const bounds = e.target.getBounds().toArray();
+      const boundsObj = e.target.getBounds();
+      if (!boundsObj) return;
+      const bounds = boundsObj.toArray();
       return {
         center,
         bounds,

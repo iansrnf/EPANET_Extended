@@ -88,6 +88,7 @@ const appendPipeProps = (
   simulationResults?: ResultsReader | null,
 ) => {
   appendPipeStatus(pipe, feature, simulationResults);
+  appendPipeArrowProps(pipe, feature, simulationResults);
   appendPipeSymbologyProps(
     pipe,
     feature,
@@ -170,14 +171,16 @@ export const appendPipeArrowProps = (
   const pipeSimulation = simulationResults?.getPipe(pipe.id);
   const status = pipeSimulation?.status ?? null;
   const flow = pipeSimulation?.flow ?? null;
-  const isReverse = flow && flow < 0;
+  const isReverse = flow !== null && flow < 0;
+  const flowMagnitude = flow === null ? 0 : Math.abs(flow);
   feature.properties!.length = convertTo(
     { value: pipe.length, unit: pipe.getUnit("length") },
     "m",
   );
   feature.properties!.hasArrow =
-    (status ?? pipe.initialStatus) === "open" && flow !== null;
+    pipe.isActive && (status ?? pipe.initialStatus) !== "closed";
   feature.properties!.rotation = isReverse ? -180 : 0;
+  feature.properties!.flowMagnitude = flowMagnitude;
 };
 
 const appendPipeSymbologyProps = (
@@ -214,7 +217,6 @@ const appendPipeSymbologyProps = (
     feature.properties!.label = `${localizedNumber} ${unitText}`;
   }
   feature.properties!.color = colorFor(linkSymbology.colorRule, numericValue);
-  appendPipeArrowProps(pipe, feature, simulationResults);
 };
 
 // Maps symbology property names to simulation property names

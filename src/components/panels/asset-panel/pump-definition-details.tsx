@@ -1,57 +1,84 @@
 import { useState, useCallback, useMemo } from "react";
+import { useAtomValue } from "jotai";
+import { projectSettingsAtom } from "src/state/project-settings";
 import { TranslateFn, useTranslate } from "src/hooks/use-translate";
-import { NumericField } from "src/components/form/numeric-field";
+import { NumericTable, type Cell } from "src/components/form/numeric-table";
 import {
+  CurveId,
   CurvePoint,
-  getPumpCurveType,
-  PumpCurveType,
+  Curves,
+  getCurvePointsType,
+  CurvePointsType,
+  getPumpCurveErrors,
+  CurveErrorPoint,
 } from "src/hydraulic-model/curves";
-import { Quantities } from "src/model-metadata/quantities-spec";
+import { UnitsSpec } from "src/lib/project-settings/quantities-spec";
+import { getDecimals } from "src/lib/project-settings";
 import { localizeDecimal } from "src/infra/i18n/numbers";
 import { Pump, PumpDefintionType } from "src/hydraulic-model/asset-types/pump";
-import { SelectRow, QuantityRow } from "./ui-components";
-import type { PropertyComparison } from "src/hooks/use-asset-comparison";
-import * as Tooltip from "@radix-ui/react-tooltip";
-import { TContent } from "src/components/elements";
+import {
+  SelectRow,
+  LibrarySelectRow,
+  QuantityRow,
+  TextField,
+} from "./ui-components";
+import type {
+  PropertyComparison,
+  PumpCurveComparison,
+} from "src/hooks/use-asset-comparison";
+import type { PropertyChange } from "src/hydraulic-model/model-operations/change-property";
+import { useShowPumpLibrary } from "src/commands/show-pump-library";
+import {
+  BlockComparisonField,
+  InlineField,
+  NestedSection,
+} from "src/components/form/fields";
 
-export type PumpDefinitionMode = "power" | "designPointCurve" | "standardCurve";
+export type PumpDefinitionMode =
+  | "power"
+  | "designPointCurve"
+  | "standardCurve"
+  | "curveId";
 
 export interface PumpCurvePoint {
   flow: number;
   head: number;
 }
 
-export type PumpDefinitionData =
-  | { type: "power"; power: number }
-  | { type: "curve"; curve: CurvePoint[] };
-
 interface MaybePumpCurvePoint {
   flow?: number;
   head?: number;
 }
 
-const OptionKey = {
-  power: "constantPower",
-  designPointCurve: "designPointCurve",
-  standardCurve: "standardCurve",
-};
-
 export const PumpDefinitionDetails = ({
   pump,
-  quantities,
+  units,
+  curves,
   readonly = false,
   onChange,
   getComparison,
+  getPumpCurveComparison,
 }: {
   pump: Pump;
-  quantities: Quantities;
+  units: UnitsSpec;
+  curves: Curves;
   readonly?: boolean;
-  onChange: (newData: PumpDefinitionData) => void;
+  onChange: (changes: PropertyChange[]) => void;
   getComparison?: (name: string, value: unknown) => PropertyComparison;
+  getPumpCurveComparison?: (
+    value: CurvePoint[] | undefined,
+  ) => PumpCurveComparison;
 }) => {
   const curve = useMemo(() => {
-    return pump.curve || [{ x: 1, y: 1 }];
-  }, [pump.curve]);
+    if (pump.definitionType === "curveId" && pump.curveId) {
+      const curve = curves.get(pump.curveId)!;
+      if (getCurvePointsType(curve.points) !== "multiPointCurve") {
+        return curve.points;
+      }
+    }
+    if (pump.definitionType === "curve" && pump.curve) return pump.curve;
+    return [{ x: 1, y: 1 }];
+  }, [pump.curve, pump.curveId, pump.definitionType, curves]);
 
   const componentKey = `${getCurveHash(curve)}|${pump.definitionType}`;
 
@@ -60,10 +87,12 @@ export const PumpDefinitionDetails = ({
       key={componentKey}
       pump={pump}
       curve={curve}
-      quantities={quantities}
+      curves={curves}
+      units={units}
       readonly={readonly}
       onChange={onChange}
       getComparison={getComparison}
+      getPumpCurveComparison={getPumpCurveComparison}
     />
   );
 };
@@ -71,17 +100,23 @@ export const PumpDefinitionDetails = ({
 const PumpDefinitionDetailsInner = ({
   pump,
   curve,
-  quantities,
+  curves,
+  units,
   readonly = false,
   onChange,
   getComparison,
+  getPumpCurveComparison,
 }: {
   pump: Pump;
   curve: CurvePoint[];
-  quantities: Quantities;
+  curves: Curves;
+  units: UnitsSpec;
   readonly?: boolean;
-  onChange: (newData: PumpDefinitionData) => void;
+  onChange: (changes: PropertyChange[]) => void;
   getComparison?: (name: string, value: unknown) => PropertyComparison;
+  getPumpCurveComparison?: (
+    value: CurvePoint[] | undefined,
+  ) => PumpCurveComparison;
 }) => {
   const translate = useTranslate();
 
@@ -96,14 +131,17 @@ const PumpDefinitionDetailsInner = ({
         { label: translate("constantPower"), value: "power" },
         { label: translate("designPointCurve"), value: "designPointCurve" },
         { label: translate("standardCurve"), value: "standardCurve" },
+        { label: translate("namedCurve"), value: "curveId" },
       ] as { label: string; value: PumpDefinitionMode }[],
     [translate],
   );
 
   const comparison = getDiffWithBaseModel({
     pump,
-    quantities,
+    curves,
+    units,
     getComparison,
+    getPumpCurveComparison,
     translate,
   });
 
@@ -116,34 +154,43 @@ const PumpDefinitionDetailsInner = ({
       setLocalDefinitionType(newValue);
 
       if (newValue === "power") {
-        return onChange({ type: "power", power: pump.power });
+        return onChange([
+          { property: "definitionType", value: "power" },
+          { property: "power", value: pump.power },
+          { property: "curveId", value: undefined },
+        ]);
       }
 
-      const curveType =
-        oldValue !== "power" ? oldValue : getPumpCurveType(curve);
-      const currentPoints = initialPointsFromCurve(curve, curveType);
-      const validationResult = validateCurve(currentPoints, newValue);
-
-      if (!validationResult.valid) {
+      if (newValue === "curveId") {
+        if (pump.curveId)
+          onChange([
+            { property: "definitionType", value: "curveId" },
+            { property: "curveId", value: pump.curveId },
+          ]);
         return;
       }
 
-      onChange({
-        type: "curve",
-        curve: validationResult.points.map(({ flow, head }) => ({
-          x: flow,
-          y: head,
-        })),
-      });
-    },
-    [pump.power, curve, onChange],
-  );
+      const curveType =
+        oldValue !== "power" && oldValue !== "curveId"
+          ? oldValue
+          : (() => {
+              const ct = getCurvePointsType(curve);
+              return ct === "multiPointCurve" ? "designPointCurve" : ct;
+            })();
+      const currentPoints = initialPointsFromCurve(curve, curveType);
+      const validPoints = extractValidPoints(currentPoints, newValue);
 
-  const handlePowerChange = useCallback(
-    (_name: string, newValue: number, _oldValue: number | null) => {
-      onChange({ type: "power", power: newValue });
+      if (!validPoints || getPumpCurveErrors(validPoints).length > 0) {
+        return;
+      }
+
+      onChange([
+        { property: "definitionType", value: "curve" },
+        { property: "curve", value: validPoints },
+        { property: "curveId", value: undefined },
+      ]);
     },
-    [onChange],
+    [curve, onChange, pump.power, pump.curveId],
   );
 
   const handleCurvePointsChange = useCallback(
@@ -151,24 +198,28 @@ const PumpDefinitionDetailsInner = ({
       if (localDefinitionType === "power") {
         return;
       }
-      onChange({
-        type: "curve",
-        curve: rawPoints.map(({ flow, head }) => ({
-          x: flow,
-          y: head,
-        })),
-      });
+      onChange([
+        {
+          property: "curve",
+          value: rawPoints.map(({ flow, head }) => ({
+            x: flow,
+            y: head,
+          })),
+        },
+      ]);
     },
     [localDefinitionType, onChange],
   );
 
-  const purpleLine = comparison?.hasChanged ? (
-    <div className="absolute -left-4 top-0 bottom-0 w-1 bg-purple-500 rounded-full" />
-  ) : null;
-
-  const sectionContent = (
-    <div className="relative">
-      {purpleLine}
+  return (
+    <BlockComparisonField
+      hasChanged={comparison.hasChanged}
+      baseDisplayValue={
+        comparison.tooltipText ? (
+          <div className="whitespace-pre-line">{comparison.tooltipText}</div>
+        ) : undefined
+      }
+    >
       <SelectRow
         name="pumpType"
         selected={localDefinitionType}
@@ -176,46 +227,35 @@ const PumpDefinitionDetailsInner = ({
         readOnly={readonly}
         onChange={handleDefinitionTypeChange}
       />
-      <div className="bg-gray-50 p-2 py-1 mt-1 -mr-2 border-l-2 border-gray-400 rounded-sm">
+      <NestedSection className="pb-2">
         {localDefinitionType === "power" && (
-          <QuantityRow
-            name="power"
-            value={pump.power}
-            unit={quantities.getUnit("power")}
-            decimals={quantities.getDecimals("power")}
+          <PowerDefinition
+            power={pump.power}
+            units={units}
             readOnly={readonly}
-            onChange={handlePowerChange}
+            onChange={onChange}
           />
         )}
-        {localDefinitionType !== "power" && (
-          <PumpCurveTable
-            curve={curve}
-            curveType={localDefinitionType}
-            quantities={quantities}
-            onCurveChange={readonly ? undefined : handleCurvePointsChange}
+        {localDefinitionType == "curveId" && (
+          <CurveIdSelector
+            curveId={pump.curveId}
+            curves={curves}
+            onChange={onChange}
+            readOnly={readonly}
           />
         )}
-      </div>
-    </div>
+        {localDefinitionType !== "power" &&
+          localDefinitionType !== "curveId" && (
+            <PumpCurveTable
+              curve={curve}
+              curveType={localDefinitionType}
+              units={units}
+              onCurveChange={readonly ? undefined : handleCurvePointsChange}
+            />
+          )}
+      </NestedSection>
+    </BlockComparisonField>
   );
-
-  if (comparison.hasChanged && comparison.tooltipText) {
-    return (
-      <Tooltip.Root delayDuration={200}>
-        <Tooltip.Trigger asChild>{sectionContent}</Tooltip.Trigger>
-        <Tooltip.Portal>
-          <TContent side="left" sideOffset={4}>
-            <div className="whitespace-pre-line">
-              {translate("scenarios.main")}:{"\n"}
-              {comparison.tooltipText}
-            </div>
-          </TContent>
-        </Tooltip.Portal>
-      </Tooltip.Root>
-    );
-  }
-
-  return sectionContent;
 };
 
 type OnCurveChange = (points: PumpCurvePoint[]) => void;
@@ -223,25 +263,37 @@ type OnCurveChange = (points: PumpCurvePoint[]) => void;
 export const PumpCurveTable = ({
   curve,
   curveType,
-  quantities,
+  units,
   onCurveChange,
 }: {
   curve?: CurvePoint[];
-  curveType: PumpCurveType;
-  quantities: Quantities;
+  curveType: CurvePointsType;
+  units: UnitsSpec;
   onCurveChange?: OnCurveChange;
 }) => {
   const translate = useTranslate();
+  const { formatting } = useAtomValue(projectSettingsAtom);
 
   const [editingPoints, setEditingPoints] = useState<MaybePumpCurvePoint[]>(
     () => initialPointsFromCurve(curve, curveType),
   );
 
-  const flowDecimals = quantities.getDecimals("flow") ?? 2;
-  const headDecimals = quantities.getDecimals("head") ?? 2;
+  const flowDecimals = getDecimals(formatting, "flow") ?? 2;
+  const headDecimals = getDecimals(formatting, "head") ?? 2;
 
   const displayPoints = calculateCurvePoints(editingPoints, curveType);
-  const validationResult = validateCurve(editingPoints, curveType);
+
+  const validatedPoints = useMemo(
+    () => extractValidPoints(displayPoints, curveType),
+    [displayPoints, curveType],
+  );
+
+  const pumpErrors = useMemo(
+    () => (validatedPoints ? getPumpCurveErrors(validatedPoints) : []),
+    [validatedPoints],
+  );
+
+  const hasMissingValues = validatedPoints === null;
 
   const pointLabels = [
     translate("shutoffPoint"),
@@ -266,9 +318,12 @@ export const PumpCurveTable = ({
           newPoints = calculateCurvePoints([{}, designPoint, {}], curveType);
         }
 
-        const result = validateCurve(newPoints, curveType);
-        if (onCurveChange && result.valid) {
-          onCurveChange(result.points);
+        const validPoints = extractValidPoints(newPoints, curveType);
+        if (validPoints && onCurveChange) {
+          const errors = getPumpCurveErrors(validPoints);
+          if (errors.length === 0) {
+            onCurveChange(validPoints.map((p) => ({ flow: p.x, head: p.y })));
+          }
         }
 
         return newPoints;
@@ -277,200 +332,163 @@ export const PumpCurveTable = ({
     [curveType, onCurveChange, setEditingPoints],
   );
 
-  const getEditHandlers = (displayIndex: number) => {
-    if (!onCurveChange) {
-      return { onChangeFlow: undefined, onChangeHead: undefined };
-    }
-
-    if (curveType === "designPointCurve") {
-      if (displayIndex === 1) {
-        return {
-          onChangeFlow: (value: number | undefined) =>
-            handlePointChange(displayIndex, "flow", value),
-          onChangeHead: (value: number | undefined) =>
-            handlePointChange(displayIndex, "head", value),
-        };
-      }
-      return { onChangeFlow: undefined, onChangeHead: undefined };
-    }
-
-    return {
-      onChangeFlow:
-        displayIndex === 0
-          ? undefined // Shutoff flow is always 0
-          : (value: number | undefined) =>
-              handlePointChange(displayIndex, "flow", value),
-      onChangeHead: (value: number | undefined) =>
-        handlePointChange(displayIndex, "head", value),
-    };
+  const isEditable = (index: number, field: "flow" | "head"): boolean => {
+    if (!onCurveChange) return false;
+    if (curveType === "designPointCurve") return index === 1;
+    if (field === "flow" && index === 0) return false; // Shutoff flow is always 0
+    return true;
   };
 
-  const getErrorStates = (
-    displayIndex: number,
-    validationResult: ValidationResult,
-  ) => {
-    const point = displayPoints[displayIndex];
-    const { onChangeFlow, onChangeHead } = getEditHandlers(displayIndex);
-
-    return {
-      flowHasError:
-        onChangeFlow !== undefined &&
-        (point.flow === undefined ||
-          (!validationResult.valid &&
-            validationResult.error === "curveValidation.flowAscendingOrder")),
-      headHasError:
-        onChangeHead !== undefined &&
-        (point.head === undefined ||
-          (!validationResult.valid &&
-            validationResult.error === "curveValidation.headDescendingOrder")),
-    };
+  const hasError = (index: number, field: "flow" | "head"): boolean => {
+    if (!isEditable(index, field)) return false;
+    const point = displayPoints[index];
+    if (
+      field === "flow" ? point.flow === undefined : point.head === undefined
+    ) {
+      return true;
+    }
+    const errorIndex = curveType === "designPointCurve" ? index - 1 : index;
+    return pumpErrors.some(
+      (e) =>
+        e.index === errorIndex && e.value === (field === "flow" ? "x" : "y"),
+    );
   };
+
+  const flowUnit = units.flow;
+  const headUnit = units.head;
+
+  const cells: Array<[Cell, Cell]> = displayPoints.map((point, index) => [
+    {
+      label: `${pointLabels[index]}-x`,
+      value: point.flow ?? null,
+      readOnly: !isEditable(index, "flow"),
+      positiveOnly: true,
+      isNullable: true,
+      decimals: flowDecimals,
+      hasError: hasError(index, "flow"),
+      handler: (newValue: number, isEmpty: boolean) =>
+        handlePointChange(index, "flow", isEmpty ? undefined : newValue),
+    },
+    {
+      label: `${pointLabels[index]}-y`,
+      value: point.head ?? null,
+      readOnly: !isEditable(index, "head"),
+      positiveOnly: true,
+      isNullable: true,
+      decimals: headDecimals,
+      hasError: hasError(index, "head"),
+      handler: (newValue: number, isEmpty: boolean) =>
+        handlePointChange(index, "head", isEmpty ? undefined : newValue),
+    },
+  ]);
 
   return (
     <>
-      <div
-        role="table"
-        className="w-full grid grid-cols-[auto_1fr_1fr] items-center"
-      >
-        <GridHeader quantities={quantities} />
-        {displayPoints.map((point, index) => {
-          const { onChangeFlow, onChangeHead } = getEditHandlers(index);
-          const { flowHasError, headHasError } = getErrorStates(
-            index,
-            validationResult,
-          );
-          return (
-            <GridRow
-              key={pointLabels[index]}
-              label={pointLabels[index]}
-              displayFlow={
-                point.flow !== undefined
-                  ? localizeDecimal(point.flow, { decimals: flowDecimals })
-                  : ""
-              }
-              displayHead={
-                point.head !== undefined
-                  ? localizeDecimal(point.head, { decimals: headDecimals })
-                  : ""
-              }
-              onChangeFlow={onChangeFlow}
-              onChangeHead={onChangeHead}
-              flowHasError={flowHasError}
-              headHasError={headHasError}
-            />
-          );
-        })}
-      </div>
-      {!validationResult.valid && (
+      <NumericTable
+        labels={{
+          horizontal: [
+            `${translate("flow")} (${flowUnit})`,
+            `${translate("head")} (${headUnit})`,
+          ],
+          vertical: pointLabels,
+        }}
+        cells={cells}
+      />
+      {(hasMissingValues || pumpErrors.length > 0) && (
         <p className="text-sm font-semibold text-orange-800">
-          {translate(validationResult.error)}
+          <PumpCurveWarning
+            hasMissingValues={hasMissingValues}
+            pumpErrors={pumpErrors}
+            curveType={curveType}
+          />
         </p>
       )}
     </>
   );
 };
 
-const GridHeader = ({ quantities }: { quantities: Quantities }) => {
-  const translate = useTranslate();
-  const flowUnit = quantities.getUnit("flow");
-  const headUnit = quantities.getUnit("head");
+const PowerDefinition = ({
+  power,
+  units,
+  readOnly,
+  onChange,
+}: {
+  power: number;
+  units: UnitsSpec;
+  onChange: (changes: PropertyChange[]) => void;
+  readOnly: boolean;
+}) => {
+  const handlePowerChange = useCallback(
+    (_name: string, newValue: number, _oldValue: number | null) => {
+      onChange([{ property: "power", value: newValue }]);
+    },
+    [onChange],
+  );
 
   return (
-    <>
-      <div role="columnheader"></div>
-
-      <div
-        role="columnheader"
-        className="pl-2 py-1 text-sm font-semibold text-gray-500 truncate"
-      >
-        <span>{translate("flow")}</span>
-        <span className="ml-1">({flowUnit})</span>
-      </div>
-      <div
-        role="columnheader"
-        className="pl-2 py-1 text-sm font-semibold text-gray-500 truncate"
-      >
-        <span>{translate("head")}</span>
-        <span className="ml-1">({headUnit})</span>
-      </div>
-    </>
+    <QuantityRow
+      name="power"
+      value={power}
+      unit={units.power}
+      readOnly={readOnly}
+      onChange={handlePowerChange}
+    />
   );
 };
 
-const GridRow = ({
-  label,
-  displayFlow,
-  displayHead,
-  onChangeFlow,
-  onChangeHead,
-  flowHasError,
-  headHasError,
+const CurveIdSelector = ({
+  curveId,
+  curves,
+  onChange,
+  readOnly,
 }: {
-  label: string;
-  displayFlow: string;
-  displayHead: string;
-  onChangeFlow?: (newValue: number | undefined) => void;
-  onChangeHead?: (newValue: number | undefined) => void;
-  flowHasError?: boolean;
-  headHasError?: boolean;
+  curveId?: CurveId;
+  curves: Curves;
+  onChange: (changes: PropertyChange[]) => void;
+  readOnly: boolean;
 }) => {
-  const handleFlowChange = onChangeFlow
-    ? (value: number, isEmpty: boolean) =>
-        onChangeFlow(isEmpty ? undefined : value)
-    : undefined;
-  const handleHeadChange = onChangeHead
-    ? (value: number, isEmpty: boolean) =>
-        onChangeHead(isEmpty ? undefined : value)
-    : undefined;
+  const translate = useTranslate();
+  const showPumpLibrary = useShowPumpLibrary();
+
+  const selectedCurve = curveId === undefined ? null : curveId;
+  const curve = selectedCurve ? curves.get(selectedCurve) : undefined;
+  const curveType = curve ? getCurvePointsType(curve.points) : undefined;
+
+  const handleChange = useCallback(
+    (_: string, newValue: number | null) => {
+      if (newValue === null) return;
+      onChange([
+        { property: "definitionType", value: "curveId" },
+        { property: "curveId", value: newValue },
+      ]);
+    },
+    [onChange],
+  );
 
   return (
-    <>
-      <div role="cell" className="pt-2 text-sm text-gray-500">
-        {label}
-      </div>
-
-      <div role="cell" className="pl-2 pt-2">
-        {onChangeFlow ? (
-          <NumericField
-            label={`${label}-x`}
-            positiveOnly={true}
-            isNullable={true}
-            displayValue={displayFlow}
-            onChangeValue={handleFlowChange}
-            styleOptions={{
-              padding: "sm",
-              textSize: "sm",
-              variant: flowHasError ? "warning" : "default",
-            }}
-          />
-        ) : (
-          <span className="block p-1 text-sm text-gray-700 dark:text-gray-100 tabular-nums border border-transparent">
-            {displayFlow}
-          </span>
-        )}
-      </div>
-
-      <div role="cell" className="pl-2 pt-2">
-        {onChangeHead ? (
-          <NumericField
-            label={`${label}-y`}
-            positiveOnly={true}
-            isNullable={true}
-            displayValue={displayHead}
-            onChangeValue={handleHeadChange}
-            styleOptions={{
-              padding: "sm",
-              textSize: "sm",
-              variant: headHasError ? "warning" : "default",
-            }}
-          />
-        ) : (
-          <span className="block p-1 text-sm text-gray-700 dark:text-gray-100 tabular-nums border border-transparent">
-            {displayHead}
-          </span>
-        )}
-      </div>
-    </>
+    <div className="flex flex-col gap-2">
+      <LibrarySelectRow
+        name="pumpName"
+        collection={curves}
+        filterByType="pump"
+        libraryLabel={translate("openPumpLibrary")}
+        onOpenLibrary={() =>
+          showPumpLibrary({
+            source: "pump",
+            curveId,
+            initialSection: "pump",
+          })
+        }
+        selected={selectedCurve}
+        readOnly={readOnly}
+        onChange={handleChange}
+      />
+      {curveType && (
+        <InlineField name={translate("curveType")} labelSize="md">
+          <TextField padding="md">{translate(curveType)}</TextField>
+        </InlineField>
+      )}
+    </div>
   );
 };
 
@@ -481,30 +499,42 @@ interface DefinitionDiff {
 
 const getDiffWithBaseModel = ({
   pump,
-  quantities,
+  curves,
+  units,
   getComparison,
+  getPumpCurveComparison,
   translate,
 }: {
   pump: Pump;
-  quantities: Quantities;
+  curves: Curves;
+  units: UnitsSpec;
   getComparison?: (name: string, value: unknown) => PropertyComparison;
+  getPumpCurveComparison?: (
+    value: CurvePoint[] | undefined,
+  ) => PumpCurveComparison;
   translate: TranslateFn;
 }): DefinitionDiff => {
-  if (!getComparison) return { hasChanged: false };
+  if (!getComparison || !getPumpCurveComparison) return { hasChanged: false };
   const definitionTypeComparison = getComparison?.(
     "definitionType",
     pump.definitionType,
   );
-  const powerComparison = getComparison?.("power", pump.power);
-  const curveComparison = getComparison?.("curve", pump.curve);
-  const definitionTypeHasChanged =
-    definitionTypeComparison?.hasChanged ?? false;
+  const powerComparison = getComparison("power", pump.power);
+  const curveIdComparison = getComparison("curveId", pump.curveId);
+  const curveComparison = getPumpCurveComparison(pump.getCurvePoints(curves));
+  const curveIdHasChanged =
+    pump.definitionType === "curveId" && curveIdComparison.hasChanged;
   const curveHasChanged =
-    pump.definitionType === "curve" && (curveComparison?.hasChanged ?? false);
+    pump.definitionType !== "power" && curveComparison.hasChanged;
+  const baseCurvePoints = curveComparison.baseValue;
+  const baseCurve = curveComparison.curve;
   const powerHasChanged =
     pump.definitionType === "power" && (powerComparison?.hasChanged ?? false);
   const definitionHasChanged =
-    definitionTypeHasChanged || curveHasChanged || powerHasChanged;
+    definitionTypeComparison.hasChanged ||
+    curveHasChanged ||
+    powerHasChanged ||
+    curveIdHasChanged;
 
   if (!definitionHasChanged) {
     return { hasChanged: false };
@@ -513,44 +543,41 @@ const getDiffWithBaseModel = ({
   const baseDefinitionType = definitionTypeComparison?.baseValue as
     | PumpDefintionType
     | undefined;
-  const baseCurve = curveComparison?.baseValue as CurvePoint[] | undefined;
-  const baseMode =
-    baseDefinitionType && baseCurve
-      ? inferDefinitionMode(baseDefinitionType, baseCurve)
-      : undefined;
+  const baseCurveLabel = baseCurve?.label;
 
   const lines: string[] = [];
-
-  if (baseMode) {
-    lines.push(`${translate("pumpType")}: ${translate(OptionKey[baseMode])}`);
-  }
 
   if (
     baseDefinitionType === "power" &&
     powerComparison?.baseValue != undefined
   ) {
-    const powerUnit = quantities.getUnit("power");
+    const powerUnit = units.power;
     lines.push(
       `${translate("power")}: ${localizeDecimal(powerComparison.baseValue as number)} ${powerUnit}`,
     );
-  } else if (baseDefinitionType === "curve" && baseCurve) {
-    const flowUnit = quantities.getUnit("flow");
-    const headUnit = quantities.getUnit("head");
-    const pointLabels: string[] =
-      baseCurve.length === 1
-        ? [translate("designPointLabel")]
-        : baseCurve.length === 3
-          ? [
-              translate("shutoffPoint"),
-              translate("designPointLabel"),
-              translate("maxOperatingPoint"),
-            ]
-          : baseCurve.map((_, i) => `Point ${i + 1}`);
-    pointLabels.forEach((label, i) => {
-      lines.push(
-        `${label}: ${localizeDecimal(baseCurve[i].x)} ${flowUnit}, ${localizeDecimal(baseCurve[i].y)} ${headUnit}`,
-      );
-    });
+  } else if (baseDefinitionType !== "power") {
+    if (baseCurveLabel) {
+      lines.push(`${translate("curve")}: ${baseCurveLabel}`);
+    }
+    if (baseCurvePoints) {
+      const flowUnit = units.flow;
+      const headUnit = units.head;
+      const pointLabels: string[] =
+        baseCurvePoints.length === 1
+          ? [translate("designPointLabel")]
+          : baseCurvePoints.length === 3
+            ? [
+                translate("shutoffPoint"),
+                translate("designPointLabel"),
+                translate("maxOperatingPoint"),
+              ]
+            : baseCurvePoints.map((_, i) => `Point ${i + 1}`);
+      pointLabels.forEach((label, i) => {
+        lines.push(
+          `${label}: ${localizeDecimal(baseCurvePoints[i].x)} ${flowUnit}, ${localizeDecimal(baseCurvePoints[i].y)} ${headUnit}`,
+        );
+      });
+    }
   }
 
   return {
@@ -564,15 +591,17 @@ const inferDefinitionMode = (
   curve: CurvePoint[],
 ): PumpDefinitionMode => {
   if (modelType === "power") return "power";
-  const curveType = getPumpCurveType(curve);
-  if (curveType === "designPointCurve" || curveType === "standardCurve")
-    return curveType;
-  return "designPointCurve";
+  if (modelType === "curveId") {
+    return "curveId";
+  }
+  const curveType = getCurvePointsType(curve);
+  if (curveType === "multiPointCurve") return "curveId";
+  return curveType;
 };
 
 const initialPointsFromCurve = (
   curve: CurvePoint[] | undefined,
-  curveType: PumpCurveType,
+  curveType: CurvePointsType,
 ): MaybePumpCurvePoint[] => {
   if (!curve || curve.length === 0) {
     return [{ flow: 0 }, {}, {}];
@@ -606,7 +635,7 @@ const initialPointsFromCurve = (
 
 const calculateCurvePoints = (
   editingPoints: MaybePumpCurvePoint[],
-  definitionType: PumpCurveType,
+  definitionType: CurvePointsType,
 ): MaybePumpCurvePoint[] => {
   if (definitionType === "standardCurve") {
     return editingPoints;
@@ -631,90 +660,59 @@ const calculateCurvePoints = (
   return editingPoints;
 };
 
-type ValidationErrorKey =
-  | "curveValidation.missingValues"
-  | "curveValidation.flowAscendingOrder"
-  | "curveValidation.headDescendingOrder";
-
-type ValidationResult =
-  | { valid: true; points: PumpCurvePoint[] }
-  | { valid: false; error: ValidationErrorKey };
-
-const validateDesignPointCurve = (
-  points: MaybePumpCurvePoint[],
-): ValidationResult => {
-  const designPoint = points[1];
-  if (designPoint.flow === undefined || designPoint.head === undefined) {
-    return {
-      valid: false,
-      error: "curveValidation.missingValues",
-    };
-  }
-  return { valid: true, points: [designPoint as PumpCurvePoint] };
-};
-
-const validateStandardCurve = (
-  points: MaybePumpCurvePoint[],
-): ValidationResult => {
-  if (points.length !== 3) {
-    return {
-      valid: false,
-      error: "curveValidation.missingValues",
-    };
-  }
-  const [shutoff, design, maxOp] = points;
-
-  if (
-    shutoff?.head === undefined ||
-    design?.flow === undefined ||
-    design?.head === undefined ||
-    maxOp?.flow === undefined ||
-    maxOp?.head === undefined
-  ) {
-    return {
-      valid: false,
-      error: "curveValidation.missingValues",
-    };
-  }
-
-  if (design.flow <= 0 || maxOp.flow <= design.flow) {
-    return {
-      valid: false,
-      error: "curveValidation.flowAscendingOrder",
-    };
-  }
-
-  if (shutoff.head <= design.head || design.head < maxOp.head) {
-    return {
-      valid: false,
-      error: "curveValidation.headDescendingOrder",
-    };
-  }
-
-  return {
-    valid: true,
-    points: [
-      { flow: 0, head: shutoff.head },
-      { flow: design.flow, head: design.head },
-      { flow: maxOp.flow, head: maxOp.head },
-    ],
-  };
-};
-
-const validateCurve = (
-  points: MaybePumpCurvePoint[],
-  curveType: PumpCurveType,
-): ValidationResult => {
+const extractValidPoints = (
+  displayPoints: MaybePumpCurvePoint[],
+  curveType: CurvePointsType | PumpDefinitionMode,
+): CurvePoint[] | null => {
   if (curveType === "designPointCurve") {
-    return validateDesignPointCurve(points);
+    const dp = displayPoints[1];
+    if (dp.flow === undefined || dp.head === undefined) return null;
+    return [{ x: dp.flow, y: dp.head }];
   }
-  if (curveType === "standardCurve") {
-    return validateStandardCurve(points);
+
+  const points: CurvePoint[] = [];
+  for (const p of displayPoints) {
+    if (p.flow === undefined || p.head === undefined) return null;
+    points.push({ x: p.flow, y: p.head });
   }
-  return {
-    valid: false,
-    error: "curveValidation.missingValues",
-  };
+  return points;
+};
+
+const PumpCurveWarning = ({
+  hasMissingValues,
+  pumpErrors,
+  curveType,
+}: {
+  hasMissingValues: boolean;
+  pumpErrors: CurveErrorPoint[];
+  curveType: CurvePointsType;
+}) => {
+  const translate = useTranslate();
+
+  if (hasMissingValues) {
+    return <>{translate("curveValidation.missingValues")}</>;
+  }
+
+  const hasXError = pumpErrors.some((e) => e.value === "x");
+  const hasYError = pumpErrors.some((e) => e.value === "y");
+  const flowLabel = translate("flow");
+  const headLabel = translate("head");
+
+  if (curveType === "designPointCurve") {
+    const parts: string[] = [];
+    if (hasXError)
+      parts.push(translate("curveValidation.valueMustBeNonZero", flowLabel));
+    if (hasYError)
+      parts.push(translate("curveValidation.valueMustBeNonZero", headLabel));
+    return <>{parts.join(" ")}</>;
+  }
+
+  const parts: string[] = [];
+  if (hasXError)
+    parts.push(translate("curveValidation.valueAscendingOrder", flowLabel));
+  if (hasYError)
+    parts.push(translate("curveValidation.valueDescendingOrder", headLabel));
+  return <>{parts.join(" ")}</>;
 };
 
 const getCurveHash = (curve: CurvePoint[]): string => {

@@ -1,6 +1,5 @@
 import { IFeature } from "src/types";
 import { LineString, Point } from "geojson";
-import { Unit } from "src/quantity";
 import { AssetType } from "./types";
 
 export type AssetId = number;
@@ -15,23 +14,18 @@ export type AssetProperties = {
   isActive: boolean;
 };
 
-export type AssetUnits = Record<string, Unit>;
-
 export class BaseAsset<T> {
   public readonly feature: IFeature<AssetGeometry, T & AssetProperties>;
   public readonly id: AssetId;
   public readonly at = "any";
   public readonly folderId = "any";
-  protected units: AssetUnits;
 
   constructor(
     id: AssetId,
     geometry: AssetGeometry,
     properties: T & AssetProperties,
-    units: AssetUnits,
   ) {
     this.id = id;
-    this.units = units;
     this.feature = {
       type: "Feature",
       geometry,
@@ -51,7 +45,7 @@ export class BaseAsset<T> {
     return this.feature.properties.isActive;
   }
 
-  setProperty(name: string, value: NonNullable<unknown>) {
+  setProperty(name: string, value: unknown) {
     this.feature.properties[name as keyof AssetProperties] = value as never;
   }
 
@@ -64,7 +58,7 @@ export class BaseAsset<T> {
   }
 
   hasProperty(name: string): boolean {
-    return this.feature.properties[name as keyof AssetProperties] !== undefined;
+    return name in this.feature.properties;
   }
 
   protected get properties() {

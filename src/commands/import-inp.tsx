@@ -1,6 +1,7 @@
 import { useCallback, useContext } from "react";
 import { useSetAtom } from "jotai";
-import { dialogAtom, fileInfoAtom } from "src/state/jotai";
+import { dialogAtom } from "src/state/dialog";
+import { fileInfoAtom } from "src/state/file-system";
 import { captureError } from "src/infra/error-tracking";
 import { FileWithHandle } from "browser-fs-access";
 import { useTranslate } from "src/hooks/use-translate";
@@ -9,19 +10,18 @@ import { usePersistence } from "src/lib/persistence";
 import { FeatureCollection } from "geojson";
 import { getExtent } from "src/lib/geometry";
 import { LngLatBoundsLike } from "mapbox-gl";
-import { MapContext } from "src/map";
+import { MapContext, captureThumbnail } from "src/map";
 import { ImportInpCompleted, useUserTracking } from "src/infra/user-tracking";
 import { InpStats } from "src/import/inp/inp-data";
-import { ModelMetadata } from "src/model-metadata";
+import { ProjectSettings } from "src/lib/project-settings";
 import { HydraulicModel } from "src/hydraulic-model";
-import { EpanetUnitSystem } from "src/simulation/build-inp";
+import { chooseUnitSystem } from "src/simulation/build-inp";
 import { notify } from "src/components/notifications";
 import { WarningIcon } from "src/icons";
 import { OPFSStorage } from "src/infra/storage";
 import { getAppId } from "src/infra/app-instance";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { parseInpWithAllCurves } from "src/import/inp/parse-inp-with-all-curves";
 import { isDemoNetwork } from "src/demo/demo-networks";
+import { useRecentFiles } from "src/hooks/use-recent-files";
 
 export const inpExtension = ".inp";
 
@@ -33,7 +33,8 @@ export const useImportInp = () => {
   const rep = usePersistence();
   const transactImport = rep.useTransactImport();
   const userTracking = useUserTracking();
-  const isPumpCurvesEnabled = useFeatureFlag("FLAG_PUMP_CURVES");
+
+  const { addRecent } = useRecentFiles();
 
   const importInp = useCallback(
     async (files: FileWithHandle[]) => {
@@ -71,16 +72,118 @@ export const useImportInp = () => {
           customerPoints: true,
           inactiveAssets: true,
         };
-        const parseInpFn = isPumpCurvesEnabled
-          ? parseInpWithAllCurves
-          : parseInp;
-        const { hydraulicModel, modelMetadata, issues, isMadeByApp, stats } =
-          parseInpFn(content, parseOptions);
+
+        const completeImport = async (
+          result: ReturnType<typeof parseInp>,
+          options?: { autoElevations?: boolean },
+        ) => {
+          const {
+            hydraulicModel,
+            factories,
+            projectSettings,
+            simulationSettings,
+            issues,
+            isMadeByApp,
+          } = result;
+
+          const storage = new OPFSStorage(getAppId());
+          await storage.clear();
+
+          transactImport(
+            hydraulicModel,
+            factories,
+            projectSettings,
+            file.name,
+            simulationSettings,
+            options,
+          );
+
+          const features: FeatureCollection = {
+            type: "FeatureCollection",
+            features: [...hydraulicModel.assets.values()].map((a) => a.feature),
+          };
+          const nextExtent = getExtent(features);
+          nextExtent.map((importedExtent) => {
+            map?.map.fitBounds(importedExtent as LngLatBoundsLike, {
+              padding: 100,
+              duration: 0,
+            });
+          });
+          setFileInfo({
+            name: file.name,
+            handle: isMadeByApp ? file.handle : undefined,
+            modelVersion: hydraulicModel.version,
+            isMadeByApp,
+            isDemoNetwork: isDemo,
+            options: { type: "inp", folderId: "" },
+          });
+          if (!isDemo && file.handle) {
+            const handle = file.handle;
+            const name = file.name;
+            if (map) {
+              const captureAndSave = () => {
+                const thumbnail = captureThumbnail(map) ?? undefined;
+                void addRecent(name, handle, thumbnail);
+              };
+              if (map.map.loaded() && !map.map.isMoving()) {
+                captureAndSave();
+              } else {
+                const timeoutId = setTimeout(captureAndSave, 5000);
+                map.map.once("idle", () => {
+                  clearTimeout(timeoutId);
+                  captureAndSave();
+                });
+              }
+            } else {
+              void addRecent(name, handle);
+            }
+          }
+          if (!issues) {
+            setDialogState(null);
+            return;
+          }
+
+          setDialogState({ type: "inpIssues", issues });
+        };
+
+        const {
+          hydraulicModel,
+          factories,
+          projectSettings,
+          simulationSettings,
+          issues,
+          isMadeByApp,
+          stats,
+        } = parseInp(content, parseOptions);
         userTracking.capture(
-          buildCompleteEvent(hydraulicModel, modelMetadata, issues, stats),
+          buildCompleteEvent(hydraulicModel, projectSettings, issues, stats),
         );
         if (issues && (issues.invalidVertices || issues.invalidCoordinates)) {
-          setDialogState({ type: "inpGeocodingNotSupported" });
+          const onImportNonProjected = async () => {
+            setDialogState({ type: "loading" });
+            try {
+              const result = parseInp(content, {
+                ...parseOptions,
+                sourceProjection: "xy-grid",
+              });
+              userTracking.capture(
+                buildCompleteEvent(
+                  result.hydraulicModel,
+                  result.projectSettings,
+                  result.issues,
+                  result.stats,
+                ),
+              );
+              await completeImport(result, { autoElevations: false });
+            } catch (error) {
+              captureError(error as Error);
+              setDialogState({ type: "invalidFilesError" });
+            }
+          };
+          setDialogState({
+            type: "inpProjectionChoice",
+            onImportNonProjected,
+          });
           return;
         }
 
@@ -89,49 +192,33 @@ export const useImportInp = () => {
           return;
         }
 
-        const storage = new OPFSStorage(getAppId());
-        await storage.clear();
-
-        transactImport(hydraulicModel, modelMetadata, file.name);
-
-        const features: FeatureCollection = {
-          type: "FeatureCollection",
-          features: [...hydraulicModel.assets.values()].map((a) => a.feature),
-        };
-        const nextExtent = getExtent(features);
-        nextExtent.map((importedExtent) => {
-          map?.map.fitBounds(importedExtent as LngLatBoundsLike, {
-            padding: 100,
-            duration: 0,
-          });
-        });
-        setFileInfo({
-          name: file.name,
-          handle: isMadeByApp ? file.handle : undefined,
-          modelVersion: hydraulicModel.version,
-          isMadeByApp,
-          isDemoNetwork: isDemo,
-          options: { type: "inp", folderId: "" },
-        });
-        if (!issues) {
-          setDialogState(null);
-          return;
-        }
-
-        setDialogState({ type: "inpIssues", issues });
+        const autoElevations =
+          projectSettings.projectionMapper.projection !== "xy-grid";
+        await completeImport(
+          {
+            hydraulicModel,
+            factories,
+            projectSettings,
+            simulationSettings,
+            issues,
+            isMadeByApp,
+            stats,
+          },
+          { autoElevations },
+        );
       } catch (error) {
         captureError(error as Error);
         setDialogState({ type: "invalidFilesError" });
       }
     },
     [
+      addRecent,
+      map,
       setDialogState,
-      userTracking,
-      translate,
-      isPumpCurvesEnabled,
-      transactImport,
       setFileInfo,
-      map?.map,
+      transactImport,
+      translate,
+      userTracking,
     ],
   );
 
@@ -140,7 +227,7 @@ export const useImportInp = () => {
 
 const buildCompleteEvent = (
   hydraulicModel: HydraulicModel,
-  modelMetadata: ModelMetadata,
+  projectSettings: ProjectSettings,
   issues: ParserIssues | null,
   stats: InpStats,
 ): ImportInpCompleted => {
@@ -155,14 +242,29 @@ const buildCompleteEvent = (
       } as const;
       return [typeMap[issues.waterQualityType]];
     }
+    if (key === "unsupportedSections" && issues?.unsupportedSections) {
+      return [...issues.unsupportedSections].map(
+        (sectionName) => `unsupportedSection-${sectionName}` as const,
+      );
+    }
+    if (key === "nonDefaultOptions" && issues?.nonDefaultOptions) {
+      return [...issues.nonDefaultOptions.keys()].map(
+        (optionName) => `nonDefaultOption-${optionName}` as const,
+      );
+    }
+    if (key === "nonDefaultTimes" && issues?.nonDefaultTimes) {
+      return [...issues.nonDefaultTimes.keys()].map(
+        (timeName) => `nonDefaultTime-${timeName}` as const,
+      );
+    }
     return [key];
   });
 
   return {
     name: "importInp.completed",
     counts: Object.fromEntries(stats.counts),
-    headlossFormula: hydraulicModel.headlossFormula,
-    units: modelMetadata.quantities.specName as EpanetUnitSystem,
+    headlossFormula: projectSettings.headlossFormula,
+    units: chooseUnitSystem(projectSettings.units),
     issues: processedIssues,
   } as ImportInpCompleted;
 };

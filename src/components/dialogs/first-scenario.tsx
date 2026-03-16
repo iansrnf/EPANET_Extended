@@ -1,19 +1,11 @@
-import { useAtom, useAtomValue } from "jotai";
-import {
-  DialogContainer,
-  DialogHeader,
-  DialogButtons,
-} from "src/components/dialog";
-import { Button } from "../elements";
+import { useAtom } from "jotai";
+import { BaseDialog, SimpleDialogActions } from "src/components/dialog";
 import { Checkbox } from "../form/Checkbox";
 import { useTranslate } from "src/hooks/use-translate";
 import { Trans } from "react-i18next";
 import { useUserTracking } from "src/infra/user-tracking";
 import { userSettingsAtom } from "src/state/user-settings";
-import { fileInfoAtom } from "src/state/jotai";
-import { AddScenarioIcon } from "src/icons";
 import { EarlyAccessBadge } from "../early-access-badge";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 
 export const FirstScenarioDialog = ({
   onConfirm,
@@ -25,9 +17,6 @@ export const FirstScenarioDialog = ({
   const translate = useTranslate();
   const [userSettings, setUserSettings] = useAtom(userSettingsAtom);
   const userTracking = useUserTracking();
-  const isDemoTrialOn = useFeatureFlag("FLAG_DEMO_TRIAL");
-  const fileInfo = useAtomValue(fileInfoAtom);
-  const showDemoTrialNote = isDemoTrialOn && fileInfo?.isDemoNetwork;
 
   const handleCreate = () => {
     onConfirm();
@@ -47,22 +36,10 @@ export const FirstScenarioDialog = ({
     });
   };
 
-  return (
-    <DialogContainer size="sm">
-      <DialogHeader
-        title={translate("scenarios.firstScenario.title")}
-        titleIcon={AddScenarioIcon}
-        badge={<EarlyAccessBadge />}
-      />
-
+  const content = (
+    <>
       <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
         <p>{translate("scenarios.firstScenario.earlyAccess")}</p>
-
-        {showDemoTrialNote && (
-          <p className="text-sm text-gray-500 italic">
-            {translate("scenarios.firstScenario.demoTrialNote")}
-          </p>
-        )}
 
         <div>
           <p>{translate("scenarios.firstScenario.pleaseNote")}</p>
@@ -80,6 +57,12 @@ export const FirstScenarioDialog = ({
               />
             </li>
             <li>{translate("scenarios.firstScenario.bullet3")}</li>
+            <li>
+              <Trans
+                i18nKey="scenarios.firstScenario.bullet4"
+                components={{ bold: <strong /> }}
+              />
+            </li>
           </ul>
         </div>
       </div>
@@ -93,15 +76,28 @@ export const FirstScenarioDialog = ({
           {translate("scenarios.firstScenario.dontShowAgain")}
         </span>
       </div>
+    </>
+  );
 
-      <DialogButtons>
-        <Button variant="primary" onClick={handleCreate}>
-          {translate("scenarios.firstScenario.createButton")}
-        </Button>
-        <Button variant="default" onClick={onClose}>
-          {translate("cancel")}
-        </Button>
-      </DialogButtons>
-    </DialogContainer>
+  return (
+    <BaseDialog
+      title={translate("scenarios.firstScenario.title")}
+      size="md"
+      isOpen={true}
+      onClose={onClose}
+      badge={<EarlyAccessBadge />}
+      footer={
+        <SimpleDialogActions
+          action={translate("scenarios.firstScenario.createButton")}
+          onAction={handleCreate}
+          secondary={{
+            action: translate("dialog.cancel"),
+            onClick: onClose,
+          }}
+        />
+      }
+    >
+      <div className="p-4">{content}</div>
+    </BaseDialog>
   );
 };

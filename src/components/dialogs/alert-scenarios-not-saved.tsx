@@ -1,8 +1,5 @@
-import { DialogHeader } from "src/components/dialog";
+import { BaseDialog, SimpleDialogActions } from "src/components/dialog";
 import { useTranslate } from "src/hooks/use-translate";
-import { Form, Formik } from "formik";
-import { SimpleDialogActions } from "src/components/dialog";
-import { WarningIcon } from "src/icons";
 
 export const AlertScenariosNotSavedDialog = ({
   onContinue,
@@ -12,27 +9,28 @@ export const AlertScenariosNotSavedDialog = ({
   onClose: () => void;
 }) => {
   const translate = useTranslate();
+
+  const handleAction = () => {
+    onClose();
+    onContinue();
+  };
+
   return (
-    <Formik
-      onSubmit={() => {
-        onClose();
-        onContinue();
-      }}
-      initialValues={{}}
-    >
-      <Form>
-        <DialogHeader
-          title={translate("alertScenariosNotSaved")}
-          titleIcon={WarningIcon}
-          variant="warning"
+    <BaseDialog
+      title={translate("alertScenariosNotSaved")}
+      size="md"
+      isOpen={true}
+      onClose={onClose}
+      footer={
+        <SimpleDialogActions
+          action={translate("understood")}
+          onAction={handleAction}
         />
-        <div className="text-sm">
-          <p className="text-sm text-gray-700">
-            {translate("alertScenariosNotSavedDetail")}
-          </p>
-        </div>
-        <SimpleDialogActions action={translate("understood")} />
-      </Form>
-    </Formik>
+      }
+    >
+      <div className="p-4 text-sm text-gray-700">
+        <p>{translate("alertScenariosNotSavedDetail")}</p>
+      </div>
+    </BaseDialog>
   );
 };

@@ -17,10 +17,10 @@ describe("deleteAssets", () => {
         ],
       })
       .aCustomerPoint(IDS.CP1, {
-        demands: [{ baseDemand: 25 }],
         coordinates: [2, 1],
         connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
       })
+      .aCustomerPointDemand(IDS.CP1, [{ baseDemand: 25 }])
       .build();
 
     const { deleteAssets: deletedAssetIds, putCustomerPoints } = deleteAssets(
@@ -37,7 +37,6 @@ describe("deleteAssets", () => {
 
     const disconnectedCP = putCustomerPoints![0];
     expect(disconnectedCP.id).toBe(IDS.CP1);
-    expect(disconnectedCP.baseDemand).toBe(25);
     expect(disconnectedCP.coordinates).toEqual([2, 1]);
     expect(disconnectedCP.connection).toBeNull();
   });
@@ -56,10 +55,10 @@ describe("deleteAssets", () => {
         ],
       })
       .aCustomerPoint(IDS.CP1, {
-        demands: [{ baseDemand: 25 }],
         coordinates: [2, 1],
         connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
       })
+      .aCustomerPointDemand(IDS.CP1, [{ baseDemand: 25 }])
       .build();
 
     const { deleteAssets: deletedAssetIds, putCustomerPoints } = deleteAssets(
@@ -94,10 +93,10 @@ describe("deleteAssets", () => {
         ],
       })
       .aCustomerPoint(IDS.CP1, {
-        demands: [{ baseDemand: 25 }],
         coordinates: [2, 1],
         connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
       })
+      .aCustomerPointDemand(IDS.CP1, [{ baseDemand: 25 }])
       .build();
 
     const { deleteAssets: deletedAssetIds, putCustomerPoints } = deleteAssets(
@@ -129,11 +128,11 @@ describe("deleteAssets", () => {
         })
         .build();
 
-      const { putAssets } = deleteAssets(hydraulicModel, {
+      const { patchAssetsAttributes } = deleteAssets(hydraulicModel, {
         assetIds: [IDS.P1, IDS.P2],
       });
 
-      expect(putAssets).not.toBeDefined();
+      expect(patchAssetsAttributes).not.toBeDefined();
     });
 
     it("keeps node active when deleting one of two active links", () => {
@@ -154,11 +153,11 @@ describe("deleteAssets", () => {
         })
         .build();
 
-      const { putAssets } = deleteAssets(hydraulicModel, {
+      const { patchAssetsAttributes } = deleteAssets(hydraulicModel, {
         assetIds: [IDS.P1],
       });
 
-      expect(putAssets).not.toBeDefined();
+      expect(patchAssetsAttributes).not.toBeDefined();
     });
 
     it("deactivates node when deleting active link but inactive link remains", () => {
@@ -179,14 +178,16 @@ describe("deleteAssets", () => {
         })
         .build();
 
-      const { putAssets } = deleteAssets(hydraulicModel, {
+      const { patchAssetsAttributes } = deleteAssets(hydraulicModel, {
         assetIds: [IDS.P1],
       });
 
-      expect(putAssets!.length).toBe(1);
-      const deactivatedNode = putAssets![0];
-      expect(deactivatedNode.id).toBe(IDS.J2);
-      expect(deactivatedNode.isActive).toBe(false);
+      expect(patchAssetsAttributes).toHaveLength(1);
+      expect(patchAssetsAttributes![0]).toEqual({
+        id: IDS.J2,
+        type: "junction",
+        properties: { isActive: false },
+      });
     });
 
     it("activates orphan nodes when deleting last inactive link", () => {
@@ -201,16 +202,16 @@ describe("deleteAssets", () => {
         })
         .build();
 
-      const { putAssets } = deleteAssets(hydraulicModel, {
+      const { patchAssetsAttributes } = deleteAssets(hydraulicModel, {
         assetIds: [IDS.P1],
       });
 
-      expect(putAssets).toHaveLength(2);
-      const assetsActiveTopologyState = Object.fromEntries(
-        putAssets!.map((asset) => [asset.id, asset.isActive]),
+      expect(patchAssetsAttributes).toHaveLength(2);
+      const patchById = Object.fromEntries(
+        patchAssetsAttributes!.map((p) => [p.id, p.properties]),
       );
-      expect(assetsActiveTopologyState[IDS.J1]).toBe(true);
-      expect(assetsActiveTopologyState[IDS.J2]).toBe(true);
+      expect(patchById[IDS.J1]).toEqual({ isActive: true });
+      expect(patchById[IDS.J2]).toEqual({ isActive: true });
     });
 
     it("deactivates appropriate nodes when cascading node deletion removes links", () => {
@@ -236,16 +237,67 @@ describe("deleteAssets", () => {
         })
         .build();
 
-      const { putAssets } = deleteAssets(hydraulicModel, {
+      const { patchAssetsAttributes } = deleteAssets(hydraulicModel, {
         assetIds: [IDS.J2],
       });
 
-      expect(putAssets).toHaveLength(2);
-      const assetsActiveTopologyState = Object.fromEntries(
-        putAssets!.map((asset) => [asset.id, asset.isActive]),
+      expect(patchAssetsAttributes).toHaveLength(2);
+      const patchById = Object.fromEntries(
+        patchAssetsAttributes!.map((p) => [p.id, p.properties]),
       );
-      expect(assetsActiveTopologyState[IDS.J1]).toBe(false);
-      expect(assetsActiveTopologyState[IDS.J3]).toBe(false);
+      expect(patchById[IDS.J1]).toEqual({ isActive: false });
+      expect(patchById[IDS.J3]).toEqual({ isActive: false });
+    });
+  });
+
+  describe("demand cleanup", () => {
+    it("clears demands for deleted junctions", () => {
+      const IDS = { J1: 1, J2: 2, P1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aJunction(IDS.J1, { coordinates: [0, 0] })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50 }, { baseDemand: 30 }])
+        .aJunction(IDS.J2, { coordinates: [10, 0] })
+        .aPipe(IDS.P1, { startNodeId: IDS.J1, endNodeId: IDS.J2 })
+        .build();
+
+      const { putDemands } = deleteAssets(hydraulicModel, {
+        assetIds: [IDS.J1],
+      });
+
+      expect(putDemands).toEqual({
+        assignments: [{ junctionId: IDS.J1, demands: [] }],
+      });
+    });
+
+    it("does not include putDemands when deleted junction has no demands", () => {
+      const IDS = { J1: 1, J2: 2, P1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aJunction(IDS.J1, { coordinates: [0, 0] })
+        .aJunction(IDS.J2, { coordinates: [10, 0] })
+        .aPipe(IDS.P1, { startNodeId: IDS.J1, endNodeId: IDS.J2 })
+        .build();
+
+      const { putDemands } = deleteAssets(hydraulicModel, {
+        assetIds: [IDS.J1],
+      });
+
+      expect(putDemands).toBeUndefined();
+    });
+
+    it("does not include putDemands when deleting non-junction assets", () => {
+      const IDS = { J1: 1, J2: 2, P1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aJunction(IDS.J1, { coordinates: [0, 0] })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50 }])
+        .aJunction(IDS.J2, { coordinates: [10, 0] })
+        .aPipe(IDS.P1, { startNodeId: IDS.J1, endNodeId: IDS.J2 })
+        .build();
+
+      const { putDemands } = deleteAssets(hydraulicModel, {
+        assetIds: [IDS.P1],
+      });
+
+      expect(putDemands).toBeUndefined();
     });
   });
 });

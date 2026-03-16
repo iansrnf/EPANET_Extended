@@ -1,15 +1,13 @@
 import { useTranslate } from "src/hooks/use-translate";
-import { DialogContainer, DialogHeader } from "../dialog";
+import { BaseDialog, AckDialogAction, useDialogState } from "../dialog";
 import { processReportWithSlots, ReportRow } from "src/simulation/report";
 import { useMemo, useCallback } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import {
-  simulationAtom,
-  selectionAtom,
-  dialogAtom,
-  stagingModelAtom,
-} from "src/state/jotai";
-import { FileTextIcon } from "src/icons";
+import { dialogAtom } from "src/state/dialog";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { selectionAtom } from "src/state/selection";
+import { simulationAtom } from "src/state/simulation";
+
 import { useSelection } from "src/selection/use-selection";
 import { AssetId } from "src/hydraulic-model";
 import { useZoomTo } from "src/hooks/use-zoom-to";
@@ -17,6 +15,7 @@ import { useUserTracking } from "src/infra/user-tracking";
 import { captureError, setErrorContext } from "src/infra/error-tracking";
 
 export const SimulationReportDialog = () => {
+  const { closeDialog } = useDialogState();
   const translate = useTranslate();
   const simulation = useAtomValue(simulationAtom);
   const hydraulicModel = useAtomValue(stagingModelAtom);
@@ -115,15 +114,18 @@ export const SimulationReportDialog = () => {
   }, [simulation, hydraulicModel.assets]);
 
   return (
-    <DialogContainer size="lg" fillMode="auto">
-      <DialogHeader
-        title={translate("simulationReport")}
-        titleIcon={FileTextIcon}
-      />
-
-      <div className="p-4 overflow-auto border rounded-sm text-sm bg-gray-100 text-gray-700 font-mono leading-loose">
+    <BaseDialog
+      title={translate("simulationReport")}
+      size="md"
+      isOpen={true}
+      onClose={closeDialog}
+      footer={
+        <AckDialogAction label={translate("understood")} onAck={closeDialog} />
+      }
+    >
+      <div className="flex-1 p-4 text-sm bg-gray-100 text-gray-700 font-mono leading-loose">
         {processedReport.map(renderRowWithSlots)}
       </div>
-    </DialogContainer>
+    </BaseDialog>
   );
 };

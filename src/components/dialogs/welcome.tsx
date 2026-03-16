@@ -1,8 +1,13 @@
+import { useState } from "react";
 import { useAtom } from "jotai";
 import { useNewProject } from "src/commands/create-new-project";
 import { useOpenInpFromFs } from "src/commands/open-inp-from-fs";
+import { useOpenInpFromUrl } from "src/commands/open-inp-from-url";
 import { useOpenModelBuilder } from "src/commands/open-model-builder";
+import { useOpenRecentFile } from "src/commands/open-recent-file";
 import { useTranslate } from "src/hooks/use-translate";
+import { useRecentFiles } from "src/hooks/use-recent-files";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useUserTracking } from "src/infra/user-tracking";
 import { userSettingsAtom } from "src/state/user-settings";
 import { languageConfig } from "src/infra/i18n/locale";
@@ -18,39 +23,22 @@ import { Checkbox } from "../form/Checkbox";
 import { Button, LogoIconAndWordmarkIcon } from "../elements";
 import {
   ArrowRightIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CloseIcon,
   FileIcon,
   FileSpreadsheetIcon,
   GlobeIcon,
   HelpIcon,
   EarlyAccessIcon,
 } from "src/icons";
-import { DialogCloseX, DialogContainer } from "../dialog";
+import { BaseDialog, DialogCloseX, useDialogState } from "../dialog";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { Message } from "../message";
 import { DemoNetworkCard } from "../demo-network-card";
-
-type DemoModel = {
-  name: string;
-  description: string;
-  url: string;
-  thumbnailUrl: string;
-};
-const getDemoModels = (
-  translate: ReturnType<typeof useTranslate>,
-): DemoModel[] => [
-  {
-    name: "Drumchapel",
-    description: translate("demoUKStyleDescription"),
-    url: "/example-models/01-uk-style.inp",
-    thumbnailUrl: "/example-models/01-uk-style.png",
-  },
-  {
-    name: "Waterdown",
-    description: translate("demoUSStyleDescription"),
-    url: "/example-models/02-us-style.inp",
-    thumbnailUrl: "/example-models/02-us-style.png",
-  },
-];
+import { DRUMCHAPEL, WATERDOWN } from "src/demo/demo-networks";
+import optimaticsLogoUrl from "src/assets/images/logos/optimatics-logo-black.webp";
+import type { RecentFileEntry } from "src/import/recent-files";
 
 export const WelcomeDialog = () => {
   const translate = useTranslate();
@@ -58,10 +46,33 @@ export const WelcomeDialog = () => {
   const createNew = useNewProject();
   const openInpFromFs = useOpenInpFromFs();
   const openModelBuilder = useOpenModelBuilder();
+  const openRecentFile = useOpenRecentFile();
   const userTracking = useUserTracking();
+  const {
+    recentFiles,
+    removeRecent,
+    isSupported: isRecentFilesSupported,
+  } = useRecentFiles();
+  const isRecentFilesOn = useFeatureFlag("FLAG_RECENT_FILES");
+  const showRecentSection = isRecentFilesOn && isRecentFilesSupported;
+  const hasRecentFiles = recentFiles.length > 0;
 
   const isMdOrLarger = useBreakpoint("md");
-  const demoModels = getDemoModels(translate);
+
+  const demoModels: DemoModel[] = [
+    {
+      name: DRUMCHAPEL.name,
+      description: translate("demoUKStyleDescription"),
+      url: DRUMCHAPEL.url,
+      thumbnailUrl: DRUMCHAPEL.thumbnailUrl,
+    },
+    {
+      name: WATERDOWN.name,
+      description: translate("demoUSStyleDescription"),
+      url: WATERDOWN.url,
+      thumbnailUrl: WATERDOWN.thumbnailUrl,
+    },
+  ];
 
   const currentLocale = useLocale();
   const currentLanguage = languageConfig.find(
@@ -69,56 +80,58 @@ export const WelcomeDialog = () => {
   );
   const isExperimental = currentLanguage?.experimental ?? false;
 
+  const { closeDialog } = useDialogState();
+
   return (
-    <DialogContainer size="md">
+    <BaseDialog size="lg" isOpen={true} onClose={closeDialog}>
       <LocaleProvider>
-        <div className="w-full flex flex-col">
-          {isMdOrLarger && (
-            <div className="flex justify-end">
-              <DialogCloseX />
+        <div className="relative grid sm:grid-cols-[min-content_1fr] h-full overflow-hidden">
+          <div className="absolute top-6 right-6 z-10">
+            <DialogCloseX />
+          </div>
+          <div className="bg-gray-50 border-r border-gray-200 rounded-tl-lg rounded-bl-lg col-span-1 md:w-max flex flex-col p-6 gap-6">
+            <div className="pl-1">
+              <LogoIconAndWordmarkIcon size={147} />
             </div>
-          )}
-          <div className="grid sm:grid-cols-3 gap-3 pb-8">
-            <div className="col-span-1 md:w-max flex flex-col gap-6">
-              <div className="pl-1">
-                <LogoIconAndWordmarkIcon size={500} isMenuBar={false}/>
-              </div>
-              <div className="sm:hidden">
-                <SmallDeviceWarning />
-              </div>
-              <div className="flex items-start flex-col gap-2">
-                {isMdOrLarger && (
-                  <Button
-                    variant="quiet"
-                    onClick={() => {
-                      void createNew({ source: "welcome" });
-                    }}
-                  >
-                    <FileIcon />
-                    {translate("startBlankProject")}
-                  </Button>
-                )}
+            <div className="sm:hidden">
+              <SmallDeviceWarning />
+            </div>
+            <div className="h-full flex flex-col gap-2">
+              {isMdOrLarger && (
                 <Button
                   variant="quiet"
                   onClick={() => {
-                    void openInpFromFs({ source: "welcome" });
+                    void createNew({ source: "welcome" });
                   }}
+                  style={{ width: "100%" }}
                 >
-                  <FileSpreadsheetIcon />
-                  {translate("openProject")}
+                  <FileIcon />
+                  {translate("startBlankProject")}
                 </Button>
-                <Button
-                  variant="quiet"
-                  onClick={() => {
-                    openModelBuilder({ source: "welcome" });
-                  }}
-                >
-                  <GlobeIcon />
-                  {translate("importFromGIS")}
-                  <EarlyAccessIcon size="sm" />
-                </Button>
-              </div>
-              <div className="flex items-start flex-col gap-2">
+              )}
+              <Button
+                variant="quiet"
+                onClick={() => {
+                  void openInpFromFs({ source: "welcome" });
+                }}
+                style={{ width: "100%" }}
+              >
+                <FileSpreadsheetIcon />
+                {translate("openProject")}
+              </Button>
+              <Button
+                variant="quiet"
+                onClick={() => {
+                  openModelBuilder({ source: "welcome" });
+                }}
+                style={{ width: "100%" }}
+              >
+                <GlobeIcon />
+                {translate("importFromGIS")}
+                <EarlyAccessIcon size="sm" />
+              </Button>
+
+              <div className="mt-4 flex items-start flex-col gap-2">
                 <a
                   href={helpCenterUrl}
                   target="_blank"
@@ -128,86 +141,143 @@ export const WelcomeDialog = () => {
                       source: "welcome",
                     });
                   }}
+                  style={{ width: "100%" }}
                 >
-                  <Button variant="quiet">
+                  <Button variant="quiet" style={{ width: "100%" }}>
                     <HelpIcon />
                     {translate("helpCenter")}
                   </Button>
                 </a>
-                <p className="text-sm">
-                  <a
-                    href={quickStartTutorialUrl}
-                    target="_blank"
-                    onClick={() => {
-                      userTracking.capture({
-                        name: "quickStart.visited",
-                        source: "welcome",
-                      });
-                    }}
-                  >
-                    <Button variant="primary">
-                      <ArrowRightIcon />
-                      {translate("quickStartTutorial")}
-                    </Button>
-                  </a>
-                </p>
-              </div>
-            </div>
-            <div className="sm:col-span-2">
-              <h2 className="mt-[.2rem] pt-2 pb-2 font-bold text-gray-500">
-                {translate("demoNetworksTitle")}
-              </h2>
-              <div className="grid grid-cols-2 gap-6">
-                {demoModels.map((demoModel, i) => (
-                  <DemoNetworkCard key={i} demoNetwork={demoModel} />
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="hidden sm:max-md:block mb-2">
-            <SmallDeviceWarning />
-          </div>
-          {isExperimental && (
-            <div className="mb-6">
-              <Message
-                variant="info"
-                title={translate("startNotificationLanguageTitle")}
-              >
-                {translate("startNotificationLanguageDescription")}
-              </Message>
-            </div>
-          )}
-          <div className="flex pt-4 items-center justify-around md:justify-between mt-auto">
-            {isMdOrLarger && (
-              <div className="text-xs flex items-center gap-x-2">
-                <Checkbox
-                  checked={userSettings.showWelcomeOnStart}
-                  onChange={() => {
-                    userSettings.showWelcomeOnStart
-                      ? userTracking.capture({ name: "welcome.hidden" })
-                      : userTracking.capture({ name: "welcome.enabled" });
-                    setUserSettings((prev) => ({
-                      ...prev,
-                      showWelcomeOnStart: !prev.showWelcomeOnStart,
-                    }));
+                <a
+                  href={quickStartTutorialUrl}
+                  target="_blank"
+                  onClick={() => {
+                    userTracking.capture({
+                      name: "quickStart.visited",
+                      source: "welcome",
+                    });
                   }}
-                />
-                {translate("alwaysShowAtStart")}
+                  style={{ width: "100%" }}
+                >
+                  <Button variant="primary" style={{ width: "100%" }}>
+                    <ArrowRightIcon />
+                    {translate("quickStartTutorial")}
+                  </Button>
+                </a>
+              </div>
+
+              <div className="flex flex-col gap-2 mt-auto text-xs">
+                {isMdOrLarger && (
+                  <div className="mb-4 text-xs flex items-center gap-x-2">
+                    <Checkbox
+                      checked={userSettings.showWelcomeOnStart}
+                      onChange={() => {
+                        userSettings.showWelcomeOnStart
+                          ? userTracking.capture({ name: "welcome.hidden" })
+                          : userTracking.capture({
+                              name: "welcome.enabled",
+                            });
+                        setUserSettings((prev) => ({
+                          ...prev,
+                          showWelcomeOnStart: !prev.showWelcomeOnStart,
+                        }));
+                      }}
+                    />
+                    {translate("alwaysShowAtStart")}
+                  </div>
+                )}
+                <a href={termsAndConditionsUrl} target="_blank">
+                  {translate("termsAndConditions")}
+                </a>
+                <a href={privacyPolicyUrl} target="_blank">
+                  {translate("privacyPolicy")}
+                </a>
+              </div>
+            </div>
+          </div>
+          <div className="p-6 min-w-0 flex flex-col overflow-hidden">
+            {isExperimental && (
+              <div className="mt-7 mb-3">
+                <Message
+                  variant="info"
+                  title={translate("startNotificationLanguageTitle")}
+                >
+                  {translate("startNotificationLanguageDescription")}
+                </Message>
               </div>
             )}
-            <div className="flex flex-row items-center text-xs gap-x-1">
-              <a href={termsAndConditionsUrl} target="_blank">
-                {translate("termsAndConditions")}
+
+            {isMdOrLarger && showRecentSection && hasRecentFiles ? (
+              <>
+                <h2 className="mt-[.2rem] pt-2 pb-2 font-bold text-gray-500">
+                  {translate("recent")}
+                </h2>
+                <div className="overflow-y-auto flex-1 min-h-0 mb-6 scroll-shadows">
+                  <div className="flex flex-row flex-wrap gap-2">
+                    {recentFiles.map((entry) => (
+                      <RecentFileCard
+                        key={entry.id}
+                        entry={entry}
+                        onOpen={() => openRecentFile(entry, "welcome")}
+                        onRemove={() => void removeRecent(entry.id)}
+                      />
+                    ))}
+                    {demoModels.map((demo, i) => (
+                      <DemoAsRecentCard key={`demo-${i}`} demoNetwork={demo} />
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : null}
+
+            {(!showRecentSection || !hasRecentFiles) && (
+              <DemoNetworks collapsible={false} />
+            )}
+            <div className="bg-gray-50 rounded-lg p-4 mt-6 text-xs text-center shrink-0">
+              <h3 className="text-gray-600 font-bold">
+                {translate("foundersPartnerTitle")}
+              </h3>
+              <a
+                href="https://optimatics.com/"
+                target="_blank"
+                onClick={() => {
+                  userTracking.capture({
+                    name: "foundersPartner.visited",
+                    link: "optimatics",
+                  });
+                }}
+              >
+                <img
+                  src={optimaticsLogoUrl.src}
+                  className="block m-auto h-16"
+                  height="64"
+                />
               </a>
-              <span>|</span>
-              <a href={privacyPolicyUrl} target="_blank">
-                {translate("privacyPolicy")}
-              </a>
+              <p className="text-gray-600">
+                {translate("foundersPartnerDescription")}{" "}
+                <a
+                  href="https://help.epanetjs.com/Founding-Partner-program-2f6e18c9f0f680d8be27c05c0b5844bb"
+                  target="_blank"
+                  className="underline text-violet-500"
+                  onClick={() => {
+                    userTracking.capture({
+                      name: "foundersPartner.visited",
+                      link: "foundersPartners",
+                    });
+                  }}
+                >
+                  {translate("foundersPartnerLearnMore")}
+                </a>
+                .
+              </p>
             </div>
           </div>
         </div>
+        <div className="hidden sm:max-md:block mb-2">
+          <SmallDeviceWarning />
+        </div>
       </LocaleProvider>
-    </DialogContainer>
+    </BaseDialog>
   );
 };
 
@@ -237,5 +307,168 @@ const SmallDeviceWarning = () => {
         </ul>
       </div>
     </Message>
+  );
+};
+
+const DemoNetworks = ({ collapsible }: { collapsible: boolean }) => {
+  const translate = useTranslate();
+  const [open, setOpen] = useState(false);
+
+  const demoModels = [
+    {
+      name: DRUMCHAPEL.name,
+      description: translate("demoUKStyleDescription"),
+      url: DRUMCHAPEL.url,
+      thumbnailUrl: DRUMCHAPEL.thumbnailUrl,
+    },
+    {
+      name: WATERDOWN.name,
+      description: translate("demoUSStyleDescription"),
+      url: WATERDOWN.url,
+      thumbnailUrl: WATERDOWN.thumbnailUrl,
+    },
+  ];
+
+  const isOpen = !collapsible || open;
+
+  return (
+    <div>
+      {collapsible ? (
+        <button
+          className="flex items-center gap-1 w-full mt-[.2rem] text-left pt-2 pb-2 font-bold text-gray-500 hover:text-gray-700"
+          onClick={() => setOpen(() => !isOpen)}
+        >
+          <h2>{translate("demoNetworksTitle")}</h2>
+          {isOpen ? (
+            <ChevronDownIcon size={16} />
+          ) : (
+            <ChevronRightIcon size={16} />
+          )}
+        </button>
+      ) : (
+        <h2 className="mt-[.2rem] pt-2 pb-2 font-bold text-gray-500">
+          {translate("demoNetworksTitle")}
+        </h2>
+      )}
+      {isOpen && (
+        <div className="grid grid-cols-2 gap-6">
+          {demoModels.map((demoModel, i) => (
+            <DemoNetworkCard key={i} demoNetwork={demoModel} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const RecentFileCard = ({
+  entry,
+  onOpen,
+  onRemove,
+}: {
+  entry: RecentFileEntry;
+  onOpen: () => void;
+  onRemove: () => void;
+}) => (
+  <div
+    className="group flex flex-col rounded-lg border shadow-sm cursor-pointer hover:bg-gray-50 overflow-hidden shrink-0"
+    style={{ width: "145px" }}
+    onClick={onOpen}
+  >
+    <div
+      className="relative bg-gray-100 shrink-0"
+      style={{ aspectRatio: "5/4" }}
+    >
+      <Button
+        variant="default"
+        size="xxs"
+        className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+        aria-label="Remove"
+      >
+        <CloseIcon />
+      </Button>
+      {entry.thumbnail ? (
+        <img
+          src={entry.thumbnail}
+          alt={entry.name}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center">
+          <FileSpreadsheetIcon className="text-gray-300" />
+        </div>
+      )}
+    </div>
+    <div className="p-1 flex flex-col gap-0.5 overflow-hidden">
+      <span
+        className="text-sm font-medium text-gray-700 truncate"
+        title={entry.name}
+      >
+        {entry.name}
+      </span>
+      <span className="text-xs text-gray-500">
+        {`${new Date(entry.openedAt).toLocaleDateString()} ${new Date(entry.openedAt).toLocaleTimeString()}`}
+      </span>
+    </div>
+  </div>
+);
+
+type DemoModel = {
+  name: string;
+  description: string;
+  url: string;
+  thumbnailUrl: string;
+};
+
+const DemoAsRecentCard = ({ demoNetwork }: { demoNetwork: DemoModel }) => {
+  const translate = useTranslate();
+  const userTracking = useUserTracking();
+  const { openInpFromUrl } = useOpenInpFromUrl();
+
+  const handleClick = () => {
+    userTracking.capture({
+      name: "exampleModel.clicked",
+      modelName: demoNetwork.name,
+    });
+    void openInpFromUrl(demoNetwork.url);
+  };
+
+  return (
+    <div
+      className="flex flex-col rounded-lg border shadow-sm cursor-pointer hover:bg-gray-50 overflow-hidden shrink-0"
+      style={{ width: "145px" }}
+      onClick={handleClick}
+    >
+      <div
+        className="relative bg-gray-100 shrink-0 overflow-hidden"
+        style={{ aspectRatio: "5/4" }}
+      >
+        <img
+          src={demoNetwork.thumbnailUrl}
+          alt={demoNetwork.name}
+          className="w-full h-full object-cover"
+        />
+      </div>
+      <div className="p-1 flex flex-col gap-0.5 overflow-hidden">
+        <div className="flex items-center gap-1">
+          <span
+            className="text-sm font-medium text-gray-700 truncate"
+            title={demoNetwork.name}
+          >
+            {demoNetwork.name}
+          </span>
+          <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase bg-orange-100 text-orange-700 rounded-full shrink-0 leading-none">
+            {translate("demo")}
+          </span>
+        </div>
+        <span className="text-xs text-gray-500 truncate">
+          {demoNetwork.description}
+        </span>
+      </div>
+    </div>
   );
 };

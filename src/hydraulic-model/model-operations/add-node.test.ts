@@ -11,6 +11,7 @@ describe("addNode", () => {
       const hydraulicModel = HydraulicModelBuilder.with().build();
 
       const { putAssets } = addNode(hydraulicModel, {
+        lengthUnit: "m",
         nodeType: "junction",
         coordinates: [10, 10],
         elevation: 100,
@@ -29,6 +30,7 @@ describe("addNode", () => {
       const hydraulicModel = HydraulicModelBuilder.with().build();
 
       const { putAssets } = addNode(hydraulicModel, {
+        lengthUnit: "m",
         nodeType: "reservoir",
         coordinates: [20, 20],
         elevation: 150,
@@ -46,6 +48,7 @@ describe("addNode", () => {
       const hydraulicModel = HydraulicModelBuilder.with().build();
 
       const { putAssets } = addNode(hydraulicModel, {
+        lengthUnit: "m",
         nodeType: "tank",
         coordinates: [30, 30],
       });
@@ -75,6 +78,7 @@ describe("addNode", () => {
       expect(originalPipe).toBeDefined();
 
       const { putAssets, deleteAssets } = addNode(hydraulicModel, {
+        lengthUnit: "m",
         nodeType: "junction",
         coordinates: [5, 0],
         elevation: 50,
@@ -119,6 +123,7 @@ describe("addNode", () => {
       const nodeCoordinates: [number, number] = [5.123, 0.456];
 
       const { putAssets } = addNode(hydraulicModel, {
+        lengthUnit: "m",
         nodeType: "junction",
         coordinates: nodeCoordinates,
         elevation: 50,
@@ -147,6 +152,7 @@ describe("addNode", () => {
         .build();
 
       const { putAssets, deleteAssets } = addNode(hydraulicModel, {
+        lengthUnit: "m",
         nodeType: "junction",
         coordinates: [5, 0],
         pipeIdToSplit: IDS.MainPipe,
@@ -169,6 +175,7 @@ describe("addNode", () => {
 
       expect(() =>
         addNode(hydraulicModel, {
+          lengthUnit: "m",
           nodeType: "junction",
           coordinates: [5, 0],
           pipeIdToSplit: NonExistentPipeId,
@@ -184,6 +191,7 @@ describe("addNode", () => {
 
       expect(() =>
         addNode(hydraulicModel, {
+          lengthUnit: "m",
           nodeType: "junction",
           coordinates: [5, 0],
           pipeIdToSplit: IDS.J1,
@@ -204,6 +212,7 @@ describe("addNode", () => {
         .build();
 
       const { putAssets } = addNode(hydraulicModel, {
+        lengthUnit: "m",
         nodeType: "junction",
         coordinates: [10, 0],
         pipeIdToSplit: IDS.MainPipe,
@@ -230,7 +239,6 @@ describe("addNode", () => {
 
       const customerPoint = buildCustomerPoint(IDS.CP1, {
         coordinates: [3, 1],
-        demands: [{ baseDemand: 75 }],
       });
 
       customerPoint.connect({
@@ -243,6 +251,7 @@ describe("addNode", () => {
       hydraulicModel.customerPointsLookup.addConnection(customerPoint);
 
       const { putAssets, putCustomerPoints } = addNode(hydraulicModel, {
+        lengthUnit: "m",
         nodeType: "junction",
         coordinates: [5, 0],
         pipeIdToSplit: IDS.P1,
@@ -257,7 +266,6 @@ describe("addNode", () => {
 
       expect(reconnectedCP.connection?.pipeId).toBe(pipe1.id);
       expect(reconnectedCP.connection?.junctionId).toBe(newJunction.id);
-      expect(reconnectedCP.baseDemand).toBe(75);
     });
 
     it("inherits isActive from pipe being split when pipe is active", () => {
@@ -273,6 +281,7 @@ describe("addNode", () => {
         .build();
 
       const { putAssets } = addNode(hydraulicModel, {
+        lengthUnit: "m",
         nodeType: "junction",
         coordinates: [5, 0],
         pipeIdToSplit: IDS.P1,
@@ -295,6 +304,7 @@ describe("addNode", () => {
         .build();
 
       const { putAssets } = addNode(hydraulicModel, {
+        lengthUnit: "m",
         nodeType: "junction",
         coordinates: [5, 0],
         pipeIdToSplit: IDS.P1,
@@ -311,6 +321,7 @@ describe("addNode", () => {
 
       expect(() =>
         addNode(hydraulicModel, {
+          lengthUnit: "m",
           nodeType: "unsupported" as any,
           coordinates: [0, 0],
         }),
@@ -335,6 +346,7 @@ describe("addNode", () => {
       .build();
 
     const { putAssets } = addNode(hydraulicModel, {
+      lengthUnit: "m",
       nodeType: "junction",
       coordinates: [5, 0],
       pipeIdToSplit: IDS.P1,
@@ -371,6 +383,7 @@ describe("addNode", () => {
       .build();
 
     const { putAssets } = addNode(hydraulicModel, {
+      lengthUnit: "m",
       nodeType: "reservoir",
       coordinates: [10, 0],
       pipeIdToSplit: IDS.P1,
@@ -408,6 +421,7 @@ describe("addNode", () => {
       .build();
 
     const { putAssets } = addNode(hydraulicModel, {
+      lengthUnit: "m",
       nodeType: "tank",
       coordinates: [5, 0],
       elevation: 100,

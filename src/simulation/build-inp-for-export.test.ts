@@ -1,9 +1,15 @@
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
 import { buildInp } from "./build-inp";
-import { presets } from "src/model-metadata/quantities-spec";
+import { presets } from "src/lib/project-settings/quantities-spec";
+import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 
 describe("build inp export ", () => {
-  const exportOptions = { labelIds: true, geolocation: true };
+  const exportOptions = {
+    labelIds: true,
+    geolocation: true,
+    simulationSettings: defaultSimulationSettings,
+    units: presets.LPS.units,
+  };
 
   it("adds reservoirs", () => {
     const IDS = { R1: 1, R2: 2 } as const;
@@ -35,13 +41,13 @@ describe("build inp export ", () => {
       .aJunction(IDS.J1, {
         label: "J_1",
         elevation: 10,
-        demands: [{ baseDemand: 1 }],
       })
+      .aJunctionDemand(IDS.J1, [{ baseDemand: 1 }])
       .aJunction(IDS.J2, {
         label: "J_2",
         elevation: 20,
-        demands: [{ baseDemand: 2 }],
       })
+      .aJunctionDemand(IDS.J2, [{ baseDemand: 2 }])
       .build();
 
     const inp = buildInp(
@@ -135,15 +141,12 @@ describe("build inp export ", () => {
   });
 
   it("includes haadloss formula", () => {
-    const hydraulicModel = HydraulicModelBuilder.with()
-      .headlossFormula("D-W")
-      .build();
+    const hydraulicModel = HydraulicModelBuilder.with().build();
 
-    const inp = buildInp(
-      hydraulicModel,
-
-      exportOptions,
-    );
+    const inp = buildInp(hydraulicModel, {
+      ...exportOptions,
+      headlossFormula: "D-W",
+    });
 
     expect(rowsFrom(inp)).toContain("Headloss\tD-W");
   });
@@ -151,11 +154,10 @@ describe("build inp export ", () => {
   it("detects units based on the flow units of the model", () => {
     const hydraulicModel = HydraulicModelBuilder.with(presets.GPM).build();
 
-    const inp = buildInp(
-      hydraulicModel,
-
-      exportOptions,
-    );
+    const inp = buildInp(hydraulicModel, {
+      ...exportOptions,
+      units: presets.GPM.units,
+    });
 
     expect(rowsFrom(inp)).toContain("Units\tGPM");
   });
@@ -178,7 +180,10 @@ describe("build inp export ", () => {
       })
       .build();
 
-    const without = buildInp(hydraulicModel);
+    const without = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+    });
     expect(rowsFrom(without)).not.toContain("[COORDINATES]");
     expect(rowsFrom(without)).not.toContain("[VERTICES]");
 

@@ -12,16 +12,24 @@ export const TimeField = ({
   label,
   value,
   onChangeValue,
+  defaultValue,
   isNullable = true,
   tabIndex = 1,
   hasError: externalError = false,
+  disabled = false,
+  readonly = false,
+  placeholder,
 }: {
   label: string;
   value: number | undefined;
   onChangeValue: (newValue: number | undefined) => void;
+  defaultValue?: number;
   isNullable?: boolean;
   tabIndex?: number;
   hasError?: boolean;
+  disabled?: boolean;
+  readonly?: boolean;
+  placeholder?: string;
 }) => {
   const displayValue = formatSecondsToDisplay(value);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -43,7 +51,9 @@ export const TimeField = ({
     }
     if (e.key === "Enter") {
       e.preventDefault();
-      if (!internalError) {
+      if (internalError) {
+        resetInput();
+      } else {
         handleCommitLastChange();
       }
       return;
@@ -64,6 +74,8 @@ export const TimeField = ({
   const handleBlur = () => {
     if (isDirty && !internalError) {
       handleCommitLastChange();
+    } else {
+      resetInput();
     }
   };
 
@@ -74,7 +86,8 @@ export const TimeField = ({
 
   const handleCommitLastChange = () => {
     const seconds = parseValueToSeconds(inputValue);
-    const finalValue = isNullable ? seconds : (seconds ?? 0);
+    const nullable = isNullable && defaultValue === undefined;
+    const finalValue = nullable ? seconds : (seconds ?? defaultValue ?? 0);
     setInputValue(formatSecondsToDisplay(finalValue));
     onChangeValue(finalValue);
 
@@ -94,9 +107,26 @@ export const TimeField = ({
     setInputValue(newInputValue);
 
     const seconds = parseValueToSeconds(newInputValue);
-    setError(seconds === undefined && newInputValue.trim() !== "");
+    const isEmpty = newInputValue.trim() === "";
+    setError(seconds === undefined && (!isEmpty || defaultValue !== undefined));
     setDirty(true);
   };
+
+  if (disabled || readonly) {
+    return (
+      <span
+        className={clsx(
+          "block w-full p-2 text-xs border rounded-sm",
+          "text-gray-500 bg-gray-50 border-gray-300",
+          "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-400",
+          readonly && "cursor-not-allowed",
+        )}
+        aria-label={`Value for: ${label}`}
+      >
+        {disabled ? "N/A" : formatSecondsToDisplay(value) || placeholder || "-"}
+      </span>
+    );
+  }
 
   if (hasError && inputRef.current) {
     inputRef.current.className = styledInput({ variant: "warning" });
@@ -117,6 +147,7 @@ export const TimeField = ({
       value={inputValue}
       onFocus={handleFocus}
       tabIndex={tabIndex}
+      placeholder={placeholder}
       className={styledInput({})}
     />
   );
@@ -183,6 +214,7 @@ function styledInput({
         variant === "warning",
     },
     "text-xs",
+    "placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic",
     "bg-transparent rounded-sm block tabular-nums overflow-hidden whitespace-nowrap text-ellipsis focus-visible:ring-inset w-full",
   );
 }

@@ -1,6 +1,7 @@
 import { AssetsMap, Asset, AssetId, Pipe, Pump } from "src/hydraulic-model";
 import { Feature } from "src/types";
-import { Sel, USelection } from "src/selection";
+import { USelection } from "src/selection";
+import type { Sel } from "src/selection/types";
 import { findLargestSegment, Link } from "src/hydraulic-model/asset-types/link";
 import { Valve } from "src/hydraulic-model/asset-types";
 import {
@@ -11,10 +12,12 @@ import {
   appendPipeArrowProps,
 } from "./features";
 import type { ResultsReader } from "src/simulation/results-reader";
+import type { UnitsSpec } from "src/lib/project-settings/quantities-spec";
 
 export const buildSelectionSource = (
   assets: AssetsMap,
   selection: Sel,
+  units: UnitsSpec,
   movedAssetIds: Set<AssetId> = new Set(),
   simulationResults?: ResultsReader | null,
 ): Feature[] => {
@@ -41,7 +44,7 @@ export const buildSelectionSource = (
 
     if (asset.isLink) {
       features.push(
-        buildLinkSelectionFeature(asset, featureId, simulationResults),
+        buildLinkSelectionFeature(asset, featureId, units, simulationResults),
       );
 
       const needsIcon =
@@ -67,6 +70,7 @@ export const buildSelectionSource = (
 const buildLinkSelectionFeature = (
   asset: Asset,
   featureId: AssetId,
+  units: UnitsSpec,
   simulationResults?: ResultsReader | null,
 ): Feature => {
   const feature: Feature = {
@@ -82,7 +86,7 @@ const buildLinkSelectionFeature = (
   switch (asset.type) {
     case "pipe":
       appendPipeStatus(asset as Pipe, feature, simulationResults);
-      appendPipeArrowProps(asset as Pipe, feature, simulationResults);
+      appendPipeArrowProps(asset as Pipe, feature, units, simulationResults);
       break;
     case "pump":
       appendPumpStatus(asset as Pump, feature, simulationResults);

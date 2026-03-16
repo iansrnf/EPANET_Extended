@@ -1,21 +1,23 @@
 import dynamic from "next/dynamic";
-import { memo, Suspense, useCallback, useRef } from "react";
+import { memo, useCallback, useRef } from "react";
 import { useAtom } from "jotai";
-import { dialogAtom } from "src/state/jotai";
+import { dialogAtom } from "src/state/dialog";
 import { match } from "ts-pattern";
-import * as D from "@radix-ui/react-dialog";
-import {
-  StyledDialogOverlay,
-  StyledDialogContent,
-  Loading,
-  DefaultErrorBoundary,
-} from "./elements";
 import * as dialogState from "src/state/dialog";
 import { ParserIssues } from "src/import/inp";
 import { useUserTracking } from "src/infra/user-tracking";
-import { SimulationSettingsDialog } from "./dialogs/simulation-settings";
 import { LoadingDialog } from "./dialog";
 import { WelcomeDialog } from "./dialogs/welcome";
+
+const SimulationSettingsDialog = dynamic(
+  () =>
+    import("src/components/dialogs/simulation-settings").then(
+      (r) => r.SimulationSettingsDialog,
+    ),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
 
 const UpgradeDialog = dynamic<{
   onClose: () => void;
@@ -35,7 +37,7 @@ const InvalidFilesErrorDialog = dynamic<{
       (r) => r.InvalidFilesErrorDialog,
     ),
   {
-    loading: () => <Loading />,
+    loading: () => <LoadingDialog />,
   },
 );
 
@@ -46,19 +48,32 @@ const InpIssuesDialog = dynamic<{
   () =>
     import("src/components/dialogs/inp-issues").then((r) => r.InpIssuesDialog),
   {
-    loading: () => <Loading />,
+    loading: () => <LoadingDialog />,
   },
 );
 
 const GeocodingNotSupportedDialog = dynamic<{
   onClose: () => void;
+  onImportNonProjected: () => void;
 }>(
   () =>
     import("src/components/dialogs/inp-issues").then(
       (r) => r.GeocodingNotSupportedDialog,
     ),
   {
-    loading: () => <Loading />,
+    loading: () => <LoadingDialog />,
+  },
+);
+
+const InpProjectionChoiceDialog = dynamic<{
+  onImportNonProjected: () => void;
+}>(
+  () =>
+    import("src/components/dialogs/inp-projection-choice").then(
+      (r) => r.InpProjectionChoiceDialog,
+    ),
+  {
+    loading: () => <LoadingDialog />,
   },
 );
 
@@ -71,15 +86,14 @@ const MissingCoordinatesDialog = dynamic<{
       (r) => r.MissingCoordinatesDialog,
     ),
   {
-    loading: () => <Loading />,
+    loading: () => <LoadingDialog />,
   },
 );
 
-const CreateNewDialog = dynamic<{
-  onClose: () => void;
-}>(() => import("src/components/dialogs/create-new").then((r) => r.CreateNew), {
-  loading: () => <Loading />,
-});
+const CreateNewDialog = dynamic(
+  () => import("src/components/dialogs/create-new").then((r) => r.CreateNew),
+  { loading: () => <LoadingDialog /> },
+);
 
 const SimulationReportDialog = dynamic(
   () =>
@@ -113,7 +127,7 @@ const UnsavedChangesDialog = dynamic<{
       (r) => r.UnsavedChangesDialog,
     ),
   {
-    loading: () => <Loading />,
+    loading: () => <LoadingDialog />,
   },
 );
 
@@ -126,7 +140,7 @@ const AlertInpOutputDialog = dynamic<{
       (r) => r.AlertInpOutputDialog,
     ),
   {
-    loading: () => <Loading />,
+    loading: () => <LoadingDialog />,
   },
 );
 
@@ -139,7 +153,7 @@ const AlertScenariosNotSavedDialog = dynamic<{
       (r) => r.AlertScenariosNotSavedDialog,
     ),
   {
-    loading: () => <Loading />,
+    loading: () => <LoadingDialog />,
   },
 );
 
@@ -151,7 +165,7 @@ const AlertNetworkRequiredDialog = dynamic<{
       (r) => r.AlertNetworkRequiredDialog,
     ),
   {
-    loading: () => <Loading />,
+    loading: () => <LoadingDialog />,
   },
 );
 
@@ -159,7 +173,7 @@ const CheatsheetDialog = dynamic<Record<string, never>>(
   () =>
     import("src/components/dialogs/cheatsheet").then((r) => r.CheatsheetDialog),
   {
-    loading: () => <Loading />,
+    loading: () => <LoadingDialog />,
   },
 );
 
@@ -249,21 +263,40 @@ const ControlsDialog = dynamic(
   },
 );
 
-const CurvesAndPatternsDialog = dynamic(
+const PatternsDialog = dynamic<{
+  initialPatternId?: number;
+  initialSection?:
+    | "demand"
+    | "reservoirHead"
+    | "pumpSpeed"
+    | "qualitySourceStrength"
+    | "energyPrice";
+}>(
+  () => import("src/components/dialogs/patterns").then((r) => r.PatternsDialog),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
+const PumpLibraryDialog = dynamic<{
+  initialCurveId?: number;
+  initialSection?: "pump" | "efficiency";
+}>(
   () =>
-    import("src/components/dialogs/curves-and-patterns").then(
-      (r) => r.CurvesAndPatternsDialog,
+    import("src/components/dialogs/pump-library").then(
+      (r) => r.PumpLibraryDialog,
     ),
   {
     loading: () => <LoadingDialog />,
   },
 );
 
-const PumpCurvesDialog = dynamic(
+const CurveLibraryDialog = dynamic<{
+  initialCurveId?: number;
+  initialSection?: "volume" | "valve" | "headloss";
+}>(
   () =>
-    import("src/components/dialogs/pump-curves").then(
-      (r) => r.PumpCurvesDialog,
-    ),
+    import("src/components/dialogs/curves").then((r) => r.CurveLibraryDialog),
   {
     loading: () => <LoadingDialog />,
   },
@@ -311,6 +344,16 @@ const ScenariosPaywallDialog = dynamic<{
   },
 );
 
+const ActivatingTrialDialog = dynamic(
+  () =>
+    import("src/components/dialogs/activating-trial").then(
+      (r) => r.ActivatingTrialDialog,
+    ),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
 const FirstScenarioDialog = dynamic<{
   onConfirm: () => void;
   onClose: () => void;
@@ -327,7 +370,6 @@ const FirstScenarioDialog = dynamic<{
 export const Dialogs = memo(function Dialogs() {
   const [dialog, setDialogState] = useAtom(dialogAtom);
   const userTracking = useUserTracking();
-
   const onClose = useCallback(() => {
     setDialogState(null);
   }, [setDialogState]);
@@ -350,6 +392,9 @@ export const Dialogs = memo(function Dialogs() {
       if (dialog.type === "inpGeocodingNotSupported") {
         userTracking.capture({ name: "geocodingNotSupported.seen" });
       }
+      if (dialog.type === "inpProjectionChoice") {
+        userTracking.capture({ name: "inpProjectionChoice.seen" });
+      }
       if (dialog.type === "inpIssues") {
         userTracking.capture({ name: "inpIssues.seen" });
       }
@@ -370,6 +415,9 @@ export const Dialogs = memo(function Dialogs() {
     previousDialog.current = dialog;
   }
 
+  if (dialog.type === "createNew") {
+    return <CreateNewDialog />;
+  }
   if (dialog.type === "simulationReport") {
     return <SimulationReportDialog />;
   }
@@ -400,11 +448,29 @@ export const Dialogs = memo(function Dialogs() {
   if (dialog.type === "controls") {
     return <ControlsDialog />;
   }
-  if (dialog.type === "curvesAndPatterns") {
-    return <CurvesAndPatternsDialog />;
+  if (dialog.type === "patternsLibrary") {
+    return (
+      <PatternsDialog
+        initialPatternId={dialog.initialPatternId}
+        initialSection={dialog.initialSection}
+      />
+    );
   }
   if (dialog.type === "pumpLibrary") {
-    return <PumpCurvesDialog />;
+    return (
+      <PumpLibraryDialog
+        initialCurveId={dialog.initialCurveId}
+        initialSection={dialog.initialSection}
+      />
+    );
+  }
+  if (dialog.type === "curveLibrary") {
+    return (
+      <CurveLibraryDialog
+        initialCurveId={dialog.initialCurveId}
+        initialSection={dialog.initialSection}
+      />
+    );
   }
 
   if (dialog.type === "upgrade") {
@@ -415,9 +481,21 @@ export const Dialogs = memo(function Dialogs() {
     return <ScenariosPaywallDialog onClose={onClose} />;
   }
 
+  if (dialog.type === "activatingTrial") {
+    return <ActivatingTrialDialog />;
+  }
+
   if (dialog.type === "firstScenario") {
     return (
       <FirstScenarioDialog onConfirm={dialog.onConfirm} onClose={onClose} />
+    );
+  }
+
+  if (dialog.type === "inpProjectionChoice") {
+    return (
+      <InpProjectionChoiceDialog
+        onImportNonProjected={dialog.onImportNonProjected}
+      />
     );
   }
 
@@ -450,12 +528,14 @@ export const Dialogs = memo(function Dialogs() {
       <InvalidFilesErrorDialog modal={modal} onClose={onClose} />
     ))
     .with({ type: "cheatsheet" }, () => <CheatsheetDialog />)
-    .with({ type: "createNew" }, () => <CreateNewDialog onClose={onClose} />)
     .with({ type: "inpIssues" }, ({ issues }) => (
       <InpIssuesDialog issues={issues} onClose={onClose} />
     ))
-    .with({ type: "inpGeocodingNotSupported" }, () => (
-      <GeocodingNotSupportedDialog onClose={onClose} />
+    .with({ type: "inpGeocodingNotSupported" }, ({ onImportNonProjected }) => (
+      <GeocodingNotSupportedDialog
+        onClose={onClose}
+        onImportNonProjected={onImportNonProjected}
+      />
     ))
     .with({ type: "inpMissingCoordinates" }, ({ issues }) => (
       <MissingCoordinatesDialog issues={issues} onClose={onClose} />
@@ -484,49 +564,5 @@ export const Dialogs = memo(function Dialogs() {
     )
     .exhaustive();
 
-  //DEPRECATED PATH! NEW DIALOGS SHOW USE DialogContainer COMPONENT
-  return (
-    <D.Root
-      open={!!content}
-      onOpenChange={(isOpen) => {
-        if (!isOpen) {
-          onClose();
-        }
-      }}
-    >
-      {/** Weird as hell shit here. Without this trigger, radix will
-      return focus to the body element, which will not receive events. */}
-      <D.Trigger className="hidden">
-        <div className="hidden"></div>
-      </D.Trigger>
-      <D.Portal>
-        <StyledDialogOverlay />
-        <Suspense fallback={<Loading />}>
-          {/**radix complains if no title, so at least having an empty one helps**/}
-          <D.Title></D.Title>
-          {/**radix complains if no description, so at least having an empty one helps**/}
-          <D.Description></D.Description>
-          {dialog && (
-            <StyledDialogContent
-              onEscapeKeyDown={(e) => {
-                onClose();
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onInteractOutside={(e) => {
-                const target = e.target as HTMLElement;
-                if (target.closest("[data-privacy-banner]")) {
-                  e.preventDefault();
-                }
-              }}
-              onOpenAutoFocus={(e) => e.preventDefault()}
-              size={"sm"}
-            >
-              <DefaultErrorBoundary>{content}</DefaultErrorBoundary>
-            </StyledDialogContent>
-          )}
-        </Suspense>
-      </D.Portal>
-    </D.Root>
-  );
+  return content;
 });

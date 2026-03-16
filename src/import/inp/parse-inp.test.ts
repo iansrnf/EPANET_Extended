@@ -1,7 +1,9 @@
 import { Junction, Pipe, Reservoir } from "src/hydraulic-model";
 import { parseInp } from "./parse-inp";
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
-import { buildInp } from "src/simulation/build-inp";
+import { buildInp, chooseUnitSystem } from "src/simulation/build-inp";
+import { presets } from "src/lib/project-settings/quantities-spec";
+import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import { getByLabel } from "src/__helpers__/asset-queries";
 import { Valve } from "src/hydraulic-model/asset-types";
 
@@ -30,7 +32,9 @@ describe("Parse inp with", () => {
       String(IDS.J1),
     ) as Junction;
     expect(junction.elevation).toEqual(elevation);
-    expect(junction.demands[0].baseDemand).toEqual(demand);
+    expect(
+      hydraulicModel.demands.junctions.get(junction.id)![0].baseDemand,
+    ).toEqual(demand);
     expect(junction.coordinates).toEqual([20, 10]);
   });
 
@@ -68,7 +72,9 @@ describe("Parse inp with", () => {
       String(IDS.J1),
     ) as Junction;
     expect(junction.elevation).toEqual(elevation);
-    expect(junction.demands[0].baseDemand).toEqual(demand);
+    expect(
+      hydraulicModel.demands.junctions.get(junction.id)![0].baseDemand,
+    ).toEqual(demand);
     expect(junction.coordinates).toEqual([20, 10]);
 
     const otherJunction = getByLabel(
@@ -76,7 +82,9 @@ describe("Parse inp with", () => {
       String(IDS.J2),
     ) as Junction;
     expect(otherJunction.elevation).toEqual(otherElevation);
-    expect(otherJunction.demands[0].baseDemand).toEqual(otherDemand);
+    expect(
+      hydraulicModel.demands.junctions.get(otherJunction.id)![0].baseDemand,
+    ).toEqual(otherDemand);
     expect(otherJunction.coordinates).toEqual([40, 30]);
   });
 
@@ -153,17 +161,11 @@ describe("Parse inp with", () => {
     [COORDINATES]
     ${IDS.R1}\t1\t1
     `;
-    const { hydraulicModel, modelMetadata } = parseInp(inp);
-    expect(hydraulicModel.units).toMatchObject({
+    const { projectSettings } = parseInp(inp);
+    expect(projectSettings.units).toMatchObject({
       flow: "gal/min",
     });
-    const reservoir = getByLabel(
-      hydraulicModel.assets,
-      String(IDS.R1),
-    ) as Reservoir;
-    expect(reservoir.getUnit("head")).toEqual("ft");
-
-    expect(modelMetadata.quantities.getUnit("head")).toEqual("ft");
+    expect(projectSettings.units.head).toEqual("ft");
   });
 
   it("detects other systems", () => {
@@ -179,15 +181,40 @@ describe("Parse inp with", () => {
     [COORDINATES]
     ${IDS.R1}\t1\t1
     `;
-    const { hydraulicModel } = parseInp(inp);
-    expect(hydraulicModel.units).toMatchObject({
+    const { projectSettings } = parseInp(inp);
+    expect(projectSettings.units).toMatchObject({
       flow: "l/s",
     });
-    const reservoir = getByLabel(
-      hydraulicModel.assets,
-      String(IDS.R1),
-    ) as Reservoir;
-    expect(reservoir.getUnit("head")).toEqual("m");
+    expect(projectSettings.units.head).toEqual("m");
+  });
+
+  it("parses pressure unit override from OPTIONS", () => {
+    const IDS = { R1: 1 } as const;
+    const inp = `
+    [RESERVOIRS]
+    ${IDS.R1}\t100
+    [OPTIONS]
+    Units\tLPS
+    Pressure\tKPA
+    [COORDINATES]
+    ${IDS.R1}\t1\t1
+    `;
+    const { projectSettings } = parseInp(inp);
+    expect(projectSettings.units.pressure).toEqual("kPa");
+  });
+
+  it("keeps default pressure unit when no PRESSURE option", () => {
+    const IDS = { R1: 1 } as const;
+    const inp = `
+    [RESERVOIRS]
+    ${IDS.R1}\t100
+    [OPTIONS]
+    Units\tLPS
+    [COORDINATES]
+    ${IDS.R1}\t1\t1
+    `;
+    const { projectSettings } = parseInp(inp);
+    expect(projectSettings.units.pressure).toEqual("mwc");
   });
 
   it("detects headloss formula from inp", () => {
@@ -199,9 +226,9 @@ describe("Parse inp with", () => {
     ANY
     `;
 
-    const { hydraulicModel } = parseInp(inp);
+    const { projectSettings } = parseInp(inp);
 
-    expect(hydraulicModel.headlossFormula).toEqual("D-W");
+    expect(projectSettings.headlossFormula).toEqual("D-W");
   });
 
   it("says when inp contains unsupported sections", () => {
@@ -316,7 +343,7 @@ describe("Parse inp with", () => {
     expect(getByLabel(assets, String(IDS.P1))).not.toBeUndefined();
   });
 
-  it("says when using non default options", () => {
+  it("parses non default options", () => {
     const inp = `
     [OPTIONS]
     Specific Gravity\t2
@@ -326,12 +353,10 @@ describe("Parse inp with", () => {
     Quality\tNONE
     `;
 
-    const { issues } = parseInp(inp);
+    const { simulationSettings } = parseInp(inp);
 
-    expect([...issues!.nonDefaultOptions!.keys()]).toEqual([
-      "SPECIFIC GRAVITY",
-      "TOLERANCE",
-    ]);
+    expect(simulationSettings.specificGravity).toBe(2);
+    expect(simulationSettings.tolerance).toBe(0.00001);
   });
 
   it("supports demo network settings", () => {
@@ -361,10 +386,10 @@ describe("Parse inp with", () => {
     Units     MGD
     Headloss H-W
  `;
-    const { modelMetadata, issues } = parseInp(inp);
+    const { projectSettings, issues } = parseInp(inp);
 
     expect(issues).toBeNull();
-    expect(modelMetadata.quantities.specName).toEqual("MGD");
+    expect(chooseUnitSystem(projectSettings.units)).toEqual("MGD");
   });
 
   it("treats 'None mg/L' quality setting as equivalent to 'None'", () => {
@@ -381,18 +406,16 @@ describe("Parse inp with", () => {
     expect(issues).toBeNull();
   });
 
-  it("says when override defaults aren't the same", () => {
+  it("parses unbalanced with extra trials", () => {
     const inp = `
     [OPTIONS]
     Unbalanced\tContinue 20
     `;
 
-    const { issues } = parseInp(inp);
+    const { simulationSettings } = parseInp(inp);
 
-    expect(issues!.unbalancedDiff).toEqual({
-      defaultSetting: "CONTINUE 10",
-      customSetting: "CONTINUE 20",
-    });
+    expect(simulationSettings.unbalancedMode).toBe("CONTINUE");
+    expect(simulationSettings.unbalancedExtraTrials).toBe(20);
   });
 
   it("detects when the inp has been made by the app", () => {
@@ -401,6 +424,8 @@ describe("Parse inp with", () => {
       .aJunction(IDS.J1, { coordinates: [10, 1] })
       .build();
     let inp = buildInp(hydraulicModel, {
+      simulationSettings: defaultSimulationSettings,
+      units: presets.LPS.units,
       madeBy: true,
     });
 
@@ -492,7 +517,9 @@ describe("Parse inp with", () => {
     ) as Junction;
     expect(junction).toBeDefined();
     expect(junction.elevation).toEqual(100);
-    expect(junction.demands[0].baseDemand).toEqual(0.5);
+    expect(
+      hydraulicModel.demands.junctions.get(junction.id)![0].baseDemand,
+    ).toEqual(0.5);
 
     const pipe = getByLabel(hydraulicModel.assets, String(IDS.P1)) as Pipe;
     expect(pipe).toBeDefined();
@@ -539,7 +566,9 @@ describe("Parse inp with", () => {
     ) as Junction;
     expect(junction).toBeDefined();
     expect(junction.elevation).toEqual(100);
-    expect(junction.demands[0].baseDemand).toEqual(0.5);
+    expect(
+      hydraulicModel.demands.junctions.get(junction.id)![0].baseDemand,
+    ).toEqual(0.5);
 
     const reservoir = getByLabel(
       hydraulicModel.assets,
@@ -587,15 +616,15 @@ describe("Parse inp with", () => {
       expect(issues?.unsupportedSections?.has("[ENERGY]")).toBeFalsy();
     });
 
-    it("reports [ENERGY] section with non-default values", () => {
+    it("parses [ENERGY] section with non-default values", () => {
       const inp = `
       [ENERGY]
       Global Efficiency  80
       `;
 
-      const { issues } = parseInp(inp);
+      const { simulationSettings } = parseInp(inp);
 
-      expect(issues?.unsupportedSections?.has("[ENERGY]")).toBe(true);
+      expect(simulationSettings.energyGlobalEfficiency).toBe(80);
     });
 
     it("ignores [EMITTERS] section with zero values", () => {
@@ -610,15 +639,27 @@ describe("Parse inp with", () => {
       expect(issues?.unsupportedSections?.has("[EMITTERS]")).toBeFalsy();
     });
 
-    it("reports [EMITTERS] section with non-zero values", () => {
+    it("parses [EMITTERS] section", () => {
       const inp = `
+      [JUNCTIONS]
+      J1  100
+      J2  200
+
+      [COORDINATES]
+      J1  10  20
+      J2  30  40
+
       [EMITTERS]
       J1  0.5
       `;
 
-      const { issues } = parseInp(inp);
+      const { hydraulicModel, issues } = parseInp(inp);
+      const j1 = getByLabel(hydraulicModel.assets, "J1") as Junction;
+      const j2 = getByLabel(hydraulicModel.assets, "J2") as Junction;
 
-      expect(issues?.unsupportedSections?.has("[EMITTERS]")).toBe(true);
+      expect(j1.emitterCoefficient).toBe(0.5);
+      expect(j2.emitterCoefficient).toBe(0);
+      expect(issues?.unsupportedSections?.has("[EMITTERS]")).toBeFalsy();
     });
 
     it("ignores [REACTIONS] section with default values", () => {
@@ -638,15 +679,15 @@ describe("Parse inp with", () => {
       expect(issues?.unsupportedSections?.has("[REACTIONS]")).toBeFalsy();
     });
 
-    it("reports [REACTIONS] section with non-default values", () => {
+    it("parses [REACTIONS] section with non-default values", () => {
       const inp = `
       [REACTIONS]
       Global Bulk  0.5
       `;
 
-      const { issues } = parseInp(inp);
+      const { simulationSettings } = parseInp(inp);
 
-      expect(issues?.unsupportedSections?.has("[REACTIONS]")).toBe(true);
+      expect(simulationSettings.reactionGlobalBulk).toBe(0.5);
     });
 
     it("reports [REACTIONS] section with pipe-specific reactions", () => {
@@ -659,83 +700,79 @@ describe("Parse inp with", () => {
 
       expect(issues?.unsupportedSections?.has("[REACTIONS]")).toBe(true);
     });
+  });
 
-    it("does not report [PATTERNS] as unsupported", () => {
-      const inp = `
-      [PATTERNS]
-      PAT1  1.0  1.2  0.8  1.1
-      `;
-
-      const { issues } = parseInp(inp);
-
-      expect(issues?.unsupportedSections?.has("[PATTERNS]")).toBeFalsy();
-    });
-
-    it("reports PCV valves with curves", () => {
+  describe("non-projected import", () => {
+    it("imports non-projected coordinates centered near origin", () => {
       const inp = `
       [JUNCTIONS]
       J1  100
-      J2  100
+      J2  200
+
+      [PIPES]
+      P1  J1  J2  1000  100  100  0  Open
 
       [COORDINATES]
-      J1  1  1
-      J2  2  2
-
-      [VALVES]
-      V1  J1  J2  100  PCV  50  0  Curve1
-
-      [CURVES]
-      Curve1  10  5
+      J1  500000  200000
+      J2  501000  201000
       `;
 
-      const { issues } = parseInp(inp);
+      const withoutFlag = parseInp(inp);
+      expect(withoutFlag.issues?.invalidCoordinates).toBeDefined();
 
-      expect(issues?.hasPCVCurves).toBe(1);
+      const result = parseInp(inp, { sourceProjection: "xy-grid" });
+      expect(result.issues?.invalidCoordinates).toBeUndefined();
+      expect(result.hydraulicModel.assets.size).toBe(3);
+
+      const j1 = getByLabel(result.hydraulicModel.assets, "J1") as Junction;
+      expect(j1).toBeDefined();
+      expect(Math.abs(j1.coordinates[0])).toBeLessThan(1);
+      expect(Math.abs(j1.coordinates[1])).toBeLessThan(1);
     });
 
-    it("does not report PCV valves without curves", () => {
+    it("preserves other issues when using xy-grid projection", () => {
       const inp = `
       [JUNCTIONS]
       J1  100
-      J2  100
 
       [COORDINATES]
-      J1  1  1
-      J2  2  2
+      J1  500000  200000
 
-      [VALVES]
-      V1  J1  J2  100  PCV  50  0
+      [MIXING]
+      ANYTHING
       `;
 
-      const { issues } = parseInp(inp);
-
-      expect(issues?.hasPCVCurves).toBeFalsy();
+      const result = parseInp(inp, { sourceProjection: "xy-grid" });
+      expect(result.issues?.invalidCoordinates).toBeUndefined();
+      expect(result.issues?.unsupportedSections).toBeDefined();
     });
 
-    it("counts multiple PCV valves with curves", () => {
+    it("sets projection to xy-grid for non-projected import", () => {
       const inp = `
       [JUNCTIONS]
       J1  100
-      J2  100
-      J3  100
 
       [COORDINATES]
-      J1  1  1
-      J2  2  2
-      J3  3  3
-
-      [VALVES]
-      V1  J1  J2  100  PCV  50  0  Curve1
-      V2  J2  J3  100  PCV  50  0  Curve2
-
-      [CURVES]
-      Curve1  10  5
-      Curve2  20  10
+      J1  500000  200000
       `;
 
-      const { issues } = parseInp(inp);
+      const result = parseInp(inp, { sourceProjection: "xy-grid" });
+      expect(result.projectSettings.projectionMapper.projection).toBe(
+        "xy-grid",
+      );
+    });
 
-      expect(issues?.hasPCVCurves).toBe(2);
+    it("sets projection to wgs84 for standard import", () => {
+      const inp = `
+      [JUNCTIONS]
+      J1  100
+
+      [COORDINATES]
+      J1  10  20
+      `;
+
+      const result = parseInp(inp);
+      expect(result.projectSettings.projectionMapper.projection).toBe("wgs84");
     });
   });
 });

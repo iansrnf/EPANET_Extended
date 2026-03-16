@@ -1,9 +1,13 @@
 import {
   HydraulicModel,
   initializeHydraulicModel,
-  JunctionDemand,
+  Demand,
 } from "src/hydraulic-model";
-import { CustomerPoint } from "src/hydraulic-model/customer-points";
+import {
+  CustomerPointFactory,
+  ModelFactories,
+  initializeModelFactories,
+} from "src/hydraulic-model/factories";
 import {
   InpData,
   ItemData,
@@ -18,21 +22,28 @@ import {
   CurveData,
 } from "./inp-data";
 import { IssuesAccumulator } from "./issues";
-import { ModelMetadata } from "src/model-metadata";
-import { Quantities, presets } from "src/model-metadata/quantities-spec";
+import { ProjectSettings } from "src/lib/project-settings";
+import {
+  presets,
+  withPressureUnit,
+} from "src/lib/project-settings/quantities-spec";
+import type { Unit } from "src/quantity";
 import { Position } from "geojson";
 import { PumpStatus } from "src/hydraulic-model/asset-types/pump";
 import { ValveStatus } from "src/hydraulic-model/asset-types/valve";
 import { ParseInpOptions } from "./parse-inp";
 import { AssetId } from "src/hydraulic-model/asset-types/base-asset";
+import { Pump } from "src/hydraulic-model/asset-types/pump";
+import { ConsecutiveIdsGenerator, IdGenerator } from "src/lib/id-generator";
 import {
-  ConsecutiveIdsGenerator,
-  IdGenerator,
-} from "src/hydraulic-model/id-generator";
-import {
+  CurveId,
   CurvePoint,
-  getPumpCurveType,
-  isValidPumpCurve,
+  CurveType,
+  Curves,
+  defaultCurvePoints,
+  ICurve,
+  isValidCurve,
+  getCurvePointsType,
 } from "src/hydraulic-model/curves";
 import {
   LabelResolver,
@@ -41,47 +52,62 @@ import {
 } from "src/hydraulic-model/controls";
 import { LabelManager } from "src/hydraulic-model/label-manager";
 import {
-  DemandPattern,
-  DemandPatterns,
+  createEmptyDemands,
+  Pattern,
+  Patterns,
   PatternId,
   PatternMultipliers,
-} from "src/hydraulic-model/demands";
+  PatternType,
+} from "src/hydraulic-model";
 import { PumpBuildData } from "src/hydraulic-model/asset-builder";
 
-type BuildPatternContext = {
-  patterns: DemandPatterns;
+type PatternsContext = {
+  patterns: Patterns;
   fallbackPatternId?: PatternId;
-  usedPatternIds: Set<PatternId>;
   idGenerator: IdGenerator;
   labelManager: LabelManager;
+  duplicates: Map<PatternId, Map<PatternType, PatternId>>;
 };
 
-type CurvesLookup = Map<string, CurvePoint[]>;
+type CurvesContext = {
+  curves: Curves;
+  pumpCurves: Map<CurveId, AssetId[]>;
+  idGenerator: IdGenerator;
+  labelManager: LabelManager;
+  duplicates: Map<CurveId, Map<CurveType, CurveId>>;
+};
 
 export const buildModel = (
   inpData: InpData,
   issues: IssuesAccumulator,
   options?: ParseInpOptions,
-): { hydraulicModel: HydraulicModel; modelMetadata: ModelMetadata } => {
-  const spec = presets[inpData.options.units];
-  const quantities = new Quantities(spec);
+): {
+  hydraulicModel: HydraulicModel;
+  factories: ModelFactories;
+  projectSettings: Pick<
+    ProjectSettings,
+    "units" | "defaults" | "headlossFormula" | "formatting"
+  >;
+} => {
+  const baseSpec = presets[inpData.options.units];
+  const spec = inpData.options.pressureUnit
+    ? withPressureUnit(baseSpec, inpData.options.pressureUnit as Unit)
+    : baseSpec;
   const nodeIds = new ItemData<AssetId>();
   const linkIds = new ItemData<AssetId>();
+  const factories = initializeModelFactories();
 
   const hydraulicModel = initializeHydraulicModel({
-    units: quantities.units,
-    defaults: quantities.defaults,
-    headlossFormula: inpData.options.headlossFormula,
-    demands: {
-      multiplier: inpData.options.demandMultiplier,
-      patterns: new Map(),
-    },
-    epsTiming: inpData.times,
+    defaults: spec.defaults,
+    demands: createEmptyDemands(),
   });
 
-  const curvesLookup: CurvesLookup = buildCurvesLookup(inpData.curves, issues);
+  const curvesContext: CurvesContext = initializeCurvesContext(
+    hydraulicModel.labelManager,
+    inpData.curves,
+  );
 
-  const patternContext: BuildPatternContext = initializeBuildPatternContext(
+  const patternContext: PatternsContext = initializeBuildPatternContext(
     hydraulicModel.labelManager,
     inpData.patterns,
     inpData.options.defaultPattern,
@@ -101,11 +127,12 @@ export const buildModel = (
       inpData,
       issues,
       nodeIds,
+      patternContext,
     });
   }
 
   for (const tankData of inpData.tanks) {
-    addTank(hydraulicModel, tankData, {
+    addTank(hydraulicModel, tankData, curvesContext, {
       inpData,
       issues,
       nodeIds,
@@ -113,7 +140,7 @@ export const buildModel = (
   }
 
   for (const pumpData of inpData.pumps) {
-    addPump(hydraulicModel, pumpData, curvesLookup, {
+    addPump(hydraulicModel, pumpData, curvesContext, patternContext, {
       inpData,
       issues,
       nodeIds,
@@ -122,7 +149,7 @@ export const buildModel = (
   }
 
   for (const valveData of inpData.valves) {
-    addValve(hydraulicModel, valveData, {
+    addValve(hydraulicModel, valveData, curvesContext, {
       inpData,
       issues,
       nodeIds,
@@ -140,76 +167,88 @@ export const buildModel = (
     });
   }
 
-  const customerPointIdGenerator = new ConsecutiveIdsGenerator();
-
   for (const customerPointData of inpData.customerPoints) {
-    addCustomerPoint(hydraulicModel, customerPointData, {
+    addCustomerPoint(hydraulicModel, customerPointData, patternContext, {
       inpData,
       nodeIds,
       linkIds,
-      patternContext,
-      customerPointIdGenerator,
+      customerPointFactory: factories.customerPointFactory,
     });
   }
 
-  hydraulicModel.demands.patterns = options?.usedPatterns
-    ? filterUsedPatterns(patternContext.patterns, patternContext.usedPatternIds)
-    : patternContext.patterns;
+  addCurves(hydraulicModel, curvesContext, issues, inpData.curves);
+
+  addPatterns(
+    hydraulicModel,
+    patternContext,
+    inpData.sourcePatterns,
+    inpData.energy.globalPattern,
+    inpData.patterns,
+  );
 
   addControls(hydraulicModel, inpData.controls, nodeIds, linkIds);
 
-  return { hydraulicModel, modelMetadata: { quantities } };
+  return {
+    hydraulicModel,
+    factories,
+    projectSettings: {
+      units: spec.units,
+      defaults: spec.defaults,
+      headlossFormula: inpData.options.headlossFormula,
+      formatting: { decimals: spec.decimals, defaultDecimals: 3 },
+    },
+  };
 };
 
-const buildCurvesLookup = (
+const initializeCurvesContext = (
+  labelManager: LabelManager,
   rawCurves: ItemData<CurveData>,
-  issues: IssuesAccumulator,
-): CurvesLookup => {
-  const curvesLookup: CurvesLookup = new Map();
+): CurvesContext => {
+  const curveContext: CurvesContext = {
+    curves: new Map(),
+    pumpCurves: new Map(),
+    labelManager: labelManager,
+    idGenerator: new ConsecutiveIdsGenerator(),
+    duplicates: new Map(),
+  };
 
-  for (const [normalizedId, curveData] of rawCurves.entries()) {
-    curvesLookup.set(normalizedId, buildCurvePoints(curveData.points, issues));
+  for (const [, curveData] of rawCurves.entries()) {
+    addCurve(curveContext, curveData.label, curveData.points);
   }
 
-  return curvesLookup;
+  return curveContext;
 };
 
-const buildCurvePoints = (
-  rawPoints: CurvePoint[],
-  issues: IssuesAccumulator,
-): CurvePoint[] => {
-  let points: CurvePoint[] = rawPoints;
-  if (
-    !isValidPumpCurve(points) ||
-    getPumpCurveType(points) === "multiPointCurve"
-  ) {
-    issues.addPumpCurve();
-    points = [inferedDesignPoint(rawPoints)];
-  }
+const addCurve = (
+  curvesContext: CurvesContext,
+  label: string,
+  points: CurvePoint[],
+): ICurve | undefined => {
+  const { curves, idGenerator, labelManager } = curvesContext;
+  if (points.length === 0) return;
 
-  return points;
-};
+  const id = idGenerator.newId();
+  const curve: ICurve = {
+    id,
+    label,
+    points,
+  };
+  curves.set(curve.id, curve);
+  labelManager.register(curve.label, "curve", curve.id);
 
-const inferedDesignPoint = (rawPoints: CurvePoint[]): CurvePoint => {
-  if (rawPoints.length === 0) {
-    return { x: 1, y: 1 };
-  }
-
-  const middleIndex = Math.floor(rawPoints.length / 2);
-  const designPoint = rawPoints[middleIndex];
-  return designPoint;
+  return curve;
 };
 
 const initializeBuildPatternContext = (
   labelManager: LabelManager,
   rawPatterns: ItemData<PatternData>,
   defaultPatternOption?: string,
-): BuildPatternContext => {
-  const patternContext: BuildPatternContext = {
+): PatternsContext => {
+  const patternContext: PatternsContext = {
     patterns: new Map(),
-    usedPatternIds: new Set(),
     labelManager: labelManager,
     idGenerator: new ConsecutiveIdsGenerator(),
+    duplicates: new Map(),
   };
 
   for (const [, patternData] of rawPatterns.entries()) {
@@ -222,18 +261,6 @@ const initializeBuildPatternContext = (
     defaultPatternOption,
   );
 
-  const { patterns } = patternContext;
-
-  const id = labelManager.getIdByLabel(defaultPatternOption || "1", "pattern");
-  if (id !== undefined && patterns.has(id)) {
-    patternContext.fallbackPatternId = id;
-  } else {
-    const pattern1Id = labelManager.getIdByLabel("1", "pattern");
-    if (pattern1Id !== undefined && patterns.has(pattern1Id)) {
-      patternContext.fallbackPatternId = pattern1Id;
-    }
-  }
-
   return patternContext;
 };
 
@@ -241,7 +268,7 @@ const buildPattern = (
   idGenerator: IdGenerator,
   label: string,
   factors: PatternMultipliers,
-): DemandPattern | undefined => {
+): Pattern | undefined => {
   if (factors.length === 0) return undefined;
   if (isConstantPattern(factors)) return undefined;
 
@@ -254,10 +281,10 @@ const buildPattern = (
 };
 
 const addPattern = (
-  patternsContext: BuildPatternContext,
+  patternsContext: PatternsContext,
   label: string,
   factors: PatternMultipliers,
-): DemandPattern | undefined => {
+): Pattern | undefined => {
   const { patterns, idGenerator, labelManager } = patternsContext;
   const pattern = buildPattern(idGenerator, label, factors);
   if (!pattern) return undefined;
@@ -269,7 +296,7 @@ const addPattern = (
 };
 
 const determineFallbackPatternId = (
-  patterns: DemandPatterns,
+  patterns: Patterns,
   labelManager: LabelManager,
   defaultPatternLabel?: string,
 ): PatternId | undefined => {
@@ -283,46 +310,37 @@ const determineFallbackPatternId = (
 };
 
 const buildDemand = (
-  patternContext: BuildPatternContext,
+  patternContext: PatternsContext,
   baseDemand: number,
   patternLabel: string | undefined,
-): JunctionDemand => {
-  const { fallbackPatternId, labelManager, usedPatternIds } = patternContext;
+): Demand => {
+  const { fallbackPatternId, labelManager } = patternContext;
 
   if (patternLabel) {
     const patternId = labelManager.getIdByLabel(patternLabel, "pattern");
     if (patternId !== undefined) {
-      usedPatternIds.add(patternId);
+      const effectiveId = markPatternUsed(patternContext, patternId, "demand");
       return {
         baseDemand,
-        patternId,
+        patternId: effectiveId,
       };
     }
   }
 
   if (fallbackPatternId !== undefined) {
-    usedPatternIds.add(fallbackPatternId);
+    const effectiveId = markPatternUsed(
+      patternContext,
+      fallbackPatternId,
+      "demand",
+    );
     return {
       baseDemand,
-      patternId: fallbackPatternId,
+      patternId: effectiveId,
     };
   }
 
   return { baseDemand };
 };
-
-const filterUsedPatterns = (
-  patterns: DemandPatterns,
-  usedPatternIds: Set<PatternId>,
-): DemandPatterns => {
-  const used: DemandPatterns = new Map();
-  for (const id of usedPatternIds) {
-    const pattern = patterns.get(id);
-    if (pattern) used.set(id, pattern);
-  }
-  return used;
-};
-
 const isConstantPattern = (pattern: PatternMultipliers): boolean => {
   return pattern.every((value) => value === 1);
 };
@@ -339,7 +357,7 @@ const addJunction = (
     inpData: InpData;
     issues: IssuesAccumulator;
     nodeIds: ItemData<AssetId>;
-    patternContext: BuildPatternContext;
+    patternContext: PatternsContext;
   },
 ) => {
   const coordinates = getNodeCoordinates(inpData, junctionData.id, issues);
@@ -347,7 +365,7 @@ const addJunction = (
 
   const junctionDemands = inpData.demands.get(junctionData.id) || [];
 
-  const demands: JunctionDemand[] =
+  const demands: Demand[] =
     junctionDemands.length > 0
       ? junctionDemands
           .filter((d) => d.baseDemand)
@@ -362,14 +380,17 @@ const addJunction = (
           ]
         : [];
 
+  const emitterCoefficient = inpData.emitters.get(junctionData.id);
+
   const junction = hydraulicModel.assetBuilder.buildJunction({
     label: junctionData.id,
     coordinates,
     elevation: junctionData.elevation,
-    demands,
+    emitterCoefficient,
     isActive: junctionData.isActive,
   });
   hydraulicModel.assets.set(junction.id, junction);
+  hydraulicModel.demands.junctions.set(junction.id, demands);
   nodeIds.set(junctionData.id, junction.id);
 };
 
@@ -380,20 +401,38 @@ const addReservoir = (
     inpData,
     issues,
     nodeIds,
+    patternContext,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
     nodeIds: ItemData<AssetId>;
+    patternContext: PatternsContext;
   },
 ) => {
   const coordinates = getNodeCoordinates(inpData, reservoirData.id, issues);
   if (!coordinates) return;
 
+  let headPatternId: PatternId | undefined;
+  if (reservoirData.patternId) {
+    const patternId = patternContext.labelManager.getIdByLabel(
+      reservoirData.patternId,
+      "pattern",
+    );
+    if (patternId !== undefined) {
+      headPatternId = markPatternUsed(
+        patternContext,
+        patternId,
+        "reservoirHead",
+      );
+    }
+  }
+
   const reservoir = hydraulicModel.assetBuilder.buildReservoir({
     label: reservoirData.id,
     coordinates,
-    head: calculateReservoirHead(reservoirData, inpData.patterns),
+    head: reservoirData.baseHead,
     elevation: reservoirData.elevation,
+    headPatternId,
     isActive: reservoirData.isActive,
   });
   hydraulicModel.assets.set(reservoir.id, reservoir);
@@ -403,6 +442,7 @@ const addReservoir = (
 const addTank = (
   hydraulicModel: HydraulicModel,
   tankData: TankData,
+  curvesContext: CurvesContext,
   {
     inpData,
     issues,
@@ -416,6 +456,18 @@ const addTank = (
   const coordinates = getNodeCoordinates(inpData, tankData.id, issues);
   if (!coordinates) return;
 
+  let volumeCurveId: CurveId | undefined = undefined;
+  if (tankData.volumeCurveId) {
+    const curveId = curvesContext.labelManager.getIdByLabel(
+      tankData.volumeCurveId,
+      "curve",
+    );
+    if (curveId !== undefined) {
+      volumeCurveId = curveId;
+      markCurveUsed(curvesContext, curveId, "volume");
+    }
+  }
+
   const tank = hydraulicModel.assetBuilder.buildTank({
     label: tankData.id,
     coordinates,
@@ -426,6 +478,7 @@ const addTank = (
     diameter: tankData.diameter,
     minVolume: tankData.minVolume,
     overflow: tankData.overflow ?? false,
+    volumeCurveId,
     isActive: tankData.isActive,
   });
   hydraulicModel.assets.set(tank.id, tank);
@@ -435,7 +488,8 @@ const addTank = (
 const addPump = (
   hydraulicModel: HydraulicModel,
   pumpData: PumpData,
-  curvesLookup: CurvesLookup,
+  curvesContext: CurvesContext,
+  patternContext: PatternsContext,
   {
     inpData,
     issues,
@@ -457,6 +511,7 @@ const addPump = (
     definitionType: PumpBuildData["definitionType"];
     power?: number;
     curve?: CurvePoint[];
+    curveId?: number;
   } = {
     definitionType: "power",
     power: 0,
@@ -470,17 +525,26 @@ const addPump = (
   }
 
   if (pumpData.curveId) {
-    const curveId = pumpData.curveId.toUpperCase();
-    if (curvesLookup.has(curveId)) {
+    const curveId = curvesContext.labelManager.getIdByLabel(
+      pumpData.curveId,
+      "curve",
+    );
+    if (curveId === undefined) {
+      issues.addUndefinedPumpCurve();
       definitionProps = {
         definitionType: "curve",
-        curve: curvesLookup.get(curveId)!.map(({ ...p }) => ({ ...p })),
+        curve: defaultCurvePoints("pump"),
       };
     } else {
-      issues.addPumpCurve();
+      const curve = curvesContext.curves.get(curveId)!;
+      if (!isValidCurve(curve.points)) {
+        issues.addInvalidPumpCurve();
+      }
+      const effectiveCurveId = markCurveUsed(curvesContext, curve.id, "pump");
+
       definitionProps = {
-        definitionType: "curve",
-        curve: [{ x: 1, y: 1 }],
+        definitionType: "curveId",
+        curveId: effectiveCurveId,
       };
     }
   }
@@ -500,10 +564,46 @@ const addPump = (
     }
   }
 
+  let speedPatternId: PatternId | undefined;
   if (pumpData.patternId) {
-    const pattern = getPattern(inpData.patterns, pumpData.patternId);
-    speed = pattern[0];
+    const patternId = patternContext.labelManager.getIdByLabel(
+      pumpData.patternId,
+      "pattern",
+    );
+    if (patternId !== undefined) {
+      speedPatternId = markPatternUsed(patternContext, patternId, "pumpSpeed");
+    }
   }
+
+  const pumpEnergyData = inpData.energy.pumpEnergy.get(pumpData.id);
+
+  let efficiencyCurveId: CurveId | undefined;
+  if (pumpEnergyData?.efficiencyCurve) {
+    const curveId = curvesContext.labelManager.getIdByLabel(
+      pumpEnergyData.efficiencyCurve,
+      "curve",
+    );
+    if (curveId !== undefined) {
+      efficiencyCurveId = markCurveUsed(curvesContext, curveId, "efficiency");
+    }
+  }
+
+  let energyPricePatternId: PatternId | undefined;
+  if (pumpEnergyData?.pattern) {
+    const patternId = patternContext.labelManager.getIdByLabel(
+      pumpEnergyData.pattern,
+      "pattern",
+    );
+    if (patternId !== undefined) {
+      energyPricePatternId = markPatternUsed(
+        patternContext,
+        patternId,
+        "energyPrice",
+      );
+    }
+  }
+
+  const energyPrice = pumpEnergyData?.price;
 
   const pump = hydraulicModel.assetBuilder.buildPump({
     label: pumpData.id,
@@ -511,17 +611,28 @@ const addPump = (
     ...definitionProps,
     initialStatus,
     speed,
+    speedPatternId,
+    efficiencyCurveId,
+    energyPrice,
+    energyPricePatternId,
     coordinates,
     isActive: pumpData.isActive,
   });
   hydraulicModel.assets.set(pump.id, pump);
   hydraulicModel.topology.addLink(pump.id, connections[0], connections[1]);
   linkIds.set(pumpData.id, pump.id);
+  if (pump.curveId) {
+    if (!curvesContext.pumpCurves.has(pump.curveId)) {
+      curvesContext.pumpCurves.set(pump.curveId, []);
+    }
+    curvesContext.pumpCurves.get(pump.curveId)!.push(pump.id);
+  }
 };
 
 const addValve = (
   hydraulicModel: HydraulicModel,
   valveData: ValveData,
+  curvesContext: CurvesContext,
   {
     inpData,
     issues,
@@ -544,16 +655,29 @@ const addValve = (
     initialStatus = statusValue === "CLOSED" ? "closed" : "open";
   }
 
+  let resolvedCurveId: CurveId | undefined;
+  if (valveData.curveId) {
+    const curveId = curvesContext.labelManager.getIdByLabel(
+      valveData.curveId,
+      "curve",
+    );
+    if (curveId !== undefined) {
+      resolvedCurveId = curveId;
+      const curveType = valveData.kind === "pcv" ? "valve" : "headloss";
+      markCurveUsed(curvesContext, curveId, curveType);
+    }
+  }
   const valve = hydraulicModel.assetBuilder.buildValve({
     label: valveData.id,
     diameter: valveData.diameter,
     minorLoss: valveData.minorLoss,
     kind: valveData.kind,
-    setting: valveData.setting,
+    setting: valveData.kind === "gpv" ? undefined : valveData.setting,
     initialStatus,
     connections,
     coordinates,
     isActive: valveData.isActive,
+    curveId: resolvedCurveId,
   });
   hydraulicModel.assets.set(valve.id, valve);
   hydraulicModel.topology.addLink(valve.id, connections[0], connections[1]);
@@ -611,35 +735,34 @@ const addPipe = (
 const addCustomerPoint = (
   hydraulicModel: HydraulicModel,
   customerPointData: CustomerPointData,
+  patternContext: PatternsContext,
   {
     inpData,
     nodeIds,
     linkIds,
-    patternContext,
-    customerPointIdGenerator,
+    customerPointFactory,
   }: {
     inpData: InpData;
     nodeIds: ItemData<AssetId>;
     linkIds: ItemData<AssetId>;
-    patternContext: BuildPatternContext;
-    customerPointIdGenerator: IdGenerator;
+    customerPointFactory: CustomerPointFactory;
   },
 ) => {
-  const id = customerPointIdGenerator.newId();
-
-  const rawDemands = customerPointData.demands ??
-    inpData.customerDemands.get(customerPointData.label) ?? [
-      { baseDemand: customerPointData.baseDemand },
-    ];
+  const rawDemands =
+    customerPointData.demands ??
+    inpData.customerDemands.get(customerPointData.label) ??
+    (customerPointData.baseDemand
+      ? [{ baseDemand: customerPointData.baseDemand }]
+      : []);
 
   const demands = rawDemands.map((d) =>
     buildDemand(patternContext, d.baseDemand, d.patternLabel),
   );
 
-  const customerPoint = CustomerPoint.build(id, customerPointData.coordinates, {
-    label: customerPointData.label,
-    demands,
-  });
+  const customerPoint = customerPointFactory.create(
+    customerPointData.coordinates,
+    customerPointData.label,
+  );
 
   if (
     customerPointData.pipeId &&
@@ -658,7 +781,8 @@ const addCustomerPoint = (
     hydraulicModel.customerPointsLookup.addConnection(customerPoint);
   }
 
-  hydraulicModel.customerPoints.set(id, customerPoint);
+  hydraulicModel.customerPoints.set(customerPoint.id, customerPoint);
+  hydraulicModel.demands.customerPoints.set(customerPoint.id, demands);
 };
 
 const getLinkProperties = (
@@ -667,6 +791,8 @@ const getLinkProperties = (
   nodeIds: ItemData<AssetId>,
   linkData: { id: string; startNodeDirtyId: string; endNodeDirtyId: string },
 ) => {
+  if (!linkData.startNodeDirtyId || !linkData.endNodeDirtyId) return null;
+
   const startCoordinates = getNodeCoordinates(
     inpData,
     linkData.startNodeDirtyId,
@@ -729,27 +855,6 @@ const isWgs84 = (coordinates: Position) =>
   coordinates[1] >= -90 &&
   coordinates[1] <= 90;
 
-const defaultPatternId = "1";
-
-const getPattern = (
-  patterns: InpData["patterns"],
-  patternId: string | undefined,
-): number[] => {
-  return patterns.get(patternId || defaultPatternId)?.multipliers || [1];
-};
-
-const calculateReservoirHead = (
-  reservoir: { id: string; baseHead: number; patternId?: string },
-  patterns: InpData["patterns"],
-): number => {
-  let head = reservoir.baseHead;
-  if (reservoir.patternId) {
-    const pattern = getPattern(patterns, reservoir.patternId);
-    head = reservoir.baseHead * pattern[0];
-  }
-  return head;
-};
-
 const addControls = (
   hydraulicModel: HydraulicModel,
   rawControls: InpData["controls"],
@@ -764,4 +869,159 @@ const addControls = (
     simple: parseSimpleControlsFromText(rawControls.simple, resolveLabel),
     rules: parseRulesFromText(rawControls.ruleBased, resolveLabel),
   };
+};
+
+const markCurveUsed = (
+  context: CurvesContext,
+  curveId: CurveId,
+  type: CurveType,
+): CurveId => {
+  const curve = context.curves.get(curveId)!;
+
+  if (!curve.type) {
+    curve.type = type;
+    return curveId;
+  }
+
+  if (curve.type === type) {
+    return curveId;
+  }
+
+  let typeDuplicates = context.duplicates.get(curveId);
+  if (typeDuplicates?.has(type)) {
+    return typeDuplicates.get(type)!;
+  }
+
+  const newLabel = context.labelManager.generateNextLabel(curve.label);
+  const duplicate = addCurve(
+    context,
+    newLabel,
+    curve.points.map((p) => ({ ...p })),
+  );
+  if (!duplicate) return curveId;
+
+  duplicate.type = type;
+
+  if (!typeDuplicates) {
+    typeDuplicates = new Map();
+    context.duplicates.set(curveId, typeDuplicates);
+  }
+  typeDuplicates.set(type, duplicate.id);
+
+  return duplicate.id;
+};
+
+const addCurves = (
+  hydraulicModel: HydraulicModel,
+  curvesContext: CurvesContext,
+  issues: IssuesAccumulator,
+  rawCurves: ItemData<CurveData>,
+) => {
+  const { curves, pumpCurves } = curvesContext;
+
+  for (const curve of curves.values()) {
+    if (!curve.type) {
+      const raw = rawCurves.get(curve.label);
+      if (raw?.fallbackType) curve.type = raw.fallbackType;
+    }
+  }
+
+  const validCurves: Curves = new Map();
+
+  for (const curve of curves.values()) {
+    if (curve.type === "pump") {
+      const curveType = getCurvePointsType(curve.points);
+      const curvePumps = pumpCurves.get(curve.id) || [];
+      if (curveType === "multiPointCurve" || curvePumps.length !== 1) {
+        validCurves.set(curve.id, curve);
+        continue;
+      }
+
+      const [pumpId] = curvePumps;
+      const pump = hydraulicModel.assets.get(pumpId) as Pump;
+      pump.setProperty("definitionType", "curve");
+      pump.feature.properties.curve = curve.points.map((p) => ({ ...p }));
+      pump.setProperty("curveId", undefined);
+      hydraulicModel.labelManager.remove(curve.label, "curve", curve.id);
+      continue;
+    }
+
+    validCurves.set(curve.id, curve);
+  }
+  hydraulicModel.curves = validCurves;
+};
+
+const addPatterns = (
+  hydraulicModel: HydraulicModel,
+  patternContext: PatternsContext,
+  sourceStrengthPatterns: Set<string>,
+  globalEnergyPattern: string | undefined,
+  rawPatterns: ItemData<PatternData>,
+) => {
+  const { patterns } = patternContext;
+
+  for (const label of sourceStrengthPatterns) {
+    const patternId = hydraulicModel.labelManager.getIdByLabel(
+      label,
+      "pattern",
+    );
+    if (patternId !== undefined) {
+      markPatternUsed(patternContext, patternId, "qualitySourceStrength");
+    }
+  }
+
+  if (globalEnergyPattern) {
+    const patternId = hydraulicModel.labelManager.getIdByLabel(
+      globalEnergyPattern,
+      "pattern",
+    );
+    if (patternId !== undefined) {
+      markPatternUsed(patternContext, patternId, "energyPrice");
+    }
+  }
+
+  for (const pattern of patterns.values()) {
+    if (!pattern.type) {
+      const raw = rawPatterns.get(pattern.label);
+      if (raw?.fallbackType) pattern.type = raw.fallbackType;
+    }
+  }
+
+  hydraulicModel.patterns = patterns;
+};
+
+const markPatternUsed = (
+  context: PatternsContext,
+  patternId: PatternId,
+  type: PatternType,
+): PatternId => {
+  const pattern = context.patterns.get(patternId)!;
+
+  if (!pattern.type) {
+    pattern.type = type;
+    return patternId;
+  }
+
+  if (pattern.type === type) {
+    return patternId;
+  }
+
+  let typeDuplicates = context.duplicates.get(patternId);
+  if (typeDuplicates?.has(type)) {
+    return typeDuplicates.get(type)!;
+  }
+
+  const newLabel = context.labelManager.generateNextLabel(pattern.label);
+  const duplicate = addPattern(context, newLabel, [...pattern.multipliers]);
+  if (!duplicate) return patternId;
+
+  duplicate.type = type;
+
+  if (!typeDuplicates) {
+    typeDuplicates = new Map();
+    context.duplicates.set(patternId, typeDuplicates);
+  }
+  typeDuplicates.set(type, duplicate.id);
+
+  return duplicate.id;
 };

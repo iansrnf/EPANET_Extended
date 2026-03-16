@@ -1,8 +1,14 @@
-import { dialogAtom, fileInfoAtom, stagingModelAtom } from "src/state/jotai";
+import { dialogAtom } from "src/state/dialog";
+import { projectSettingsAtom } from "src/state/project-settings";
+import { fileInfoAtom } from "src/state/file-system";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { isDemoNetworkAtom } from "src/state/file-system";
+import { simulationSettingsAtom } from "src/state/simulation-settings";
 import { baseModelAtom } from "src/state/hydraulic-model";
 import { ExportOptions } from "src/types/export";
 import { useAtomCallback } from "jotai/utils";
-import { useCallback } from "react";
+import { useCallback, useContext } from "react";
+import { MapContext, captureThumbnail } from "src/map";
 import { buildInp } from "src/simulation/build-inp";
 import { useTranslate } from "src/hooks/use-translate";
 import type { fileSave as fileSaveType } from "browser-fs-access";
@@ -10,9 +16,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { notifyPromiseState } from "src/components/notifications";
 import { useUserTracking } from "src/infra/user-tracking";
 import { worktreeAtom } from "src/state/scenarios";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { buildInpWithAllCurves } from "src/simulation/build-inp-with-all-curves";
-
+import { useRecentFiles } from "src/hooks/use-recent-files";
 const getDefaultFsAccess = async () => {
   const { fileSave } = await import("browser-fs-access");
   return { fileSave };
@@ -31,8 +35,9 @@ export const useSaveInp = ({
   const translate = useTranslate();
   const setDialogState = useSetAtom(dialogAtom);
   const fileInfo = useAtomValue(fileInfoAtom);
+  const { addRecent } = useRecentFiles();
   const userTracking = useUserTracking();
-  const isPumpCurvesEnabled = useFeatureFlag("FLAG_PUMP_CURVES");
+  const map = useContext(MapContext);
 
   const saveInp = useAtomCallback(
     useCallback(
@@ -56,6 +61,8 @@ export const useSaveInp = ({
           const hydraulicModel = hasScenarios
             ? get(baseModelAtom)
             : get(stagingModelAtom);
+          const projectSettings = get(projectSettingsAtom);
+          const simulationSettings = get(simulationSettingsAtom);
           const buildOptions = {
             geolocation: true,
             madeBy: true,
@@ -64,11 +71,12 @@ export const useSaveInp = ({
             customerPoints: true,
             inactiveAssets: true,
             reservoirElevations: true,
+            projectionMapper: projectSettings.projectionMapper,
+            simulationSettings,
+            units: projectSettings.units,
+            headlossFormula: projectSettings.headlossFormula,
           };
-          const buildInpFn = isPumpCurvesEnabled
-            ? buildInpWithAllCurves
-            : buildInp;
-          const inp = buildInpFn(hydraulicModel, buildOptions);
+          const inp = buildInp(hydraulicModel, buildOptions);
           const inpBlob = new Blob([inp], { type: "text/plain" });
 
           const newHandle = await fileSave(
@@ -84,14 +92,21 @@ export const useSaveInp = ({
               : null,
           );
           if (newHandle) {
+            const isDemo = get(isDemoNetworkAtom);
             set(fileInfoAtom, {
               name: newHandle.name,
               modelVersion: hydraulicModel.version,
               handle: newHandle,
               options: exportOptions,
               isMadeByApp: true,
-              isDemoNetwork: fileInfo?.isDemoNetwork ?? false,
+              isDemoNetwork: isDemo,
             });
+            if (!isDemo) {
+              const thumbnail = map
+                ? (captureThumbnail(map) ?? undefined)
+                : undefined;
+              void addRecent(newHandle.name, newHandle, thumbnail);
+            }
           }
         };
 
@@ -107,7 +122,7 @@ export const useSaveInp = ({
           return false;
         }
       },
-      [userTracking, getFsAccess, isPumpCurvesEnabled, translate],
+      [userTracking, getFsAccess, addRecent, translate, map],
     ),
   );
 

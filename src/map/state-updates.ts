@@ -1,26 +1,22 @@
-import { atom, useAtomValue, useSetAtom } from "jotai";
-import { useCallback, useRef } from "react";
+import type { Sel } from "src/selection/types";
+import { useAtomValue, useSetAtom } from "jotai";
+import { type MutableRefObject, useCallback, useRef } from "react";
 import { Unit } from "src/quantity";
 import { Moment } from "src/lib/persistence/moment";
+import { projectSettingsAtom } from "src/state/project-settings";
+import type { EphemeralEditingState } from "src/state/drawing";
+import { assetsAtom, stagingModelAtom } from "src/state/hydraulic-model";
 import {
-  EphemeralEditingState,
-  PreviewProperty,
-  Sel,
-  SimulationState,
-  assetsAtom,
-  dataAtom,
-  ephemeralStateAtom,
-  initialSimulationState,
-  layerConfigAtom,
-  memoryMetaAtom,
-  momentLogAtom,
-  selectionAtom,
-  simulationAtom,
-  simulationResultsAtom,
-  currentZoomAtom,
-  customerPointsAtom,
-  stagingModelAtom,
-} from "src/state/jotai";
+  type StylesConfig,
+  type MapState,
+  nullMapState,
+  mapStateAtom,
+  mapSyncMomentAtom,
+  mapLoadingAtom,
+} from "src/state/map";
+import { gridPreviewAtom, showGridAtom } from "src/state/map-projection";
+import { momentLogAtom } from "src/state/model-changes";
+import { simulationResultsAtom } from "src/state/simulation";
 import type { ResultsReader } from "src/simulation/results-reader";
 import { MapEngine } from "./map-engine";
 import {
@@ -30,7 +26,8 @@ import {
   buildSelectionSource,
   FeatureSources,
 } from "./data-source";
-import { ISymbology, LayerConfigMap, SYMBOLIZATION_NONE } from "src/types";
+import mapboxgl from "mapbox-gl";
+import { Grid } from "./grid";
 import { buildBaseStyle, makeLayers } from "./build-style";
 import { LayerId } from "./layers";
 import { AssetId, AssetsMap, filterAssets } from "src/hydraulic-model";
@@ -38,11 +35,11 @@ import { MomentLog } from "src/lib/persistence/moment-log";
 import { captureError } from "src/infra/error-tracking";
 import { withDebugInstrumentation } from "src/infra/with-instrumentation";
 import { USelection } from "src/selection";
-import { SymbologySpec, symbologyAtom } from "src/state/symbology";
-import { Quantities } from "src/model-metadata/quantities-spec";
-import { nullSymbologySpec } from "src/map/symbology";
-import { mapLoadingAtom } from "./state";
-import { offlineAtom } from "src/state/offline";
+import { SymbologySpec } from "src/state/map-symbology";
+import {
+  FormattingSpec,
+  UnitsSpec,
+} from "src/lib/project-settings/quantities-spec";
 import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import {
@@ -51,15 +48,11 @@ import {
   buildCustomerPointsHighlightOverlay,
   buildCustomerPointsSelectionOverlay,
   buildConnectCustomerPointsPreviewOverlay,
+  buildMovingCustomerPointOverlay,
   updateCustomerPointsOverlayVisibility,
 } from "./overlays/customer-points";
 import { CustomerPoints } from "src/hydraulic-model/customer-points";
-import { DEFAULT_ZOOM } from "./map-engine";
 import { junctionsSymbologyFilterExpression } from "./layers/junctions";
-import { mapSyncMomentAtom } from "src/state/map";
-import { useLiveLoggerReadingsStore } from "src/store/liveLoggerReadingsStore";
-import type { LiveLoggerReading } from "src/store/liveLoggerReadingsStore";
-import { useLoggerPointPanelStore } from "src/store/loggerPointPanelStore";
 
 const SELECTION_LAYERS: LayerId[] = [
   "selected-pipes",
@@ -77,97 +70,10 @@ const getAssetIdsInMoments = (moments: Moment[]): Set<AssetId> => {
       assetIds.add(assetId);
     });
     moment.putAssets.forEach((asset) => assetIds.add(asset.id));
+    moment.patchAssetsAttributes.forEach((patch) => assetIds.add(patch.id));
   });
   return assetIds;
 };
-
-type StylesConfig = {
-  symbology: ISymbology;
-  layerConfigs: LayerConfigMap;
-  previewProperty: PreviewProperty;
-};
-
-type MapState = {
-  momentLogId: string;
-  momentLogPointer: number;
-  syncMomentPointer: number;
-  syncMomentVersion: number;
-  stylesConfig: StylesConfig;
-  selection: Sel;
-  ephemeralState: EphemeralEditingState;
-  symbology: SymbologySpec;
-  simulation: SimulationState;
-  selectedAssetIds: Set<AssetId>;
-  movedAssetIds: Set<AssetId>;
-  isOffline: boolean;
-  customerPoints: CustomerPoints;
-  currentZoom: number;
-};
-
-const nullMapState: MapState = {
-  momentLogId: "",
-  momentLogPointer: -1,
-  syncMomentPointer: -1,
-  syncMomentVersion: 0,
-  stylesConfig: {
-    symbology: SYMBOLIZATION_NONE,
-    previewProperty: null,
-    layerConfigs: new Map(),
-  },
-  selection: { type: "none" },
-  ephemeralState: { type: "none" },
-  symbology: nullSymbologySpec,
-  simulation: initialSimulationState,
-  selectedAssetIds: new Set(),
-  movedAssetIds: new Set(),
-  isOffline: false,
-  customerPoints: new Map(),
-  currentZoom: DEFAULT_ZOOM,
-} as const;
-
-const stylesConfigAtom = atom<StylesConfig>((get) => {
-  const layerConfigs = get(layerConfigAtom);
-  const { symbology, label } = get(memoryMetaAtom);
-
-  return {
-    symbology: symbology || SYMBOLIZATION_NONE,
-    previewProperty: label,
-    layerConfigs,
-  };
-});
-
-const mapStateAtom = atom<MapState>((get) => {
-  const momentLog = get(momentLogAtom);
-  const mapSyncMoment = get(mapSyncMomentAtom);
-  const stylesConfig = get(stylesConfigAtom);
-  const selection = get(selectionAtom);
-  const ephemeralState = get(ephemeralStateAtom);
-  const symbology = get(symbologyAtom);
-  const simulation = get(simulationAtom);
-  const customerPoints = get(customerPointsAtom);
-  const currentZoom = get(currentZoomAtom);
-  const selectedAssetIds = new Set(USelection.toIds(selection));
-
-  const movedAssetIds = getMovedAssets(ephemeralState);
-  const isOffline = get(offlineAtom);
-
-  return {
-    momentLogId: momentLog.id,
-    momentLogPointer: momentLog.getPointer(),
-    syncMomentPointer: mapSyncMoment.pointer,
-    syncMomentVersion: mapSyncMoment.version,
-    stylesConfig,
-    selection,
-    ephemeralState,
-    symbology,
-    simulation,
-    selectedAssetIds,
-    movedAssetIds,
-    isOffline,
-    customerPoints,
-    currentZoom,
-  };
-});
 
 const detectChanges = (
   state: MapState,
@@ -214,37 +120,29 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
 
   const assets = useAtomValue(assetsAtom);
   const hydraulicModel = useAtomValue(stagingModelAtom);
-  const {
-    modelMetadata: { quantities },
-  } = useAtomValue(dataAtom);
+  const { units, formatting } = useAtomValue(projectSettingsAtom);
+  const isGridOn = useAtomValue(showGridAtom);
+  const isGridPreview = useAtomValue(gridPreviewAtom);
   const simulationResults = useAtomValue(simulationResultsAtom);
   const lastHiddenFeatures = useRef<Set<AssetId>>(new Set([]));
   const previousMapStateRef = useRef<MapState>(nullMapState);
   const customerPointsOverlayRef = useRef<CustomerPointsOverlay>([]);
   const selectionDeckLayersRef = useRef<CustomerPointsOverlay>([]);
   const ephemeralDeckLayersRef = useRef<CustomerPointsOverlay>([]);
+  const gridRef = useRef<Grid | null>(null);
+  const scaleControlRef = useRef<mapboxgl.ScaleControl | null>(null);
   const translate = useTranslate();
   const translateUnit = useTranslateUnit();
 
   const resultsReader = simulationResults;
-  const liveLoggerReadings = useLiveLoggerReadingsStore(
-    (s) => s.readingsByDeviceId,
-  );
-  const liveLoggerRevision = useLiveLoggerReadingsStore((s) => s.revision);
-  const loggerPanelStateById = useLoggerPointPanelStore((s) => s.byLoggerId);
-  const previousLiveLoggerRevisionRef = useRef(-1);
 
   const doUpdates = useCallback(() => {
     if (!map) return;
-    const hasNewLiveLoggerReadings =
-      previousLiveLoggerRevisionRef.current !== liveLoggerRevision;
-    if (mapState === previousMapStateRef.current && !hasNewLiveLoggerReadings) {
-      return;
-    }
+
+    if (mapState === previousMapStateRef.current) return;
 
     const previousMapState = previousMapStateRef.current;
     previousMapStateRef.current = mapState;
-    previousLiveLoggerRevisionRef.current = liveLoggerRevision;
 
     const changes = detectChanges(mapState, previousMapState, map);
     const {
@@ -286,11 +184,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             translate,
           );
           addEditingLayersToMap(map, mapState.stylesConfig);
-          toggleAnalysisLayers(
-            map,
-            mapState.symbology,
-            mapState.simulation,
-          );
+          toggleAnalysisLayers(map, mapState.symbology);
         }
 
         if (
@@ -304,13 +198,25 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             map,
             assets,
             mapState.symbology,
-            quantities,
+            units,
+            formatting,
             translateUnit,
             resultsReader,
           );
           lastHiddenFeatures.current = new Set();
           setMapSyncMoment((prev) => {
             return { pointer: momentLog.getPointer(), version: prev.version };
+          });
+        }
+
+        if (hasNewImport || hasNewStyles) {
+          updateGrid({
+            map,
+            isGridOn,
+            isPreview: isGridPreview,
+            lengthUnit: units.length === "ft" ? "ft" : "m",
+            gridRef,
+            scaleControlRef,
           });
         }
 
@@ -321,7 +227,8 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             mapState.syncMomentPointer,
             assets,
             mapState.symbology,
-            quantities,
+            units,
+            formatting,
             translateUnit,
             resultsReader,
           );
@@ -334,30 +241,43 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           hasNewStyles ||
           hasNewSymbology ||
           hasNewSelection ||
-          (hasNewSimulation && mapState.simulation.status !== "running") ||
-          hasNewLiveLoggerReadings
+          (hasNewSimulation && mapState.simulation.status !== "running")
         ) {
           await updateIconsSource(
             map,
             assets,
             mapState.selection,
-            mapState.symbology.node,
-            liveLoggerReadings,
-            loggerPanelStateById,
             resultsReader,
           );
         }
+
+        const movingCustomerPointId =
+          mapState.ephemeralState.type === "moveCustomerPoint"
+            ? mapState.ephemeralState.customerPoint.id
+            : null;
+        const prevMovingCustomerPointId =
+          previousMapState.ephemeralState.type === "moveCustomerPoint"
+            ? previousMapState.ephemeralState.customerPoint.id
+            : null;
+        const customerPointExclusionChanged =
+          movingCustomerPointId !== prevMovingCustomerPointId;
 
         if (
           hasNewImport ||
           hasNewEditions ||
           hasNewStyles ||
-          hasNewCustomerPoints
+          hasNewCustomerPoints ||
+          customerPointExclusionChanged
         ) {
+          const excludedCustomerPointIds = movingCustomerPointId
+            ? new Set([movingCustomerPointId])
+            : undefined;
+
           customerPointsOverlayRef.current = buildCustomerPointsOverlay(
             hydraulicModel.customerPoints,
             assets,
             mapState.currentZoom,
+            excludedCustomerPointIds,
           );
         }
 
@@ -393,7 +313,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           );
         }
 
-        if (hasNewSelection) {
+        if (hasNewSelection || hasNewCustomerPoints) {
           selectionDeckLayersRef.current =
             buildSelectionOverlayForCustomerPoints(
               mapState.selection,
@@ -427,6 +347,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             map,
             mapState.selection,
             assets,
+            units,
             mapState.movedAssetIds,
             resultsReader,
           );
@@ -443,11 +364,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           hasNewSelection ||
           hasNewEditions
         ) {
-          toggleAnalysisLayers(
-            map,
-            mapState.symbology,
-            mapState.simulation,
-          );
+          toggleAnalysisLayers(map, mapState.symbology);
         }
 
         if (
@@ -467,11 +384,22 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           const isCustomerPointsVisible =
             mapState.symbology.customerPoints.visible;
 
+          const shouldHideSelectionDuringMove =
+            mapState.ephemeralState.type === "moveCustomerPoint" &&
+            mapState.ephemeralState.moveActivated;
+
+          const shouldHideCustomerPointSelection =
+            !isCustomerPointsVisible &&
+            mapState.selection.type === "singleCustomerPoint";
+
           const combinedOverlay = [
             ...(shouldHideCustomerPointsOverlay || !isCustomerPointsVisible
               ? []
               : customerPointsOverlayRef.current),
-            ...selectionDeckLayersRef.current,
+            ...(shouldHideSelectionDuringMove ||
+            shouldHideCustomerPointSelection
+              ? []
+              : selectionDeckLayersRef.current),
             ...ephemeralDeckLayersRef.current,
           ];
           map.setOverlay(combinedOverlay);
@@ -489,15 +417,15 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
     map,
     momentLog,
     setMapSyncMoment,
-    quantities,
+    units,
+    formatting,
     setMapLoading,
     translate,
     translateUnit,
     hydraulicModel,
-    liveLoggerReadings,
-    liveLoggerRevision,
-    loggerPanelStateById,
     resultsReader,
+    isGridOn,
+    isGridPreview,
   ]);
 
   doUpdates();
@@ -527,21 +455,19 @@ const buildBaseStyleAndSetOnMap = withDebugInstrumentation(
 );
 
 const toggleAnalysisLayers = withDebugInstrumentation(
-  (
-    map: MapEngine,
-    symbology: SymbologySpec,
-    simulation: SimulationState,
-  ) => {
-    const hasSimulationData =
-      simulation.status === "success" || simulation.status === "warning";
-    if (hasSimulationData) {
-      map.showLayers([
+  (map: MapEngine, symbology: SymbologySpec) => {
+    const arrowProperties = ["flow", "velocity", "unitHeadloss"];
+    const showArrows =
+      symbology.link.colorRule &&
+      arrowProperties.includes(symbology.link.colorRule.property);
+    if (!showArrows) {
+      map.hideLayers([
         "main-features-pipe-arrows",
         "delta-features-pipe-arrows",
         "selected-pipe-arrows",
       ]);
     } else {
-      map.hideLayers([
+      map.showLayers([
         "main-features-pipe-arrows",
         "delta-features-pipe-arrows",
         "selected-pipe-arrows",
@@ -567,9 +493,6 @@ const updateIconsSource = withDebugInstrumentation(
     map: MapEngine,
     assets: AssetsMap,
     selection: Sel,
-    nodeSymbology: SymbologySpec["node"],
-    liveReadingsByDeviceId: Record<string, LiveLoggerReading>,
-    loggerPanelStateById: Record<number, { wsDeviceId?: string }>,
     simulationResults?: ResultsReader | null,
   ): Promise<void> => {
     const selectionSet = new Set(USelection.toIds(selection));
@@ -577,9 +500,6 @@ const updateIconsSource = withDebugInstrumentation(
       assets,
       selectionSet,
       simulationResults,
-      nodeSymbology,
-      liveReadingsByDeviceId,
-      loggerPanelStateById,
     );
     await map.setSource("icons", features);
   },
@@ -605,14 +525,16 @@ const rebuildSources = withDebugInstrumentation(
     map: MapEngine,
     assets: AssetsMap,
     symbology: SymbologySpec,
-    quantities: Quantities,
+    units: UnitsSpec,
+    formatting: FormattingSpec,
     translateUnit: (unit: Unit) => string,
     simulationResults?: ResultsReader | null,
   ): Promise<void> => {
     const features = buildOptimizedAssetsSource(
       assets,
       symbology,
-      quantities,
+      units,
+      formatting,
       translateUnit,
       simulationResults,
     );
@@ -630,7 +552,8 @@ const updateDeltaSource = withDebugInstrumentation(
     assets: AssetsMap,
     editedAssetIds: Set<AssetId>,
     symbology: SymbologySpec,
-    quantities: Quantities,
+    units: UnitsSpec,
+    formatting: FormattingSpec,
     translateUnit: (unit: Unit) => string,
     simulationResults?: ResultsReader | null,
   ): Promise<void> => {
@@ -638,7 +561,8 @@ const updateDeltaSource = withDebugInstrumentation(
     const features = buildOptimizedAssetsSource(
       editedAssets,
       symbology,
-      quantities,
+      units,
+      formatting,
       translateUnit,
       simulationResults,
     );
@@ -653,7 +577,8 @@ const syncSourcesWithEdits = async (
   mapSyncMoment: number,
   assets: AssetsMap,
   symbology: SymbologySpec,
-  quantities: Quantities,
+  units: UnitsSpec,
+  formatting: FormattingSpec,
   translateUnit: (unit: Unit) => string,
   simulationResults?: ResultsReader | null,
 ): Promise<{ editedAssetIds: Set<AssetId> }> => {
@@ -666,7 +591,8 @@ const syncSourcesWithEdits = async (
     assets,
     editedSinceConsolidation,
     symbology,
-    quantities,
+    units,
+    formatting,
     translateUnit,
     simulationResults,
   );
@@ -720,12 +646,14 @@ const updateSelection = withDebugInstrumentation(
     map: MapEngine,
     selection: Sel,
     assets: AssetsMap,
+    units: UnitsSpec,
     movedAssetIds: Set<AssetId>,
     simulationResults?: ResultsReader | null,
   ): Promise<void> => {
     const features = buildSelectionSource(
       assets,
       selection,
+      units,
       movedAssetIds,
       simulationResults,
     );
@@ -787,30 +715,6 @@ const updateEphemeralStateSource = withDebugInstrumentation(
   },
 );
 
-const noMoved: Set<AssetId> = new Set();
-const getMovedAssets = (
-  ephemeralState: EphemeralEditingState,
-): Set<AssetId> => {
-  switch (ephemeralState.type) {
-    case "moveAssets":
-      return new Set(ephemeralState.oldAssets.map((asset) => asset.id));
-    case "drawLink":
-      return ephemeralState.sourceLink
-        ? new Set([ephemeralState.sourceLink.id])
-        : noMoved;
-    case "drawNode":
-      return noMoved;
-    case "customerPointsHighlight":
-      return noMoved;
-    case "connectCustomerPoints":
-      return noMoved;
-    case "areaSelect":
-      return noMoved;
-    case "none":
-      return noMoved;
-  }
-};
-
 const buildCustomerPointsEphemeralOverlay = (
   ephemeralState: EphemeralEditingState,
   zoom: number,
@@ -827,6 +731,8 @@ const buildCustomerPointsEphemeralOverlay = (
       zoom,
       "highlight",
     );
+  } else if (ephemeralState.type === "moveCustomerPoint") {
+    return buildMovingCustomerPointOverlay(ephemeralState, zoom);
   }
   return [];
 };
@@ -855,3 +761,43 @@ const buildSelectionOverlayForCustomerPoints = (
   }
   return [];
 };
+
+function updateGrid({
+  map,
+  isGridOn,
+  isPreview,
+  lengthUnit,
+  gridRef,
+  scaleControlRef,
+}: {
+  map: MapEngine;
+  isGridOn: boolean;
+  isPreview: boolean;
+  lengthUnit: "ft" | "m";
+  gridRef: MutableRefObject<Grid | null>;
+  scaleControlRef: MutableRefObject<mapboxgl.ScaleControl | null>;
+}) {
+  if (isGridOn && !gridRef.current) {
+    gridRef.current = new Grid(map.map, lengthUnit);
+    gridRef.current.attach();
+  } else if (isGridOn && gridRef.current) {
+    gridRef.current.setLengthUnit(lengthUnit);
+    gridRef.current.forceUpdate();
+  } else if (!isGridOn && gridRef.current) {
+    gridRef.current.detach();
+    gridRef.current = null;
+  }
+  if (isGridOn && !isPreview) {
+    const scaleUnit = lengthUnit === "ft" ? "imperial" : "metric";
+    if (scaleControlRef.current) {
+      map.map.removeControl(scaleControlRef.current);
+    }
+    scaleControlRef.current = new mapboxgl.ScaleControl({
+      unit: scaleUnit,
+    });
+    map.map.addControl(scaleControlRef.current, "bottom-left");
+  } else if (scaleControlRef.current) {
+    map.map.removeControl(scaleControlRef.current);
+    scaleControlRef.current = null;
+  }
+}

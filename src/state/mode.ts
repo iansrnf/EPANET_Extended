@@ -1,5 +1,4 @@
 import { atom } from "jotai";
-import { IWrappedFeature } from "src/types";
 
 /**
  * Map drawing mode
@@ -15,39 +14,16 @@ export enum Mode {
   DRAW_PUMP = "DRAW_PUMP",
   DRAW_VALVE = "DRAW_VALVE",
   DRAW_TANK = "DRAW_TANK",
+  DRAW_CUSTOMER_POINT = "DRAW_CUSTOMER_POINT",
   CONNECT_CUSTOMER_POINTS = "CONNECT_CUSTOMER_POINTS",
   REDRAW_LINK = "REDRAW_LINK",
-  ADD_LOGGER_POINT = "ADD_LOGGER_POINT",
+  BOUNDARY_TRACE_SELECT = "BOUNDARY_TRACE_SELECT",
+  UPSTREAM_TRACE_SELECT = "UPSTREAM_TRACE_SELECT",
+  DOWNSTREAM_TRACE_SELECT = "DOWNSTREAM_TRACE_SELECT",
 }
 
-export enum CIRCLE_TYPE {
-  MERCATOR = "Mercator",
-  GEODESIC = "Geodesic",
-  DEGREES = "Degrees",
-}
-
-export interface ModeOptions {
-  /**
-   * A weird special case: in "none" mode,
-   * you can resize a rectangle. This shows a help
-   * menu item showing that you can _avoid_ this behavior
-   * by hitting a key.
-   */
-  hasResizedRectangle?: boolean;
-  /**
-   * This is for lines: if someone clicks on the first
-   * vertex of a line to continue it from there, we need
-   * to remember to add points to that end.
-   */
-  reverse?: boolean;
-
-  circleType?: CIRCLE_TYPE;
-
-  /**
-   * Replace geometry of the feature with the given ID
-   */
-  replaceGeometryForId?: IWrappedFeature["id"] | null;
-}
+// eslint-disable-next-line @typescript-eslint/no-empty-interface
+interface ModeOptions {}
 
 export const MODE_INFO: Record<
   Mode,
@@ -65,9 +41,12 @@ export const MODE_INFO: Record<
   [Mode.DRAW_PUMP]: { name: "pump" },
   [Mode.DRAW_VALVE]: { name: "valve" },
   [Mode.DRAW_TANK]: { name: "tank" },
+  [Mode.DRAW_CUSTOMER_POINT]: { name: "customerPoint" },
   [Mode.CONNECT_CUSTOMER_POINTS]: { name: "connect customer points" },
   [Mode.REDRAW_LINK]: { name: "redraw link" },
-  [Mode.ADD_LOGGER_POINT]: { name: "add logger point" },
+  [Mode.BOUNDARY_TRACE_SELECT]: { name: "boundary trace" },
+  [Mode.UPSTREAM_TRACE_SELECT]: { name: "upstream trace" },
+  [Mode.DOWNSTREAM_TRACE_SELECT]: { name: "downstream trace" },
 };
 
 export type ModeWithOptions = {
@@ -80,3 +59,4 @@ export const modeAtom = atom<ModeWithOptions>({
 });
 
 export const lastSelectionModeAtom = atom<Mode>(Mode.SELECT_POLYGONAL);
+export const lastTraceSelectModeAtom = atom<Mode>(Mode.BOUNDARY_TRACE_SELECT);

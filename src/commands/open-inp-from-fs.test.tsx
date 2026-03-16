@@ -1,15 +1,13 @@
+import type { Sel } from "src/selection/types";
 import { render, screen, waitFor } from "@testing-library/react";
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
-import {
-  Sel,
-  SimulationFinished,
-  Store,
-  dataAtom,
-  fileInfoAtom,
-  momentLogAtom,
-  simulationAtom,
-  stagingModelAtom,
-} from "src/state/jotai";
+import { defaultSimulationSettings } from "src/simulation/simulation-settings";
+import { dataAtom } from "src/state/data";
+import { fileInfoAtom } from "src/state/file-system";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { momentLogAtom } from "src/state/model-changes";
+import { SimulationFinished, simulationAtom } from "src/state/simulation";
+import { Store } from "src/state";
 import { MomentLog } from "src/lib/persistence/moment-log";
 import userEvent from "@testing-library/user-event";
 import { aTestFile } from "src/__helpers__/file";
@@ -23,6 +21,7 @@ import {
   stubFileSave,
 } from "src/__helpers__/browser-fs-mock";
 import { buildInp } from "src/simulation/build-inp";
+import { presets } from "src/lib/project-settings/quantities-spec";
 import { waitForNotLoading } from "src/__helpers__/ui-expects";
 import { getByLabel } from "src/__helpers__/asset-queries";
 import { useOpenInpFromFs } from "./open-inp-from-fs";
@@ -143,6 +142,7 @@ describe("openInpFromFs", () => {
       status: "failure",
       report: "ERROR",
       modelVersion: "10",
+      settingsVersion: "",
     };
     const previousSelection: Sel = {
       type: "single",
@@ -384,6 +384,8 @@ const anInpMadeByTheApp = ({ junctionId }: { junctionId: number }) => {
     .aJunction(junctionId, { coordinates: [10, 10] })
     .build();
   const inp = buildInp(hydraulicModel, {
+    simulationSettings: defaultSimulationSettings,
+    units: presets.LPS.units,
     madeBy: true,
     geolocation: true,
   });

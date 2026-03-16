@@ -1,0 +1,307 @@
+import type { Style } from "mapbox-gl";
+import { LayerConfigMap } from "src/types";
+import {
+  addMapboxStyle,
+  addXYZStyle,
+  addTileJSONStyle,
+} from "src/lib/layer-config-adapters";
+import { emptyFeatureCollection } from "src/lib/constants";
+
+function getEmptyStyle() {
+  const style: Style = {
+    version: 8,
+    name: "XYZ Layer",
+    sprite: "mapbox://sprites/mapbox/streets-v8",
+    glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
+    sources: {},
+    layers: [],
+  };
+  return style;
+}
+
+const emptyGeoJSONSource = {
+  type: "geojson",
+  data: emptyFeatureCollection,
+  buffer: 4,
+  tolerance: 0,
+} as const;
+
+export async function buildBaseStyle({
+  layerConfigs,
+  translate,
+}: {
+  layerConfigs: LayerConfigMap;
+  translate: (key: string) => string;
+}): Promise<Style> {
+  let style = getEmptyStyle();
+  let id = 0;
+  const layers = [...layerConfigs.values()].reverse();
+  for (const layer of layers) {
+    id++;
+    switch (layer.type) {
+      case "MAPBOX": {
+        style = await addMapboxStyle(style, layer, translate);
+        break;
+      }
+      case "XYZ": {
+        style = addXYZStyle(style, layer, id);
+        break;
+      }
+      case "TILEJSON": {
+        style = await addTileJSONStyle(style, layer, id, translate);
+        break;
+      }
+    }
+  }
+
+  defineEmptySources(style);
+
+  return style;
+}
+
+export function defineEmptySources(style: Style) {
+  style.sources["main-features"] = emptyGeoJSONSource;
+  style.sources["delta-features"] = emptyGeoJSONSource;
+  style.sources["icons"] = emptyGeoJSONSource;
+  style.sources["selected-features"] = emptyGeoJSONSource;
+  style.sources["ephemeral"] = emptyGeoJSONSource;
+}
+
+import type { PreviewProperty } from "src/state/jotai";
+import type { ISymbology } from "src/types";
+import { reservoirLayers, pipesLayer, junctionsLayer } from "src/map/layers";
+import { pipeArrows, checkValveIcons } from "src/map/layers/pipes";
+import { junctionResultsLayer } from "src/map/layers/junctions";
+import { pumpIcons, pumpLines } from "src/map/layers/pumps";
+import { valveIcons, valveLines } from "src/map/layers/valves";
+import { linkLabelsLayer } from "src/map/layers/link-labels";
+import { nodeLabelsLayer } from "src/map/layers/node-labels";
+import { tankLayers } from "src/map/layers/tank";
+import { loggerPointLayers } from "src/map/layers/logger-points";
+import {
+  ephemeralDraftLineLayer,
+  ephemeralIconHighlightLayers,
+  ephemeralJunctionHighlightLayers,
+  ephemeralHaloLayer,
+  ephemeralPipeHighlightLayer,
+  ephemeralShadowLineLayer,
+  ephemeralSelectionFillLayer,
+  ephemeralSelectionOutlineLayer,
+} from "src/map/layers/ephemeral-state";
+import {
+  selectedPipesLayer,
+  selectedPumpLinesLayer,
+  selectedValveLinesLayer,
+  selectedPipeArrowsLayer,
+  selectedJunctionsLayer,
+  selectedIconsHaloLayer,
+  selectedIconsLayer,
+} from "src/map/layers/selection";
+import type * as mapboxgl from "mapbox-gl";
+
+const DELTA_FEATURES_POINT_LABEL_LAYER_NAME = "delta-features-point-label";
+const DELTA_FEATURES_LINE_LABEL_LAYER_NAME = "delta-features-line-label";
+const DELTA_FEATURES_LINE_LAYER_NAME = "delta-features-line";
+const DELTA_FEATURES_POINT_LAYER_NAME = "delta-features-symbol";
+
+const CONTENT_LAYER_FILTERS: {
+  [key: string]: mapboxgl.Layer["filter"];
+} = {
+  [DELTA_FEATURES_LINE_LAYER_NAME]: [
+    "any",
+    ["==", "$type", "LineString"],
+    ["==", "$type", "Polygon"],
+  ],
+  [DELTA_FEATURES_POINT_LAYER_NAME]: ["all", ["==", "$type", "Point"]],
+};
+
+function addPreviewFilter(
+  filters: mapboxgl.Layer["filter"],
+  previewProperty: PreviewProperty,
+): mapboxgl.Layer["filter"] {
+  if (!previewProperty) return filters;
+  return ["all", filters, ["has", previewProperty]];
+}
+
+function LABEL_PAINT(
+  _symbology: ISymbology,
+  _previewProperty: PreviewProperty,
+): mapboxgl.SymbolPaint {
+  const paint: mapboxgl.SymbolPaint = {
+    "text-halo-color": "#fff",
+    "text-halo-width": 1,
+    "text-halo-blur": 0.8,
+  };
+  return paint;
+}
+
+function LABEL_LAYOUT(
+  previewProperty: PreviewProperty,
+  placement: mapboxgl.SymbolLayout["symbol-placement"],
+): mapboxgl.SymbolLayout {
+  const paint: mapboxgl.SymbolLayout = {
+    "text-field": ["get", previewProperty],
+    "text-variable-anchor": ["top", "bottom", "left", "right"],
+    "text-radial-offset": 0.5,
+    "symbol-placement": placement,
+    "icon-optional": true,
+    "text-size": 13,
+    "text-justify": "auto",
+  };
+  return paint;
+}
+
+export function makeLayers({
+  symbology,
+  previewProperty,
+}: {
+  symbology: ISymbology;
+  previewProperty: PreviewProperty;
+}): mapboxgl.AnyLayer[] {
+  return [
+    ephemeralHaloLayer({ source: "ephemeral" }),
+    pipesLayer({
+      source: "main-features",
+      layerId: "main-features-pipes",
+      symbology,
+    }),
+    pipesLayer({
+      source: "delta-features",
+      layerId: "delta-features-pipes",
+      symbology,
+    }),
+    selectedPipesLayer({
+      source: "selected-features",
+      layerId: "selected-pipes",
+    }),
+    pumpLines({
+      source: "main-features",
+      layerId: "main-features-pump-lines",
+      symbology,
+    }),
+    pumpLines({
+      source: "delta-features",
+      layerId: "delta-features-pump-lines",
+      symbology,
+    }),
+    selectedPumpLinesLayer({
+      source: "selected-features",
+      layerId: "selected-pump-lines",
+    }),
+    valveLines({
+      source: "main-features",
+      layerId: "main-features-valve-lines",
+      symbology,
+    }),
+    valveLines({
+      source: "delta-features",
+      layerId: "delta-features-valve-lines",
+      symbology,
+    }),
+    selectedValveLinesLayer({
+      source: "selected-features",
+      layerId: "selected-valve-lines",
+    }),
+    ephemeralShadowLineLayer({ source: "ephemeral" }),
+    ephemeralDraftLineLayer({ source: "ephemeral" }),
+    ephemeralPipeHighlightLayer({ source: "ephemeral" }),
+    pipeArrows({
+      source: "main-features",
+      layerId: "main-features-pipe-arrows",
+      symbology,
+    }),
+    pipeArrows({
+      source: "delta-features",
+      layerId: "delta-features-pipe-arrows",
+      symbology,
+    }),
+    selectedPipeArrowsLayer({
+      source: "selected-features",
+      layerId: "selected-pipe-arrows",
+    }),
+    junctionsLayer({
+      source: "main-features",
+      layerId: "main-features-junctions",
+      symbology,
+    }),
+    junctionsLayer({
+      source: "delta-features",
+      layerId: "delta-features-junctions",
+      symbology,
+    }),
+    junctionResultsLayer({
+      source: "main-features",
+      layerId: "main-features-junction-results",
+      symbology,
+    }),
+    junctionResultsLayer({
+      source: "delta-features",
+      layerId: "delta-features-junction-results",
+      symbology,
+    }),
+    selectedJunctionsLayer({
+      source: "selected-features",
+      layerId: "selected-junctions",
+    }),
+    selectedIconsHaloLayer({
+      source: "selected-features",
+      layerId: "selected-icons-halo",
+    }),
+    ...valveIcons({
+      source: "icons",
+      layerId: "valve-icons",
+    }),
+    checkValveIcons({
+      source: "icons",
+      layerId: "check-valve-icons",
+    }),
+    pumpIcons({
+      source: "icons",
+      layerId: "pump-icons",
+      symbology,
+    }),
+    ...reservoirLayers({ sources: ["icons"] }),
+    ...tankLayers({ sources: ["icons"] }),
+    ...loggerPointLayers({ sources: ["icons"] }),
+    selectedIconsLayer({
+      source: "selected-features",
+      layerId: "selected-icons",
+    }),
+    ephemeralJunctionHighlightLayers({ source: "ephemeral" }),
+    ephemeralIconHighlightLayers({ source: "ephemeral" }),
+    ...linkLabelsLayer({
+      sources: ["main-features", "delta-features"],
+    }),
+    ...nodeLabelsLayer({
+      sources: ["main-features", "delta-features"],
+    }),
+    ...(typeof previewProperty === "string"
+      ? [
+          {
+            id: DELTA_FEATURES_POINT_LABEL_LAYER_NAME,
+            type: "symbol",
+            source: "delta-features",
+            paint: LABEL_PAINT(symbology, previewProperty),
+            layout: LABEL_LAYOUT(previewProperty, "point"),
+            filter: addPreviewFilter(
+              CONTENT_LAYER_FILTERS[DELTA_FEATURES_POINT_LAYER_NAME],
+              previewProperty,
+            ),
+          } as mapboxgl.AnyLayer,
+          {
+            id: DELTA_FEATURES_LINE_LABEL_LAYER_NAME,
+            type: "symbol",
+            source: "delta-features",
+            paint: LABEL_PAINT(symbology, previewProperty),
+            layout: LABEL_LAYOUT(previewProperty, "line"),
+            filter: addPreviewFilter(
+              CONTENT_LAYER_FILTERS[DELTA_FEATURES_LINE_LAYER_NAME],
+              previewProperty,
+            ),
+          } as mapboxgl.AnyLayer,
+        ]
+      : []),
+    ephemeralSelectionFillLayer({ source: "ephemeral" }),
+    ephemeralSelectionOutlineLayer({ source: "ephemeral" }),
+  ].filter((l) => !!l);
+}

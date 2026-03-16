@@ -1,4 +1,4 @@
-import { DialogHeader, DialogContainer } from "src/components/dialog";
+import { BaseDialog, useDialogState } from "src/components/dialog";
 import { Keycap } from "src/components/elements";
 import React from "react";
 import { localizeKeybinding } from "src/infra/i18n";
@@ -7,10 +7,10 @@ import { showSimulationSettingsShortcut } from "src/commands/show-simulation-set
 import { showControlsShortcut } from "src/commands/show-controls";
 import { getIsMac } from "src/infra/i18n/mac";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { KeyboardIcon } from "src/icons";
 import { toggleNetworkReviewShortcut } from "src/commands/toggle-network-review";
 import { toggleSidePanelShortcut } from "src/commands/toggle-side-panel";
 import { selectionModeShortcut } from "src/commands/set-area-selection-mode";
+import { traceSelectModeShortcut } from "src/commands/set-trace-select-mode";
 import { changeActiveTopologyShortcut } from "src/commands/change-selected-assets-active-topology-status";
 import {
   previousTimestepShortcut,
@@ -38,8 +38,10 @@ type ShortcutSection = {
 };
 
 export function CheatsheetDialog() {
+  const { closeDialog } = useDialogState();
   const translate = useTranslate();
   const isMac = useFeatureFlag("FLAG_MAC");
+  const isCreateCustomerOn = useFeatureFlag("FLAG_CREATE_CUSTOMER");
 
   const BINDINGS: ShortcutSection[] = [
     {
@@ -76,6 +78,9 @@ export function CheatsheetDialog() {
         { binding: "5", description: "pipe" },
         { binding: "6", description: "pump" },
         { binding: "7", description: "valve" },
+        ...(isCreateCustomerOn
+          ? [{ binding: "8", description: "customerPoint" as const }]
+          : []),
       ],
     },
     {
@@ -125,6 +130,10 @@ export function CheatsheetDialog() {
           binding: selectionModeShortcut,
           description: "areaSelection.tool",
         },
+        {
+          binding: traceSelectModeShortcut,
+          description: "traceSelection.tool",
+        },
         { binding: "Command+a", description: "selectAll" },
         {
           binding: changeActiveTopologyShortcut,
@@ -142,12 +151,13 @@ export function CheatsheetDialog() {
   ];
 
   return (
-    <DialogContainer size="md">
-      <DialogHeader
-        title={translate("keyboardShortcuts.title")}
-        titleIcon={KeyboardIcon}
-      />
-      <div className="columns-1 md:columns-2">
+    <BaseDialog
+      title={translate("keyboardShortcuts.title")}
+      size="lg"
+      isOpen={true}
+      onClose={closeDialog}
+    >
+      <div className="p-4 columns-1 md:columns-2">
         {BINDINGS.map((section) => (
           <div key={section.group} className="break-inside-avoid mb-6">
             <h2 className="text-sm font-bold mb-2 text-gray-700">
@@ -170,6 +180,6 @@ export function CheatsheetDialog() {
           </div>
         ))}
       </div>
-    </DialogContainer>
+    </BaseDialog>
   );
 }

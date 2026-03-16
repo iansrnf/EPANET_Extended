@@ -8,15 +8,17 @@ import {
   Topology,
   AssetBuilder,
   JunctionBuildData,
-  JunctionDemand,
   PipeBuildData,
   ReservoirBuildData,
   NodeAsset,
   AssetId,
-  HeadlossFormula,
-  EPSTiming,
   Controls,
   createEmptyControls,
+  createEmptyDemands,
+  Demand,
+  Demands,
+  Patterns,
+  PatternType,
 } from "src/hydraulic-model";
 import { SimpleControl, RuleBasedControl } from "src/hydraulic-model/controls";
 import { AssetIndex } from "src/hydraulic-model/asset-index";
@@ -25,20 +27,14 @@ import {
   PumpBuildData,
   TankBuildData,
   ValveBuildData,
-  LoggerPointBuildData,
 } from "src/hydraulic-model/asset-builder";
-import {
-  ConsecutiveIdsGenerator,
-  IdGenerator,
-} from "src/hydraulic-model/id-generator";
+import { ConsecutiveIdsGenerator, IdGenerator } from "src/lib/id-generator";
 import { LabelManager } from "src/hydraulic-model/label-manager";
 import {
   AssetQuantitiesSpec,
-  Quantities,
   UnitsSpec,
   presets,
-} from "src/model-metadata/quantities-spec";
-import { Demands, createEmptyDemands } from "src/hydraulic-model/demands";
+} from "src/lib/project-settings/quantities-spec";
 import {
   AllocationRule,
   CustomerPoint,
@@ -55,10 +51,8 @@ export const buildPipe = (
     ...presets.LPS,
     units: { ...presets.LPS.units, ...unitsOverride },
   };
-  const quantities = new Quantities(quantitiesSpec);
   return new AssetBuilder(
-    quantities.units,
-    quantities.defaults,
+    quantitiesSpec.defaults,
     new ConsecutiveIdsGenerator(),
     new LabelManager(),
   ).buildPipe(data);
@@ -71,29 +65,23 @@ export const buildPump = (
     ...presets.LPS,
     units: { ...presets.LPS.units, ...unitsOverride },
   };
-  const quantities = new Quantities(quantitiesSpec);
   return new AssetBuilder(
-    quantities.units,
-    quantities.defaults,
+    quantitiesSpec.defaults,
     new ConsecutiveIdsGenerator(),
     new LabelManager(),
   ).buildPump(data);
 };
 
 export const buildJunction = (data: JunctionBuildData = {}) => {
-  const quantities = new Quantities(presets.LPS);
   return new AssetBuilder(
-    quantities.units,
-    quantities.defaults,
+    presets.LPS.defaults,
     new ConsecutiveIdsGenerator(),
     new LabelManager(),
   ).buildJunction(data);
 };
 export const buildReservoir = (data: ReservoirBuildData = {}) => {
-  const quantities = new Quantities(presets.LPS);
   return new AssetBuilder(
-    quantities.units,
-    quantities.defaults,
+    presets.LPS.defaults,
     new ConsecutiveIdsGenerator(),
     new LabelManager(),
   ).buildReservoir(data);
@@ -102,17 +90,14 @@ export const buildReservoir = (data: ReservoirBuildData = {}) => {
 export const buildCustomerPoint = (
   id: number,
   options: {
-    demands?: JunctionDemand[];
     coordinates?: Position;
     junctionId?: number;
     label?: string;
   } = {},
 ) => {
   const { coordinates = [0, 0], label = String(id) } = options;
-  const demands = options.demands ?? [];
-  return CustomerPoint.build(id, coordinates, {
+  return new CustomerPoint(id, coordinates, {
     label,
-    demands,
   });
 };
 
@@ -140,14 +125,13 @@ export class HydraulicModelBuilder {
   private topology: Topology;
   private assets: AssetsMap;
   private assetBuilder: AssetBuilder;
-  private units: UnitsSpec;
-  private headlossFormulaValue: HeadlossFormula;
   private labelManager: LabelManager;
   private demands: Demands;
   private customerPointsMap: CustomerPoints;
   private idGenerator: WritableIdGenerator;
+  private customerPointIdGenerator: WritableIdGenerator;
   private curves: Curves;
-  private epsTiming: EPSTiming;
+  private patterns: Patterns;
   private controlsValue: Controls;
 
   static with(quantitiesSpec: AssetQuantitiesSpec = presets.LPS) {
@@ -163,19 +147,16 @@ export class HydraulicModelBuilder {
     this.customerPointsMap = initializeCustomerPoints();
     this.labelManager = new LabelManager();
     this.idGenerator = new WritableIdGenerator();
-    const quantities = new Quantities(quantitiesSpec);
-    this.units = quantities.units;
+    this.customerPointIdGenerator = new WritableIdGenerator();
     this.assetBuilder = new AssetBuilder(
-      this.units,
-      quantities.defaults,
+      quantitiesSpec.defaults,
       this.idGenerator,
       this.labelManager,
     );
     this.topology = new Topology();
     this.demands = createEmptyDemands();
-    this.headlossFormulaValue = "H-W";
     this.curves = new Map();
-    this.epsTiming = {};
+    this.patterns = new Map();
     this.controlsValue = createEmptyControls();
   }
 
@@ -199,6 +180,11 @@ export class HydraulicModelBuilder {
     return this;
   }
 
+  aJunctionDemand(id: number, demands: Demand[]) {
+    this.demands.junctions.set(id, demands);
+    return this;
+  }
+
   aReservoir(id: number, properties: Partial<ReservoirBuildData> = {}) {
     const reservoir = this.assetBuilder.buildReservoir({
       id,
@@ -215,16 +201,6 @@ export class HydraulicModelBuilder {
       ...data,
     });
     this.assets.set(id, tank);
-    this.idGenerator.addId(id);
-    return this;
-  }
-
-  aLoggerPoint(id: number, data: Partial<LoggerPointBuildData> = {}) {
-    const loggerPoint = this.assetBuilder.buildLoggerPoint({
-      id,
-      ...data,
-    });
-    this.assets.set(id, loggerPoint);
     this.idGenerator.addId(id);
     return this;
   }
@@ -317,23 +293,20 @@ export class HydraulicModelBuilder {
     return this.aPipe(id, { startNodeId, endNodeId, ...properties });
   }
 
-  headlossFormula(headlossFormula: HeadlossFormula) {
-    this.headlossFormulaValue = headlossFormula;
-    return this;
-  }
-
-  demandMultiplier(multiplier: number) {
-    this.demands = {
-      multiplier,
-      patterns: this.demands.patterns,
-    };
-    return this;
-  }
-
   aDemandPattern(patternId: number, patternLabel: string, factors: number[]) {
-    this.demands.patterns.set(patternId, {
+    return this.aPattern(patternId, patternLabel, factors, "demand");
+  }
+
+  aPattern(
+    patternId: number,
+    patternLabel: string,
+    factors: number[],
+    type?: PatternType,
+  ) {
+    this.patterns.set(patternId, {
       id: patternId,
       label: patternLabel,
+      type,
       multipliers: factors.length ? factors : [1],
     });
     this.labelManager.register(patternLabel, "pattern", patternId);
@@ -344,7 +317,6 @@ export class HydraulicModelBuilder {
   aCustomerPoint(
     id: number,
     options: {
-      demands?: JunctionDemand[];
       coordinates?: Position;
       label?: string;
       connection?: {
@@ -384,6 +356,12 @@ export class HydraulicModelBuilder {
     }
 
     this.customerPointsMap.set(id, customerPoint);
+    this.customerPointIdGenerator.addId(id);
+    return this;
+  }
+
+  aCustomerPointDemand(id: number, demands: Demand[]) {
+    this.demands.customerPoints.set(id, demands);
     return this;
   }
 
@@ -405,15 +383,9 @@ export class HydraulicModelBuilder {
     const curve: ICurve = {
       ...rawCurve,
       label: rawCurve.label || String(rawCurve.id),
-      assetIds: rawCurve.assetIds || new Set(),
     };
     this.curves.set(curve.id, curve);
     this.labelManager.register(curve.label, "curve", curve.id);
-    return this;
-  }
-
-  eps(epsTiming: EPSTiming) {
-    this.epsTiming = epsTiming;
     return this;
   }
 
@@ -476,11 +448,9 @@ export class HydraulicModelBuilder {
       labelManager: this.labelManager,
       topology: this.topology,
       assetIndex,
-      units: this.units,
       demands: this.demands,
-      headlossFormula: this.headlossFormulaValue,
       curves: this.curves,
-      epsTiming: this.epsTiming,
+      patterns: this.patterns,
       controls: this.controlsValue,
     };
   }

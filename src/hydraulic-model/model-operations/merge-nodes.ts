@@ -1,8 +1,7 @@
 import { AssetId, LinkAsset, NodeAsset } from "../asset-types";
-import { ModelOperation } from "../model-operation";
+import { DemandAssignment, ModelOperation } from "../model-operation";
 import { CustomerPoints } from "../customer-points";
 import { Pipe } from "../asset-types/pipe";
-import { Junction } from "../asset-types/junction";
 import { HydraulicModel } from "../hydraulic-model";
 import { AssetsMap } from "../assets-map";
 import { Topology } from "../topology";
@@ -10,10 +9,14 @@ import { CustomerPointsLookup } from "../customer-points-lookup";
 import { updateLinkConnections } from "../mutations/update-link-connections";
 import { isNodeAsset } from "../asset-types/type-guards";
 import { reassignCustomerPoints } from "../mutations/reassign-customer-points";
+import { getJunctionDemands } from "../demands";
+import { computeLinkLength } from "../asset-types/link";
+import { Unit } from "src/quantity";
 
 type InputData = {
   sourceNodeId: AssetId;
   targetNodeId: AssetId;
+  lengthUnit: Unit;
 };
 
 const determineWinner = (
@@ -36,7 +39,7 @@ const determineWinner = (
 
 export const mergeNodes: ModelOperation<InputData> = (
   hydraulicModel,
-  { sourceNodeId, targetNodeId },
+  { sourceNodeId, targetNodeId, lengthUnit },
 ) => {
   const { sourceNode, targetNode } = validateAndGetNodes(
     hydraulicModel.assets,
@@ -53,6 +56,7 @@ export const mergeNodes: ModelOperation<InputData> = (
     loserNode,
     targetNode,
     hydraulicModel,
+    lengthUnit,
   );
 
   const shouldBeActive = updatedLinks.length
@@ -60,11 +64,37 @@ export const mergeNodes: ModelOperation<InputData> = (
     : true;
   mergedNode.setProperty("isActive", shouldBeActive);
 
+  let demandAssignments: DemandAssignment[] | undefined;
+  if (winnerNode.type === "junction" && loserNode.type === "junction") {
+    const winnerDemands = getJunctionDemands(
+      hydraulicModel.demands,
+      winnerNode.id,
+    );
+    const loserDemands = getJunctionDemands(
+      hydraulicModel.demands,
+      loserNode.id,
+    );
+    const mergedDemands = [...winnerDemands, ...loserDemands];
+    demandAssignments = [
+      { junctionId: winnerNode.id, demands: mergedDemands },
+      { junctionId: loserNode.id, demands: [] },
+    ];
+  } else if (loserNode.type === "junction") {
+    const loserDemands = getJunctionDemands(
+      hydraulicModel.demands,
+      loserNode.id,
+    );
+    if (loserDemands.length > 0) {
+      demandAssignments = [{ junctionId: loserNode.id, demands: [] }];
+    }
+  }
+
   return buildMergeResult(
     mergedNode,
     loserNode,
     updatedLinks,
     updatedCustomerPoints,
+    demandAssignments,
   );
 };
 
@@ -89,20 +119,12 @@ const validateAndGetNodes = (
 
 const createMergedNode = (
   winnerNode: NodeAsset,
-  loserNode: NodeAsset,
+  _loserNode: NodeAsset,
   targetNode: NodeAsset,
 ): NodeAsset => {
   const winnerNodeCopy = winnerNode.copy();
   winnerNodeCopy.setCoordinates(targetNode.coordinates);
   winnerNodeCopy.setElevation(targetNode.elevation);
-
-  if (winnerNode.type === "junction" && loserNode.type === "junction") {
-    const winnerJunction = winnerNodeCopy as Junction;
-    const loserJunction = loserNode as Junction;
-
-    const mergedDemands = [...winnerJunction.demands, ...loserJunction.demands];
-    winnerJunction.setDemands(mergedDemands);
-  }
 
   return winnerNodeCopy;
 };
@@ -111,6 +133,7 @@ const updateLinkCoordinates = (
   link: LinkAsset,
   nodeId: AssetId,
   newCoordinates: [number, number],
+  lengthUnit: Unit,
 ): void => {
   const coordinates = link.coordinates;
   const updatedCoordinates = [...coordinates];
@@ -123,6 +146,7 @@ const updateLinkCoordinates = (
   }
 
   link.setCoordinates(updatedCoordinates);
+  link.setProperty("length", computeLinkLength(link, lengthUnit));
 };
 
 const processLinkCustomerPoints = (
@@ -149,6 +173,7 @@ const processConnectedLinks = (
   loserNode: NodeAsset,
   targetNode: NodeAsset,
   hydraulicModel: HydraulicModel,
+  lengthUnit: Unit,
 ): { updatedLinks: LinkAsset[]; updatedCustomerPoints: CustomerPoints } => {
   const { topology, assets, customerPointsLookup } = hydraulicModel;
   const updatedLinks: LinkAsset[] = [];
@@ -163,6 +188,7 @@ const processConnectedLinks = (
     customerPointsLookup,
     updatedLinks,
     updatedCustomerPoints,
+    lengthUnit,
   );
 
   updateLoserLinks(
@@ -175,6 +201,7 @@ const processConnectedLinks = (
     customerPointsLookup,
     updatedLinks,
     updatedCustomerPoints,
+    lengthUnit,
   );
 
   return { updatedLinks, updatedCustomerPoints };
@@ -189,6 +216,7 @@ const updateWinnerLinks = (
   customerPointsLookup: CustomerPointsLookup,
   updatedLinks: LinkAsset[],
   updatedCustomerPoints: CustomerPoints,
+  lengthUnit: Unit,
 ): void => {
   const winnerConnectedLinkIds = topology.getLinks(winnerNodeId);
 
@@ -200,6 +228,7 @@ const updateWinnerLinks = (
       linkCopy,
       winnerNodeId,
       targetNode.coordinates as [number, number],
+      lengthUnit,
     );
     updatedLinks.push(linkCopy);
 
@@ -223,6 +252,7 @@ const updateLoserLinks = (
   customerPointsLookup: CustomerPointsLookup,
   updatedLinks: LinkAsset[],
   updatedCustomerPoints: CustomerPoints,
+  lengthUnit: Unit,
 ): void => {
   const loserConnectedLinkIds = topology.getLinks(loserNodeId);
 
@@ -235,6 +265,7 @@ const updateLoserLinks = (
       linkCopy,
       winnerNodeId,
       targetNode.coordinates as [number, number],
+      lengthUnit,
     );
     updatedLinks.push(linkCopy);
 
@@ -253,6 +284,7 @@ const buildMergeResult = (
   loserNode: NodeAsset,
   updatedLinks: LinkAsset[],
   updatedCustomerPoints: CustomerPoints,
+  demandAssignments?: DemandAssignment[],
 ) => {
   return {
     note: `Merge ${loserNode.type} into ${winnerNode.type}`,
@@ -262,5 +294,8 @@ const buildMergeResult = (
       updatedCustomerPoints.size > 0
         ? [...updatedCustomerPoints.values()]
         : undefined,
+    putDemands: demandAssignments
+      ? { assignments: demandAssignments }
+      : undefined,
   };
 };

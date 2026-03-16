@@ -12,7 +12,9 @@ import {
 } from "./common";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue } from "jotai";
-import { selectionAtom, stagingModelAtom } from "src/state/jotai";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { projectSettingsAtom } from "src/state/project-settings";
+import { selectionAtom } from "src/state/selection";
 import { useTranslate } from "src/hooks/use-translate";
 import { convertTo, Quantity } from "src/quantity";
 import {
@@ -204,9 +206,8 @@ const DistanceInput = ({
 };
 
 const useDistance = () => {
-  const {
-    units: { length: unit },
-  } = useAtomValue(stagingModelAtom);
+  const { units } = useAtomValue(projectSettingsAtom);
+  const unit = units.length;
   const [distance, setDistance] = useState<number>(() =>
     unit === "ft" ? DEFAULT_DISTANCE_FT : DEFAULT_DISTANCE_M,
   );
@@ -242,6 +243,8 @@ const useCheckProximityAnomalies = () => {
     async (distance: number, signal?: AbortSignal) => {
       startLoading();
       await deferToAllowRender();
+
+      if (signal?.aborted) return;
 
       try {
         const result = await findProximityAnomalies(
@@ -316,6 +319,7 @@ const ProximityAnomalyItem = ({
 }) => {
   const translate = useTranslate();
   const hydraulicModel = useAtomValue(stagingModelAtom);
+  const { units } = useAtomValue(projectSettingsAtom);
   const connectionId = `${anomaly.nodeId}-${anomaly.pipeId}`;
   const isSelected = selectedId === connectionId;
 
@@ -323,7 +327,7 @@ const ProximityAnomalyItem = ({
 
   if (!nodeAsset) return null;
 
-  const lengthUnit = hydraulicModel.units.length;
+  const lengthUnit = units.length;
   const distanceInModelUnits = convertTo(
     { value: anomaly.distance, unit: "m" },
     lengthUnit,

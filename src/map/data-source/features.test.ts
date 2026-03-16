@@ -1,73 +1,24 @@
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
 import { SymbologySpec, nullSymbologySpec } from "src/map/symbology";
 import { buildOptimizedAssetsSource } from "./features";
-import { Quantities, presets } from "src/model-metadata/quantities-spec";
+import {
+  presets,
+  FormattingSpec,
+} from "src/lib/project-settings/quantities-spec";
 import {
   aLinkSymbology,
   aNodeSymbology,
   aRangeColorRule,
 } from "src/__helpers__/state";
 import { getColors } from "src/map/symbology/range-color-rule";
-import type { ResultsReader } from "src/simulation/results-reader";
-
-const createMockResultsReader = (
-  data: {
-    pipes?: Record<
-      number,
-      { flow?: number; velocity?: number; status?: "open" | "closed" }
-    >;
-    junctions?: Record<
-      number,
-      { pressure?: number; head?: number; demand?: number }
-    >;
-    pumps?: Record<number, { status?: "on" | "off" }>;
-  } = {},
-): ResultsReader => ({
-  getPipe: (id) => {
-    const sim = data.pipes?.[id];
-    if (!sim) return null;
-    return {
-      type: "pipe",
-      flow: sim.flow ?? 0,
-      velocity: sim.velocity ?? 0,
-      headloss: 0,
-      unitHeadloss: 0,
-      status: sim.status ?? "open",
-    };
-  },
-  getJunction: (id) => {
-    const sim = data.junctions?.[id];
-    if (!sim) return null;
-    return {
-      type: "junction",
-      pressure: sim.pressure ?? 0,
-      head: sim.head ?? 0,
-      demand: sim.demand ?? 0,
-    };
-  },
-  getPump: (id) => {
-    const sim = data.pumps?.[id];
-    if (!sim) return null;
-    return {
-      type: "pump",
-      flow: 0,
-      headloss: 0,
-      status: sim.status ?? "on",
-      statusWarning: null,
-    };
-  },
-  getValve: () => null,
-  getTank: () => null,
-  getAllPressures: () => [],
-  getAllHeads: () => [],
-  getAllDemands: () => [],
-  getAllFlows: () => [],
-  getAllVelocities: () => [],
-  getAllUnitHeadlosses: () => [],
-});
+import { createMockResultsReader } from "src/__helpers__/state";
 
 describe("build optimized source", () => {
-  const defaultQuantities = new Quantities(presets.LPS);
+  const defaultUnits = presets.LPS.units;
+  const defaultFormatting: FormattingSpec = {
+    decimals: presets.LPS.decimals,
+    defaultDecimals: 3,
+  };
   const fakeTranslateUnit = vi.fn();
   it("preserves core properties", () => {
     const IDS = { ID: 1, J1: 2 } as const;
@@ -83,7 +34,8 @@ describe("build optimized source", () => {
     const features = buildOptimizedAssetsSource(
       assets,
       symbology,
-      defaultQuantities,
+      defaultUnits,
+      defaultFormatting,
       fakeTranslateUnit,
     );
 
@@ -120,7 +72,8 @@ describe("build optimized source", () => {
     const features = buildOptimizedAssetsSource(
       assets,
       symbology,
-      defaultQuantities,
+      defaultUnits,
+      defaultFormatting,
       fakeTranslateUnit,
     );
 
@@ -147,7 +100,8 @@ describe("build optimized source", () => {
     const features = buildOptimizedAssetsSource(
       assets,
       symbology,
-      defaultQuantities,
+      defaultUnits,
+      defaultFormatting,
       fakeTranslateUnit,
       simulationResults,
     );
@@ -182,7 +136,8 @@ describe("build optimized source", () => {
       const features = buildOptimizedAssetsSource(
         assets,
         symbology,
-        defaultQuantities,
+        defaultUnits,
+        defaultFormatting,
         fakeTranslateUnit,
         simulationResults,
       );
@@ -211,72 +166,14 @@ describe("build optimized source", () => {
       const features = buildOptimizedAssetsSource(
         assets,
         symbology,
-        defaultQuantities,
+        defaultUnits,
+        defaultFormatting,
         () => "m",
         simulationResults,
       );
 
       const [junction] = features;
       expect(junction.properties!.label).toEqual("10 m");
-    });
-
-    it("includes converted elevation labels when symbology unit is psi", () => {
-      const IDS = { J1: 1 } as const;
-      const symbology: SymbologySpec = {
-        ...nullSymbologySpec,
-        node: aNodeSymbology({
-          colorRule: aRangeColorRule({
-            property: "elevation",
-            unit: "psi",
-          }),
-          labelRule: "elevation",
-        }),
-      };
-      const { assets } = HydraulicModelBuilder.with()
-        .aJunction(IDS.J1, { elevation: 10 })
-        .build();
-
-      const features = buildOptimizedAssetsSource(
-        assets,
-        symbology,
-        defaultQuantities,
-        () => "psi",
-      );
-
-      const [junction] = features;
-      expect(junction.properties!.label).toEqual("14.223 psi");
-    });
-
-    it("includes converted pressure labels when unit is mwc", () => {
-      const IDS = { J1: 1 } as const;
-      const symbology: SymbologySpec = {
-        ...nullSymbologySpec,
-        node: aNodeSymbology({
-          colorRule: aRangeColorRule({
-            property: "pressure",
-            unit: "mwc",
-          }),
-          labelRule: "pressure",
-        }),
-      };
-      const { assets } = HydraulicModelBuilder.with()
-        .aJunction(IDS.J1, { elevation: 15 })
-        .build();
-      const simulationResults = createMockResultsReader({
-        junctions: { [IDS.J1]: { pressure: 14.2233433 } },
-      });
-
-      const features = buildOptimizedAssetsSource(
-        assets,
-        symbology,
-        defaultQuantities,
-        () => "m",
-        simulationResults,
-      );
-
-      const [junction] = features;
-      expect(junction.properties!.label).toContain("10");
-      expect(junction.properties!.label).toContain("m");
     });
   });
 
@@ -310,7 +207,8 @@ describe("build optimized source", () => {
       const features = buildOptimizedAssetsSource(
         assets,
         symbology,
-        defaultQuantities,
+        defaultUnits,
+        defaultFormatting,
         fakeTranslateUnit,
         simulationResults,
       );
@@ -350,7 +248,8 @@ describe("build optimized source", () => {
       const features = buildOptimizedAssetsSource(
         assets,
         symbology,
-        defaultQuantities,
+        defaultUnits,
+        defaultFormatting,
         () => "l/s",
         simulationResults,
       );
@@ -377,7 +276,8 @@ describe("build optimized source", () => {
       const features = buildOptimizedAssetsSource(
         assets,
         symbology,
-        defaultQuantities,
+        defaultUnits,
+        defaultFormatting,
         fakeTranslateUnit,
         simulationResults,
       );
@@ -413,7 +313,8 @@ describe("build optimized source", () => {
       const features = buildOptimizedAssetsSource(
         assets,
         symbology,
-        defaultQuantities,
+        defaultUnits,
+        defaultFormatting,
         fakeTranslateUnit,
         simulationResults,
       );
@@ -437,7 +338,8 @@ describe("build optimized source", () => {
       const features = buildOptimizedAssetsSource(
         assets,
         symbology,
-        defaultQuantities,
+        defaultUnits,
+        defaultFormatting,
         fakeTranslateUnit,
         simulationResults,
       );
@@ -456,6 +358,11 @@ describe("build optimized source", () => {
 
     it("assigns lengths in meters", () => {
       const IDS = { p1: 1 } as const;
+      const gpmUnits = presets.GPM.units;
+      const gpmFormatting: FormattingSpec = {
+        decimals: presets.GPM.decimals,
+        defaultDecimals: 3,
+      };
       const { assets } = HydraulicModelBuilder.with(presets.GPM)
         .aPipe(IDS.p1, { length: 10 })
         .build();
@@ -466,7 +373,8 @@ describe("build optimized source", () => {
       const features = buildOptimizedAssetsSource(
         assets,
         symbology,
-        defaultQuantities,
+        gpmUnits,
+        gpmFormatting,
         fakeTranslateUnit,
         simulationResults,
       );

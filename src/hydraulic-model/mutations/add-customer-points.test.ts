@@ -4,8 +4,8 @@ import {
   HydraulicModelBuilder,
   buildCustomerPoint,
 } from "src/__helpers__/hydraulic-model-builder";
-import { Junction } from "src/hydraulic-model/asset-types/junction";
 import { CustomerPoint } from "src/hydraulic-model/customer-points";
+import { Demand } from "src/hydraulic-model/demands";
 
 describe("addCustomerPoints", () => {
   it("connects multiple customer points to their assigned junctions", () => {
@@ -27,7 +27,6 @@ describe("addCustomerPoints", () => {
 
     const cp1 = buildCustomerPoint(IDS.CP1, {
       coordinates: [2, 1],
-      demands: [{ baseDemand: 25 }],
     });
     cp1.connect({
       pipeId: IDS.P1,
@@ -37,7 +36,6 @@ describe("addCustomerPoints", () => {
 
     const cp2 = buildCustomerPoint(IDS.CP2, {
       coordinates: [8, 1],
-      demands: [{ baseDemand: 50 }],
     });
     cp2.connect({
       pipeId: IDS.P1,
@@ -48,7 +46,16 @@ describe("addCustomerPoints", () => {
     customerPointsToAdd.push(cp1);
     customerPointsToAdd.push(cp2);
 
-    const updatedModel = addCustomerPoints(hydraulicModel, customerPointsToAdd);
+    const updatedModel = addCustomerPoints(
+      hydraulicModel,
+      customerPointsToAdd,
+      {
+        customerPointDemands: new Map<number, Demand[]>([
+          [IDS.CP1, [{ baseDemand: 25 }]],
+          [IDS.CP2, [{ baseDemand: 50 }]],
+        ]),
+      },
+    );
 
     expect(updatedModel.customerPoints.size).toBe(2);
     expect(updatedModel.customerPoints.has(IDS.CP1)).toBe(true);
@@ -89,11 +96,18 @@ describe("addCustomerPoints", () => {
 
     const cpWithoutConnection = buildCustomerPoint(IDS.CP1, {
       coordinates: [2, 1],
-      demands: [{ baseDemand: 25 }],
     });
     customerPointsToAdd.push(cpWithoutConnection);
 
-    const updatedModel = addCustomerPoints(hydraulicModel, customerPointsToAdd);
+    const updatedModel = addCustomerPoints(
+      hydraulicModel,
+      customerPointsToAdd,
+      {
+        customerPointDemands: new Map<number, Demand[]>([
+          [IDS.CP1, [{ baseDemand: 25 }]],
+        ]),
+      },
+    );
 
     expect(updatedModel.customerPoints.size).toBe(1);
     expect(updatedModel.customerPoints.has(IDS.CP1)).toBe(true);
@@ -122,7 +136,6 @@ describe("addCustomerPoints", () => {
 
     const connectedCP = buildCustomerPoint(IDS.CP1, {
       coordinates: [2, 1],
-      demands: [{ baseDemand: 25 }],
     });
     connectedCP.connect({
       pipeId: IDS.P1,
@@ -132,13 +145,21 @@ describe("addCustomerPoints", () => {
 
     const disconnectedCP = buildCustomerPoint(IDS.CP2, {
       coordinates: [5, 5],
-      demands: [{ baseDemand: 30 }],
     });
 
     customerPointsToAdd.push(connectedCP);
     customerPointsToAdd.push(disconnectedCP);
 
-    const updatedModel = addCustomerPoints(hydraulicModel, customerPointsToAdd);
+    const updatedModel = addCustomerPoints(
+      hydraulicModel,
+      customerPointsToAdd,
+      {
+        customerPointDemands: new Map<number, Demand[]>([
+          [IDS.CP1, [{ baseDemand: 25 }]],
+          [IDS.CP2, [{ baseDemand: 30 }]],
+        ]),
+      },
+    );
 
     expect(updatedModel.customerPoints.size).toBe(2);
     expect(updatedModel.customerPoints.has(IDS.CP1)).toBe(true);
@@ -160,7 +181,6 @@ describe("addCustomerPoints", () => {
 
     const cpWithInvalidJunction = buildCustomerPoint(IDS.CP1, {
       coordinates: [2, 1],
-      demands: [{ baseDemand: 25 }],
     });
 
     cpWithInvalidJunction.connect({
@@ -171,7 +191,15 @@ describe("addCustomerPoints", () => {
 
     customerPointsToAdd.push(cpWithInvalidJunction);
 
-    const updatedModel = addCustomerPoints(hydraulicModel, customerPointsToAdd);
+    const updatedModel = addCustomerPoints(
+      hydraulicModel,
+      customerPointsToAdd,
+      {
+        customerPointDemands: new Map<number, Demand[]>([
+          [IDS.CP1, [{ baseDemand: 25 }]],
+        ]),
+      },
+    );
 
     expect(updatedModel.customerPoints.size).toBe(1);
     expect(updatedModel.customerPoints.has(IDS.CP1)).toBe(true);
@@ -200,7 +228,6 @@ describe("addCustomerPoints", () => {
 
     const cp1 = buildCustomerPoint(IDS.CP1, {
       coordinates: [1, 1],
-      demands: [{ baseDemand: 25 }],
     });
     cp1.connect({
       pipeId: IDS.P1,
@@ -210,7 +237,6 @@ describe("addCustomerPoints", () => {
 
     const cp2 = buildCustomerPoint(IDS.CP2, {
       coordinates: [2, 1],
-      demands: [{ baseDemand: 30 }],
     });
     cp2.connect({
       pipeId: IDS.P1,
@@ -221,7 +247,16 @@ describe("addCustomerPoints", () => {
     customerPointsToAdd.push(cp1);
     customerPointsToAdd.push(cp2);
 
-    const updatedModel = addCustomerPoints(hydraulicModel, customerPointsToAdd);
+    const updatedModel = addCustomerPoints(
+      hydraulicModel,
+      customerPointsToAdd,
+      {
+        customerPointDemands: new Map<number, Demand[]>([
+          [IDS.CP1, [{ baseDemand: 25 }]],
+          [IDS.CP2, [{ baseDemand: 30 }]],
+        ]),
+      },
+    );
 
     expect(updatedModel.customerPoints.size).toBe(2);
 
@@ -232,7 +267,9 @@ describe("addCustomerPoints", () => {
 
     const j1CustomerPointsArray = Array.from(j1CustomerPoints);
     const totalDemand = j1CustomerPointsArray.reduce(
-      (sum, cp) => sum + cp.baseDemand,
+      (sum, cp) =>
+        sum +
+        (updatedModel.demands.customerPoints.get(cp.id)?.[0]?.baseDemand ?? 0),
       0,
     );
     expect(totalDemand).toBe(55);
@@ -248,7 +285,6 @@ describe("addCustomerPoints", () => {
 
     const cp1 = buildCustomerPoint(IDS.CP1, {
       coordinates: [2, 1],
-      demands: [{ baseDemand: 25 }],
     });
     cp1.connect({
       pipeId: 999,
@@ -257,7 +293,11 @@ describe("addCustomerPoints", () => {
     });
     customerPointsToAdd.push(cp1);
 
-    const updatedModel = addCustomerPoints(originalModel, customerPointsToAdd);
+    const updatedModel = addCustomerPoints(originalModel, customerPointsToAdd, {
+      customerPointDemands: new Map<number, Demand[]>([
+        [IDS.CP1, [{ baseDemand: 25 }]],
+      ]),
+    });
 
     expect(originalModel.customerPoints.size).toBe(0);
     expect(originalModel.customerPointsLookup.hasConnections(IDS.J1)).toBe(
@@ -279,19 +319,18 @@ describe("addCustomerPoints", () => {
       .aPipe(IDS.P1, { startNodeId: IDS.J1, endNodeId: IDS.J2 })
       .aCustomerPoint(IDS.EXISTING, {
         coordinates: [1, 1],
-        demands: [{ baseDemand: 10 }],
         connection: {
           pipeId: IDS.P1,
           junctionId: IDS.J1,
           snapPoint: [1, 0],
         },
       })
+      .aCustomerPointDemand(IDS.EXISTING, [{ baseDemand: 10 }])
       .build();
 
     const customerPointsToAdd: CustomerPoint[] = [];
     const newCP = buildCustomerPoint(IDS.CP1, {
       coordinates: [2, 1],
-      demands: [{ baseDemand: 25 }],
     });
     newCP.connect({
       pipeId: IDS.P1,
@@ -301,7 +340,15 @@ describe("addCustomerPoints", () => {
     customerPointsToAdd.push(newCP);
 
     const existingCP = hydraulicModel.customerPoints.get(IDS.EXISTING)!;
-    const updatedModel = addCustomerPoints(hydraulicModel, customerPointsToAdd);
+    const updatedModel = addCustomerPoints(
+      hydraulicModel,
+      customerPointsToAdd,
+      {
+        customerPointDemands: new Map<number, Demand[]>([
+          [IDS.CP1, [{ baseDemand: 25 }]],
+        ]),
+      },
+    );
 
     const j1CustomerPoints =
       updatedModel.customerPointsLookup.getCustomerPoints(IDS.J1);
@@ -312,14 +359,14 @@ describe("addCustomerPoints", () => {
   it("preserves junction base demands by default", () => {
     const IDS = { J1: 1, CP1: 2 } as const;
     const hydraulicModel = HydraulicModelBuilder.with()
-      .aJunction(IDS.J1, { coordinates: [0, 0], demands: [{ baseDemand: 30 }] })
+      .aJunction(IDS.J1, { coordinates: [0, 0] })
+      .aJunctionDemand(IDS.J1, [{ baseDemand: 30 }])
       .build();
 
     const customerPointsToAdd: CustomerPoint[] = [];
 
     const cp1 = buildCustomerPoint(IDS.CP1, {
       coordinates: [2, 1],
-      demands: [{ baseDemand: 25 }],
     });
     cp1.connect({
       pipeId: 999,
@@ -328,15 +375,26 @@ describe("addCustomerPoints", () => {
     });
     customerPointsToAdd.push(cp1);
 
-    const updatedModel = addCustomerPoints(hydraulicModel, customerPointsToAdd);
+    const updatedModel = addCustomerPoints(
+      hydraulicModel,
+      customerPointsToAdd,
+      {
+        customerPointDemands: new Map<number, Demand[]>([
+          [IDS.CP1, [{ baseDemand: 25 }]],
+        ]),
+      },
+    );
 
-    const updatedJ1 = updatedModel.assets.get(IDS.J1) as Junction;
-    expect(updatedJ1.demands).toEqual([{ baseDemand: 30 }]);
+    expect(updatedModel.demands.junctions.get(IDS.J1)).toEqual([
+      { baseDemand: 30 },
+    ]);
 
     const j1CustomerPoints =
       updatedModel.customerPointsLookup.getCustomerPoints(IDS.J1);
     const totalCustomerDemand = Array.from(j1CustomerPoints).reduce(
-      (sum, cp) => sum + cp.baseDemand,
+      (sum, cp) =>
+        sum +
+        (updatedModel.demands.customerPoints.get(cp.id)?.[0]?.baseDemand ?? 0),
       0,
     );
     expect(totalCustomerDemand).toBe(25);
@@ -345,14 +403,14 @@ describe("addCustomerPoints", () => {
   it("resets junction base demands to 0 when preserveJunctionDemands is false", () => {
     const IDS = { J1: 1, CP1: 2 } as const;
     const hydraulicModel = HydraulicModelBuilder.with()
-      .aJunction(IDS.J1, { coordinates: [0, 0], demands: [{ baseDemand: 60 }] })
+      .aJunction(IDS.J1, { coordinates: [0, 0] })
+      .aJunctionDemand(IDS.J1, [{ baseDemand: 60 }])
       .build();
 
     const customerPointsToAdd: CustomerPoint[] = [];
 
     const cp1 = buildCustomerPoint(IDS.CP1, {
       coordinates: [2, 1],
-      demands: [{ baseDemand: 35 }],
     });
     cp1.connect({
       pipeId: 999,
@@ -366,16 +424,20 @@ describe("addCustomerPoints", () => {
       customerPointsToAdd,
       {
         preserveJunctionDemands: false,
+        customerPointDemands: new Map<number, Demand[]>([
+          [IDS.CP1, [{ baseDemand: 35 }]],
+        ]),
       },
     );
 
-    const updatedJ1 = updatedModel.assets.get(IDS.J1) as Junction;
-    expect(updatedJ1.demands).toEqual([]);
+    expect(updatedModel.demands.junctions.has(IDS.J1)).toBe(false);
 
     const j1CustomerPoints =
       updatedModel.customerPointsLookup.getCustomerPoints(IDS.J1);
     const totalCustomerDemand = Array.from(j1CustomerPoints).reduce(
-      (sum, cp) => sum + cp.baseDemand,
+      (sum, cp) =>
+        sum +
+        (updatedModel.demands.customerPoints.get(cp.id)?.[0]?.baseDemand ?? 0),
       0,
     );
     expect(totalCustomerDemand).toBe(35);
@@ -400,7 +462,6 @@ describe("addCustomerPoints", () => {
 
     const cp1 = buildCustomerPoint(IDS.CP1, {
       coordinates: [2, 1],
-      demands: [{ baseDemand: 25 }],
     });
     cp1.connect({
       pipeId: IDS.P1,
@@ -410,7 +471,6 @@ describe("addCustomerPoints", () => {
 
     const cp2 = buildCustomerPoint(IDS.CP2, {
       coordinates: [8, 1],
-      demands: [{ baseDemand: 50 }],
     });
     cp2.connect({
       pipeId: IDS.P1,
@@ -421,7 +481,16 @@ describe("addCustomerPoints", () => {
     customerPointsToAdd.push(cp1);
     customerPointsToAdd.push(cp2);
 
-    const updatedModel = addCustomerPoints(hydraulicModel, customerPointsToAdd);
+    const updatedModel = addCustomerPoints(
+      hydraulicModel,
+      customerPointsToAdd,
+      {
+        customerPointDemands: new Map<number, Demand[]>([
+          [IDS.CP1, [{ baseDemand: 25 }]],
+          [IDS.CP2, [{ baseDemand: 50 }]],
+        ]),
+      },
+    );
 
     expect(updatedModel.customerPoints.size).toBe(2);
 
@@ -448,7 +517,6 @@ describe("addCustomerPoints", () => {
 
     const cp1 = buildCustomerPoint(IDS.CP1, {
       coordinates: [2, 1],
-      demands: [{ baseDemand: 100 }],
     });
     cp1.connect({
       pipeId: IDS.P1,
@@ -458,7 +526,6 @@ describe("addCustomerPoints", () => {
 
     const cp2 = buildCustomerPoint(IDS.CP2, {
       coordinates: [8, 1],
-      demands: [{ baseDemand: 150 }],
     });
     cp2.connect({
       pipeId: IDS.P1,
@@ -466,7 +533,12 @@ describe("addCustomerPoints", () => {
       junctionId: IDS.J2,
     });
 
-    const updatedModel = addCustomerPoints(hydraulicModel, [cp1, cp2]);
+    const updatedModel = addCustomerPoints(hydraulicModel, [cp1, cp2], {
+      customerPointDemands: new Map<number, Demand[]>([
+        [IDS.CP1, [{ baseDemand: 100 }]],
+        [IDS.CP2, [{ baseDemand: 150 }]],
+      ]),
+    });
 
     const j1CustomerPoints =
       updatedModel.customerPointsLookup.getCustomerPoints(IDS.J1);
@@ -503,29 +575,28 @@ describe("addCustomerPoints", () => {
       .aPipe(IDS.P1, { startNodeId: IDS.J1, endNodeId: IDS.J2 })
       .aCustomerPoint(IDS.EXISTING1, {
         coordinates: [1, 1],
-        demands: [{ baseDemand: 10 }],
         connection: {
           pipeId: IDS.P1,
           junctionId: IDS.J1,
           snapPoint: [1, 0],
         },
       })
+      .aCustomerPointDemand(IDS.EXISTING1, [{ baseDemand: 10 }])
       .aCustomerPoint(IDS.EXISTING2, {
         coordinates: [9, 1],
-        demands: [{ baseDemand: 20 }],
         connection: {
           pipeId: IDS.P1,
           junctionId: IDS.J2,
           snapPoint: [9, 0],
         },
       })
+      .aCustomerPointDemand(IDS.EXISTING2, [{ baseDemand: 20 }])
       .build();
 
     expect(hydraulicModel.customerPoints.size).toBe(2);
 
     const newCP = buildCustomerPoint(IDS.NEW1, {
       coordinates: [5, 1],
-      demands: [{ baseDemand: 100 }],
     });
     newCP.connect({
       pipeId: IDS.P1,
@@ -535,6 +606,9 @@ describe("addCustomerPoints", () => {
 
     const updatedModel = addCustomerPoints(hydraulicModel, [newCP], {
       overrideExisting: true,
+      customerPointDemands: new Map<number, Demand[]>([
+        [IDS.NEW1, [{ baseDemand: 100 }]],
+      ]),
     });
 
     expect(updatedModel.customerPoints.size).toBe(1);
@@ -560,18 +634,17 @@ describe("addCustomerPoints", () => {
       .aPipe(IDS.P1, { startNodeId: IDS.J1, endNodeId: IDS.J2 })
       .aCustomerPoint(IDS.EXISTING, {
         coordinates: [1, 1],
-        demands: [{ baseDemand: 10 }],
         connection: {
           pipeId: IDS.P1,
           junctionId: IDS.J1,
           snapPoint: [1, 0],
         },
       })
+      .aCustomerPointDemand(IDS.EXISTING, [{ baseDemand: 10 }])
       .build();
 
     const newCP = buildCustomerPoint(IDS.NEW1, {
       coordinates: [5, 1],
-      demands: [{ baseDemand: 100 }],
     });
     newCP.connect({
       pipeId: IDS.P1,
@@ -581,6 +654,9 @@ describe("addCustomerPoints", () => {
 
     const updatedModel = addCustomerPoints(hydraulicModel, [newCP], {
       overrideExisting: false,
+      customerPointDemands: new Map<number, Demand[]>([
+        [IDS.NEW1, [{ baseDemand: 100 }]],
+      ]),
     });
 
     expect(updatedModel.customerPoints.size).toBe(2);
@@ -604,13 +680,13 @@ describe("addCustomerPoints", () => {
       .aPipe(IDS.P1, { startNodeId: IDS.J1, endNodeId: IDS.J2 })
       .aCustomerPoint(IDS.EXISTING, {
         coordinates: [1, 1],
-        demands: [{ baseDemand: 10 }],
         connection: {
           pipeId: IDS.P1,
           junctionId: IDS.J1,
           snapPoint: [1, 0],
         },
       })
+      .aCustomerPointDemand(IDS.EXISTING, [{ baseDemand: 10 }])
       .build();
 
     expect(hydraulicModel.customerPointsLookup.hasConnections(IDS.J1)).toBe(

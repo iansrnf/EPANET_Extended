@@ -62,40 +62,25 @@ export const pipeArrows = ({
     type: "symbol",
     source,
     layout: {
-      "symbol-placement": "line",
-      "symbol-spacing": ["interpolate", ["linear"], ["zoom"], 12, 220, 18, 90],
+      "symbol-placement": "line-center",
       "icon-image": "triangle",
       "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.2, 26, 0.5],
-      "icon-offset": [0, 0],
       "icon-rotate": ["get", "rotation"],
-      "icon-rotation-alignment": "map",
       "icon-ignore-placement": true,
       "icon-allow-overlap": true,
       visibility: "none",
     },
     filter: ["all", ["==", "$type", "LineString"], ["==", "hasArrow", true]],
     paint: {
-      "icon-color": [
-        "interpolate",
-        ["linear"],
-        ["coalesce", ["get", "flowMagnitude"], 0],
-        0,
-        colors.amber500,
-        10,
-        colors.orange500,
-        30,
-        colors.red600,
-      ],
+      "icon-color": ["coalesce", ["get", "color"], symbology.defaultColor],
       "icon-opacity": [
-        "case",
-        ["boolean", ["feature-state", "hidden"], false],
-        0,
-        ["==", ["get", "isActive"], false],
-        0.25,
-        0.9,
+        ...zoomExpression(
+          [14, 15, 16, 17, 18, 19, 20],
+          [200, 100, 50, 20, 10, 5, 0],
+        ),
       ],
     },
-    minzoom: 12,
+    minzoom: 14,
   };
 };
 
@@ -130,4 +115,30 @@ export const checkValveIcons = ({
     },
     minzoom: 13,
   };
+};
+
+const zoomExpression = (
+  steps: number[],
+  lengths: number[],
+): mapboxgl.Expression => {
+  const result: mapboxgl.Expression = ["interpolate", ["linear"], ["zoom"]];
+
+  for (const step of steps) {
+    const index = steps.indexOf(step);
+    const length = lengths[index];
+    result.push(step, [
+      "case",
+      [
+        "all",
+        [">", ["get", "length"], length],
+        ["!", ["boolean", ["feature-state", "hidden"], false]],
+        ["!=", ["get", "isActive"], false],
+      ],
+      1,
+      ["==", ["get", "isActive"], false],
+      0.33,
+      0,
+    ]);
+  }
+  return result;
 };

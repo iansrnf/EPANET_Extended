@@ -1,5 +1,4 @@
 import { Link, LinkProperties } from "./link";
-import { Unit } from "src/quantity";
 
 export const pipeStatuses = ["open", "closed", "cv"] as const;
 export type PipeStatus = (typeof pipeStatuses)[number];
@@ -61,19 +60,10 @@ export class Pipe extends Link<PipeProperties> {
     return this.properties.minorLoss;
   }
 
-  getUnit(quantity: PipeQuantity): Unit {
-    return this.units[quantity];
-  }
-
   copy() {
-    const newPipe = new Pipe(
-      this.id,
-      [...this.coordinates],
-      {
-        ...this.properties,
-      },
-      this.units,
-    );
+    const newPipe = new Pipe(this.id, [...this.coordinates], {
+      ...this.properties,
+    });
 
     return newPipe;
   }

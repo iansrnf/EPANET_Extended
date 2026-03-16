@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider as JotaiProvider } from "jotai";
-import { Store } from "src/state/jotai";
+import { Store } from "src/state";
 import { setInitialState } from "src/__helpers__/state";
 import {
   HydraulicModelBuilder,
@@ -232,6 +232,7 @@ describe("AllocationStep", () => {
     setWizardState(store, {
       parsedDataSummary: {
         validCustomerPoints: customerPoints,
+        customerPointDemands: new Map(),
         issues: null,
         totalCount,
         demandImportUnit: "l/d",
@@ -277,6 +278,7 @@ describe("AllocationStep", () => {
     setWizardState(store, {
       parsedDataSummary: {
         validCustomerPoints: customerPoints,
+        customerPointDemands: new Map(),
         issues: null,
         totalCount,
         demandImportUnit: "l/d",
@@ -322,6 +324,7 @@ describe("AllocationStep", () => {
     setWizardState(store, {
       parsedDataSummary: {
         validCustomerPoints: customerPoints,
+        customerPointDemands: new Map(),
         issues: null,
         totalCount,
         demandImportUnit: "l/d",
@@ -352,6 +355,7 @@ const setWizardState = (store: Store, overrides: Partial<WizardState> = {}) => {
         buildCustomerPoint(IDS.CP1),
         buildCustomerPoint(IDS.CP2),
       ],
+      customerPointDemands: new Map(),
       issues: null,
       totalCount: 2,
       demandImportUnit: "l/d",

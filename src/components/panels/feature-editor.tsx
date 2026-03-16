@@ -1,29 +1,33 @@
 import { useAtomValue } from "jotai";
 import React from "react";
 import { NothingSelected } from "src/components/nothing-selected";
-import { dataAtom, selectedFeaturesAtom } from "src/state/jotai";
+import { projectSettingsAtom } from "src/state/project-settings";
+import { selectedFeaturesAtom, selectionAtom } from "src/state/selection";
 import { MultiAssetPanel } from "./multi-asset-panel";
 import { AssetPanel } from "./asset-panel";
+import { CustomerPointPanel } from "./customer-point-panel";
 import { Asset } from "src/hydraulic-model";
 import { useIsSnapshotLocked } from "src/hooks/use-is-snapshot-locked";
 
 export default function FeatureEditor() {
   const selectedFeatures = useAtomValue(selectedFeaturesAtom);
-  const {
-    modelMetadata: { quantities },
-  } = useAtomValue(dataAtom);
+  const selection = useAtomValue(selectionAtom);
+  const { units } = useAtomValue(projectSettingsAtom);
   const isSnapshotLocked = useIsSnapshotLocked();
+
+  if (selection.type === "singleCustomerPoint") {
+    return <CustomerPointPanel />;
+  }
 
   const content =
     selectedFeatures.length > 1 ? (
       <MultiAssetPanel
         selectedFeatures={selectedFeatures}
-        quantitiesMetadata={quantities}
         readonly={isSnapshotLocked}
       />
     ) : selectedFeatures.length === 1 ? (
       <AssetPanel
-        quantitiesMetadata={quantities}
+        units={units}
         asset={selectedFeatures[0] as Asset}
         readonly={isSnapshotLocked}
       />

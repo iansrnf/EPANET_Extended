@@ -14,12 +14,16 @@ export const SearchableSelector = <T extends SearchableSelectorOption>({
   onSearch,
   placeholder,
   label,
+  disabled = false,
+  wrapperClassName,
 }: {
   selected?: T;
   onChange: (option: T) => void;
   onSearch: (query: string) => Promise<T[]>;
   placeholder?: string;
   label?: string;
+  disabled?: boolean;
+  wrapperClassName?: string;
 }) => {
   const [searchTerm, setSearchTerm] = useState(selected?.label || "");
   const [suggestions, setSuggestions] = useState<T[]>([]);
@@ -161,7 +165,7 @@ export const SearchableSelector = <T extends SearchableSelectorOption>({
   }, []);
 
   return (
-    <label className="block pt-2 space-y-2 pb-3">
+    <label className={wrapperClassName ?? "block pt-2 space-y-2 pb-3"}>
       {label && (
         <div className="text-sm text-gray-700 dark:text-gray-300 flex items-center justify-between">
           {label}
@@ -178,12 +182,15 @@ export const SearchableSelector = <T extends SearchableSelectorOption>({
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
-              className="
-                flex items-center gap-x-2 text-gray-700 w-full min-w-[90px]
-                border rounded-sm border-gray-200 px-2 py-2 text-sm
-                bg-white dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600
-                outline-none focus:outline-none focus-visible:outline-none
-                focus:ring-inset focus:ring-1 focus:ring-purple-500 focus:bg-purple-300/10 focus:border-transparent"
+              disabled={disabled}
+              className={clsx(
+                "flex items-center gap-x-2 w-full min-w-[90px]",
+                "border rounded-sm border-gray-200 px-2 py-2 text-sm",
+                "outline-none focus:outline-none focus-visible:outline-none",
+                disabled
+                  ? "cursor-not-allowed bg-gray-100 border-gray-300 text-gray-400 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-500"
+                  : "text-gray-700 bg-white dark:bg-gray-800 dark:text-gray-100 dark:border-gray-600 focus:ring-inset focus:ring-1 focus:ring-purple-500 focus:bg-purple-300/10 focus:border-transparent",
+              )}
             />
 
             {isSearching && (

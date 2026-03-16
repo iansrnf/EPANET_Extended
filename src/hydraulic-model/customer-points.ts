@@ -1,9 +1,7 @@
 import { Unit } from "src/quantity";
 import { Position } from "geojson";
-import { roundCoordinates } from "src/lib/geometry";
 import { AssetId } from "./asset-types/base-asset";
 import { CustomerPointsLookup } from "./customer-points-lookup";
-import { JunctionDemand } from "./demands";
 
 export const MAX_CUSTOMER_POINT_LABEL_LENGTH = 50;
 
@@ -11,6 +9,8 @@ export type AllocationRule = {
   maxDistance: number;
   maxDiameter: number;
 };
+
+export type CustomerPointId = number;
 
 export const defaultAllocationRules: AllocationRule[] = [
   { maxDistance: 100, maxDiameter: 300 },
@@ -33,45 +33,21 @@ export interface CustomerPointConnection {
 }
 
 export class CustomerPoint {
-  public readonly id: number;
+  public readonly id: CustomerPointId;
   public readonly label: string;
   public readonly coordinates: Position;
-  private properties: { demands: JunctionDemand[] };
   private connectionData: CustomerPointConnection | null = null;
 
   constructor(
-    id: number,
+    id: CustomerPointId,
     coordinates: Position,
     properties: {
       label: string;
-      demands: JunctionDemand[];
     },
   ) {
     this.id = id;
     this.label = properties.label;
     this.coordinates = coordinates;
-    this.properties = {
-      demands: properties.demands,
-    };
-  }
-
-  static build(
-    id: number,
-    coordinates: Position,
-    properties: {
-      label: string;
-      demands: JunctionDemand[];
-    },
-  ): CustomerPoint {
-    return new CustomerPoint(id, roundCoordinates(coordinates), properties);
-  }
-
-  get baseDemand() {
-    return this.demands?.[0]?.baseDemand ?? 0;
-  }
-
-  get demands(): JunctionDemand[] {
-    return this.properties.demands;
   }
 
   get snapPosition(): Position | null {
@@ -89,7 +65,6 @@ export class CustomerPoint {
   copyDisconnected(): CustomerPoint {
     return new CustomerPoint(this.id, [...this.coordinates], {
       label: this.label,
-      demands: this.properties.demands.map((d) => ({ ...d })),
     });
   }
 }

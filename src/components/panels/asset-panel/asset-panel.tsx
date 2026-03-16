@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useEffect, useRef, useState } from "react";
+import { useMemo, useCallback, useState } from "react";
 import { useAtomValue } from "jotai";
 import {
   Asset,
@@ -7,32 +7,46 @@ import {
   Pump,
   Reservoir,
   Tank,
+  Valve,
   NodeAsset,
-  LinkAsset,
   HydraulicModel,
+  Demands,
+  Demand,
+  Patterns,
+  calculateAverageDemand,
+  calculateAverageHead,
+  getCustomerPointDemands,
+  getJunctionDemands,
 } from "src/hydraulic-model";
+import {
+  tankDiameterFor,
+  tankDiameterFromArea,
+  tankVolumeCurveRange,
+  tankVolumeFor,
+} from "src/hydraulic-model/asset-types/tank";
 import {
   CustomerPoint,
   getActiveCustomerPoints,
 } from "src/hydraulic-model/customer-points";
-import { Valve } from "src/hydraulic-model/asset-types";
-import { LoggerPoint } from "src/hydraulic-model/asset-types/logger-point";
-import {
-  DemandPatterns,
-  JunctionDemand,
-  calculateAverageDemand,
-} from "src/hydraulic-model/demands";
-import { Quantities } from "src/model-metadata/quantities-spec";
+import { UnitsSpec } from "src/lib/project-settings/quantities-spec";
+import { getMinorLossUnit } from "src/lib/project-settings";
 import { useTranslate } from "src/hooks/use-translate";
 import { usePersistence } from "src/lib/persistence";
 import { useUserTracking } from "src/infra/user-tracking";
-import { stagingModelAtom } from "src/state/jotai";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { projectSettingsAtom } from "src/state/project-settings";
+import { simulationSettingsAtom } from "src/state/simulation-settings";
 import {
-  changePumpDefinition,
   changeProperty,
-  changeJunctionDemands,
+  changeProperties,
+  changeDemandAssignment,
   changeLabel,
 } from "src/hydraulic-model/model-operations";
+import type {
+  ChangeableProperty,
+  ChangeablePropertyValue,
+  PropertyChange,
+} from "src/hydraulic-model/model-operations/change-property";
 import { activateAssets } from "src/hydraulic-model/model-operations/activate-assets";
 import { deactivateAssets } from "src/hydraulic-model/model-operations/deactivate-assets";
 import { getLinkNodes } from "src/hydraulic-model/assets-map";
@@ -46,21 +60,30 @@ import {
   ValveKind,
   ValveStatus,
   valveKinds,
+  valveCurveTypeFrom,
 } from "src/hydraulic-model/asset-types/valve";
 import {
   AssetEditorContent,
   QuantityRow,
   SelectRow,
+  LibrarySelectRow,
   TextRow,
   SwitchRow,
   ConnectedCustomersRow,
+  SectionWrapper,
+  type TankDefinitionMode,
 } from "./ui-components";
-import { Section } from "src/components/form/fields";
-import { PumpDefinitionDetails } from "./pump-definition-details";
+import {
+  NestedSection,
+  BlockComparisonField,
+} from "src/components/form/fields";
+import { localizeDecimal } from "src/infra/i18n/numbers";
+import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import { useQuickGraph } from "./quick-graph";
-import { QuickGraphChart } from "./quick-graph/quick-graph-chart";
-import { useMultipleJunctionTimeSeries } from "./quick-graph/use-time-series";
-import { useAssetComparison } from "src/hooks/use-asset-comparison";
+import {
+  useAssetComparison,
+  type PropertyComparison,
+} from "src/hooks/use-asset-comparison";
 import { useSimulation } from "src/hooks/use-simulation";
 import type {
   PipeSimulation,
@@ -68,104 +91,44 @@ import type {
   ValveSimulation,
 } from "src/simulation/results-reader";
 import { DemandsEditor } from "./demands-editor";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { Unit, convertTo } from "src/quantity";
+import { PumpDefinitionDetails } from "./pump-definition-details";
+import { NumericTable } from "src/components/form/numeric-table";
+import { useShowPatternsLibrary } from "src/commands/show-patterns-library";
+import { useShowPumpLibrary } from "src/commands/show-pump-library";
+import { PatternId } from "src/hydraulic-model/patterns";
 import {
-  PumpDefinitionData,
-  PumpDefinitionDetailsWithAllCurves,
-} from "./pump-definition-details-all-curves";
-import { colors } from "src/lib/constants";
-import { localizeDecimal } from "src/infra/i18n/numbers";
-import { WarningIcon } from "src/icons";
-import { useLiveLoggerReadingsStore } from "src/store/liveLoggerReadingsStore";
-import { useLiveSeriesStore, LiveLoggerConfig } from "src/store/liveSeriesStore";
-import { useLoggerPointPanelStore } from "src/store/loggerPointPanelStore";
+  CurveId,
+  Curves,
+  ICurve,
+  getCurveBounds,
+} from "src/hydraulic-model/curves";
+import { useShowCurveLibrary } from "src/commands/show-curve-library";
 
-type OnPropertyChange = (
-  name: string,
-  value: number | boolean,
-  oldValue: number | boolean | null,
+type OnPropertyChange = <P extends ChangeableProperty>(
+  name: P,
+  value: ChangeablePropertyValue<P>,
+  oldValue: ChangeablePropertyValue<P> | null,
 ) => void;
 type OnStatusChange<T> = (newStatus: T, oldStatus: T) => void;
-type OnTypeChange<T> = (newType: T, oldType: T) => void;
-
-const toPressureInUnit = (
-  value: number | null,
-  sourceUnit: Unit,
-  targetUnit: Unit,
-): number | null => {
-  if (value === null) return null;
-  if (sourceUnit === null || targetUnit === null || sourceUnit === targetUnit) {
-    return value;
-  }
-  return convertTo({ value, unit: sourceUnit }, targetUnit);
-};
-
-const toElevationInPsi = (
-  value: number | null,
-  sourceUnit: Unit,
-): number | null => {
-  if (value === null) return null;
-  if (sourceUnit === "m") return value * 1.42233433;
-  if (sourceUnit === "ft") return value * 0.4333;
-  if (sourceUnit === "psi") return value;
-  return value;
-};
-
-const LOGGER_PANEL_MAX_STORED_POINTS = 300;
-
-const pipeStatusLabel = (sim: Pick<PipeSimulation, "status"> | null) => {
-  if (!sim) return "notAvailable";
-  return "pipe." + sim.status;
-};
-
-const pumpStatusLabel = (
-  sim: {
-    status: PumpSimulation["status"] | null;
-    statusWarning: PumpSimulation["statusWarning"];
-  } | null,
-) => {
-  if (!sim || sim.status === null) return "notAvailable";
-  if (sim.statusWarning) {
-    return `pump.${sim.status}.${sim.statusWarning}`;
-  }
-  return "pump." + sim.status;
-};
-
-export const valveStatusLabel = (
-  sim: {
-    status: ValveSimulation["status"] | null;
-    statusWarning: ValveSimulation["statusWarning"];
-  } | null,
-) => {
-  if (!sim || sim.status === null) return "notAvailable";
-  if (sim.statusWarning) {
-    return `valve.${sim.status}.${sim.statusWarning}`;
-  }
-  return "valve." + sim.status;
-};
 
 export function AssetPanel({
   asset,
-  quantitiesMetadata,
+  units,
   readonly = false,
 }: {
   asset: Asset;
-  quantitiesMetadata: Quantities;
+  units: UnitsSpec;
   readonly?: boolean;
 }) {
   const hydraulicModel = useAtomValue(stagingModelAtom);
+  const projectSettings = useAtomValue(projectSettingsAtom);
   const rep = usePersistence();
   const transact = rep.useTransact();
   const userTracking = useUserTracking();
   const translate = useTranslate();
 
-  const handlePropertyChange = useCallback(
-    (
-      property: string,
-      value: number | boolean,
-      oldValue: number | boolean | null,
-    ) => {
+  const handlePropertyChange: OnPropertyChange = useCallback(
+    (property, value, oldValue) => {
       const moment = changeProperty(hydraulicModel, {
         assetIds: [asset.id],
         property,
@@ -176,15 +139,19 @@ export function AssetPanel({
         name: "assetProperty.edited",
         type: asset.type,
         property,
-        newValue: typeof value === "boolean" ? Number(value) : value,
-        oldValue: typeof oldValue === "boolean" ? Number(oldValue) : oldValue,
+        newValue:
+          typeof value === "boolean" ? Number(value) : (value as number),
+        oldValue:
+          typeof oldValue === "boolean"
+            ? Number(oldValue)
+            : (oldValue as number | null),
       });
     },
     [hydraulicModel, asset.id, asset.type, transact, userTracking],
   );
 
   const handleActiveTopologyStatusChange = useCallback(
-    (property: string, newValue: boolean, oldValue: boolean) => {
+    (_property: string, newValue: boolean, oldValue: boolean) => {
       const moment = newValue
         ? activateAssets(hydraulicModel, { assetIds: [asset.id] })
         : deactivateAssets(hydraulicModel, { assetIds: [asset.id] });
@@ -195,25 +162,6 @@ export function AssetPanel({
         property: "isActive",
         newValue: Number(newValue),
         oldValue: Number(oldValue),
-      });
-    },
-    [hydraulicModel, asset.id, asset.type, transact, userTracking],
-  );
-
-  const handleValveKindChange = useCallback(
-    (newType: ValveKind, oldType: ValveKind) => {
-      const moment = changeProperty(hydraulicModel, {
-        assetIds: [asset.id],
-        property: "kind",
-        value: newType,
-      });
-      transact(moment);
-      userTracking.capture({
-        name: "assetDefinitionType.edited",
-        type: asset.type,
-        property: "kind",
-        newType: newType,
-        oldType: oldType,
       });
     },
     [hydraulicModel, asset.id, asset.type, transact, userTracking],
@@ -241,30 +189,28 @@ export function AssetPanel({
     [hydraulicModel, asset.id, asset.type, transact, userTracking],
   );
 
-  const handleChangePumpDefinition = useCallback(
-    (data: PumpDefinitionData) => {
-      const moment = changePumpDefinition(hydraulicModel, {
-        pumpId: asset.id,
-        data,
+  const handleBatchPropertyChange = useCallback(
+    (changes: PropertyChange[]) => {
+      const moment = changeProperties(hydraulicModel, {
+        assetIds: [asset.id],
+        changes,
       });
       transact(moment);
       userTracking.capture({
-        name: "assetDefinitionType.edited",
+        name: "assetProperties.edited",
         type: asset.type,
-        property: "definitionType",
-        newType: data.type,
+        properties: changes.map((c) => c.property),
       });
     },
     [asset.id, asset.type, hydraulicModel, transact, userTracking],
   );
 
   const handleDemandsChange = useCallback(
-    (newDemands: JunctionDemand[]) => {
-      const oldDemands = (asset as Junction).demands;
-      const moment = changeJunctionDemands(hydraulicModel, {
-        junctionId: asset.id,
-        demands: newDemands,
-      });
+    (newDemands: Demand[]) => {
+      const oldDemands = getJunctionDemands(hydraulicModel.demands, asset.id);
+      const moment = changeDemandAssignment(hydraulicModel, [
+        { junctionId: asset.id, demands: newDemands },
+      ]);
       transact(moment);
       userTracking.capture({
         name: "assetProperty.edited",
@@ -321,7 +267,7 @@ export function AssetPanel({
       return (
         <JunctionEditor
           junction={asset as Junction}
-          quantitiesMetadata={quantitiesMetadata}
+          units={units}
           onPropertyChange={handlePropertyChange}
           onDemandsChange={handleDemandsChange}
           onLabelChange={handleLabelChange}
@@ -335,8 +281,8 @@ export function AssetPanel({
         <PipeEditor
           pipe={pipe}
           {...getLinkNodes(hydraulicModel.assets, pipe)}
-          headlossFormula={hydraulicModel.headlossFormula}
-          quantitiesMetadata={quantitiesMetadata}
+          headlossFormula={projectSettings.headlossFormula}
+          units={units}
           onPropertyChange={handlePropertyChange}
           onStatusChange={handleStatusChange}
           onActiveTopologyStatusChange={handleActiveTopologyStatusChange}
@@ -355,9 +301,9 @@ export function AssetPanel({
           onPropertyChange={handlePropertyChange}
           onStatusChange={handleStatusChange}
           onActiveTopologyStatusChange={handleActiveTopologyStatusChange}
-          onDefinitionChange={handleChangePumpDefinition}
+          onBatchPropertyChange={handleBatchPropertyChange}
           onLabelChange={handleLabelChange}
-          quantitiesMetadata={quantitiesMetadata}
+          units={units}
           {...getLinkNodes(hydraulicModel.assets, pump)}
           readonly={readonly}
         />
@@ -367,11 +313,12 @@ export function AssetPanel({
       const valve = asset as Valve;
       return (
         <ValveEditor
+          hydraulicModel={hydraulicModel}
           valve={valve}
           onPropertyChange={handlePropertyChange}
-          quantitiesMetadata={quantitiesMetadata}
+          onBatchPropertyChange={handleBatchPropertyChange}
+          units={units}
           onStatusChange={handleStatusChange}
-          onTypeChange={handleValveKindChange}
           onActiveTopologyStatusChange={handleActiveTopologyStatusChange}
           onLabelChange={handleLabelChange}
           {...getLinkNodes(hydraulicModel.assets, valve)}
@@ -382,8 +329,9 @@ export function AssetPanel({
     case "reservoir":
       return (
         <ReservoirEditor
+          hydraulicModel={hydraulicModel}
           reservoir={asset as Reservoir}
-          quantitiesMetadata={quantitiesMetadata}
+          units={units}
           onPropertyChange={handlePropertyChange}
           onLabelChange={handleLabelChange}
           readonly={readonly}
@@ -393,19 +341,10 @@ export function AssetPanel({
       return (
         <TankEditor
           tank={asset as Tank}
-          quantitiesMetadata={quantitiesMetadata}
-          onPropertyChange={handlePropertyChange}
-          onLabelChange={handleLabelChange}
-          readonly={readonly}
-        />
-      );
-    case "loggerPoint":
-      return (
-        <LoggerPointEditor
-          loggerPoint={asset as LoggerPoint}
           hydraulicModel={hydraulicModel}
-          quantitiesMetadata={quantitiesMetadata}
+          units={units}
           onPropertyChange={handlePropertyChange}
+          onBatchPropertyChange={handleBatchPropertyChange}
           onLabelChange={handleLabelChange}
           readonly={readonly}
         />
@@ -415,7 +354,7 @@ export function AssetPanel({
 
 const JunctionEditor = ({
   junction,
-  quantitiesMetadata,
+  units,
   onPropertyChange,
   onDemandsChange,
   onLabelChange,
@@ -423,28 +362,26 @@ const JunctionEditor = ({
   readonly = false,
 }: {
   junction: Junction;
-  quantitiesMetadata: Quantities;
+  units: UnitsSpec;
   onPropertyChange: OnPropertyChange;
-  onDemandsChange: (newDemands: JunctionDemand[]) => void;
+  onDemandsChange: (newDemands: Demand[]) => void;
   onLabelChange: (newLabel: string) => string | undefined;
   hydraulicModel: HydraulicModel;
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
-  const { footer } = useQuickGraph(junction.label, junction.id, "junction");
-  const { getComparison, getDirectDemandComparison, isNew } =
-    useAssetComparison(junction);
+  const { footer } = useQuickGraph(junction.id, "junction");
+  const {
+    getComparison,
+    getDirectDemandComparison,
+    getCustomerDemandComparison,
+    getCustomerCountComparison,
+    isNew,
+  } = useAssetComparison(junction);
   const simulation = useSimulation();
   const junctionSimulation = simulation?.getJunction(junction.id);
 
   const simPressure = junctionSimulation?.pressure ?? null;
-  const elevationPsi = toElevationInPsi(
-    junction.elevation,
-    quantitiesMetadata.getUnit("elevation"),
-  );
-  const pressureUnit = quantitiesMetadata.getUnit("pressure");
-  const pressureInMeters = toPressureInUnit(simPressure, pressureUnit, "mwc");
-  const pressureInPsi = toPressureInUnit(simPressure, pressureUnit, "psi");
   const simHead = junctionSimulation?.head ?? null;
   const simDemand = junctionSimulation?.demand ?? null;
 
@@ -461,16 +398,38 @@ const JunctionEditor = ({
     return customerPoints.reduce(
       (sum, cp) =>
         sum +
-        calculateAverageDemand(cp.demands, hydraulicModel.demands.patterns),
+        calculateAverageDemand(
+          getCustomerPointDemands(hydraulicModel.demands, cp.id),
+          hydraulicModel.patterns,
+        ),
       0,
     );
-  }, [customerPoints, hydraulicModel.demands.patterns]);
+  }, [customerPoints, hydraulicModel.demands, hydraulicModel.patterns]);
 
   const customerDemandPattern = useMemo(
     () =>
-      getCustomerPointsPattern(customerPoints, hydraulicModel.demands.patterns),
-    [customerPoints, hydraulicModel.demands.patterns],
+      getCustomerPointsPattern(
+        customerPoints,
+        hydraulicModel.demands,
+        hydraulicModel.patterns,
+      ),
+    [customerPoints, hydraulicModel.demands, hydraulicModel.patterns],
   );
+
+  const activeTopologyComparison = getComparison("isActive", junction.isActive);
+  const hasModelAttributesChanges = ["elevation", "emitterCoefficient"].some(
+    (property) =>
+      getComparison(property, junction.getProperty(property)).hasChanged,
+  );
+  const hasDemandChanges =
+    getDirectDemandComparison(
+      calculateAverageDemand(
+        getJunctionDemands(hydraulicModel.demands, junction.id),
+        hydraulicModel.patterns,
+      ),
+    ).hasChanged ||
+    getCustomerCountComparison(customerCount).hasChanged ||
+    getCustomerDemandComparison(totalDemand).hasChanged;
 
   return (
     <AssetEditorContent
@@ -482,50 +441,67 @@ const JunctionEditor = ({
       readOnly={readonly}
       key={junction.id}
     >
-      <Section title={translate("activeTopology")}>
+      <SectionWrapper
+        title={translate("activeTopology")}
+        section="activeTopology"
+        hasChanged={activeTopologyComparison.hasChanged}
+      >
         <SwitchRow
           name="isActive"
           label={translate("isEnabled")}
           enabled={junction.isActive}
-          comparison={getComparison("isActive", junction.isActive)}
+          comparison={activeTopologyComparison}
           readOnly={readonly}
         />
-      </Section>
-      <Section title={translate("modelAttributes")}>
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("modelAttributes")}
+        section="modelAttributes"
+        hasChanged={hasModelAttributesChanges}
+      >
         <QuantityRow
           name="elevation"
           value={junction.elevation}
-          unit={quantitiesMetadata.getUnit("elevation")}
-          decimals={quantitiesMetadata.getDecimals("elevation")}
+          unit={units.elevation}
           comparison={getComparison("elevation", junction.elevation)}
           onChange={onPropertyChange}
           readOnly={readonly}
         />
         <QuantityRow
-          name="elevation"
-          value={elevationPsi}
-          unit="psi"
-          decimals={quantitiesMetadata.getDecimals("elevation")}
-          readOnly={true}
+          name="emitterCoefficient"
+          value={junction.emitterCoefficient}
+          unit={units.emitterCoefficient}
+          comparison={getComparison(
+            "emitterCoefficient",
+            junction.emitterCoefficient,
+          )}
+          onChange={onPropertyChange}
+          positiveOnly={true}
+          readOnly={readonly}
         />
-      </Section>
-      <Section title={translate("demands")}>
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("demands")}
+        section="demands"
+        hasChanged={hasDemandChanges}
+      >
         <DemandsEditor
-          demands={junction.demands}
-          patterns={hydraulicModel.demands.patterns}
-          quantitiesMetadata={quantitiesMetadata}
+          demands={getJunctionDemands(hydraulicModel.demands, junction.id)}
+          patterns={hydraulicModel.patterns}
+          units={units}
           name="directDemand"
           onChange={onDemandsChange}
           demandComparator={getDirectDemandComparison}
           readOnly={readonly}
         />
-        {customerCount > 0 && (
+        {(customerCount > 0 ||
+          getCustomerCountComparison(customerCount).hasChanged) && (
           <>
             <QuantityRow
               name="customerDemand"
               value={totalDemand}
-              unit={quantitiesMetadata.getUnit("baseDemand")}
-              decimals={quantitiesMetadata.getDecimals("baseDemand")}
+              unit={units.baseDemand}
+              comparison={getCustomerDemandComparison(totalDemand)}
               readOnly={true}
             />
             {!!customerDemandPattern && (
@@ -539,43 +515,38 @@ const JunctionEditor = ({
             <ConnectedCustomersRow
               customerCount={customerCount}
               customerPoints={customerPoints}
-              aggregateUnit={quantitiesMetadata.getUnit("customerDemand")}
-              customerUnit={quantitiesMetadata.getUnit("customerDemandPerDay")}
-              patterns={hydraulicModel.demands.patterns}
+              aggregateUnit={units.customerDemand}
+              customerUnit={units.customerDemandPerDay}
+              demands={hydraulicModel.demands}
+              patterns={hydraulicModel.patterns}
+              comparison={getCustomerCountComparison(customerCount)}
             />
           </>
         )}
-      </Section>
-      <Section title={translate("simulationResults")}>
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("simulationResults")}
+        section="simulationResults"
+      >
         <QuantityRow
           name="pressure"
-          value={pressureInMeters}
-          unit="mwc"
-          decimals={quantitiesMetadata.getDecimals("pressure")}
-          readOnly={true}
-        />
-        <QuantityRow
-          name="pressure"
-          value={pressureInPsi}
-          unit="psi"
-          decimals={quantitiesMetadata.getDecimals("pressure")}
+          value={simPressure}
+          unit={units.pressure}
           readOnly={true}
         />
         <QuantityRow
           name="head"
           value={simHead}
-          unit={quantitiesMetadata.getUnit("head")}
-          decimals={quantitiesMetadata.getDecimals("head")}
+          unit={units.head}
           readOnly={true}
         />
         <QuantityRow
           name="actualDemand"
           value={simDemand}
-          unit={quantitiesMetadata.getUnit("actualDemand")}
-          decimals={quantitiesMetadata.getDecimals("actualDemand")}
+          unit={units.actualDemand}
           readOnly={true}
         />
-      </Section>
+      </SectionWrapper>
     </AssetEditorContent>
   );
 };
@@ -585,7 +556,7 @@ const PipeEditor = ({
   startNode,
   endNode,
   headlossFormula,
-  quantitiesMetadata,
+  units,
   onPropertyChange,
   onStatusChange,
   onActiveTopologyStatusChange,
@@ -597,7 +568,7 @@ const PipeEditor = ({
   startNode: NodeAsset | null;
   endNode: NodeAsset | null;
   headlossFormula: HeadlossFormula;
-  quantitiesMetadata: Quantities;
+  units: UnitsSpec;
   onPropertyChange: OnPropertyChange;
   onStatusChange: OnStatusChange<PipeStatus>;
   onActiveTopologyStatusChange: (
@@ -610,8 +581,13 @@ const PipeEditor = ({
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
-  const { footer } = useQuickGraph(pipe.label, pipe.id, "pipe");
-  const { getComparison, isNew } = useAssetComparison(pipe);
+  const { footer } = useQuickGraph(pipe.id, "pipe");
+  const {
+    getComparison,
+    isNew,
+    getCustomerDemandComparison,
+    getCustomerCountComparison,
+  } = useAssetComparison(pipe);
   const simulation = useSimulation();
   const pipeSimulation = simulation?.getPipe(pipe.id);
 
@@ -634,15 +610,22 @@ const PipeEditor = ({
     return customerPoints.reduce(
       (sum, cp) =>
         sum +
-        calculateAverageDemand(cp.demands, hydraulicModel.demands.patterns),
+        calculateAverageDemand(
+          getCustomerPointDemands(hydraulicModel.demands, cp.id),
+          hydraulicModel.patterns,
+        ),
       0,
     );
-  }, [customerPoints, hydraulicModel.demands.patterns]);
+  }, [customerPoints, hydraulicModel.demands, hydraulicModel.patterns]);
 
   const customerDemandPattern = useMemo(
     () =>
-      getCustomerPointsPattern(customerPoints, hydraulicModel.demands.patterns),
-    [customerPoints, hydraulicModel.demands.patterns],
+      getCustomerPointsPattern(
+        customerPoints,
+        hydraulicModel.demands,
+        hydraulicModel.patterns,
+      ),
+    [customerPoints, hydraulicModel.demands, hydraulicModel.patterns],
   );
 
   const pipeStatusOptions = useMemo(() => {
@@ -660,6 +643,18 @@ const PipeEditor = ({
     onStatusChange(newValue, oldValue);
   };
 
+  const activeTopologyComparison = getComparison("isActive", pipe.isActive);
+  const hasModelAttributesChanges = [
+    "initialStatus",
+    "diameter",
+    "length",
+    "roughness",
+    "minorLoss",
+  ].some((p) => getComparison(p, pipe.getProperty(p)).hasChanged);
+  const hasDemandChanges =
+    getCustomerCountComparison(customerCount).hasChanged ||
+    getCustomerDemandComparison(totalDemand).hasChanged;
+
   return (
     <AssetEditorContent
       label={pipe.label}
@@ -670,21 +665,29 @@ const PipeEditor = ({
       readOnly={readonly}
       key={pipe.id}
     >
-      <Section title={translate("connections")}>
+      <SectionWrapper title={translate("connections")} section="connections">
         <TextRow name="startNode" value={startNode ? startNode.label : ""} />
         <TextRow name="endNode" value={endNode ? endNode.label : ""} />
-      </Section>
-      <Section title={translate("activeTopology")}>
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("activeTopology")}
+        section="activeTopology"
+        hasChanged={activeTopologyComparison.hasChanged}
+      >
         <SwitchRow
           name="isActive"
           label={translate("isEnabled")}
           enabled={pipe.isActive}
-          comparison={getComparison("isActive", pipe.isActive)}
+          comparison={activeTopologyComparison}
           onChange={onActiveTopologyStatusChange}
           readOnly={readonly}
         />
-      </Section>
-      <Section title={translate("modelAttributes")}>
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("modelAttributes")}
+        section="modelAttributes"
+        hasChanged={hasModelAttributesChanges}
+      >
         <SelectRow
           name="initialStatus"
           selected={pipe.initialStatus}
@@ -698,8 +701,7 @@ const PipeEditor = ({
           value={pipe.diameter}
           positiveOnly={true}
           isNullable={false}
-          unit={quantitiesMetadata.getUnit("diameter")}
-          decimals={quantitiesMetadata.getDecimals("diameter")}
+          unit={units.diameter}
           comparison={getComparison("diameter", pipe.diameter)}
           onChange={onPropertyChange}
           readOnly={readonly}
@@ -709,8 +711,7 @@ const PipeEditor = ({
           value={pipe.length}
           positiveOnly={true}
           isNullable={false}
-          unit={quantitiesMetadata.getUnit("length")}
-          decimals={quantitiesMetadata.getDecimals("length")}
+          unit={units.length}
           comparison={getComparison("length", pipe.length)}
           onChange={onPropertyChange}
           readOnly={readonly}
@@ -719,8 +720,7 @@ const PipeEditor = ({
           name="roughness"
           value={pipe.roughness}
           positiveOnly={true}
-          unit={quantitiesMetadata.getUnit("roughness")}
-          decimals={quantitiesMetadata.getDecimals("roughness")}
+          unit={units.roughness}
           comparison={getComparison("roughness", pipe.roughness)}
           onChange={onPropertyChange}
           readOnly={readonly}
@@ -729,20 +729,24 @@ const PipeEditor = ({
           name="minorLoss"
           value={pipe.minorLoss}
           positiveOnly={true}
-          unit={quantitiesMetadata.getMinorLossUnit(headlossFormula)}
-          decimals={quantitiesMetadata.getDecimals("minorLoss")}
+          unit={getMinorLossUnit(headlossFormula, units)}
           comparison={getComparison("minorLoss", pipe.minorLoss)}
           onChange={onPropertyChange}
           readOnly={readonly}
         />
-      </Section>
-      {customerCount > 0 && (
-        <Section title={translate("demands")}>
+      </SectionWrapper>
+      {(customerCount > 0 ||
+        getCustomerCountComparison(customerCount).hasChanged) && (
+        <SectionWrapper
+          title={translate("demands")}
+          section="demands"
+          hasChanged={hasDemandChanges}
+        >
           <QuantityRow
             name="customerDemand"
             value={totalDemand}
-            unit={quantitiesMetadata.getUnit("baseDemand")}
-            decimals={quantitiesMetadata.getDecimals("baseDemand")}
+            unit={units.baseDemand}
+            comparison={getCustomerDemandComparison(totalDemand)}
             readOnly={true}
           />
           {!!customerDemandPattern && (
@@ -756,67 +760,86 @@ const PipeEditor = ({
           <ConnectedCustomersRow
             customerCount={customerCount}
             customerPoints={customerPoints}
-            aggregateUnit={quantitiesMetadata.getUnit("customerDemand")}
-            customerUnit={quantitiesMetadata.getUnit("customerDemandPerDay")}
-            patterns={hydraulicModel.demands.patterns}
+            aggregateUnit={units.customerDemand}
+            customerUnit={units.customerDemandPerDay}
+            demands={hydraulicModel.demands}
+            patterns={hydraulicModel.patterns}
+            comparison={getCustomerCountComparison(customerCount)}
           />
-        </Section>
+        </SectionWrapper>
       )}
-      <Section title={translate("simulationResults")}>
+      <SectionWrapper
+        title={translate("simulationResults")}
+        section="simulationResults"
+      >
         <QuantityRow
           name="flow"
           value={simFlow}
-          unit={quantitiesMetadata.getUnit("flow")}
-          decimals={quantitiesMetadata.getDecimals("flow")}
+          unit={units.flow}
           readOnly={true}
         />
         <QuantityRow
           name="velocity"
           value={simVelocity}
-          unit={quantitiesMetadata.getUnit("velocity")}
-          decimals={quantitiesMetadata.getDecimals("velocity")}
+          unit={units.velocity}
           readOnly={true}
         />
         <QuantityRow
           name="unitHeadloss"
           value={simUnitHeadloss}
-          unit={quantitiesMetadata.getUnit("unitHeadloss")}
-          decimals={quantitiesMetadata.getDecimals("unitHeadloss")}
+          unit={units.unitHeadloss}
           readOnly={true}
         />
         <QuantityRow
           name="headlossShort"
           value={simHeadloss}
-          unit={quantitiesMetadata.getUnit("headloss")}
-          decimals={quantitiesMetadata.getDecimals("headloss")}
+          unit={units.headloss}
           readOnly={true}
         />
         <TextRow name="actualStatus" value={simulationStatusText} />
-      </Section>
+      </SectionWrapper>
     </AssetEditorContent>
   );
 };
 
 const ReservoirEditor = ({
+  hydraulicModel,
   reservoir,
-  quantitiesMetadata,
+  units,
   onPropertyChange,
   onLabelChange,
   readonly = false,
 }: {
+  hydraulicModel: HydraulicModel;
   reservoir: Reservoir;
-  quantitiesMetadata: Quantities;
+  units: UnitsSpec;
   onPropertyChange: OnPropertyChange;
   onLabelChange: (newLabel: string) => string | undefined;
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
-  const { footer } = useQuickGraph(reservoir.label, reservoir.id, "reservoir");
-  const { getComparison, isNew } = useAssetComparison(reservoir);
-  const elevationPsi = toElevationInPsi(
-    reservoir.elevation,
-    quantitiesMetadata.getUnit("elevation"),
+  const { footer } = useQuickGraph(reservoir.id, "reservoir");
+  const { getComparison, getPatternComparison, isNew } =
+    useAssetComparison(reservoir);
+  const simulation = useSimulation();
+  const reservoirSimulation = simulation?.getReservoir(reservoir.id);
+
+  const simPressure = reservoirSimulation?.pressure ?? null;
+  const simHead = reservoirSimulation?.head ?? null;
+  const simNetFlow = reservoirSimulation?.netFlow ?? null;
+
+  const activeTopologyComparison = getComparison(
+    "isActive",
+    reservoir.isActive,
   );
+  const hasModelAttributesChanges =
+    getComparison("elevation", reservoir.elevation).hasChanged ||
+    getComparison("head", reservoir.head).hasChanged ||
+    getPatternComparison(
+      "headPatternId",
+      reservoir.headPatternId,
+      hydraulicModel.patterns,
+    ).hasChanged;
 
   return (
     <AssetEditorContent
@@ -828,76 +851,112 @@ const ReservoirEditor = ({
       readOnly={readonly}
       key={reservoir.id}
     >
-      <Section title={translate("activeTopology")}>
+      <SectionWrapper
+        title={translate("activeTopology")}
+        section="activeTopology"
+        hasChanged={activeTopologyComparison.hasChanged}
+      >
         <SwitchRow
           name="isActive"
           label={translate("isEnabled")}
           enabled={reservoir.isActive}
-          comparison={getComparison("isActive", reservoir.isActive)}
+          comparison={activeTopologyComparison}
           readOnly={readonly}
         />
-      </Section>
-      <Section title={translate("modelAttributes")}>
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("modelAttributes")}
+        section="modelAttributes"
+        hasChanged={hasModelAttributesChanges}
+      >
         <QuantityRow
           name="elevation"
           value={reservoir.elevation}
-          unit={quantitiesMetadata.getUnit("elevation")}
-          decimals={quantitiesMetadata.getDecimals("elevation")}
+          unit={units.elevation}
           comparison={getComparison("elevation", reservoir.elevation)}
           onChange={onPropertyChange}
           readOnly={readonly}
         />
+        <ReservoirHeadField
+          reservoir={reservoir}
+          patterns={hydraulicModel.patterns}
+          onPropertyChange={onPropertyChange}
+          units={units}
+          readOnly={readonly}
+        />
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("simulationResults")}
+        section="simulationResults"
+      >
         <QuantityRow
-          name="elevation"
-          value={elevationPsi}
-          unit="psi"
-          decimals={quantitiesMetadata.getDecimals("elevation")}
+          name="pressure"
+          value={simPressure}
+          unit={units.pressure}
           readOnly={true}
         />
         <QuantityRow
           name="head"
-          value={reservoir.head}
-          unit={quantitiesMetadata.getUnit("head")}
-          decimals={quantitiesMetadata.getDecimals("head")}
-          comparison={getComparison("head", reservoir.head)}
-          onChange={onPropertyChange}
-          readOnly={readonly}
+          value={simHead}
+          unit={units.head}
+          readOnly={true}
         />
-      </Section>
+        <QuantityRow
+          name="netFlow"
+          value={simNetFlow}
+          unit={units.netFlow}
+          readOnly={true}
+        />
+      </SectionWrapper>
     </AssetEditorContent>
   );
 };
 
 const TankEditor = ({
   tank,
-  quantitiesMetadata,
+  hydraulicModel,
+  units,
   onPropertyChange,
+  onBatchPropertyChange,
   onLabelChange,
   readonly = false,
 }: {
   tank: Tank;
-  quantitiesMetadata: Quantities;
+  hydraulicModel: HydraulicModel;
+  units: UnitsSpec;
   onPropertyChange: OnPropertyChange;
+  onBatchPropertyChange: (changes: PropertyChange[]) => void;
   onLabelChange: (newLabel: string) => string | undefined;
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
-  const { footer } = useQuickGraph(tank.label, tank.id, "tank");
-  const { getComparison, isNew } = useAssetComparison(tank);
+  const { footer } = useQuickGraph(tank.id, "tank");
+  const { getComparison, getCurveComparison, isNew } = useAssetComparison(tank);
   const simulation = useSimulation();
   const tankSimulation = simulation?.getTank(tank.id);
 
   const simPressure = tankSimulation?.pressure ?? null;
-  const elevationPsi = toElevationInPsi(
-    tank.elevation,
-    quantitiesMetadata.getUnit("elevation"),
-  );
-  const pressureUnit = quantitiesMetadata.getUnit("pressure");
-  const pressureInMeters = toPressureInUnit(simPressure, pressureUnit, "mwc");
-  const pressureInPsi = toPressureInUnit(simPressure, pressureUnit, "psi");
   const simHead = tankSimulation?.head ?? null;
+  const simNetFlow = tankSimulation?.netFlow ?? null;
   const simLevel = tankSimulation?.level ?? null;
   const simVolume = tankSimulation?.volume ?? null;
+
+  const activeTopologyComparison = getComparison("isActive", tank.isActive);
+  const hasModelAttributesChanges =
+    [
+      "elevation",
+      "initialLevel",
+      "minLevel",
+      "maxLevel",
+      "diameter",
+      "minVolume",
+      "overflow",
+    ].some((p) => getComparison(p, tank.getProperty(p)).hasChanged) ||
+    getCurveComparison(
+      "volumeCurveId",
+      tank.volumeCurveId,
+      hydraulicModel.curves,
+    ).hasChanged;
 
   return (
     <AssetEditorContent
@@ -909,81 +968,47 @@ const TankEditor = ({
       readOnly={readonly}
       key={tank.id}
     >
-      <Section title={translate("activeTopology")}>
+      <SectionWrapper
+        title={translate("activeTopology")}
+        section="activeTopology"
+        hasChanged={activeTopologyComparison.hasChanged}
+      >
         <SwitchRow
           name="isActive"
           label={translate("isEnabled")}
           enabled={tank.isActive}
-          comparison={getComparison("isActive", tank.isActive)}
+          comparison={activeTopologyComparison}
           readOnly={readonly}
         />
-      </Section>
-      <Section title={translate("modelAttributes")}>
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("modelAttributes")}
+        section="modelAttributes"
+        hasChanged={hasModelAttributesChanges}
+      >
         <QuantityRow
           name="elevation"
           value={tank.elevation}
-          unit={quantitiesMetadata.getUnit("elevation")}
-          decimals={quantitiesMetadata.getDecimals("elevation")}
+          unit={units.elevation}
           comparison={getComparison("elevation", tank.elevation)}
           onChange={onPropertyChange}
           readOnly={readonly}
         />
         <QuantityRow
-          name="elevation"
-          value={elevationPsi}
-          unit="psi"
-          decimals={quantitiesMetadata.getDecimals("elevation")}
-          readOnly={true}
-        />
-        <QuantityRow
           name="initialLevel"
           value={tank.initialLevel}
-          unit={quantitiesMetadata.getUnit("initialLevel")}
-          decimals={quantitiesMetadata.getDecimals("initialLevel")}
+          unit={units.initialLevel}
           comparison={getComparison("initialLevel", tank.initialLevel)}
           onChange={onPropertyChange}
           positiveOnly={true}
           readOnly={readonly}
         />
-        <QuantityRow
-          name="minLevel"
-          value={tank.minLevel}
-          unit={quantitiesMetadata.getUnit("minLevel")}
-          decimals={quantitiesMetadata.getDecimals("minLevel")}
-          comparison={getComparison("minLevel", tank.minLevel)}
-          onChange={onPropertyChange}
-          positiveOnly={true}
-          readOnly={readonly}
-        />
-        <QuantityRow
-          name="maxLevel"
-          value={tank.maxLevel}
-          unit={quantitiesMetadata.getUnit("maxLevel")}
-          decimals={quantitiesMetadata.getDecimals("maxLevel")}
-          comparison={getComparison("maxLevel", tank.maxLevel)}
-          onChange={onPropertyChange}
-          positiveOnly={true}
-          readOnly={readonly}
-        />
-        <QuantityRow
-          name="diameter"
-          value={tank.diameter}
-          unit={quantitiesMetadata.getUnit("tankDiameter")}
-          decimals={quantitiesMetadata.getDecimals("diameter")}
-          comparison={getComparison("diameter", tank.diameter)}
-          onChange={onPropertyChange}
-          positiveOnly={true}
-          isNullable={false}
-          readOnly={readonly}
-        />
-        <QuantityRow
-          name="minVolume"
-          value={tank.minVolume}
-          unit={quantitiesMetadata.getUnit("minVolume")}
-          decimals={quantitiesMetadata.getDecimals("minVolume")}
-          comparison={getComparison("minVolume", tank.minVolume)}
-          onChange={onPropertyChange}
-          positiveOnly={true}
+        <TankDefinitionField
+          tank={tank}
+          curves={hydraulicModel.curves}
+          units={units}
+          onPropertyChange={onPropertyChange}
+          onBatchPropertyChange={onBatchPropertyChange}
           readOnly={readonly}
         />
         <SwitchRow
@@ -994,955 +1019,523 @@ const TankEditor = ({
           onChange={onPropertyChange}
           readOnly={readonly}
         />
-      </Section>
-      <Section title={translate("simulationResults")}>
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("simulationResults")}
+        section="simulationResults"
+      >
         <QuantityRow
           name="pressure"
-          value={pressureInMeters}
-          unit="mwc"
-          decimals={quantitiesMetadata.getDecimals("pressure")}
-          readOnly={true}
-        />
-        <QuantityRow
-          name="pressure"
-          value={pressureInPsi}
-          unit="psi"
-          decimals={quantitiesMetadata.getDecimals("pressure")}
+          value={simPressure}
+          unit={units.pressure}
           readOnly={true}
         />
         <QuantityRow
           name="head"
           value={simHead}
-          unit={quantitiesMetadata.getUnit("head")}
-          decimals={quantitiesMetadata.getDecimals("head")}
+          unit={units.head}
           readOnly={true}
         />
         <QuantityRow
           name="level"
           value={simLevel}
-          unit={quantitiesMetadata.getUnit("level")}
-          decimals={quantitiesMetadata.getDecimals("level")}
+          unit={units.level}
           readOnly={true}
         />
         <QuantityRow
           name="volume"
           value={simVolume}
-          unit={quantitiesMetadata.getUnit("volume")}
-          decimals={quantitiesMetadata.getDecimals("volume")}
+          unit={units.volume}
           readOnly={true}
         />
-      </Section>
+        <QuantityRow
+          name="netFlow"
+          value={simNetFlow}
+          unit={units.netFlow}
+          readOnly={true}
+        />
+      </SectionWrapper>
     </AssetEditorContent>
   );
 };
 
-const LoggerPointEditor = ({
-  loggerPoint,
-  hydraulicModel,
-  quantitiesMetadata,
+const TankDefinitionField = ({
+  tank,
+  curves,
+  units,
   onPropertyChange,
-  onLabelChange,
-  readonly = false,
+  onBatchPropertyChange,
+  readOnly = false,
 }: {
-  loggerPoint: LoggerPoint;
-  hydraulicModel: HydraulicModel;
-  quantitiesMetadata: Quantities;
+  tank: Tank;
+  curves: Curves;
+  units: UnitsSpec;
   onPropertyChange: OnPropertyChange;
-  onLabelChange: (newLabel: string) => string | undefined;
-  readonly?: boolean;
+  onBatchPropertyChange: (changes: PropertyChange[]) => void;
+  readOnly?: boolean;
 }) => {
-  const PSI_PER_METER = 1.42233433;
-  const PSI_PER_KPA = 0.1450377377;
-  const PSI_PER_BAR = 14.5037738;
-  const PSI_PER_FOOT = 0.4333;
   const translate = useTranslate();
-  const simulation = useSimulation();
-  const { getComparison, isNew } = useAssetComparison(loggerPoint);
-  const connectedJunctions = useMemo(
-    () => getConnectedJunctionsForLogger(hydraulicModel, loggerPoint.id),
-    [hydraulicModel, loggerPoint.id],
+  const translateUnit = useTranslateUnit();
+  const showCurveLibrary = useShowCurveLibrary();
+  const { getComparison, getCurveComparison } = useAssetComparison(tank);
+
+  const [definitionMode, setDefinitionMode] = useState<TankDefinitionMode>(
+    tank.volumeCurveId != null ? "curveBased" : "diameterBased",
   );
-  const primaryConnectedJunction = connectedJunctions[0] ?? null;
-  const junctionSimulation = primaryConnectedJunction
-    ? simulation?.getJunction(primaryConnectedJunction.id)
-    : null;
-  const { footer } = useQuickGraph(
-    loggerPoint.label,
-    primaryConnectedJunction?.id ?? loggerPoint.id,
-    "junction",
-  );
-  const getLoggerPanelState = useLoggerPointPanelStore((s) => s.getOrCreate);
-  const setLoggerPanelState = useLoggerPointPanelStore((s) => s.update);
-  const persistedPanelState = useMemo(
-    () => getLoggerPanelState(loggerPoint.id, loggerPoint.deviceId || ""),
-    [getLoggerPanelState, loggerPoint.id, loggerPoint.deviceId],
-  );
-  const [wsUrl, setWsUrl] = useState(persistedPanelState.wsUrl);
-  const [wsDeviceId, setWsDeviceId] = useState(persistedPanelState.wsDeviceId);
-  const [liveEnabled, setLiveEnabled] = useState(persistedPanelState.liveEnabled);
-  const [liveConnected, setLiveConnected] = useState(false);
-  const [liveError, setLiveError] = useState<string | null>(null);
-  const [combineWithConnectedNode, setCombineWithConnectedNode] =
-    useState(persistedPanelState.combineWithConnectedNode);
-  const [selectedConnectedJunctions, setSelectedConnectedJunctions] = useState<
-    Record<number, boolean>
-  >(persistedPanelState.selectedConnectedJunctions);
-  const [liveSeries, setLiveSeries] = useState<number[]>(
-    persistedPanelState.liveSeries.slice(-LOGGER_PANEL_MAX_STORED_POINTS),
-  );
-  const [liveSampleCount, setLiveSampleCount] = useState(
-    persistedPanelState.liveSampleCount,
-  );
-  const [liveData, setLiveData] = useState<{
-    deviceId?: string;
-    status?: string;
-    timestamp?: string;
-    pressure?: number;
-    flow?: number;
-    level?: number;
-    temperature?: number;
-    batteryV?: number;
-    externalV?: number;
-    gsmPct?: number;
-  }>(persistedPanelState.liveData);
-  const wsRef = useRef<WebSocket | null>(null);
-  const connectedDeviceIdRef = useRef<string | null>(null);
-  const upsertLiveReading = useLiveLoggerReadingsStore((s) => s.upsertReading);
-  const setLiveConnection = useLiveLoggerReadingsStore((s) => s.setConnection);
-  const passiveReadingsByDeviceId = useLiveLoggerReadingsStore(
-    (s) => s.readingsByDeviceId,
-  );
-  const passivePointsByDeviceId = useLiveLoggerReadingsStore(
-    (s) => s.pointsByDeviceId,
-  );
-  const setGlobalLiveLogger = useLiveSeriesStore((s) => s.setLiveLogger);
-  const graphLength = 120;
-  const maxStoredPoints = LOGGER_PANEL_MAX_STORED_POINTS;
-  const loggerFieldsReadOnly = readonly || (liveEnabled && liveConnected);
-  const connectedJunctionIds = useMemo(
-    () => connectedJunctions.map((junction) => junction.id),
-    [connectedJunctions],
-  );
-  const {
-    dataByAssetId: connectedNodeSeriesByAssetId,
-    isLoading: isConnectedNodeSeriesLoading,
-  } = useMultipleJunctionTimeSeries({
-    assetIds: connectedJunctionIds,
-    property: "pressure",
-    enabled: connectedJunctions.length > 0,
-  });
-  useEffect(() => {
-    const nextState = getLoggerPanelState(loggerPoint.id, loggerPoint.deviceId || "");
-    setWsUrl(nextState.wsUrl);
-    setWsDeviceId(nextState.wsDeviceId);
-    setLiveEnabled(nextState.liveEnabled);
-    setCombineWithConnectedNode(nextState.combineWithConnectedNode);
-    setSelectedConnectedJunctions(nextState.selectedConnectedJunctions);
-    setLiveSeries(nextState.liveSeries.slice(-LOGGER_PANEL_MAX_STORED_POINTS));
-    setLiveSampleCount(nextState.liveSampleCount);
-    setLiveData(nextState.liveData);
-  }, [getLoggerPanelState, loggerPoint.id, loggerPoint.deviceId]);
 
-  useEffect(() => {
-    setLoggerPanelState(loggerPoint.id, { wsUrl });
-  }, [loggerPoint.id, setLoggerPanelState, wsUrl]);
-
-  useEffect(() => {
-    setLoggerPanelState(loggerPoint.id, { wsDeviceId });
-  }, [loggerPoint.id, setLoggerPanelState, wsDeviceId]);
-
-  useEffect(() => {
-    setLoggerPanelState(loggerPoint.id, { liveEnabled });
-  }, [liveEnabled, loggerPoint.id, setLoggerPanelState]);
-
-  useEffect(() => {
-    setLoggerPanelState(loggerPoint.id, { combineWithConnectedNode });
-  }, [combineWithConnectedNode, loggerPoint.id, setLoggerPanelState]);
-
-  useEffect(() => {
-    setLoggerPanelState(loggerPoint.id, { selectedConnectedJunctions });
-  }, [loggerPoint.id, selectedConnectedJunctions, setLoggerPanelState]);
-
-  useEffect(() => {
-    setLoggerPanelState(loggerPoint.id, { liveSeries });
-  }, [liveSeries, loggerPoint.id, setLoggerPanelState]);
-
-  useEffect(() => {
-    setLoggerPanelState(loggerPoint.id, { liveSampleCount });
-  }, [liveSampleCount, loggerPoint.id, setLoggerPanelState]);
-
-  useEffect(() => {
-    setLoggerPanelState(loggerPoint.id, { liveData });
-  }, [liveData, loggerPoint.id, setLoggerPanelState]);
-
-  useEffect(() => {
-    setSelectedConnectedJunctions((previous) => {
-      const next: Record<number, boolean> = {};
-      for (const junction of connectedJunctions) {
-        next[junction.id] = previous[junction.id] ?? true;
-      }
-      return next;
-    });
-  }, [connectedJunctions]);
-  const wsUrlWithDeviceId = useMemo(() => {
-    const deviceId = wsDeviceId.trim();
-    if (!deviceId) return wsUrl;
-    try {
-      const parsed = new URL(wsUrl);
-      parsed.searchParams.set("deviceId", deviceId);
-      return parsed.toString();
-    } catch {
-      const sep = wsUrl.includes("?") ? "&" : "?";
-      return `${wsUrl}${sep}deviceId=${encodeURIComponent(deviceId)}`;
-    }
-  }, [wsDeviceId, wsUrl]);
-
-  const passiveDeviceCandidates = useMemo(
+  const definitionOptions = useMemo(
     () =>
-      [loggerPoint.deviceId, wsDeviceId, loggerPoint.label]
-        .map((value) => value?.trim() ?? "")
-        .filter((value, index, array) => value.length > 0 && array.indexOf(value) === index),
-    [loggerPoint.deviceId, loggerPoint.label, wsDeviceId],
+      [
+        { label: translate("diameterBased"), value: "diameterBased" },
+        { label: translate("areaBased"), value: "areaBased" },
+        { label: translate("volumeBased"), value: "volumeBased" },
+        { label: translate("curveBased"), value: "curveBased" },
+      ] as { label: string; value: TankDefinitionMode }[],
+    [translate],
   );
 
-  const resolvedPassiveDeviceId = useMemo(() => {
-    for (const candidate of passiveDeviceCandidates) {
-      if ((passivePointsByDeviceId[candidate]?.length ?? 0) > 0) return candidate;
-    }
-    return passiveDeviceCandidates[0] ?? null;
-  }, [passiveDeviceCandidates, passivePointsByDeviceId]);
+  const levelUnit = translateUnit(units.minLevel);
+  const volumeUnit = translateUnit(units.minVolume);
+  const tableLabels = {
+    horizontal: [
+      `${translate("level")} (${levelUnit})`,
+      `${translate("volume")} (${volumeUnit})`,
+    ] as [string, string],
+    vertical: [translate("max"), translate("min")],
+  };
 
-  const passiveSeries = useMemo(() => {
-    if (!resolvedPassiveDeviceId) return [];
-    return passivePointsByDeviceId[resolvedPassiveDeviceId] ?? [];
-  }, [passivePointsByDeviceId, resolvedPassiveDeviceId]);
+  const definitionDiff = useMemo(() => {
+    const diameterComp = getComparison("diameter", tank.diameter);
+    const minVolumeComp = getComparison("minVolume", tank.minVolume);
+    const minLevelComp = getComparison("minLevel", tank.minLevel);
+    const maxLevelComp = getComparison("maxLevel", tank.maxLevel);
+    const curveComp = getCurveComparison(
+      "volumeCurveId",
+      tank.volumeCurveId,
+      curves,
+    );
 
-  const resolvedLiveReadingDeviceId = useMemo(() => {
-    for (const candidate of passiveDeviceCandidates) {
-      if (passiveReadingsByDeviceId[candidate]) return candidate;
-    }
-    return resolvedPassiveDeviceId;
-  }, [
-    passiveDeviceCandidates,
-    passiveReadingsByDeviceId,
-    resolvedPassiveDeviceId,
-  ]);
+    const hasChanged =
+      diameterComp.hasChanged ||
+      minVolumeComp.hasChanged ||
+      minLevelComp.hasChanged ||
+      maxLevelComp.hasChanged ||
+      curveComp.hasChanged;
 
-  const resolvedLiveReading = useMemo(() => {
-    if (!resolvedLiveReadingDeviceId) return null;
-    return passiveReadingsByDeviceId[resolvedLiveReadingDeviceId] ?? null;
-  }, [passiveReadingsByDeviceId, resolvedLiveReadingDeviceId]);
+    if (!hasChanged) return { hasChanged: false } as const;
 
-  useEffect(() => {
-    if (liveEnabled) return;
-    if (passiveSeries.length === 0) return;
-    setLiveSeries((prev) => {
-      const trimmedPassive = passiveSeries.slice(-maxStoredPoints);
-      const isSame =
-        prev.length === trimmedPassive.length &&
-        prev.every((value, index) => value === trimmedPassive[index]);
-      return isSame ? prev : trimmedPassive;
-    });
-    setLiveSampleCount((prev) => Math.max(prev, passiveSeries.length));
-  }, [liveEnabled, maxStoredPoints, passiveSeries]);
+    const baseCurveId = curveComp.hasChanged
+      ? curveComp.baseValue?.id
+      : tank.volumeCurveId;
+    const baseIsCircular = baseCurveId == null;
 
-  useEffect(() => {
-    const markDisconnected = () => {
-      const connectedDeviceId = connectedDeviceIdRef.current;
-      if (connectedDeviceId) {
-        setLiveConnection(connectedDeviceId, false);
-      }
-      connectedDeviceIdRef.current = null;
-    };
+    const diameterUnit = translateUnit(units.tankDiameter);
+    const volumeUnit = translateUnit(units.minVolume);
+    const levelUnit = translateUnit(units.minLevel);
 
-    if (!liveEnabled) {
-      if (wsRef.current) {
-        try {
-          wsRef.current.close();
-        } catch {}
-        wsRef.current = null;
-      }
-      setLiveConnected(false);
-      markDisconnected();
-      return;
-    }
-
-    try {
-      const ws = new WebSocket(wsUrlWithDeviceId);
-      wsRef.current = ws;
-      setLiveError(null);
-
-      ws.onopen = () => {
-        setLiveConnected(true);
-        const initialDeviceId = wsDeviceId.trim() || loggerPoint.deviceId?.trim();
-        if (initialDeviceId) {
-          connectedDeviceIdRef.current = initialDeviceId;
-          setLiveConnection(initialDeviceId, true);
-        }
-      };
-
-      ws.onclose = () => {
-        setLiveConnected(false);
-        markDisconnected();
-      };
-
-      ws.onerror = () => {
-        setLiveConnected(false);
-        setLiveError("Connection error");
-        markDisconnected();
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (wsDeviceId && msg?.deviceId !== wsDeviceId) return;
-
-          const pressureValue =
-            typeof msg?.pressure_psi === "number"
-              ? msg.pressure_psi
-              : typeof msg?.pressurePsi === "number"
-                ? msg.pressurePsi
-                : typeof msg?.pressure === "number"
-                  ? msg.pressure * PSI_PER_METER
-                  : typeof msg?.pressure_ft === "number"
-                    ? msg.pressure_ft * PSI_PER_FOOT
-                    : typeof msg?.pressure_bar === "number"
-                      ? msg.pressure_bar * PSI_PER_BAR
-                      : typeof msg?.pressure_kpa === "number"
-                        ? msg.pressure_kpa * PSI_PER_KPA
-                        : null;
-
-          const messageDeviceId =
-            typeof msg?.deviceId === "string" ? msg.deviceId.trim() : "";
-          const effectiveDeviceId =
-            messageDeviceId ||
-            connectedDeviceIdRef.current ||
-            wsDeviceId.trim() ||
-            loggerPoint.deviceId?.trim();
-
-          if (effectiveDeviceId) {
-            if (
-              connectedDeviceIdRef.current &&
-              connectedDeviceIdRef.current !== effectiveDeviceId
-            ) {
-              setLiveConnection(connectedDeviceIdRef.current, false);
-            }
-            connectedDeviceIdRef.current = effectiveDeviceId;
-            setLiveConnection(effectiveDeviceId, true);
-            upsertLiveReading(effectiveDeviceId, {
-              pressurePsi:
-                typeof pressureValue === "number" ? pressureValue : null,
-              timestamp:
-                typeof msg?.timestamp === "string" ? msg.timestamp : undefined,
-            });
-          }
-
-          const flowValue =
-            typeof msg?.flow === "number" ? msg.flow : undefined;
-          const levelValue =
-            typeof msg?.level === "number" ? msg.level : undefined;
-          const temperatureValue =
-            typeof msg?.temperature === "number"
-              ? msg.temperature
-              : typeof msg?.temp_or_status === "number"
-                ? msg.temp_or_status
-                : undefined;
-          const batteryVValue =
-            typeof msg?.batteryV === "number"
-              ? msg.batteryV
-              : typeof msg?.battery_v === "number"
-                ? msg.battery_v
-                : undefined;
-          const externalVValue =
-            typeof msg?.externalV === "number"
-              ? msg.externalV
-              : typeof msg?.external_v === "number"
-                ? msg.external_v
-                : undefined;
-          const gsmPctValue =
-            typeof msg?.gsmPct === "number"
-              ? msg.gsmPct
-              : typeof msg?.gsm_pct === "number"
-                ? msg.gsm_pct
-                : undefined;
-
-          setLiveData((prev) => ({
-            ...prev,
-            deviceId:
-              typeof msg?.deviceId === "string" ? msg.deviceId : prev.deviceId,
-            status: typeof msg?.status === "string" ? msg.status : prev.status,
-            timestamp:
-              typeof msg?.timestamp === "string"
-                ? msg.timestamp
-                : prev.timestamp,
-            pressure:
-              typeof pressureValue === "number" ? pressureValue : prev.pressure,
-            flow: typeof flowValue === "number" ? flowValue : prev.flow,
-            level: typeof levelValue === "number" ? levelValue : prev.level,
-            temperature:
-              typeof temperatureValue === "number"
-                ? temperatureValue
-                : prev.temperature,
-            batteryV:
-              typeof batteryVValue === "number" ? batteryVValue : prev.batteryV,
-            externalV:
-              typeof externalVValue === "number"
-                ? externalVValue
-                : prev.externalV,
-            gsmPct: typeof gsmPctValue === "number" ? gsmPctValue : prev.gsmPct,
-          }));
-
-          const value = pressureValue;
-          if (typeof value !== "number" || !Number.isFinite(value)) return;
-
-          setLiveSeries((prev) => {
-            const next = [...prev, value];
-            if (next.length > maxStoredPoints) {
-              return next.slice(-maxStoredPoints);
-            }
-            return next;
-          });
-          setLiveSampleCount((prev) => prev + 1);
-        } catch {}
-      };
-    } catch {
-      setLiveConnected(false);
-      setLiveError("Invalid WebSocket URL");
-      markDisconnected();
-    }
-
-    return () => {
-      if (wsRef.current) {
-        try {
-          wsRef.current.close();
-        } catch {}
-        wsRef.current = null;
-      }
-      setLiveConnected(false);
-      markDisconnected();
-    };
-  }, [
-    liveEnabled,
-    loggerPoint.deviceId,
-    setLiveConnection,
-    upsertLiveReading,
-    wsDeviceId,
-    wsUrlWithDeviceId,
-  ]);
-
-  const liveValues = useMemo(() => {
-    const visibleSeries = liveSeries.slice(-graphLength);
-    const padded = Array(graphLength).fill(null) as (number | null)[];
-    for (let i = 0; i < visibleSeries.length; i++) {
-      padded[i] = visibleSeries[i];
-    }
-    return padded;
-  }, [graphLength, liveSeries]);
-  const liveCurrentIntervalIndex = Math.max(
-    0,
-    Math.min(liveSeries.length - 1, graphLength - 1),
-  );
-
-  const connectedNodeOverlaySeries = useMemo(() => {
-    if (!combineWithConnectedNode || connectedJunctions.length === 0) {
-      return null;
-    }
-
-    const windowStartSecond = Math.max(0, liveSampleCount - graphLength);
-    const overlayColors = [
-      colors.blue500,
-      colors.cyan700,
-      colors.indigo500,
-      colors.purple500,
-      colors.green800,
-      colors.orange500,
-    ];
-
-    return connectedJunctions
-      .filter((junction) => selectedConnectedJunctions[junction.id] !== false)
-      .map((junction, index) => {
-        const series = connectedNodeSeriesByAssetId[junction.id];
-        if (!series) return null;
-
-        const simulationValues = Array.from(series.values).map(
-          (value): number => {
-            const converted = toPressureInUnit(
-              value,
-              quantitiesMetadata.getUnit("pressure"),
-              "psi",
-            );
-            return converted ?? Number.NaN;
-          },
-        );
-
-        const simulationIntervalSeconds = Math.max(
-          series.intervalSeconds || 1,
-          1,
-        );
-        const resampled: (number | null)[] = Array(graphLength).fill(
-          Number.NaN,
-        );
-
-        // Re-sample simulation series (often hourly) onto logger chart timeline (seconds).
-        for (let secondIndex = 0; secondIndex < graphLength; secondIndex++) {
-          const absoluteSecond = windowStartSecond + secondIndex;
-          const simulationStepIndex = Math.floor(
-            absoluteSecond / simulationIntervalSeconds,
-          );
-          if (simulationStepIndex < simulationValues.length) {
-            resampled[secondIndex] = simulationValues[simulationStepIndex];
-          }
-        }
-
-        return {
-          label: `${junction.label} simulation`,
-          values: resampled,
-          color: overlayColors[index % overlayColors.length],
-        };
-      })
-      .filter(
-        (
-          series,
-        ): series is {
-          label: string;
-          values: (number | null)[];
-          color: string;
-        } => series !== null,
+    const lines: string[] = [];
+    if (baseIsCircular) {
+      const baseDiameter = diameterComp.baseValue ?? tank.diameter;
+      const baseMinVolume = minVolumeComp.baseValue ?? tank.minVolume;
+      const baseMinLevel = minLevelComp.baseValue ?? tank.minLevel;
+      const baseMaxLevel = maxLevelComp.baseValue ?? tank.maxLevel;
+      const baseMaxVolume = tankVolumeFor(
+        baseDiameter,
+        baseMaxLevel,
+        baseMinVolume,
+        baseMinLevel,
       );
-  }, [
-    combineWithConnectedNode,
-    connectedJunctions,
-    connectedNodeSeriesByAssetId,
-    graphLength,
-    liveSampleCount,
-    quantitiesMetadata,
-    selectedConnectedJunctions,
-  ]);
-
-  const loggerPressurePsi =
-    liveData.pressure ??
-    resolvedLiveReading?.pressurePsi ??
-    (typeof loggerPoint.pressure === "number"
-      ? loggerPoint.pressure * PSI_PER_METER
-      : loggerPoint.pressure);
-  const loggerPressureM = toPressureInUnit(loggerPressurePsi, "psi", "mwc");
-  const loggerElevationPsi = toElevationInPsi(
-    loggerPoint.elevation,
-    quantitiesMetadata.getUnit("elevation"),
-  );
-  const simulatedPressure = junctionSimulation?.pressure ?? null;
-  const simulatedPressureM = toPressureInUnit(
-    simulatedPressure,
-    quantitiesMetadata.getUnit("pressure"),
-    "mwc",
-  );
-  const simulatedPressurePsi = toPressureInUnit(
-    simulatedPressure,
-    quantitiesMetadata.getUnit("pressure"),
-    "psi",
-  );
-  const simulatedHead = junctionSimulation?.head ?? null;
-  const simulatedDemand = junctionSimulation?.demand ?? null;
-  const pressureDecimals = quantitiesMetadata.getDecimals("pressure") ?? 2;
-  const connectedJunctionPressureComparisons = useMemo(() => {
-    const loggerPressureForComparison =
-      typeof loggerPressurePsi === "number" ? loggerPressurePsi : null;
-    const currentAbsoluteSecond = Math.max(0, liveSampleCount - 1);
-
-    return connectedJunctions.map((junction) => {
-      const series = connectedNodeSeriesByAssetId[junction.id];
-      let simulatedPressurePsi: number | null = null;
-
-      if (series && series.values.length > 0) {
-        const simulationIntervalSeconds = Math.max(
-          series.intervalSeconds || 1,
-          1,
+      lines.push(
+        `${translate("diameter")}: ${localizeDecimal(baseDiameter)} ${diameterUnit}`,
+      );
+      lines.push(
+        `${translate("minLevel")}: ${localizeDecimal(baseMinLevel)} ${levelUnit}`,
+      );
+      lines.push(
+        `${translate("maxLevel")}: ${localizeDecimal(baseMaxLevel)} ${levelUnit}`,
+      );
+      lines.push(
+        `${translate("minVolume")}: ${localizeDecimal(baseMinVolume)} ${volumeUnit}`,
+      );
+      lines.push(
+        `${translate("maxVolume")}: ${localizeDecimal(baseMaxVolume)} ${volumeUnit}`,
+      );
+    } else {
+      const baseCurve = curveComp.baseValue;
+      if (baseCurve) {
+        const {
+          minLevel: baseMinLevel,
+          maxLevel: baseMaxLevel,
+          minVolume: baseMinVolume,
+          maxVolume: baseMaxVolume,
+        } = tankVolumeCurveRange(baseCurve);
+        lines.push(`${translate("volumeCurve")}: ${baseCurve.label}`);
+        lines.push(
+          `${translate("minLevel")}: ${localizeDecimal(baseMinLevel)} ${levelUnit}`,
         );
-        const simulationStepIndex = Math.floor(
-          currentAbsoluteSecond / simulationIntervalSeconds,
+        lines.push(
+          `${translate("maxLevel")}: ${localizeDecimal(baseMaxLevel)} ${levelUnit}`,
         );
-        const rawValue = series.values[simulationStepIndex];
-        if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
-          simulatedPressurePsi = toPressureInUnit(
-            rawValue,
-            quantitiesMetadata.getUnit("pressure"),
-            "psi",
-          );
-        }
-      }
-
-      if (simulatedPressurePsi === null) {
-        const junctionSimulation = simulation?.getJunction(junction.id);
-        const simulatedPressure =
-          junctionSimulation?.pressure === undefined
-            ? null
-            : junctionSimulation.pressure;
-        simulatedPressurePsi = toPressureInUnit(
-          simulatedPressure,
-          quantitiesMetadata.getUnit("pressure"),
-          "psi",
+        lines.push(
+          `${translate("minVolume")}: ${localizeDecimal(baseMinVolume)} ${volumeUnit}`,
+        );
+        lines.push(
+          `${translate("maxVolume")}: ${localizeDecimal(baseMaxVolume)} ${volumeUnit}`,
         );
       }
+    }
 
-      const versusPsi =
-        loggerPressureForComparison === null || simulatedPressurePsi === null
-          ? null
-          : loggerPressureForComparison - simulatedPressurePsi;
-
-      return {
-        junction,
-        simulatedPressurePsi,
-        versusPsi,
-      };
-    });
+    return { hasChanged: true, tooltipText: lines.join("\n") } as const;
   }, [
-    connectedJunctions,
-    connectedNodeSeriesByAssetId,
-    liveSampleCount,
-    loggerPressurePsi,
-    quantitiesMetadata,
-    simulation,
+    getComparison,
+    tank.diameter,
+    tank.minVolume,
+    tank.minLevel,
+    tank.maxLevel,
+    tank.volumeCurveId,
+    getCurveComparison,
+    curves,
+    translateUnit,
+    units,
+    translate,
   ]);
+
+  const handleDefinitionModeChange = useCallback(
+    (_name: string, newValue: TankDefinitionMode) => {
+      setDefinitionMode(newValue);
+      if (newValue !== "curveBased" && tank.volumeCurveId) {
+        onPropertyChange("volumeCurveId", undefined, tank.volumeCurveId);
+      }
+    },
+    [onPropertyChange, tank.volumeCurveId],
+  );
+
+  const handleCurveChange = useCallback(
+    (_name: string, newValue: CurveId | null) => {
+      if (newValue === null) return;
+      const curve = curves.get(newValue);
+      if (!curve || !curve.points.length) return;
+      const bounds = getCurveBounds(curves, newValue);
+      if (!bounds) return;
+      onBatchPropertyChange([
+        { property: "volumeCurveId", value: newValue },
+        { property: "minLevel", value: curve.points[0].x },
+        {
+          property: "maxLevel",
+          value: curve.points[curve.points.length - 1].x,
+        },
+        { property: "minVolume", value: curve.points[0].y },
+      ]);
+    },
+    [curves, onBatchPropertyChange],
+  );
+
+  const handleAreaChange = (_name: string, area: number) => {
+    const diameter = tankDiameterFromArea(area);
+    if (diameter !== tank.diameter) {
+      onPropertyChange("diameter", diameter, tank.diameter);
+    }
+  };
+
+  const handleMaxVolumeChange = (_name: string, maxVolume: number) => {
+    const diameter = tankDiameterFor(
+      maxVolume,
+      tank.maxLevel,
+      tank.minVolume,
+      tank.minLevel,
+    );
+    if (diameter !== tank.diameter) {
+      onPropertyChange("diameter", diameter, tank.diameter);
+    }
+  };
+
+  const handleMaxLevelChange = (_name: string, maxLevel: number) => {
+    const diameter = tankDiameterFor(
+      tank.maxVolume,
+      maxLevel,
+      tank.minVolume,
+      tank.minLevel,
+    );
+    onBatchPropertyChange([
+      { property: "maxLevel", value: maxLevel },
+      { property: "diameter", value: diameter },
+    ]);
+  };
+
+  const handleMinLevelChange = (_name: string, minLevel: number) => {
+    const diameter = tankDiameterFor(
+      tank.maxVolume,
+      tank.maxLevel,
+      tank.minVolume,
+      minLevel,
+    );
+    onBatchPropertyChange([
+      { property: "minLevel", value: minLevel },
+      { property: "diameter", value: diameter },
+    ]);
+  };
+
+  const handleMinVolumeChange = (_name: string, minVolume: number) => {
+    const diameter = tankDiameterFor(
+      tank.maxVolume,
+      tank.maxLevel,
+      minVolume,
+      tank.minLevel,
+    );
+    onBatchPropertyChange([
+      { property: "minVolume", value: minVolume },
+      { property: "diameter", value: diameter },
+    ]);
+  };
 
   return (
-    <AssetEditorContent
-      label={loggerPoint.label}
-      type="Logger Point"
-      isNew={isNew}
-      onLabelChange={onLabelChange}
-      footer={primaryConnectedJunction ? footer : undefined}
-      readOnly={loggerFieldsReadOnly}
-      key={loggerPoint.id}
+    <BlockComparisonField
+      hasChanged={definitionDiff.hasChanged}
+      baseDisplayValue={
+        definitionDiff.tooltipText ? (
+          <div className="whitespace-pre-line">
+            {definitionDiff.tooltipText}
+          </div>
+        ) : undefined
+      }
     >
-      <Section title={translate("connections")}>
-        <TextRow
-          name="junction"
-          value={
-            connectedJunctions.length > 0
-              ? connectedJunctions.map((junction) => junction.label).join(", ")
-              : "Not connected"
-          }
-        />
-      </Section>
-      <Section title="Live Logger">
-        <div className="px-2 py-2 text-sm">
-          <div className="flex items-center gap-2 mb-2">
-            <input
-              className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={wsUrl}
-              onChange={(e) => setWsUrl(e.target.value)}
-              placeholder="wss://logger-api.gscwd.app/stream"
-              disabled={readonly || liveConnected}
+      <SelectRow
+        name="tankDefinition"
+        selected={definitionMode}
+        options={definitionOptions}
+        readOnly={readOnly}
+        onChange={handleDefinitionModeChange}
+      />
+      <NestedSection className="pb-2">
+        {definitionMode === "diameterBased" && (
+          <>
+            <QuantityRow
+              name="diameter"
+              value={tank.diameter}
+              unit={units.tankDiameter}
+              onChange={onPropertyChange}
+              positiveOnly={true}
+              isNullable={false}
+              readOnly={readOnly}
             />
-          </div>
-          <div className="flex items-center gap-2 mb-2">
-            <input
-              className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm"
-              value={wsDeviceId}
-              onChange={(e) => setWsDeviceId(e.target.value)}
-              placeholder="pi-sim-001"
-              disabled={readonly || liveConnected}
+            <hr className="border-gray-200 dark:border-gray-600 my-1" />
+            <NumericTable
+              labels={tableLabels}
+              cells={[
+                [
+                  {
+                    label: translate("maxLevel"),
+                    value: tank.maxLevel,
+                    positiveOnly: true,
+                    readOnly,
+                    handler: (v) =>
+                      onPropertyChange("maxLevel", v, tank.maxLevel),
+                  },
+                  {
+                    label: translate("maxVolume"),
+                    value: tank.maxVolume,
+                    readOnly: true,
+                  },
+                ],
+                [
+                  {
+                    label: translate("minLevel"),
+                    value: tank.minLevel,
+                    positiveOnly: true,
+                    readOnly,
+                    handler: (v) =>
+                      onPropertyChange("minLevel", v, tank.minLevel),
+                  },
+                  {
+                    label: translate("minVolume"),
+                    value: tank.minVolume,
+                    positiveOnly: true,
+                    readOnly,
+                    handler: (v) =>
+                      onPropertyChange("minVolume", v, tank.minVolume),
+                  },
+                ],
+              ]}
             />
-            <button
-              className="rounded-md border border-gray-300 px-3 py-1 text-sm"
-              disabled={readonly}
-              onClick={() => {
-                if (liveConnected) {
-                  setGlobalLiveLogger((prev: LiveLoggerConfig) => ({
-                    ...prev,
-                    enabled: false,
-                  }));
-                  setLiveEnabled(false);
-                  setLiveConnected(false);
-                } else {
-                  setGlobalLiveLogger((prev: LiveLoggerConfig) => ({
-                    ...prev,
-                    enabled: true,
-                    wsUrl,
-                    deviceId: wsDeviceId,
-                    field: "pressure",
-                  }));
-                  setLiveEnabled(true);
-                }
-              }}
-            >
-              {liveConnected ? "Disconnect" : "Connect"}
-            </button>
-          </div>
-          <div className="mb-2 text-xs text-gray-500">{wsUrlWithDeviceId}</div>
-          <div className="mb-2 text-xs text-gray-500">
-            Status:{" "}
-            {liveConnected
-              ? "Connected"
-              : liveEnabled
-                ? "Connecting..."
-                : "Disconnected"}
-            {liveError ? ` (${liveError})` : ""}
-          </div>
-          {connectedJunctionPressureComparisons.length > 0 && (
-            <div className="mb-2 rounded-md border border-gray-200 px-2 py-2 text-xs text-gray-700 dark:border-gray-700 dark:text-gray-200">
-              <div className="mb-1 font-medium text-gray-600 dark:text-gray-300">
-                Live vs connected simulation (psi)
-              </div>
-              {connectedJunctionPressureComparisons.map(
-                ({ junction, simulatedPressurePsi, versusPsi }) => (
-                  <div
-                    key={junction.id}
-                    className="mb-1 last:mb-0 text-[11px] leading-5"
-                  >
-                    <div>
-                      {junction.label} simulated:{" "}
-                      {simulatedPressurePsi === null
-                        ? "N/A"
-                        : localizeDecimal(simulatedPressurePsi, {
-                            decimals: pressureDecimals,
-                          })}
-                    </div>
-                    <div>
-                      {loggerPoint.label}:{" "}
-                      {typeof loggerPressurePsi === "number"
-                        ? localizeDecimal(loggerPressurePsi, {
-                            decimals: pressureDecimals,
-                          })
-                        : "N/A"}
-                    </div>
-                    <div>
-                      {loggerPoint.label} - {junction.label} ={" "}
-                      <span className="inline-flex items-center gap-1">
-                        {versusPsi === null
-                          ? "N/A"
-                          : localizeDecimal(versusPsi, {
-                              decimals: pressureDecimals,
-                            })}
-                        {versusPsi !== null && versusPsi <= -15 && (
-                          <span
-                            title="possible leaking"
-                            className="inline-flex cursor-help text-red-600 dark:text-red-400"
-                            aria-label="possible leaking"
-                          >
-                            <WarningIcon size={12} />
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                ),
-              )}
-            </div>
-          )}
-          <label className="mb-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-            <input
-              type="checkbox"
-              checked={combineWithConnectedNode}
-              onChange={(e) => setCombineWithConnectedNode(e.target.checked)}
-              disabled={connectedJunctions.length === 0}
+          </>
+        )}
+        {definitionMode === "areaBased" && (
+          <>
+            <QuantityRow
+              name="area"
+              value={tank.area}
+              unit={units.tankArea}
+              onChange={handleAreaChange}
+              positiveOnly={true}
+              readOnly={readOnly}
             />
-            Combine graph with connected node simulation
-          </label>
-          {combineWithConnectedNode && connectedJunctions.length > 0 && (
-            <div className="mb-2 grid grid-cols-2 gap-1 text-xs text-gray-600 dark:text-gray-300">
-              {connectedJunctions.map((junction) => (
-                <label key={junction.id} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={selectedConnectedJunctions[junction.id] !== false}
-                    onChange={(e) =>
-                      setSelectedConnectedJunctions((prev) => ({
-                        ...prev,
-                        [junction.id]: e.target.checked,
-                      }))
-                    }
+            <hr className="border-gray-200 dark:border-gray-600 my-1" />
+            <NumericTable
+              labels={tableLabels}
+              cells={[
+                [
+                  {
+                    label: translate("maxLevel"),
+                    value: tank.maxLevel,
+                    positiveOnly: true,
+                    readOnly,
+                    handler: (v) =>
+                      onPropertyChange("maxLevel", v, tank.maxLevel),
+                  },
+                  {
+                    label: translate("maxVolume"),
+                    value: tank.maxVolume,
+                    readOnly: true,
+                  },
+                ],
+                [
+                  {
+                    label: translate("minLevel"),
+                    value: tank.minLevel,
+                    positiveOnly: true,
+                    readOnly,
+                    handler: (v) =>
+                      onPropertyChange("minLevel", v, tank.minLevel),
+                  },
+                  {
+                    label: translate("minVolume"),
+                    value: tank.minVolume,
+                    positiveOnly: true,
+                    readOnly,
+                    handler: (v) =>
+                      onPropertyChange("minVolume", v, tank.minVolume),
+                  },
+                ],
+              ]}
+            />
+          </>
+        )}
+        {definitionMode === "volumeBased" && (
+          <NumericTable
+            labels={tableLabels}
+            cells={[
+              [
+                {
+                  label: translate("maxLevel"),
+                  value: tank.maxLevel,
+                  positiveOnly: true,
+                  readOnly,
+                  handler: (v) => handleMaxLevelChange("maxLevel", v),
+                },
+                {
+                  label: translate("maxVolume"),
+                  value: tank.maxVolume,
+                  positiveOnly: true,
+                  readOnly,
+                  handler: (v) => handleMaxVolumeChange("maxVolume", v),
+                },
+              ],
+              [
+                {
+                  label: translate("minLevel"),
+                  value: tank.minLevel,
+                  positiveOnly: true,
+                  readOnly,
+                  handler: (v) => handleMinLevelChange("minLevel", v),
+                },
+                {
+                  label: translate("minVolume"),
+                  value: tank.minVolume,
+                  positiveOnly: true,
+                  readOnly,
+                  handler: (v) => handleMinVolumeChange("minVolume", v),
+                },
+              ],
+            ]}
+          />
+        )}
+        {definitionMode === "curveBased" && (
+          <>
+            <LibrarySelectRow
+              name="volumeCurve"
+              collection={curves}
+              filterByType="volume"
+              libraryLabel={translate("openCurvesLibrary")}
+              onOpenLibrary={() =>
+                showCurveLibrary({
+                  source: "tank",
+                  curveId: tank.volumeCurveId,
+                  initialSection: "volume",
+                })
+              }
+              selected={tank.volumeCurveId ?? null}
+              onChange={handleCurveChange}
+              readOnly={readOnly}
+            />
+            {(() => {
+              if (!tank.volumeCurveId) return null;
+              const curve = curves.get(tank.volumeCurveId);
+              if (!curve) return null;
+              const { minLevel, maxLevel, minVolume, maxVolume } =
+                tankVolumeCurveRange(curve);
+              return (
+                <>
+                  <hr className="border-gray-200 dark:border-gray-600 my-1" />
+                  <NumericTable
+                    labels={tableLabels}
+                    cells={[
+                      [
+                        {
+                          label: translate("maxLevel"),
+                          value: maxLevel,
+                          readOnly: true,
+                        },
+                        {
+                          label: translate("maxVolume"),
+                          value: maxVolume,
+                          readOnly: true,
+                        },
+                      ],
+                      [
+                        {
+                          label: translate("minLevel"),
+                          value: minLevel,
+                          readOnly: true,
+                        },
+                        {
+                          label: translate("minVolume"),
+                          value: minVolume,
+                          readOnly: true,
+                        },
+                      ],
+                    ]}
                   />
-                  {junction.label}
-                </label>
-              ))}
-            </div>
-          )}
-          {combineWithConnectedNode && isConnectedNodeSeriesLoading && (
-            <div className="mb-2 text-xs text-gray-500">
-              Loading connected node simulation series...
-            </div>
-          )}
-          <div className="h-36">
-            <QuickGraphChart
-              values={Array(graphLength).fill(Number.NaN)}
-              mainValues={null}
-              mainLabel={null}
-              intervalsCount={graphLength}
-              intervalSeconds={1}
-              decimals={quantitiesMetadata.getDecimals("pressure") ?? 0}
-              currentIntervalIndex={liveCurrentIntervalIndex}
-              onIntevalClick={() => {}}
-              scenarioName={null}
-              liveValues={liveValues}
-              liveLabel="Live pressure"
-              liveColor="rgb(239, 68, 68)"
-              extraSeries={connectedNodeOverlaySeries}
-            />
-          </div>
-        </div>
-      </Section>
-      <Section title={translate("activeTopology")}>
-        <SwitchRow
-          name="isActive"
-          label={translate("isEnabled")}
-          enabled={loggerPoint.isActive}
-          comparison={getComparison("isActive", loggerPoint.isActive)}
-          onChange={onPropertyChange}
-          readOnly={loggerFieldsReadOnly}
-        />
-      </Section>
-      <Section title={translate("modelAttributes")}>
-        <QuantityRow
-          name="elevation"
-          value={loggerPoint.elevation}
-          unit={quantitiesMetadata.getUnit("elevation")}
-          decimals={quantitiesMetadata.getDecimals("elevation")}
-          comparison={getComparison("elevation", loggerPoint.elevation)}
-          onChange={onPropertyChange}
-          readOnly={loggerFieldsReadOnly}
-        />
-        <QuantityRow
-          name="elevation"
-          value={loggerElevationPsi}
-          unit="psi"
-          decimals={quantitiesMetadata.getDecimals("elevation")}
-          readOnly={true}
-        />
-        <TextRow
-          name="deviceId"
-          value={
-            liveData.deviceId ??
-            resolvedLiveReadingDeviceId ??
-            loggerPoint.deviceId ??
-            ""
-          }
-        />
-        <TextRow
-          name="status"
-          value={
-            liveData.status ??
-            (resolvedLiveReading
-              ? resolvedLiveReading.connected
-                ? "Connected"
-                : "Disconnected"
-              : loggerPoint.status) ??
-            ""
-          }
-        />
-        <TextRow
-          name="timestamp"
-          value={
-            liveData.timestamp ??
-            resolvedLiveReading?.timestamp ??
-            loggerPoint.timestamp ??
-            ""
-          }
-        />
-        <QuantityRow
-          name="pressure"
-          value={loggerPressureM}
-          unit="mwc"
-          decimals={quantitiesMetadata.getDecimals("pressure")}
-          onChange={onPropertyChange}
-          readOnly={loggerFieldsReadOnly}
-        />
-        <QuantityRow
-          name="pressure"
-          value={loggerPressurePsi}
-          unit="psi"
-          decimals={quantitiesMetadata.getDecimals("pressure")}
-          onChange={onPropertyChange}
-          readOnly={loggerFieldsReadOnly}
-        />
-        <QuantityRow
-          name="flow"
-          value={liveData.flow ?? loggerPoint.flow}
-          unit={quantitiesMetadata.getUnit("flow")}
-          decimals={quantitiesMetadata.getDecimals("flow")}
-          onChange={onPropertyChange}
-          readOnly={loggerFieldsReadOnly}
-        />
-        <QuantityRow
-          name="level"
-          value={liveData.level ?? loggerPoint.level}
-          unit={quantitiesMetadata.getUnit("level")}
-          decimals={quantitiesMetadata.getDecimals("level")}
-          onChange={onPropertyChange}
-          readOnly={loggerFieldsReadOnly}
-        />
-        <TextRow
-          name="temperature"
-          value={`${liveData.temperature ?? loggerPoint.temperature ?? ""}`}
-        />
-        <TextRow
-          name="batteryV"
-          value={`${liveData.batteryV ?? loggerPoint.batteryV ?? ""}`}
-        />
-        <TextRow
-          name="externalV"
-          value={`${liveData.externalV ?? loggerPoint.externalV ?? ""}`}
-        />
-        <TextRow
-          name="gsmPct"
-          value={`${liveData.gsmPct ?? loggerPoint.gsmPct ?? ""}`}
-        />
-      </Section>
-      {primaryConnectedJunction && (
-        <Section title={translate("simulationResults")}>
-          <QuantityRow
-            name="pressure"
-            value={simulatedPressureM}
-            unit="mwc"
-            decimals={quantitiesMetadata.getDecimals("pressure")}
-            readOnly={true}
-          />
-          <QuantityRow
-            name="pressure"
-            value={simulatedPressurePsi}
-            unit="psi"
-            decimals={quantitiesMetadata.getDecimals("pressure")}
-            readOnly={true}
-          />
-          <QuantityRow
-            name="head"
-            value={simulatedHead}
-            unit={quantitiesMetadata.getUnit("head")}
-            decimals={quantitiesMetadata.getDecimals("head")}
-            readOnly={true}
-          />
-          <QuantityRow
-            name="actualDemand"
-            value={simulatedDemand}
-            unit={quantitiesMetadata.getUnit("actualDemand")}
-            decimals={quantitiesMetadata.getDecimals("actualDemand")}
-            readOnly={true}
-          />
-        </Section>
-      )}
-    </AssetEditorContent>
+                </>
+              );
+            })()}
+          </>
+        )}
+      </NestedSection>
+    </BlockComparisonField>
   );
 };
 
 const ValveEditor = ({
+  hydraulicModel,
   valve,
   startNode,
   endNode,
-  quantitiesMetadata,
+  units,
   onPropertyChange,
+  onBatchPropertyChange,
   onStatusChange,
-  onTypeChange,
   onActiveTopologyStatusChange,
   onLabelChange,
   readonly = false,
 }: {
+  hydraulicModel: HydraulicModel;
   valve: Valve;
   startNode: NodeAsset | null;
   endNode: NodeAsset | null;
-  quantitiesMetadata: Quantities;
+  units: UnitsSpec;
   onStatusChange: OnStatusChange<ValveStatus>;
   onPropertyChange: OnPropertyChange;
-  onTypeChange: OnTypeChange<ValveKind>;
+  onBatchPropertyChange: (changes: PropertyChange[]) => void;
   onActiveTopologyStatusChange: (
     property: string,
     newValue: boolean,
@@ -1952,8 +1545,9 @@ const ValveEditor = ({
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
-  const { footer } = useQuickGraph(valve.label, valve.id, "valve");
-  const { getComparison, isNew } = useAssetComparison(valve);
+  const { footer } = useQuickGraph(valve.id, "valve");
+  const { getComparison, getCurveComparison, isNew } =
+    useAssetComparison(valve);
   const simulation = useSimulation();
   const valveSimulation = simulation?.getValve(valve.id);
 
@@ -1971,21 +1565,34 @@ const ValveEditor = ({
   }, [translate]);
 
   const kindOptions = useMemo(() => {
-    return valveKinds.map((kind) => {
-      return {
-        label: kind.toUpperCase(),
-        description: translate(`valve.${kind}.detailed`),
-        value: kind,
-      };
-    });
-  }, [translate]);
+    const options: { label: string; description: string; value: ValveKind }[] =
+      valveKinds.map((kind) => {
+        return {
+          label: kind.toUpperCase(),
+          description: translate(`valve.${kind}.detailed`),
+          value: kind,
+        };
+      });
+    if (!valveKinds.includes(valve.kind as any)) {
+      options.push({
+        label: valve.kind.toUpperCase(),
+        description: translate(`valve.${valve.kind}.detailed`),
+        value: valve.kind,
+      });
+    }
+    return options;
+  }, [translate, valve.kind]);
 
   const handleKindChange = (
-    name: string,
+    _name: string,
     newValue: ValveKind,
     oldValue: ValveKind,
   ) => {
-    onTypeChange(newValue, oldValue);
+    const changes: PropertyChange[] = [{ property: "kind", value: newValue }];
+    if (valveCurveTypeFrom(newValue) !== valveCurveTypeFrom(oldValue)) {
+      changes.push({ property: "curveId", value: undefined });
+    }
+    onBatchPropertyChange(changes);
   };
 
   const handleStatusChange = (
@@ -1998,11 +1605,18 @@ const ValveEditor = ({
 
   const getSettingUnit = () => {
     if (valve.kind === "tcv") return null;
-    if (["psv", "prv", "pbv"].includes(valve.kind))
-      return quantitiesMetadata.getUnit("pressure");
-    if (valve.kind === "fcv") return quantitiesMetadata.getUnit("flow");
+    if (["psv", "prv", "pbv"].includes(valve.kind)) return units.pressure;
+    if (valve.kind === "fcv") return units.flow;
     return null;
   };
+
+  const activeTopologyComparison = getComparison("isActive", valve.isActive);
+  const hasModelAttributesChanges =
+    ["kind", "setting", "initialStatus", "diameter", "minorLoss"].some(
+      (p) => getComparison(p, valve.getProperty(p)).hasChanged,
+    ) ||
+    getCurveComparison("curveId", valve.curveId, hydraulicModel.curves)
+      .hasChanged;
 
   return (
     <AssetEditorContent
@@ -2014,21 +1628,29 @@ const ValveEditor = ({
       readOnly={readonly}
       key={valve.id}
     >
-      <Section title={translate("connections")}>
+      <SectionWrapper title={translate("connections")} section="connections">
         <TextRow name="startNode" value={startNode ? startNode.label : ""} />
         <TextRow name="endNode" value={endNode ? endNode.label : ""} />
-      </Section>
-      <Section title={translate("activeTopology")}>
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("activeTopology")}
+        section="activeTopology"
+        hasChanged={activeTopologyComparison.hasChanged}
+      >
         <SwitchRow
           name="isActive"
           label={translate("isEnabled")}
           enabled={valve.isActive}
-          comparison={getComparison("isActive", valve.isActive)}
+          comparison={activeTopologyComparison}
           onChange={onActiveTopologyStatusChange}
           readOnly={readonly}
         />
-      </Section>
-      <Section title={translate("modelAttributes")}>
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("modelAttributes")}
+        section="modelAttributes"
+        hasChanged={hasModelAttributesChanges}
+      >
         <SelectRow
           name="valveType"
           selected={valve.kind}
@@ -2037,14 +1659,34 @@ const ValveEditor = ({
           onChange={handleKindChange}
           readOnly={readonly}
         />
-        <QuantityRow
-          name="setting"
-          value={valve.setting}
-          unit={getSettingUnit()}
-          comparison={getComparison("setting", valve.setting)}
-          onChange={onPropertyChange}
-          readOnly={readonly}
-        />
+        {valve.kind !== "gpv" && (
+          <QuantityRow
+            name="setting"
+            value={valve.setting}
+            unit={getSettingUnit()}
+            comparison={getComparison("setting", valve.setting)}
+            onChange={onPropertyChange}
+            readOnly={readonly}
+          />
+        )}
+        {valve.kind === "gpv" && (
+          <HeadlossCurveField
+            valve={valve}
+            curves={hydraulicModel.curves}
+            getCurveComparison={getCurveComparison}
+            onChange={onPropertyChange}
+            readOnly={readonly}
+          />
+        )}
+        {valve.kind === "pcv" && (
+          <ValveCurveField
+            valve={valve}
+            curves={hydraulicModel.curves}
+            getCurveComparison={getCurveComparison}
+            onChange={onPropertyChange}
+            readOnly={readonly}
+          />
+        )}
         <SelectRow
           name="initialStatus"
           selected={valve.initialStatus}
@@ -2057,8 +1699,7 @@ const ValveEditor = ({
           name="diameter"
           value={valve.diameter}
           positiveOnly={true}
-          unit={quantitiesMetadata.getUnit("diameter")}
-          decimals={quantitiesMetadata.getDecimals("diameter")}
+          unit={units.diameter}
           comparison={getComparison("diameter", valve.diameter)}
           onChange={onPropertyChange}
           readOnly={readonly}
@@ -2067,37 +1708,36 @@ const ValveEditor = ({
           name="minorLoss"
           value={valve.minorLoss}
           positiveOnly={true}
-          unit={quantitiesMetadata.getUnit("minorLoss")}
-          decimals={quantitiesMetadata.getDecimals("minorLoss")}
+          unit={units.minorLoss}
           comparison={getComparison("minorLoss", valve.minorLoss)}
           onChange={onPropertyChange}
           readOnly={readonly}
         />
-      </Section>
-      <Section title={translate("simulationResults")}>
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("simulationResults")}
+        section="simulationResults"
+      >
         <QuantityRow
           name="flow"
           value={simFlow}
-          unit={quantitiesMetadata.getUnit("flow")}
-          decimals={quantitiesMetadata.getDecimals("flow")}
+          unit={units.flow}
           readOnly={true}
         />
         <QuantityRow
           name="velocity"
           value={simVelocity}
-          unit={quantitiesMetadata.getUnit("velocity")}
-          decimals={quantitiesMetadata.getDecimals("velocity")}
+          unit={units.velocity}
           readOnly={true}
         />
         <QuantityRow
           name="headlossShort"
           value={simHeadloss}
-          unit={quantitiesMetadata.getUnit("headloss")}
-          decimals={quantitiesMetadata.getDecimals("headloss")}
+          unit={units.headloss}
           readOnly={true}
         />
         <TextRow name="status" value={statusText} />
-      </Section>
+      </SectionWrapper>
     </AssetEditorContent>
   );
 };
@@ -2110,9 +1750,9 @@ const PumpEditor = ({
   onStatusChange,
   onPropertyChange,
   onActiveTopologyStatusChange,
-  onDefinitionChange,
+  onBatchPropertyChange,
   onLabelChange,
-  quantitiesMetadata,
+  units,
   readonly = false,
 }: {
   pump: Pump;
@@ -2126,22 +1766,28 @@ const PumpEditor = ({
     newValue: boolean,
     oldValue: boolean,
   ) => void;
-  onDefinitionChange: (data: PumpDefinitionData) => void;
+  onBatchPropertyChange: (changes: PropertyChange[]) => void;
   onLabelChange: (newLabel: string) => string | undefined;
-  quantitiesMetadata: Quantities;
+  units: UnitsSpec;
   readonly?: boolean;
 }) => {
+  const simulationSettings = useAtomValue(simulationSettingsAtom);
   const translate = useTranslate();
-  const { footer } = useQuickGraph(pump.label, pump.id, "pump");
-  const { getComparison, getPumpCurveComparison, isNew } =
-    useAssetComparison(pump);
+  const { footer } = useQuickGraph(pump.id, "pump");
+  const {
+    getComparison,
+    getCurveComparison,
+    getPatternComparison,
+    getPumpCurveComparison,
+    isNew,
+  } = useAssetComparison(pump);
   const simulation = useSimulation();
   const pumpSimulation = simulation?.getPump(pump.id);
+  const pumpEnergy = simulation?.getPumpEnergy(pump.id) ?? null;
 
   const simFlow = pumpSimulation?.flow ?? null;
   const simHead = pumpSimulation ? -pumpSimulation.headloss : null;
   const statusText = translate(pumpStatusLabel(pumpSimulation ?? null));
-  const isPumpCurvesEnabled = useFeatureFlag("FLAG_PUMP_CURVES");
 
   const statusOptions = useMemo(() => {
     return pumpStatuses.map((status) => ({
@@ -2158,6 +1804,31 @@ const PumpEditor = ({
     onStatusChange(newValue, oldValue);
   };
 
+  const activeTopologyComparison = getComparison("isActive", pump.isActive);
+  const hasModelAttributesChanges =
+    ["definitionType", "power", "speed", "initialStatus"].some(
+      (p) => getComparison(p, pump.getProperty(p)).hasChanged,
+    ) ||
+    getCurveComparison("curveId", pump.curveId, hydraulicModel.curves)
+      .hasChanged ||
+    getPatternComparison(
+      "speedPatternId",
+      pump.speedPatternId,
+      hydraulicModel.patterns,
+    ).hasChanged;
+  const hasEnergyChanges =
+    getComparison("energyPrice", pump.energyPrice).hasChanged ||
+    getCurveComparison(
+      "efficiencyCurveId",
+      pump.efficiencyCurveId,
+      hydraulicModel.curves,
+    ).hasChanged ||
+    getPatternComparison(
+      "energyPricePatternId",
+      pump.energyPricePatternId,
+      hydraulicModel.patterns,
+    ).hasChanged;
+
   return (
     <AssetEditorContent
       label={pump.label}
@@ -2168,47 +1839,47 @@ const PumpEditor = ({
       readOnly={readonly}
       key={pump.id}
     >
-      <Section title={translate("connections")}>
+      <SectionWrapper title={translate("connections")} section="connections">
         <TextRow name="startNode" value={startNode ? startNode.label : ""} />
         <TextRow name="endNode" value={endNode ? endNode.label : ""} />
-      </Section>
-      <Section title={translate("activeTopology")}>
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("activeTopology")}
+        section="activeTopology"
+        hasChanged={activeTopologyComparison.hasChanged}
+      >
         <SwitchRow
           name="isActive"
           label={translate("isEnabled")}
           enabled={pump.isActive}
-          comparison={getComparison("isActive", pump.isActive)}
+          comparison={activeTopologyComparison}
           onChange={onActiveTopologyStatusChange}
           readOnly={readonly}
         />
-      </Section>
-      <Section title={translate("modelAttributes")}>
-        {isPumpCurvesEnabled ? (
-          <PumpDefinitionDetailsWithAllCurves
-            pump={pump}
-            curves={hydraulicModel.curves}
-            quantities={quantitiesMetadata}
-            onChange={onDefinitionChange}
-            readonly={readonly}
-            getComparison={getComparison}
-            getPumpCurveComparison={getPumpCurveComparison}
-          />
-        ) : (
-          <PumpDefinitionDetails
-            pump={pump}
-            quantities={quantitiesMetadata}
-            onChange={onDefinitionChange}
-            readonly={readonly}
-            getComparison={getComparison}
-          />
-        )}
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("modelAttributes")}
+        section="modelAttributes"
+        hasChanged={hasModelAttributesChanges}
+      >
+        <PumpDefinitionDetails
+          pump={pump}
+          curves={hydraulicModel.curves}
+          units={units}
+          onChange={onBatchPropertyChange}
+          readonly={readonly}
+          getComparison={getComparison}
+          getPumpCurveComparison={getPumpCurveComparison}
+        />
+
         <QuantityRow
-          name="speed"
+          name="initialSpeed"
           value={pump.speed}
-          unit={quantitiesMetadata.getUnit("speed")}
-          decimals={quantitiesMetadata.getDecimals("speed")}
+          unit={units.speed}
           comparison={getComparison("speed", pump.speed)}
-          onChange={onPropertyChange}
+          onChange={(_, newValue, oldValue) =>
+            onPropertyChange("speed", newValue, oldValue)
+          }
           readOnly={readonly}
         />
         <SelectRow
@@ -2219,38 +1890,771 @@ const PumpEditor = ({
           onChange={handleStatusChange}
           readOnly={readonly}
         />
-      </Section>
-      <Section title={translate("simulationResults")}>
+        <VariableSpeedField
+          pump={pump}
+          patterns={hydraulicModel.patterns}
+          onPropertyChange={onPropertyChange}
+          readOnly={readonly}
+        />
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("energy")}
+        section="energy"
+        hasChanged={hasEnergyChanges}
+      >
+        <PumpEfficiencyCurveField
+          pump={pump}
+          curves={hydraulicModel.curves}
+          onChange={onPropertyChange}
+          readOnly={readonly}
+        />
+        <QuantityRow
+          name="energyPrice"
+          value={pump.energyPrice ?? null}
+          unit={null}
+          comparison={getComparison("energyPrice", pump.energyPrice)}
+          onChange={(_, newValue, oldValue) =>
+            onPropertyChange(
+              "energyPrice",
+              newValue || undefined,
+              oldValue || undefined,
+            )
+          }
+          isNullable
+          readOnly={readonly}
+          placeholder={localizeDecimal(simulationSettings.energyGlobalPrice)}
+        />
+        <PumpEnergyPricePatternField
+          pump={pump}
+          patterns={hydraulicModel.patterns}
+          globalPatternId={simulationSettings.energyGlobalPatternId}
+          onPropertyChange={onPropertyChange}
+          readOnly={readonly}
+        />
+      </SectionWrapper>
+
+      <SectionWrapper
+        title={translate("simulationResults")}
+        section="simulationResults"
+      >
         <QuantityRow
           name="flow"
           value={simFlow}
-          unit={quantitiesMetadata.getUnit("flow")}
-          decimals={quantitiesMetadata.getDecimals("flow")}
+          unit={units.flow}
           readOnly={true}
         />
         <QuantityRow
           name="pumpHead"
           value={simHead}
-          unit={quantitiesMetadata.getUnit("headloss")}
-          decimals={quantitiesMetadata.getDecimals("headloss")}
+          unit={units.headloss}
           readOnly={true}
         />
         <TextRow name="status" value={statusText} />
-      </Section>
+      </SectionWrapper>
+      <SectionWrapper
+        title={translate("energyResults")}
+        section="energyResults"
+      >
+        <QuantityRow
+          name="utilization"
+          value={pumpEnergy?.utilization ?? null}
+          unit={units.efficiency}
+          readOnly={true}
+        />
+        <QuantityRow
+          name="averageEfficiency"
+          value={pumpEnergy?.averageEfficiency ?? null}
+          unit={units.efficiency}
+          readOnly={true}
+        />
+        <QuantityRow
+          name="averageKwPerFlowUnit"
+          value={pumpEnergy?.averageKwPerFlowUnit ?? null}
+          unit={units.averageKwPerFlowUnit}
+          readOnly={true}
+        />
+        <QuantityRow
+          name="averageKw"
+          value={pumpEnergy?.averageKw ?? null}
+          unit={units.power}
+          readOnly={true}
+        />
+        <QuantityRow
+          name="peakKw"
+          value={pumpEnergy?.peakKw ?? null}
+          unit={units.power}
+          readOnly={true}
+        />
+        <QuantityRow
+          name="averageCostPerDay"
+          value={pumpEnergy?.averageCostPerDay ?? null}
+          unit={null}
+          readOnly={true}
+        />
+        <QuantityRow
+          name="demandCharge"
+          value={pumpEnergy?.demandCharge ?? null}
+          unit={null}
+          readOnly={true}
+        />
+      </SectionWrapper>
     </AssetEditorContent>
+  );
+};
+
+const pipeStatusLabel = (sim: Pick<PipeSimulation, "status"> | null) => {
+  if (!sim) return "notAvailable";
+  return "pipe." + sim.status;
+};
+
+const pumpStatusLabel = (
+  sim: {
+    status: PumpSimulation["status"] | null;
+    statusWarning: PumpSimulation["statusWarning"];
+  } | null,
+) => {
+  if (!sim || sim.status === null) return "notAvailable";
+  if (sim.statusWarning) {
+    return `pump.${sim.status}.${sim.statusWarning}`;
+  }
+  return "pump." + sim.status;
+};
+
+export const valveStatusLabel = (
+  sim: {
+    status: ValveSimulation["status"] | null;
+    statusWarning: ValveSimulation["statusWarning"];
+  } | null,
+) => {
+  if (!sim || sim.status === null) return "notAvailable";
+  if (sim.statusWarning) {
+    return `valve.${sim.status}.${sim.statusWarning}`;
+  }
+  return "valve." + sim.status;
+};
+
+const VARIABLE_SPEED_NONE = 0;
+const VARIABLE_SPEED_PATTERN_BASED = 1;
+
+const VariableSpeedField = ({
+  pump,
+  patterns,
+  onPropertyChange,
+  readOnly = false,
+}: {
+  pump: Pump;
+  patterns: Patterns;
+  onPropertyChange: OnPropertyChange;
+  readOnly?: boolean;
+}) => {
+  const translate = useTranslate();
+  const showPatternsLibrary = useShowPatternsLibrary();
+  const { getPatternComparison } = useAssetComparison(pump);
+
+  const comparison = getPatternComparison(
+    "speedPatternId",
+    pump.speedPatternId,
+    patterns,
+  );
+
+  const variableSpeedOptions = useMemo(
+    () => [
+      [{ label: translate("none"), value: VARIABLE_SPEED_NONE }],
+      [
+        {
+          label: translate("patternBased"),
+          value: VARIABLE_SPEED_PATTERN_BASED,
+        },
+      ],
+    ],
+    [translate],
+  );
+
+  const [selectedVariableSpeed, setSelectedVariableSpeed] = useState<
+    number | null
+  >(pump.speedPatternId ? VARIABLE_SPEED_PATTERN_BASED : null);
+  const [prevSpeedPatternId, setPrevSpeedPatternId] = useState(
+    pump.speedPatternId,
+  );
+  if (pump.speedPatternId !== prevSpeedPatternId) {
+    setPrevSpeedPatternId(pump.speedPatternId);
+    setSelectedVariableSpeed(
+      pump.speedPatternId ? VARIABLE_SPEED_PATTERN_BASED : null,
+    );
+  }
+
+  const handleVariableSpeedChange = useCallback(
+    (_: string, newValue: number | null, oldValue: number | null) => {
+      if (newValue === oldValue) return;
+      const resolved = newValue === VARIABLE_SPEED_NONE ? null : newValue;
+      setSelectedVariableSpeed(resolved);
+      if (resolved === null && pump.speedPatternId) {
+        onPropertyChange("speedPatternId", undefined, pump.speedPatternId);
+      }
+    },
+    [onPropertyChange, pump.speedPatternId],
+  );
+
+  const handleSpeedPatternChange = useCallback(
+    (_: string, newValue: number | null, oldValue: number | null) => {
+      if (newValue === oldValue) return;
+      if (newValue === null) {
+        if (pump.speedPatternId) {
+          onPropertyChange("speedPatternId", undefined, pump.speedPatternId);
+        }
+        return;
+      }
+      onPropertyChange("speedPatternId", newValue, pump.speedPatternId);
+    },
+    [onPropertyChange, pump.speedPatternId],
+  );
+
+  const baseDisplayValue = useMemo(() => {
+    if (!comparison.hasChanged) return undefined;
+    const basePattern = comparison.baseValue;
+    const baseHadPattern = basePattern != null;
+    const baseSpeed = baseHadPattern
+      ? translate("patternBased")
+      : translate("none");
+    const multipliersDiffer =
+      baseHadPattern && basePattern.id === pump.speedPatternId;
+
+    return (
+      <div className="whitespace-pre-line">
+        {baseSpeed}
+        {baseHadPattern &&
+          `\n${translate("speedPattern")}: ${basePattern.label}`}
+        {multipliersDiffer && `\n${translate("multipliersDiffer")}`}
+      </div>
+    );
+  }, [comparison, pump.speedPatternId, translate]);
+
+  return (
+    <BlockComparisonField
+      hasChanged={comparison.hasChanged}
+      baseDisplayValue={baseDisplayValue}
+    >
+      <SelectRow
+        name="variableSpeed"
+        selected={selectedVariableSpeed}
+        options={variableSpeedOptions}
+        listClassName="first:italic"
+        nullable={true}
+        placeholder={translate("none")}
+        onChange={handleVariableSpeedChange}
+        readOnly={readOnly}
+      />
+      {selectedVariableSpeed === VARIABLE_SPEED_PATTERN_BASED && (
+        <NestedSection>
+          <LibrarySelectRow
+            name="speedPattern"
+            collection={patterns}
+            filterByType="pumpSpeed"
+            libraryLabel={translate("openPatternsLibrary")}
+            onOpenLibrary={() =>
+              showPatternsLibrary({
+                source: "pump",
+                initialPatternId: pump.speedPatternId,
+                initialSection: "pumpSpeed",
+              })
+            }
+            selected={pump.speedPatternId ?? null}
+            emptyOptionLabel={translate("constant")}
+            onChange={handleSpeedPatternChange}
+            readOnly={readOnly}
+          />
+        </NestedSection>
+      )}
+    </BlockComparisonField>
+  );
+};
+
+const PumpEfficiencyCurveField = ({
+  pump,
+  curves,
+  onChange,
+  readOnly = false,
+}: {
+  pump: Pump;
+  curves: Curves;
+  onChange: OnPropertyChange;
+  readOnly?: boolean;
+}) => {
+  const translate = useTranslate();
+  const showPumpLibrary = useShowPumpLibrary();
+  const { getCurveComparison } = useAssetComparison(pump);
+
+  const curveComparison = getCurveComparison(
+    "efficiencyCurveId",
+    pump.efficiencyCurveId,
+    curves,
+  );
+
+  const baseDisplayValue = useMemo(() => {
+    if (!curveComparison.hasChanged) return undefined;
+    const baseCurve = curveComparison.baseValue;
+    const curveName = translate("efficiencyCurve");
+    const lines: string[] = [];
+
+    if (baseCurve) {
+      lines.push(`${curveName}: ${baseCurve.label}`);
+      if (baseCurve.id === pump.efficiencyCurveId) {
+        lines.push(translate("curvePointsDiffer"));
+      }
+    } else {
+      lines.push(`${curveName}: (${translate("none").toLocaleLowerCase()})`);
+    }
+
+    return <div className="whitespace-pre-line">{lines.join("\n")}</div>;
+  }, [curveComparison, pump.efficiencyCurveId, translate]);
+
+  const handleOnChange = useCallback(
+    (_name: string, newValue: CurveId | null, _oldValue: CurveId | null) => {
+      const efficiencyCurveId = newValue === null ? undefined : newValue;
+      if (pump.efficiencyCurveId !== efficiencyCurveId)
+        onChange(
+          "efficiencyCurveId",
+          efficiencyCurveId,
+          pump.efficiencyCurveId,
+        );
+    },
+    [onChange, pump.efficiencyCurveId],
+  );
+
+  return (
+    <BlockComparisonField
+      hasChanged={curveComparison.hasChanged}
+      baseDisplayValue={baseDisplayValue}
+    >
+      <LibrarySelectRow
+        name="efficiencyCurve"
+        collection={curves}
+        filterByType="efficiency"
+        libraryLabel={translate("openPumpLibrary")}
+        onOpenLibrary={() =>
+          showPumpLibrary({
+            source: "pump",
+            curveId: pump.efficiencyCurveId,
+            initialSection: "efficiency",
+          })
+        }
+        selected={pump.efficiencyCurveId ?? null}
+        emptyOptionLabel={translate("none")}
+        onChange={handleOnChange}
+        readOnly={readOnly}
+      />
+    </BlockComparisonField>
+  );
+};
+
+const PumpEnergyPricePatternField = ({
+  pump,
+  patterns,
+  globalPatternId,
+  onPropertyChange,
+  readOnly = false,
+}: {
+  pump: Pump;
+  patterns: Patterns;
+  globalPatternId: PatternId | null;
+  onPropertyChange: OnPropertyChange;
+  readOnly?: boolean;
+}) => {
+  const translate = useTranslate();
+  const showPatternsLibrary = useShowPatternsLibrary();
+  const { getPatternComparison } = useAssetComparison(pump);
+
+  const patternComparison = getPatternComparison(
+    "energyPricePatternId",
+    pump.energyPricePatternId,
+    patterns,
+  );
+
+  const baseDisplayValue = useMemo(() => {
+    if (!patternComparison.hasChanged) return undefined;
+    const basePattern = patternComparison.baseValue;
+    const patternName = translate("energyPricePattern");
+    const lines: string[] = [];
+
+    if (basePattern) {
+      lines.push(`${patternName}: ${basePattern.label}`);
+      if (basePattern.id === pump.energyPricePatternId) {
+        lines.push(translate("multipliersDiffer"));
+      }
+    } else {
+      lines.push(`${patternName}: (${translate("none").toLocaleLowerCase()})`);
+    }
+
+    return <div className="whitespace-pre-line">{lines.join("\n")}</div>;
+  }, [patternComparison, pump.energyPricePatternId, translate]);
+
+  const placeholder = useMemo(() => {
+    if (globalPatternId !== null) {
+      const globalPattern = patterns.get(globalPatternId);
+      if (globalPattern) return globalPattern.label;
+    }
+    return translate("constant");
+  }, [globalPatternId, patterns, translate]);
+
+  const handleChange = useCallback(
+    (_: string, newValue: PatternId | null, oldValue: PatternId | null) => {
+      onPropertyChange(
+        "energyPricePatternId",
+        newValue === null ? undefined : newValue,
+        oldValue || undefined,
+      );
+    },
+    [onPropertyChange],
+  );
+
+  return (
+    <BlockComparisonField
+      hasChanged={patternComparison.hasChanged}
+      baseDisplayValue={baseDisplayValue}
+    >
+      <LibrarySelectRow
+        name="energyPricePattern"
+        collection={patterns}
+        filterByType="energyPrice"
+        libraryLabel={translate("openPatternsLibrary")}
+        onOpenLibrary={() =>
+          showPatternsLibrary({
+            source: "pump",
+            initialPatternId: pump.energyPricePatternId,
+            initialSection: "energyPrice",
+          })
+        }
+        selected={pump.energyPricePatternId ?? null}
+        emptyOptionLabel={translate("constant")}
+        placeholder={placeholder}
+        onChange={handleChange}
+        readOnly={readOnly}
+      />
+    </BlockComparisonField>
+  );
+};
+
+const ReservoirHeadField = ({
+  reservoir,
+  patterns,
+  onPropertyChange,
+  units,
+  readOnly = false,
+}: {
+  reservoir: Reservoir;
+  patterns: Patterns;
+  onPropertyChange: OnPropertyChange;
+  units: UnitsSpec;
+  readOnly?: boolean;
+}) => {
+  const showPatternsLibrary = useShowPatternsLibrary();
+  const translate = useTranslate();
+  const translateUnit = useTranslateUnit();
+  const { getComparison, getPatternComparison } = useAssetComparison(reservoir);
+
+  const averageHead = useMemo(
+    () => calculateAverageHead(reservoir, patterns),
+    [reservoir, patterns],
+  );
+
+  const handleHeadPatternChange = useCallback(
+    (_: string, newValue: number | null, oldValue: number | null) => {
+      if (newValue === oldValue) return;
+      const patternId = newValue === null ? undefined : newValue;
+      if (!patternId && !oldValue) return;
+      onPropertyChange("headPatternId", patternId, reservoir.headPatternId);
+    },
+    [onPropertyChange, reservoir.headPatternId],
+  );
+
+  const headComparison = getComparison("head", reservoir.head);
+  const patternComparison = getPatternComparison(
+    "headPatternId",
+    reservoir.headPatternId,
+    patterns,
+  );
+  const hasChanged = headComparison.hasChanged || patternComparison.hasChanged;
+
+  const headUnit = units.head;
+
+  const baseDisplayValue = useMemo(() => {
+    if (!hasChanged) return undefined;
+
+    const baseHead = headComparison.hasChanged
+      ? (headComparison.baseValue as number)
+      : reservoir.head;
+
+    const baseMultipliers = patternComparison.hasChanged
+      ? patternComparison.baseValue?.multipliers
+      : reservoir.headPatternId
+        ? patterns.get(reservoir.headPatternId)?.multipliers
+        : undefined;
+
+    const avgMultiplier =
+      baseMultipliers && baseMultipliers.length > 0
+        ? baseMultipliers.reduce((sum, m) => sum + m, 0) /
+          baseMultipliers.length
+        : 1;
+
+    const baseAverageHead = baseHead * avgMultiplier;
+    const unitLabel = translateUnit(headUnit);
+    const formattedAvgHead = localizeDecimal(baseAverageHead);
+
+    const basePattern = patternComparison.baseValue;
+    const multipliersDiffer =
+      patternComparison.hasChanged &&
+      basePattern != null &&
+      basePattern.id === reservoir.headPatternId;
+
+    return (
+      <div className="whitespace-pre-line">
+        {`${translate("headAverage")} (${unitLabel}): ${formattedAvgHead}`}
+        {headComparison.hasChanged &&
+          `\n${translate("head")} (${unitLabel}): ${localizeDecimal(baseHead)}`}
+        {patternComparison.hasChanged && basePattern
+          ? `\n${translate("headPattern")}: ${basePattern.label}`
+          : `\n${translate("headPattern")}: ${translate("constant")}`}
+        {multipliersDiffer && `\n${translate("multipliersDiffer")}`}
+      </div>
+    );
+  }, [
+    hasChanged,
+    headComparison,
+    patternComparison,
+    patterns,
+    reservoir.head,
+    reservoir.headPatternId,
+    headUnit,
+    translate,
+    translateUnit,
+  ]);
+
+  const selectedPatternId = reservoir.headPatternId ?? null;
+
+  return (
+    <BlockComparisonField
+      hasChanged={hasChanged}
+      baseDisplayValue={baseDisplayValue}
+    >
+      <div className="flex flex-col gap-1">
+        <QuantityRow
+          name="head"
+          value={reservoir.head}
+          unit={headUnit}
+          onChange={onPropertyChange}
+          readOnly={readOnly}
+        />
+
+        <LibrarySelectRow
+          name="headPattern"
+          collection={patterns}
+          filterByType="reservoirHead"
+          libraryLabel={translate("openPatternsLibrary")}
+          onOpenLibrary={() =>
+            showPatternsLibrary({
+              source: "reservoir",
+              initialPatternId: reservoir.headPatternId,
+              initialSection: "reservoirHead",
+            })
+          }
+          selected={selectedPatternId}
+          emptyOptionLabel={translate("constant")}
+          onChange={handleHeadPatternChange}
+          readOnly={readOnly}
+        />
+        {!!selectedPatternId && (
+          <QuantityRow
+            name="headAverage"
+            value={averageHead}
+            unit={headUnit}
+            readOnly={true}
+          />
+        )}
+      </div>
+    </BlockComparisonField>
+  );
+};
+
+const HeadlossCurveField = ({
+  valve,
+  curves,
+  getCurveComparison,
+  onChange,
+  readOnly = false,
+}: {
+  valve: Valve;
+  curves: Curves;
+  getCurveComparison: (
+    propertyName: string,
+    currentCurveId: CurveId | undefined,
+    currentCurves: Curves,
+  ) => PropertyComparison<ICurve>;
+  onChange: OnPropertyChange;
+  readOnly?: boolean;
+}) => {
+  const translate = useTranslate();
+  const showCurveLibrary = useShowCurveLibrary();
+
+  const curveComparison = getCurveComparison("curveId", valve.curveId, curves);
+
+  const baseDisplayValue = useMemo(() => {
+    if (!curveComparison.hasChanged) return undefined;
+    const baseCurve = curveComparison.baseValue;
+    const curveName = translate("headlossCurve");
+    const lines: string[] = [];
+
+    if (baseCurve) {
+      lines.push(`${curveName}: ${baseCurve.label}`);
+      if (baseCurve.id === valve.curveId) {
+        lines.push(translate("curvePointsDiffer"));
+      }
+    } else {
+      lines.push(`${curveName}: (${translate("none").toLocaleLowerCase()})`);
+    }
+
+    return <div className="whitespace-pre-line">{lines.join("\n")}</div>;
+  }, [curveComparison, valve.curveId, translate]);
+
+  const selectedCurveId = useMemo(() => {
+    if (!valve.curveId) return null;
+    const curve = curves.get(valve.curveId);
+    if (!curve || curve.type !== "headloss") return null;
+    return valve.curveId;
+  }, [valve.curveId, curves]);
+
+  const handleOnChange = useCallback(
+    (_name: string, newValue: CurveId | null, oldValue: CurveId | null) => {
+      if (newValue === null) return;
+      onChange("curveId", newValue, oldValue || undefined);
+    },
+    [onChange],
+  );
+
+  return (
+    <BlockComparisonField
+      hasChanged={curveComparison.hasChanged}
+      baseDisplayValue={baseDisplayValue}
+    >
+      <LibrarySelectRow
+        name="headlossCurve"
+        collection={curves}
+        filterByType="headloss"
+        libraryLabel={translate("openCurvesLibrary")}
+        onOpenLibrary={() =>
+          showCurveLibrary({
+            source: "valve",
+            curveId: valve.curveId,
+            initialSection: "headloss",
+          })
+        }
+        selected={selectedCurveId}
+        onChange={handleOnChange}
+        readOnly={readOnly}
+      />
+    </BlockComparisonField>
+  );
+};
+
+const ValveCurveField = ({
+  valve,
+  curves,
+  getCurveComparison,
+  onChange,
+  readOnly = false,
+}: {
+  valve: Valve;
+  curves: Curves;
+  getCurveComparison: (
+    propertyName: string,
+    currentCurveId: CurveId | undefined,
+    currentCurves: Curves,
+  ) => PropertyComparison<ICurve>;
+  onChange: OnPropertyChange;
+  readOnly?: boolean;
+}) => {
+  const translate = useTranslate();
+  const showCurveLibrary = useShowCurveLibrary();
+
+  const curveComparison = getCurveComparison("curveId", valve.curveId, curves);
+
+  const baseDisplayValue = useMemo(() => {
+    if (!curveComparison.hasChanged) return undefined;
+    const baseCurve = curveComparison.baseValue;
+    const curveName = translate("valveCurve");
+    const lines: string[] = [];
+
+    if (baseCurve) {
+      lines.push(`${curveName}: ${baseCurve.label}`);
+      if (baseCurve.id === valve.curveId) {
+        lines.push(translate("curvePointsDiffer"));
+      }
+    } else {
+      lines.push(`${curveName}: (${translate("none").toLocaleLowerCase()})`);
+    }
+
+    return <div className="whitespace-pre-line">{lines.join("\n")}</div>;
+  }, [curveComparison, valve.curveId, translate]);
+
+  const selectedCurveId = useMemo(() => {
+    if (!valve.curveId) return null;
+    const curve = curves.get(valve.curveId);
+    if (!curve || curve.type !== "valve") return null;
+    return valve.curveId;
+  }, [valve.curveId, curves]);
+
+  const handleOnChange = useCallback(
+    (_name: string, newValue: CurveId | null, oldValue: CurveId | null) => {
+      onChange(
+        "curveId",
+        newValue === null ? undefined : newValue,
+        oldValue || undefined,
+      );
+    },
+    [onChange],
+  );
+
+  return (
+    <BlockComparisonField
+      hasChanged={curveComparison.hasChanged}
+      baseDisplayValue={baseDisplayValue}
+    >
+      <LibrarySelectRow
+        name="valveCurve"
+        collection={curves}
+        filterByType="valve"
+        libraryLabel={translate("openCurvesLibrary")}
+        onOpenLibrary={() =>
+          showCurveLibrary({
+            source: "valve",
+            curveId: valve.curveId,
+            initialSection: "valve",
+          })
+        }
+        selected={selectedCurveId}
+        emptyOptionLabel={translate("none")}
+        onChange={handleOnChange}
+        readOnly={readOnly}
+      />
+    </BlockComparisonField>
   );
 };
 
 function getCustomerPointsPattern(
   customerPoints: CustomerPoint[],
-  patterns: DemandPatterns,
+  demands: Demands,
+  patterns: Patterns,
 ) {
   if (!customerPoints.length) return;
   const firstCustomerPointWithDemand = customerPoints.find(
-    (customerPoint) => customerPoint.demands?.[0],
+    (customerPoint) =>
+      getCustomerPointDemands(demands, customerPoint.id).length > 0,
   );
   if (!firstCustomerPointWithDemand) return;
-  const patternId = firstCustomerPointWithDemand.demands[0].patternId;
+  const customerDemands = getCustomerPointDemands(
+    demands,
+    firstCustomerPointWithDemand.id,
+  );
+  const patternId = customerDemands[0]?.patternId;
   if (!patternId) return;
   const pattern = patterns.get(patternId);
   if (!pattern) return;
@@ -2258,24 +2662,4 @@ function getCustomerPointsPattern(
     value: patternId,
     label: pattern.label,
   };
-}
-
-function getConnectedJunctionsForLogger(
-  hydraulicModel: HydraulicModel,
-  loggerPointId: number,
-): Junction[] {
-  const isLinkAsset = (asset: Asset): asset is LinkAsset => asset.isLink;
-  const connected = new Map<number, Junction>();
-  for (const asset of hydraulicModel.assets.values()) {
-    if (!isLinkAsset(asset)) continue;
-    const [startNodeId, endNodeId] = asset.connections;
-    if (startNodeId !== loggerPointId && endNodeId !== loggerPointId) continue;
-
-    const otherNodeId = startNodeId === loggerPointId ? endNodeId : startNodeId;
-    const otherNode = hydraulicModel.assets.get(otherNodeId);
-    if (otherNode && otherNode.isNode && otherNode.type === "junction") {
-      connected.set(otherNode.id, otherNode as Junction);
-    }
-  }
-  return Array.from(connected.values());
 }

@@ -13,13 +13,14 @@ import type { FlatbushLike } from "src/lib/generate-flatbush-instance";
 import type { ModeWithOptions } from "src/state/mode";
 import type { Dispatch, SetStateAction } from "react";
 import type { IPersistence } from "src/lib/persistence/ipersistence";
-import type { Sel } from "src/state/jotai";
+import type { Sel } from "src/selection/types";
 import { JsonValue, SetOptional } from "type-fest";
 import { getFoldersInTree } from "src/lib/folder";
 import { colors } from "src/lib/constants";
 import clamp from "lodash/clamp";
 import { HydraulicModel } from "src/hydraulic-model";
 import type { MapEngine } from "src/map";
+import type { UnitsSpec } from "src/lib/project-settings/quantities-spec";
 
 export interface CoordProps {
   x: number;
@@ -94,29 +95,6 @@ export type FolderMap = Map<string, IFolder> & { version?: number };
 export type LayerConfigMap = Map<string, ILayerConfig> & { version?: number };
 
 export type IWrappedFeatureInput = SetOptional<IWrappedFeature, "at">;
-
-export const Presence = z.object({
-  bearing: z.number(),
-  pitch: z.number(),
-  minx: z.number(),
-  miny: z.number(),
-  maxx: z.number(),
-  maxy: z.number(),
-  userName: z.string(),
-  userId: z.number(),
-  updatedAt: z.string(),
-  cursorLatitude: z.number(),
-  cursorLongitude: z.number(),
-  wrappedFeatureCollectionId: z.string().length(21),
-  replicacheClientId: z.string(),
-});
-
-export type IPresence = z.infer<typeof Presence>;
-
-export type IPresenceMinus = Omit<
-  IPresence,
-  "replicacheClientId" | "wrappedFeatureCollectionId"
->;
 
 export const Folder = z.object({
   id: z.string(),
@@ -316,6 +294,7 @@ export interface HandlerContext {
   dragTargetRef: React.MutableRefObject<DragTarget | null>;
   mode: ModeWithOptions;
   hydraulicModel: HydraulicModel;
+  units: UnitsSpec;
   folderMap: FolderMap;
   rep: IPersistence;
   map: MapEngine;

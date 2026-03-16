@@ -3,7 +3,9 @@ import { useAtomValue } from "jotai";
 import { AllocationRule } from "src/hydraulic-model/customer-points";
 
 import { AllocationRulesTable } from "./allocation-rules-table";
-import { dataAtom, stagingModelAtom } from "src/state/jotai";
+import { projectSettingsAtom } from "src/state/project-settings";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { modelFactoriesAtom } from "src/state/model-factories";
 import { allocateCustomerPoints } from "src/hydraulic-model/model-operations/allocate-customer-points";
 import { initializeCustomerPoints } from "src/hydraulic-model/customer-points";
 import { addCustomerPoints } from "src/hydraulic-model/mutations/add-customer-points";
@@ -15,25 +17,31 @@ import { useTranslate } from "src/hooks/use-translate";
 import { useUserTracking } from "src/infra/user-tracking";
 import { notify } from "src/components/notifications";
 import { usePersistence } from "src/lib/persistence";
+import { simulationSettingsAtom } from "src/state/simulation-settings";
 import { Button } from "src/components/elements";
 import { SuccessIcon, WarningIcon } from "src/icons";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 
 export const AllocationStep: React.FC<{
   onBack: () => void;
   onFinish: () => void;
+  renderActions?: boolean;
   wizardState: WizardState &
     WizardActions & {
       allocationRules: AllocationRule[];
       units: { diameter: Unit; length: Unit };
     };
-}> = ({ onBack, onFinish, wizardState }) => {
+}> = ({ onBack, onFinish, renderActions = true, wizardState }) => {
   const [tempRules, setTempRules] = useState<AllocationRule[]>([]);
-  const data = useAtomValue(dataAtom);
+  const projectSettings = useAtomValue(projectSettingsAtom);
   const hydraulicModel = useAtomValue(stagingModelAtom);
+  const factories = useAtomValue(modelFactoriesAtom);
+  const simulationSettings = useAtomValue(simulationSettingsAtom);
   const translate = useTranslate();
   const userTracking = useUserTracking();
   const rep = usePersistence();
   const transactImport = rep.useTransactImport();
+  const isModalsOn = useFeatureFlag("FLAG_MODALS");
 
   const {
     parsedDataSummary,
@@ -76,6 +84,7 @@ export const AllocationStep: React.FC<{
         {
           preserveJunctionDemands: keepDemands,
           overrideExisting: true,
+          customerPointDemands: parsedDataSummary?.customerPointDemands,
         },
       );
 
@@ -83,8 +92,10 @@ export const AllocationStep: React.FC<{
 
       transactImport(
         updatedHydraulicModel,
-        data.modelMetadata,
+        factories,
+        projectSettings,
         "customerpoints",
+        simulationSettings,
       );
 
       userTracking.capture({
@@ -109,8 +120,11 @@ export const AllocationStep: React.FC<{
     }
   }, [
     allocationResult,
-    data.modelMetadata,
+    projectSettings,
     hydraulicModel,
+    factories,
+    simulationSettings,
+    parsedDataSummary?.customerPointDemands,
     keepDemands,
     onFinish,
     setProcessing,
@@ -293,7 +307,9 @@ export const AllocationStep: React.FC<{
 
   return (
     <>
-      <div className="overflow-y-auto flex-grow space-y-4">
+      <div
+        className={`overflow-y-auto flex-grow space-y-4 ${isModalsOn ? "scroll-shadows" : ""}`}
+      >
         <div>
           <h2 className="text-lg font-semibold mb-2">
             {translate("importCustomerPoints.wizard.allocationStep.title")}
@@ -386,7 +402,7 @@ export const AllocationStep: React.FC<{
         )}
       </div>
 
-      <WizardActionsComponent {...actionProps} />
+      {renderActions && <WizardActionsComponent {...actionProps} />}
     </>
   );
 };

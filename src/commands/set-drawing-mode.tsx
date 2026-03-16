@@ -1,6 +1,7 @@
 import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback } from "react";
-import { ephemeralStateAtom, selectionAtom } from "src/state/jotai";
+import { ephemeralStateAtom } from "src/state/drawing";
+import { selectionAtom } from "src/state/selection";
 import { Mode, modeAtom } from "src/state/mode";
 import { USelection } from "src/selection/selection";
 
@@ -9,6 +10,9 @@ const SELECTION_MODES = [
   Mode.SELECT_RECTANGULAR,
   Mode.SELECT_POLYGONAL,
   Mode.SELECT_FREEHAND,
+  Mode.BOUNDARY_TRACE_SELECT,
+  Mode.UPSTREAM_TRACE_SELECT,
+  Mode.DOWNSTREAM_TRACE_SELECT,
 ] as const;
 
 const isSelectionMode = (mode: Mode): boolean =>
@@ -25,8 +29,12 @@ export const drawingModeShorcuts: { [key in Mode]: string } = {
   [Mode.DRAW_PIPE]: "5",
   [Mode.DRAW_PUMP]: "6",
   [Mode.DRAW_VALVE]: "7",
+  [Mode.DRAW_CUSTOMER_POINT]: "8",
   [Mode.CONNECT_CUSTOMER_POINTS]: "",
   [Mode.REDRAW_LINK]: "",
+  [Mode.BOUNDARY_TRACE_SELECT]: "",
+  [Mode.UPSTREAM_TRACE_SELECT]: "",
+  [Mode.DOWNSTREAM_TRACE_SELECT]: "",
 };
 
 export const useDrawingMode = () => {

@@ -1,13 +1,11 @@
-import { useAtomValue } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import * as Popover from "@radix-ui/react-popover";
 import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
-import {
-  dataAtom,
-  simulationAtom,
-  simulationResultsAtom,
-  stagingModelAtom,
-} from "src/state/jotai";
+import { projectSettingsAtom } from "src/state/project-settings";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { showGridAtom } from "src/state/map-projection";
+import { simulationAtom, simulationResultsAtom } from "src/state/simulation";
 import { Selector, SelectorLikeButton } from "../form/selector";
 import { useUserTracking } from "src/infra/user-tracking";
 import {
@@ -16,7 +14,7 @@ import {
   supportedLinkProperties,
   supportedNodeProperties,
 } from "src/map/symbology/symbology-types";
-import { useSymbologyState } from "src/state/symbology";
+import { useSymbologyState } from "src/state/map-symbology";
 import { defaultSymbologyBuilders } from "src/map/symbology/default-symbology-builders";
 import { Checkbox } from "../form/Checkbox";
 import { ColorRampSelector } from "src/components/color-ramp-selector";
@@ -27,7 +25,9 @@ import { AddLayer, LayersEditor } from "../layers/layers-editor";
 import { InlineField, Section, SectionList } from "../form/fields";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { LegendRamp } from "../legends";
-import { Unit, convertTo } from "src/quantity";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { selectionAtom } from "src/state/selection";
+import { USelection } from "src/selection/selection";
 
 const colorPropertyLabelFor = (
   property: string,
@@ -42,10 +42,12 @@ const colorPropertyLabelFor = (
 
 export const MapStylingEditor = () => {
   const translate = useTranslate();
+  const isGridOn = useAtomValue(showGridAtom);
+  const isCreateCustomerOn = useFeatureFlag("FLAG_CREATE_CUSTOMER");
 
   return (
     <div className="flex-auto overflow-y-auto placemark-scrollbar border-gray-200 dark:border-gray-900">
-      <SectionList>
+      <SectionList gap={1} padding={4}>
         <SymbologyEditor
           geometryType="node"
           properties={supportedNodeProperties}
@@ -54,10 +56,12 @@ export const MapStylingEditor = () => {
           geometryType="link"
           properties={supportedLinkProperties}
         />
-        <CustomerPointsSection />
-        <Section title={translate("layers")} button={<AddLayer />}>
-          <LayersEditor />
-        </Section>
+        {(!isGridOn || isCreateCustomerOn) && <CustomerPointsSection />}
+        {!isGridOn && (
+          <Section title={translate("layers")} button={<AddLayer />}>
+            <LayersEditor />
+          </Section>
+        )}
       </SectionList>
     </div>
   );
@@ -73,33 +77,6 @@ const simulationProperties = [
 ];
 
 type SelectOption = SupportedProperty | "none";
-type ExtendedSelectOption = SelectOption | "pressureMeters" | "elevationPsi";
-
-const PSI_PER_METER = 1.42233433;
-const PSI_PER_FOOT = 0.4333;
-
-const elevationToPsi = (value: number, sourceUnit: Unit): number => {
-  if (sourceUnit === "m") return value * PSI_PER_METER;
-  if (sourceUnit === "ft") return value * PSI_PER_FOOT;
-  return value;
-};
-
-const toBaseProperty = (option: ExtendedSelectOption): SelectOption =>
-  option === "pressureMeters"
-    ? "pressure"
-    : option === "elevationPsi"
-      ? "elevation"
-      : option;
-
-const toSelectOption = (
-  property: SupportedProperty | null,
-  unit: Unit,
-): ExtendedSelectOption => {
-  if (property === null) return "none";
-  if (property === "pressure" && unit === "mwc") return "pressureMeters";
-  if (property === "elevation" && unit === "psi") return "elevationPsi";
-  return property;
-};
 
 const SymbologyEditor = ({
   geometryType,
@@ -116,30 +93,34 @@ const SymbologyEditor = ({
   const {
     linkSymbology,
     nodeSymbology,
+    symbologyPreferences,
     updateNodeSymbology,
     updateLinkSymbology,
     switchNodeSymbologyTo,
     switchLinkSymbologyTo,
   } = useSymbologyState();
   const symbology = geometryType === "node" ? nodeSymbology : linkSymbology;
-  const {
-    modelMetadata: { quantities },
-  } = useAtomValue(dataAtom);
+  const { units } = useAtomValue(projectSettingsAtom);
   const hydraulicModel = useAtomValue(stagingModelAtom);
+  const isPersistMapPreferencesOn = useFeatureFlag(
+    "FLAG_RESTORE_MAP_PREFERENCES",
+  );
 
   const userTracking = useUserTracking();
 
-  const handleColorByChange = (option: ExtendedSelectOption) => {
-    const property = toBaseProperty(option);
-
+  const handleColorByChange = (property: SelectOption) => {
     userTracking.capture({
       name: "map.colorBy.changed",
       type: geometryType,
-      subtype: option,
+      subtype: property,
     });
 
     const isSimulationProperty = simulationProperties.includes(property);
     const canApplySymbology = !isSimulationProperty || simulationResults;
+    const preference =
+      isPersistMapPreferencesOn && property !== "none"
+        ? symbologyPreferences[property]
+        : undefined;
 
     if (geometryType === "node") {
       if (property === "none") {
@@ -148,62 +129,15 @@ const SymbologyEditor = ({
       }
 
       if (canApplySymbology) {
-        if (property === "pressure") {
-          const nextSymbology = defaultSymbologyBuilders[property](
+        switchNodeSymbologyTo(
+          property,
+          defaultSymbologyBuilders[property](
             hydraulicModel,
-            quantities,
+            units,
             simulationResults!,
-          )();
-          if (option === "pressureMeters" && nextSymbology.colorRule) {
-            const convertPressure = (value: number) =>
-              convertTo({ value, unit: "psi" }, "mwc");
-            updateNodeSymbology({
-              ...nextSymbology,
-              colorRule: {
-                ...nextSymbology.colorRule,
-                unit: "mwc",
-                breaks: nextSymbology.colorRule.breaks.map(convertPressure),
-                fallbackEndpoints: nextSymbology.colorRule.fallbackEndpoints.map(
-                  convertPressure,
-                ) as [number, number],
-              },
-            });
-          } else {
-            updateNodeSymbology(nextSymbology);
-          }
-        } else if (property === "elevation") {
-          const nextSymbology = defaultSymbologyBuilders[property](
-            hydraulicModel,
-          )();
-          if (option === "elevationPsi" && nextSymbology.colorRule) {
-            const sourceElevationUnit = hydraulicModel.units.elevation;
-            const convertElevation = (value: number) =>
-              elevationToPsi(value, sourceElevationUnit);
-            updateNodeSymbology({
-              ...nextSymbology,
-              colorRule: {
-                ...nextSymbology.colorRule,
-                unit: "psi",
-                breaks: nextSymbology.colorRule.breaks.map(convertElevation),
-                fallbackEndpoints:
-                  nextSymbology.colorRule.fallbackEndpoints.map(
-                    convertElevation,
-                  ) as [number, number],
-              },
-            });
-          } else {
-            updateNodeSymbology(nextSymbology);
-          }
-        } else {
-          switchNodeSymbologyTo(
-            property,
-            defaultSymbologyBuilders[property](
-              hydraulicModel,
-              quantities,
-              simulationResults!,
-            ),
-          );
-        }
+            preference,
+          ),
+        );
       }
     } else {
       if (property === "none") {
@@ -216,8 +150,9 @@ const SymbologyEditor = ({
           property,
           defaultSymbologyBuilders[property](
             hydraulicModel,
-            quantities,
+            units,
             simulationResults!,
+            preference,
           ),
         );
       }
@@ -251,53 +186,14 @@ const SymbologyEditor = ({
       : translate("linkSymbology");
 
   const isSmOrLarger = useBreakpoint("sm");
-  const colorByOptions = ((): ExtendedSelectOption[] => {
-    const baseOptions = ["none", ...properties] as ExtendedSelectOption[];
-    if (
-      geometryType === "node" &&
-      ["m", "ft"].includes(quantities.getUnit("elevation") ?? "")
-    ) {
-      const elevationIndex = baseOptions.findIndex(
-        (option) => option === "elevation",
-      );
-      if (elevationIndex !== -1) {
-        baseOptions.splice(elevationIndex + 1, 0, "elevationPsi");
-      }
-    }
-
-    const shouldShowPressureMeters =
-      geometryType === "node" && quantities.getUnit("pressure") === "psi";
-    if (!shouldShowPressureMeters) return baseOptions;
-
-    const pressureIndex = baseOptions.findIndex((option) => option === "pressure");
-    if (pressureIndex === -1) return baseOptions;
-
-    baseOptions.splice(pressureIndex + 1, 0, "pressureMeters");
-    return baseOptions;
-  })();
 
   return (
     <Section title={title}>
-      <InlineField name={translate("colorBy")}>
+      <InlineField name={translate("colorBy")} labelSize="md">
         <Selector
           ariaLabel={`${translate(geometryType)} ${translate("colorBy")}`}
-          options={colorByOptions.map((type) => {
-            if (type === "pressureMeters") {
-              return {
-                value: type,
-                label: `${translate("pressure")} (${translateUnit("mwc")})`,
-                disabled: simulation.status === "idle",
-              };
-            }
-            if (type === "elevationPsi") {
-              return {
-                value: type,
-                label: `${translate("elevation")} (${translateUnit("psi")})`,
-                disabled: false,
-              };
-            }
-
-            const unit = type !== "none" ? quantities.getUnit(type) : null;
+          options={(["none", ...properties] as SelectOption[]).map((type) => {
+            const unit = type !== "none" ? units[type] : null;
             return {
               value: type,
               label: `${colorPropertyLabelFor(type, translate)} ${!!unit ? `(${translateUnit(unit)})` : ""}`,
@@ -307,12 +203,9 @@ const SymbologyEditor = ({
             };
           })}
           selected={
-            toSelectOption(
-              symbology.colorRule
-                ? (symbology.colorRule.property as SupportedProperty)
-                : null,
-              symbology.colorRule?.unit ?? null,
-            )
+            (symbology.colorRule
+              ? symbology.colorRule.property
+              : "none") as SelectOption
           }
           onChange={handleColorByChange}
         />
@@ -321,39 +214,35 @@ const SymbologyEditor = ({
         <>
           {isSmOrLarger && (
             <>
-              <InlineField name={translate("range")}>
+              <InlineField name={translate("range")} labelSize="md">
                 <RangeColorRuleEditorTrigger
                   mode={symbology.colorRule.mode}
                   numIntervals={symbology.colorRule.breaks.length + 1}
                   geometryType={geometryType}
                 />
               </InlineField>
-              <InlineField name={translate("ramp")}>
+              <InlineField name={translate("ramp")} labelSize="md">
                 <ColorRampSelector geometryType={geometryType} />
               </InlineField>
             </>
           )}
           {!isSmOrLarger && (
-            <InlineField name="Legend" align="start">
+            <InlineField name="Legend" align="start" labelSize="md">
               <div className="w-full px-2">
                 <LegendRamp colorRule={symbology.colorRule} />
               </div>
             </InlineField>
           )}
-          <InlineField name={translate("labels")}>
-            <div className="p-2 flex items-center h-[38px]">
-              <Checkbox
-                checked={!!symbology.labelRule}
-                aria-label={`${translate(geometryType)} ${translate("labels")}`}
-                onChange={() =>
-                  handleLabelRuleChange(
-                    !!symbology.labelRule
-                      ? null
-                      : symbology.colorRule!.property,
-                  )
-                }
-              />
-            </div>
+          <InlineField name={translate("labels")} labelSize="md">
+            <Checkbox
+              checked={!!symbology.labelRule}
+              aria-label={`${translate(geometryType)} ${translate("labels")}`}
+              onChange={() =>
+                handleLabelRuleChange(
+                  !!symbology.labelRule ? null : symbology.colorRule!.property,
+                )
+              }
+            />
           </InlineField>
         </>
       )}
@@ -366,6 +255,8 @@ const CustomerPointsSection = () => {
   const userTracking = useUserTracking();
   const { customerPointsSymbology, updateCustomerPointsSymbology } =
     useSymbologyState();
+  const selection = useAtomValue(selectionAtom);
+  const setSelection = useSetAtom(selectionAtom);
 
   const handleVisibilityChange = () => {
     const newVisibility = !customerPointsSymbology.visible;
@@ -377,18 +268,20 @@ const CustomerPointsSection = () => {
     });
 
     updateCustomerPointsSymbology({ visible: newVisibility });
+
+    if (!newVisibility && selection.type === "singleCustomerPoint") {
+      setSelection(USelection.none());
+    }
   };
 
   return (
     <Section title={translate("customerPoints")}>
-      <InlineField name={translate("visible")}>
-        <div className="p-2 flex items-center h-[38px]">
-          <Checkbox
-            checked={customerPointsSymbology.visible}
-            aria-label={`${translate("customerPoints")} ${translate("visible")}`}
-            onChange={handleVisibilityChange}
-          />
-        </div>
+      <InlineField name={translate("visible")} labelSize="md">
+        <Checkbox
+          checked={customerPointsSymbology.visible}
+          aria-label={`${translate("customerPoints")} ${translate("visible")}`}
+          onChange={handleVisibilityChange}
+        />
       </InlineField>
     </Section>
   );

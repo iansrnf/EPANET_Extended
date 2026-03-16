@@ -1,14 +1,11 @@
 import { useAtom, useAtomValue } from "jotai";
-import {
-  dataAtom,
-  pipeDrawingDefaultsAtom,
-  Mode,
-  modeAtom,
-} from "src/state/jotai";
+import { projectSettingsAtom } from "src/state/project-settings";
+import { pipeDrawingDefaultsAtom } from "src/state/drawing";
+import { Mode, modeAtom } from "src/state/mode";
 import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import { NumericField } from "./form/numeric-field";
-import { localizeDecimal } from "src/infra/i18n/numbers";
+import { useValueDisplay } from "src/hooks/use-value-display";
 import { useRef } from "react";
 import { useUserTracking } from "src/infra/user-tracking";
 
@@ -17,9 +14,8 @@ export const PipeDrawingFloatingPanel = () => {
   const translate = useTranslate();
   const translateUnit = useTranslateUnit();
   const userTracking = useUserTracking();
-  const {
-    modelMetadata: { quantities },
-  } = useAtomValue(dataAtom);
+  const { units, defaults } = useAtomValue(projectSettingsAtom);
+  const { displayValue } = useValueDisplay();
   const [pipeDrawingDefaults, setPipeDrawingDefaults] = useAtom(
     pipeDrawingDefaultsAtom,
   );
@@ -31,7 +27,7 @@ export const PipeDrawingFloatingPanel = () => {
     return null;
   }
 
-  const systemDefaults = quantities.defaults.pipe;
+  const systemDefaults = defaults.pipe;
   const currentDiameter =
     pipeDrawingDefaults.diameter ?? systemDefaults.diameter ?? 0;
   const currentRoughness =
@@ -57,8 +53,8 @@ export const PipeDrawingFloatingPanel = () => {
     });
   };
 
-  const diameterUnit = quantities.getUnit("diameter");
-  const roughnessUnit = quantities.getUnit("roughness");
+  const diameterUnit = units.diameter;
+  const roughnessUnit = units.roughness;
 
   const diameterLabel = diameterUnit
     ? `${translate("diameter")} (${translateUnit(diameterUnit)})`
@@ -67,12 +63,8 @@ export const PipeDrawingFloatingPanel = () => {
     ? `${translate("roughness")} (${translateUnit(roughnessUnit)})`
     : translate("roughness");
 
-  const diameterDisplay = localizeDecimal(currentDiameter, {
-    decimals: quantities.getDecimals("diameter"),
-  });
-  const roughnessDisplay = localizeDecimal(currentRoughness, {
-    decimals: quantities.getDecimals("roughness"),
-  });
+  const diameterDisplay = displayValue(currentDiameter, "diameter");
+  const roughnessDisplay = displayValue(currentRoughness, "roughness");
 
   return (
     <div

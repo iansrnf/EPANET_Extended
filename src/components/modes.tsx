@@ -1,12 +1,12 @@
-import { modeAtom, Mode, MODE_INFO } from "src/state/jotai";
+import { modeAtom, Mode, MODE_INFO } from "src/state/mode";
 import MenuAction from "src/components/menu-action";
 import { memo } from "react";
 import { useAtomValue } from "jotai";
-import { IWrappedFeature } from "src/types";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useDrawingMode } from "src/commands/set-drawing-mode";
 import { useTranslate } from "src/hooks/use-translate";
 import { SelectionTool } from "./toolbar/selection-tool";
+import { TraceTool } from "./toolbar/trace-tool";
 
 import {
   JunctionIcon,
@@ -16,8 +16,9 @@ import {
   PumpIcon,
   ValveIcon,
   PipeIcon,
-  WaterLoggerIcon,
+  CustomerPointIcon,
 } from "src/icons";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 
 const MODE_OPTIONS = [
   {
@@ -50,48 +51,49 @@ const MODE_OPTIONS = [
     hotkey: "7",
     Icon: () => <ValveIcon />,
   },
-  {
-    mode: Mode.ADD_LOGGER_POINT,
-    hotkey: "8",
-    Icon: () => <WaterLoggerIcon />,
-  },
 ] as const;
 
+const CUSTOMER_POINT_MODE = {
+  mode: Mode.DRAW_CUSTOMER_POINT,
+  hotkey: "8",
+  Icon: () => <CustomerPointIcon />,
+} as const;
+
 export default memo(function Modes({
-  replaceGeometryForId,
   disabled = false,
 }: {
-  replaceGeometryForId: IWrappedFeature["id"] | null;
   disabled?: boolean;
 }) {
   const { mode: currentMode } = useAtomValue(modeAtom);
   const setDrawingMode = useDrawingMode();
   const userTracking = useUserTracking();
   const translate = useTranslate();
-  const drawingModes = MODE_OPTIONS;
+  const isCreateCustomerOn = useFeatureFlag("FLAG_CREATE_CUSTOMER");
+  const drawingModes = isCreateCustomerOn
+    ? [...MODE_OPTIONS, CUSTOMER_POINT_MODE]
+    : MODE_OPTIONS;
 
   return (
     <div className="flex items-center justify-start" role="radiogroup">
-      {!replaceGeometryForId && (
-        <MenuAction
-          role="radio"
-          key={Mode.NONE}
-          selected={currentMode === Mode.NONE}
-          readOnlyHotkey={"1"}
-          label={translate(MODE_INFO[Mode.NONE].name)}
-          onClick={() => {
-            userTracking.capture({
-              name: "drawingMode.enabled",
-              source: "toolbar",
-              type: MODE_INFO[Mode.NONE].name,
-            });
-            void setDrawingMode(Mode.NONE);
-          }}
-        >
-          <MouseCursorDefaultIcon />
-        </MenuAction>
-      )}
+      <MenuAction
+        role="radio"
+        key={Mode.NONE}
+        selected={currentMode === Mode.NONE}
+        readOnlyHotkey={"1"}
+        label={translate(MODE_INFO[Mode.NONE].name)}
+        onClick={() => {
+          userTracking.capture({
+            name: "drawingMode.enabled",
+            source: "toolbar",
+            type: MODE_INFO[Mode.NONE].name,
+          });
+          void setDrawingMode(Mode.NONE);
+        }}
+      >
+        <MouseCursorDefaultIcon />
+      </MenuAction>
       <SelectionTool />
+      <TraceTool />
       {drawingModes.map(({ mode, hotkey, Icon }) => {
         const modeInfo = MODE_INFO[mode];
 

@@ -1,8 +1,5 @@
-import { DialogHeader } from "src/components/dialog";
+import { BaseDialog, SimpleDialogActions } from "src/components/dialog";
 import { useTranslate } from "src/hooks/use-translate";
-import { Form, Formik } from "formik";
-import { SimpleDialogActions } from "src/components/dialog";
-import { WarningIcon } from "src/icons";
 
 export const AlertInpOutputDialog = ({
   onContinue,
@@ -12,30 +9,29 @@ export const AlertInpOutputDialog = ({
   onClose: () => void;
 }) => {
   const translate = useTranslate();
+
   return (
-    <Formik
-      onSubmit={() => {
-        onClose();
-        onContinue();
-      }}
-      initialValues={{}}
-    >
-      <Form>
-        <DialogHeader
-          title={translate("alertInpOutput")}
-          titleIcon={WarningIcon}
-          variant="warning"
+    <BaseDialog
+      title={translate("alertInpOutput")}
+      size="md"
+      isOpen={true}
+      onClose={onClose}
+      footer={
+        <SimpleDialogActions
+          action={translate("understood")}
+          onAction={() => {
+            onClose();
+            onContinue();
+          }}
         />
-        <div className="text-sm">
-          <p className="text-base font-semibold text-gray-700 pb-4">
-            {translate("alertInpOutputSubtitle")}
-          </p>
-          <p className="text-sm text-gray-700">
-            {translate("alertInpOutputDetail")}
-          </p>
-        </div>
-        <SimpleDialogActions action={translate("understood")} />
-      </Form>
-    </Formik>
+      }
+    >
+      <div className="p-4 text-sm text-gray-700">
+        <p className="text-base font-semibold pb-4">
+          {translate("alertInpOutputSubtitle")}
+        </p>
+        <p>{translate("alertInpOutputDetail")}</p>
+      </div>
+    </BaseDialog>
   );
 };

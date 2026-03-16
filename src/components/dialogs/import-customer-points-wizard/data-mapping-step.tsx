@@ -4,7 +4,9 @@ import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useAtomValue } from "jotai";
-import { dataAtom, stagingModelAtom } from "src/state/jotai";
+import { projectSettingsAtom } from "src/state/project-settings";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { modelFactoriesAtom } from "src/state/model-factories";
 import { parseCustomerPoints } from "src/import/customer-points/parse-customer-points";
 import {
   CustomerPointsIssuesAccumulator,
@@ -12,8 +14,10 @@ import {
 } from "src/import/customer-points/parse-customer-points-issues";
 import {
   CustomerPoint,
+  CustomerPointId,
   MAX_CUSTOMER_POINT_LABEL_LENGTH,
 } from "src/hydraulic-model/customer-points";
+import { Demand } from "src/hydraulic-model/demands";
 import { localizeDecimal } from "src/infra/i18n/numbers";
 import {
   WizardState,
@@ -21,24 +25,28 @@ import {
   ParsedDataSummary,
   InputData,
 } from "./types";
-import { UnitsSpec } from "src/model-metadata/quantities-spec";
+import { UnitsSpec } from "src/lib/project-settings/quantities-spec";
 import { WizardActions as WizardActionsComponent } from "src/components/wizard";
 import { convertTo } from "src/quantity";
 import { ChevronDownIcon, ChevronRightIcon } from "src/icons";
 import { Selector } from "src/components/form/selector";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 
 const CONSTANT_PATTERN_ID = 0;
 
 export const DataMappingStep: React.FC<{
   onNext: () => void;
   onBack: () => void;
+  renderActions?: boolean;
   wizardState: WizardState & WizardActions & { units: UnitsSpec };
-}> = ({ onNext, onBack, wizardState }) => {
+}> = ({ onNext, onBack, renderActions = true, wizardState }) => {
   const translate = useTranslate();
   const userTracking = useUserTracking();
-  const { modelMetadata } = useAtomValue(dataAtom);
+  const projectSettings = useAtomValue(projectSettingsAtom);
   const hydraulicModel = useAtomValue(stagingModelAtom);
-  const patterns = hydraulicModel.demands.patterns;
+  const { customerPointFactory } = useAtomValue(modelFactoriesAtom);
+  const patterns = hydraulicModel.patterns;
+  const isModalsOn = useFeatureFlag("FLAG_MODALS");
 
   const {
     parsedDataSummary,
@@ -84,37 +92,37 @@ export const DataMappingStep: React.FC<{
         try {
           const issues = new CustomerPointsIssuesAccumulator();
           const validCustomerPoints: CustomerPoint[] = [];
+          const customerPointDemands = new Map<CustomerPointId, Demand[]>();
           let totalCount = 0;
 
-          const demandImportUnit = modelMetadata.quantities.getUnit(
-            "customerDemandPerDay",
-          );
-          const demandTargetUnit =
-            modelMetadata.quantities.getUnit("customerDemand");
+          const demandImportUnit = projectSettings.units.customerDemandPerDay;
+          const demandTargetUnit = projectSettings.units.customerDemand;
 
           const fileContent = JSON.stringify({
             type: "FeatureCollection",
             features: inputData.features,
           });
 
-          for (const customerPoint of parseCustomerPoints(
+          for (const parsed of parseCustomerPoints(
             fileContent,
             issues,
             demandImportUnit,
             demandTargetUnit,
-            1,
+            customerPointFactory,
             demandPropertyName,
             labelPropertyName,
             patternId,
           )) {
             totalCount++;
-            if (customerPoint) {
-              validCustomerPoints.push(customerPoint);
+            if (parsed) {
+              validCustomerPoints.push(parsed.customerPoint);
+              customerPointDemands.set(parsed.customerPoint.id, parsed.demands);
             }
           }
 
           const parsedDataSummary: ParsedDataSummary = {
             validCustomerPoints,
+            customerPointDemands,
             issues: issues.buildResult(),
             totalCount,
             demandImportUnit,
@@ -149,7 +157,8 @@ export const DataMappingStep: React.FC<{
     [
       setLoading,
       setError,
-      modelMetadata.quantities,
+      projectSettings.units,
+      customerPointFactory,
       setParsedDataSummary,
       userTracking,
       selectedFile,
@@ -256,7 +265,9 @@ export const DataMappingStep: React.FC<{
 
   return (
     <>
-      <div className="overflow-y-auto flex-grow">
+      <div
+        className={`overflow-y-auto flex-grow ${isModalsOn ? "scroll-shadows" : ""}`}
+      >
         <h2 className="text-lg font-semibold">
           {translate("importCustomerPoints.wizard.dataMapping.title")}
         </h2>
@@ -421,16 +432,18 @@ export const DataMappingStep: React.FC<{
         )}
       </div>
 
-      <WizardActionsComponent
-        backAction={{
-          onClick: onBack,
-          disabled: isLoading,
-        }}
-        nextAction={{
-          onClick: onNext,
-          disabled: isNextDisabled,
-        }}
-      />
+      {renderActions && (
+        <WizardActionsComponent
+          backAction={{
+            onClick: onBack,
+            disabled: isLoading,
+          }}
+          nextAction={{
+            onClick: onNext,
+            disabled: isNextDisabled,
+          }}
+        />
+      )}
     </>
   );
 };
@@ -460,7 +473,7 @@ type CustomerPointsTableProps = {
 const CustomerPointsTable: React.FC<CustomerPointsTableProps> = ({
   customerPoints,
   maxPreviewRows,
-  parsedDataSummary: _,
+  parsedDataSummary,
   wizardState,
 }) => {
   const translate = useTranslate();
@@ -535,7 +548,13 @@ const CustomerPointsTable: React.FC<CustomerPointsTableProps> = ({
                 <td className="px-3 py-2 border-b">
                   {localizeDecimal(
                     convertTo(
-                      { value: point.baseDemand, unit: customerDemandUnit },
+                      {
+                        value:
+                          parsedDataSummary.customerPointDemands.get(
+                            point.id,
+                          )?.[0]?.baseDemand ?? 0,
+                        unit: customerDemandUnit,
+                      },
                       customerDemandPerDayUnit,
                     ),
                   )}

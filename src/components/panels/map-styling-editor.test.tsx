@@ -4,7 +4,7 @@ import { Provider as JotaiProvider } from "jotai";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
 import { aLayerConfig, setInitialState } from "src/__helpers__/state";
 import { MapStylingEditor } from "./map-styling-editor";
-import { Store } from "src/state/jotai";
+import { Store } from "src/state";
 import userEvent from "@testing-library/user-event";
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
 import { LayerConfigMap } from "src/types";
@@ -17,6 +17,7 @@ import { stubWindowSize } from "src/__helpers__/media-queries";
 describe("Map Styling Editor", () => {
   beforeEach(() => {
     stubWindowSize("sm");
+    localStorage.clear();
   });
 
   it("can change the styles for nodes", async () => {
@@ -158,33 +159,10 @@ describe("Map Styling Editor", () => {
     );
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("combobox", { name: /node color by/i }));
-    expect(
-      screen.getByRole("option", { name: /pressure \(psi\)/i }),
-    ).toHaveAttribute(
+    expect(screen.getByRole("option", { name: /pressure/i })).toHaveAttribute(
       "aria-disabled",
       "true",
     );
-    expect(screen.getByRole("option", { name: /pressure \(m\)/i })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-  });
-
-  it("shows Pressure (m) as a node color option", async () => {
-    const IDS = { J1: 1, J2: 2 } as const;
-    const user = userEvent.setup();
-    const hydraulicModel = HydraulicModelBuilder.with()
-      .aJunction(IDS.J1)
-      .aJunction(IDS.J2)
-      .build();
-    const store = setInitialState({
-      hydraulicModel,
-    });
-    renderComponent(store);
-
-    await user.click(screen.getByRole("combobox", { name: /node color by/i }));
-    expect(screen.getByRole("option", { name: /pressure \(m\)/i })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: /elevation \(psi\)/i })).toBeInTheDocument();
   });
 
   describe("layers", () => {

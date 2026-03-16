@@ -17,7 +17,6 @@ export const useSnapping = (map: MapEngine, assetsMap: AssetsMap) => {
         "main-features-junction-results",
         "icons-tanks",
         "icons-reservoirs",
-        "icons-logger-points",
       ],
     });
     if (!pointFeatures.length) return null;

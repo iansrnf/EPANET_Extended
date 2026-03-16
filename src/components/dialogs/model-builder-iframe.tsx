@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { DialogContainer, DialogHeader } from "../dialog";
+import { BaseDialog } from "../dialog";
 import { useTranslate } from "src/hooks/use-translate";
 import { Loading } from "../elements";
 import { EarlyAccessBadge } from "../early-access-badge";
@@ -7,9 +7,7 @@ import { useImportInp } from "src/commands/import-inp";
 import { useUnsavedChangesCheck } from "src/commands/check-unsaved-changes";
 import { useUserTracking, UserEvent } from "src/infra/user-tracking";
 import { useToggleNetworkReview } from "src/commands/toggle-network-review";
-import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { modelBuilderUrl } from "src/global-config";
-import { GlobeIcon } from "src/icons";
 
 interface IframeMessage {
   type: string;
@@ -109,7 +107,6 @@ export const ModelBuilderIframeDialog = ({
   const checkUnsavedChanges = useUnsavedChangesCheck();
   const userTracking = useUserTracking();
   const toggleNetworkReview = useToggleNetworkReview();
-  const isMdOrLarger = useBreakpoint("md");
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -148,13 +145,16 @@ export const ModelBuilderIframeDialog = ({
       window.removeEventListener("message", handleMessage);
     };
   }, [importInp, checkUnsavedChanges, userTracking, toggleNetworkReview]);
+
   return (
-    <DialogContainer size={isMdOrLarger ? "xl" : "fullscreen"}>
-      <DialogHeader
-        title={translate("importFromGIS")}
-        titleIcon={GlobeIcon}
-        badge={<EarlyAccessBadge />}
-      />
+    <BaseDialog
+      title={translate("importFromGIS")}
+      size="xxl"
+      height="xxl"
+      isOpen={true}
+      onClose={_onClose}
+      badge={<EarlyAccessBadge />}
+    >
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-900 z-10">
@@ -163,12 +163,12 @@ export const ModelBuilderIframeDialog = ({
         )}
         <iframe
           src={modelBuilderUrl}
-          className="w-full flex-1 border-0 rounded"
+          className="w-full flex-1 border-0 rounded-bl-lg rounded-br-lg"
           onLoad={() => setIsLoading(false)}
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
           title={translate("importFromGIS")}
         />
       </div>
-    </DialogContainer>
+    </BaseDialog>
   );
 };

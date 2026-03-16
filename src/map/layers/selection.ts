@@ -183,9 +183,9 @@ export const selectedIconsLayer = ({
         ["linear"],
         ["zoom"],
         13,
-        ["match", ["get", "type"], "reservoir", 0.2, "loggerPoint", 0.2, 0.2],
+        ["match", ["get", "type"], "reservoir", 0.2, 0.2],
         20,
-        ["match", ["get", "type"], "reservoir", 0.5, "loggerPoint", 0.45, 0.4],
+        ["match", ["get", "type"], "reservoir", 0.5, 0.4],
       ],
       "icon-allow-overlap": true,
       "icon-rotation-alignment": "map",
@@ -194,17 +194,11 @@ export const selectedIconsLayer = ({
     filter: [
       "all",
       ["has", "icon"],
-      [
-        "any",
-        ["==", "type", "tank"],
-        ["==", "type", "reservoir"],
-        ["==", "type", "loggerPoint"],
-      ],
+      ["any", ["==", "type", "tank"], ["==", "type", "reservoir"]],
     ],
     paint: {
       "icon-opacity": 1,
     },
-    minzoom: 10,
   };
 };
 
@@ -236,7 +230,6 @@ export const selectedIconsHaloLayer = ({
       "circle-opacity": 0.8,
       "circle-blur": ["interpolate", ["linear"], ["zoom"], 12, 0, 20, 0.8],
     },
-    minzoom: 10,
   };
 };
 

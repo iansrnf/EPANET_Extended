@@ -10,8 +10,8 @@ import type {
 } from "src/simulation/epanet/eps-results-reader";
 
 export interface QuickGraphPropertyByAssetType {
-  junction: JunctionProperty | "pressureMeters" | "pressurePsi";
-  tank: TankProperty | "pressureMeters" | "pressurePsi";
+  junction: JunctionProperty;
+  tank: TankProperty;
   reservoir: ReservoirProperty;
   pipe: PipeProperty;
   pump: PumpProperty;

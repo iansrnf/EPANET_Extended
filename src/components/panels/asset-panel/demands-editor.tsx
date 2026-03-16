@@ -7,13 +7,14 @@ import {
   GridColumn,
 } from "src/components/data-grid";
 import { Button } from "src/components/elements";
-import { JunctionDemand, DemandPatterns, PatternId } from "src/hydraulic-model";
+import { Patterns, PatternId } from "src/hydraulic-model";
 import { useTranslate } from "src/hooks/use-translate";
 import { DeleteIcon, AddIcon } from "src/icons";
 import { PropertyComparison } from "src/hooks/use-asset-comparison";
-import { calculateAverageDemand } from "src/hydraulic-model/demands";
-import { Quantities } from "src/model-metadata/quantities-spec";
+import { calculateAverageDemand, Demand } from "src/hydraulic-model/demands";
+import { UnitsSpec } from "src/lib/project-settings/quantities-spec";
 import { QuantityRow } from "./ui-components";
+import { NestedSection } from "src/components/form/fields";
 
 type DemandCategoryRow = {
   baseDemand: number | null;
@@ -21,19 +22,16 @@ type DemandCategoryRow = {
 };
 
 type Props = {
-  demands: JunctionDemand[];
-  patterns: DemandPatterns;
-  onDemandsChange: (newDemands: JunctionDemand[]) => void;
+  demands: Demand[];
+  patterns: Patterns;
+  onDemandsChange: (newDemands: Demand[]) => void;
   comparison?: PropertyComparison;
   readOnly?: boolean;
 };
 
 const CONSTANT_PATTERN_ID = 0;
 
-const toRow = (
-  demand: JunctionDemand,
-  patterns: DemandPatterns,
-): DemandCategoryRow => {
+const toRow = (demand: Demand, patterns: Patterns): DemandCategoryRow => {
   if (demand.patternId) {
     const pattern = patterns.get(demand.patternId);
     if (pattern) {
@@ -49,7 +47,7 @@ const toRow = (
   };
 };
 
-const fromRow = (row: DemandCategoryRow): JunctionDemand => {
+const fromRow = (row: DemandCategoryRow): Demand => {
   return {
     baseDemand: row.baseDemand ?? 0,
     patternId:
@@ -110,11 +108,13 @@ export const DemandCategoriesEditor = ({
     const options: { value: number; label: string }[] = [
       {
         value: CONSTANT_PATTERN_ID,
-        label: translate("constant").toUpperCase(),
+        label: translate("constant"),
       },
     ];
-    for (const [patternId, { label }] of patterns.entries()) {
-      options.push({ value: patternId, label });
+    for (const [patternId, { label, type }] of patterns.entries()) {
+      if (type === "demand") {
+        options.push({ value: patternId, label });
+      }
     }
     return options;
   }, [patterns, translate]);
@@ -276,7 +276,7 @@ export const DemandCategoriesEditor = ({
       >
         {translate("demandCategories")}
       </label>
-      <div className="border-l-2 border-gray-400 bg-gray-50 pr-2 pb-2">
+      <NestedSection className="pb-2 pl-0">
         <DataGrid<DemandCategoryRow>
           ref={gridRef}
           data={rowData}
@@ -289,7 +289,7 @@ export const DemandCategoriesEditor = ({
           gutterColumn
           readOnly={readOnly}
         />
-      </div>
+      </NestedSection>
     </div>
   );
 };
@@ -297,17 +297,17 @@ export const DemandCategoriesEditor = ({
 export const DemandsEditor = ({
   demands,
   patterns,
-  quantitiesMetadata,
+  units,
   name,
   onChange,
   demandComparator,
   readOnly,
 }: {
-  demands: JunctionDemand[];
-  patterns: DemandPatterns;
-  quantitiesMetadata: Quantities;
+  demands: Demand[];
+  patterns: Patterns;
+  units: UnitsSpec;
   name: string;
-  onChange: (demands: JunctionDemand[]) => void;
+  onChange: (demands: Demand[]) => void;
   demandComparator: (demands: number) => PropertyComparison;
   readOnly: boolean;
 }) => {
@@ -333,8 +333,7 @@ export const DemandsEditor = ({
       <QuantityRow
         name={name}
         value={averageDemand}
-        unit={quantitiesMetadata.getUnit("directDemand")}
-        decimals={quantitiesMetadata.getDecimals("directDemand")}
+        unit={units.directDemand}
         comparison={demandComparison}
         readOnly={true}
       />

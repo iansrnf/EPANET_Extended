@@ -1,4 +1,6 @@
-import { Store, selectionAtom, stagingModelAtom } from "src/state/jotai";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { selectionAtom } from "src/state/selection";
+import { Store } from "src/state";
 import { screen, render } from "@testing-library/react";
 import { CommandContainer } from "./__helpers__/command-container";
 import userEvent from "@testing-library/user-event";
@@ -8,7 +10,7 @@ import {
   nullSelection,
   setInitialState,
 } from "src/__helpers__/state";
-import { useDeleteSelectedAssets } from "./delete-selected-assets";
+import { useDeleteSelection } from "./delete-selection";
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
 import { stubUserTracking } from "src/__helpers__/user-tracking";
 
@@ -81,7 +83,7 @@ describe("delete selected", () => {
   };
 
   const TestableComponent = () => {
-    const deleteAssets = useDeleteSelectedAssets();
+    const deleteAssets = useDeleteSelection();
 
     return (
       <button

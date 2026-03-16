@@ -1,18 +1,17 @@
-import { AssetId, Junction, LoggerPoint, Pump } from "./asset-types";
+import { AssetId, Junction, Pump } from "./asset-types";
 import { JunctionQuantity } from "./asset-types/junction";
 import { Pipe, PipeQuantity, PipeStatus } from "./asset-types/pipe";
 import { LinkConnections, nullConnections } from "./asset-types/link";
 import { Position } from "geojson";
 import { Reservoir, ReservoirQuantity } from "./asset-types/reservoir";
 import { Tank, TankQuantity } from "./asset-types/tank";
-import { JunctionDemand } from "./demands";
 
 export type JunctionBuildData = {
   id?: AssetId;
   label?: string;
   coordinates?: Position;
   elevation?: number;
-  demands?: JunctionDemand[];
+  emitterCoefficient?: number;
   isActive?: boolean;
 };
 
@@ -40,6 +39,10 @@ export type PumpBuildData = {
   curve?: CurvePoint[];
   curveId?: CurveId;
   speed?: number;
+  speedPatternId?: PatternId;
+  efficiencyCurveId?: CurveId;
+  energyPrice?: number;
+  energyPricePatternId?: PatternId;
   isActive?: boolean;
 };
 
@@ -54,6 +57,7 @@ export type ValveBuildData = {
   setting?: number;
   initialStatus?: ValveStatus;
   isActive?: boolean;
+  curveId?: CurveId;
 };
 
 export type ReservoirBuildData = {
@@ -63,6 +67,7 @@ export type ReservoirBuildData = {
   head?: number;
   relativeHead?: number;
   elevation?: number;
+  headPatternId?: PatternId;
   isActive?: boolean;
 };
 
@@ -78,29 +83,12 @@ export type TankBuildData = {
   diameter?: number;
   overflow?: boolean;
   isActive?: boolean;
+  volumeCurveId?: CurveId;
 };
 
-export type LoggerPointBuildData = {
-  id?: AssetId;
-  label?: string;
-  coordinates?: Position;
-  elevation?: number;
-  deviceId?: string;
-  status?: string;
-  timestamp?: string;
-  pressure?: number;
-  flow?: number;
-  level?: number;
-  temperature?: number;
-  batteryV?: number;
-  externalV?: number;
-  gsmPct?: number;
-  isActive?: boolean;
-};
-
-import { UnitsSpec } from "src/model-metadata/quantities-spec";
-import { IdGenerator } from "./id-generator";
+import { IdGenerator } from "src/lib/id-generator";
 import { LabelGenerator } from "./label-manager";
+import { DefaultsSpec } from "src/lib/project-settings/quantities-spec";
 import {
   PumpDefintionType,
   PumpQuantity,
@@ -113,29 +101,18 @@ import {
   ValveKind,
 } from "./asset-types/valve";
 import { CurveId, CurvePoint, defaultCurvePoints } from "./curves";
-
-export type DefaultQuantities = {
-  pipe: Partial<Record<PipeQuantity, number>>;
-  junction: Partial<Record<JunctionQuantity, number>>;
-  reservoir: Partial<Record<ReservoirQuantity | "relativeHead", number>>;
-  tank: Partial<Record<TankQuantity, number>>;
-  pump: Partial<Record<PumpQuantity, number>>;
-  valve: Partial<Record<ValveQuantity, number>>;
-};
+import { PatternId } from "./patterns";
 
 export class AssetBuilder {
-  private units: UnitsSpec;
-  private defaults: DefaultQuantities;
+  private defaults: DefaultsSpec;
   private _idGenerator: IdGenerator;
   readonly labelGenerator: LabelGenerator;
 
   constructor(
-    units: UnitsSpec,
-    defaults: DefaultQuantities,
+    defaults: DefaultsSpec,
     idGenerator: IdGenerator,
     labelGenerator: LabelGenerator,
   ) {
-    this.units = units;
     this.defaults = defaults;
     this._idGenerator = idGenerator;
     this.labelGenerator = labelGenerator;
@@ -161,25 +138,20 @@ export class AssetBuilder {
     isActive = true,
   }: PipeBuildData = {}) {
     const internalId = id ?? this._idGenerator.newId();
-    return new Pipe(
-      internalId,
-      coordinates,
-      {
-        type: "pipe",
-        label:
-          label !== undefined
-            ? label
-            : this.labelGenerator.generateFor("pipe", internalId),
-        connections,
-        initialStatus,
-        length: this.getPipeValue("length", length),
-        diameter: this.getPipeValue("diameter", diameter),
-        minorLoss: this.getPipeValue("minorLoss", minorLoss),
-        roughness: this.getPipeValue("roughness", roughness),
-        isActive,
-      },
-      this.units,
-    );
+    return new Pipe(internalId, coordinates, {
+      type: "pipe",
+      label:
+        label !== undefined
+          ? label
+          : this.labelGenerator.generateFor("pipe", internalId),
+      connections,
+      initialStatus,
+      length: this.getPipeValue("length", length),
+      diameter: this.getPipeValue("diameter", diameter),
+      minorLoss: this.getPipeValue("minorLoss", minorLoss),
+      roughness: this.getPipeValue("roughness", roughness),
+      isActive,
+    });
   }
 
   buildValve({
@@ -196,28 +168,25 @@ export class AssetBuilder {
     setting,
     initialStatus = "active",
     isActive = true,
+    curveId,
   }: ValveBuildData = {}) {
     const internalId = id ?? this._idGenerator.newId();
-    return new Valve(
-      internalId,
-      coordinates,
-      {
-        type: "valve",
-        label:
-          label !== undefined
-            ? label
-            : this.labelGenerator.generateFor("valve", internalId),
-        connections,
-        length: 10,
-        diameter: this.getValveValue("diameter", diameter),
-        minorLoss: this.getValveValue("minorLoss", minorLoss),
-        kind,
-        setting: this.getValveSetting(kind, setting),
-        initialStatus,
-        isActive,
-      },
-      this.units,
-    );
+    return new Valve(internalId, coordinates, {
+      type: "valve",
+      label:
+        label !== undefined
+          ? label
+          : this.labelGenerator.generateFor("valve", internalId),
+      connections,
+      length: 10,
+      diameter: this.getValveValue("diameter", diameter),
+      minorLoss: this.getValveValue("minorLoss", minorLoss),
+      kind,
+      setting: this.getValveSetting(kind, setting),
+      initialStatus,
+      isActive,
+      curveId,
+    });
   }
 
   buildPump({
@@ -234,34 +203,37 @@ export class AssetBuilder {
     curve,
     power,
     speed = 1,
+    speedPatternId,
+    efficiencyCurveId,
+    energyPrice,
+    energyPricePatternId,
     isActive = true,
   }: PumpBuildData = {}) {
     const internalId = id ?? this._idGenerator.newId();
-    return new Pump(
-      internalId,
-      coordinates,
-      {
-        type: "pump",
-        label:
-          label !== undefined
-            ? label
-            : this.labelGenerator.generateFor("pump", internalId),
-        connections,
-        length: 10,
-        initialStatus,
-        definitionType,
-        power: this.getPumpValue("power", power),
-        speed,
-        curveId,
-        curve: curve
-          ? curve
-          : definitionType === "curve"
-            ? defaultCurvePoints()
-            : undefined,
-        isActive,
-      },
-      this.units,
-    );
+    return new Pump(internalId, coordinates, {
+      type: "pump",
+      label:
+        label !== undefined
+          ? label
+          : this.labelGenerator.generateFor("pump", internalId),
+      connections,
+      length: 10,
+      initialStatus,
+      definitionType,
+      power: this.getPumpValue("power", power),
+      speed,
+      speedPatternId,
+      curveId,
+      curve: curve
+        ? curve
+        : definitionType === "curve"
+          ? defaultCurvePoints("pump")
+          : undefined,
+      efficiencyCurveId,
+      energyPrice,
+      energyPricePatternId,
+      isActive,
+    });
   }
 
   buildJunction({
@@ -269,25 +241,20 @@ export class AssetBuilder {
     label,
     coordinates = [0, 0],
     elevation,
-    demands,
+    emitterCoefficient,
     isActive = true,
   }: JunctionBuildData = {}) {
     const internalId = id ?? this._idGenerator.newId();
-    return new Junction(
-      internalId,
-      coordinates,
-      {
-        type: "junction",
-        label:
-          label !== undefined
-            ? label
-            : this.labelGenerator.generateFor("junction", internalId),
-        elevation: this.getJunctionValue("elevation", elevation),
-        demands: demands ?? [],
-        isActive,
-      },
-      this.units,
-    );
+    return new Junction(internalId, coordinates, {
+      type: "junction",
+      label:
+        label !== undefined
+          ? label
+          : this.labelGenerator.generateFor("junction", internalId),
+      elevation: this.getJunctionValue("elevation", elevation),
+      emitterCoefficient: emitterCoefficient ?? 0,
+      isActive,
+    });
   }
 
   buildReservoir({
@@ -297,6 +264,7 @@ export class AssetBuilder {
     elevation,
     head,
     relativeHead,
+    headPatternId,
     isActive = true,
   }: ReservoirBuildData = {}) {
     const internalId = id ?? this._idGenerator.newId();
@@ -312,21 +280,17 @@ export class AssetBuilder {
       headValue = relativeHeadValue + elevationValue;
     }
 
-    return new Reservoir(
-      internalId,
-      coordinates,
-      {
-        type: "reservoir",
-        label:
-          label !== undefined
-            ? label
-            : this.labelGenerator.generateFor("reservoir", internalId),
-        head: headValue,
-        elevation: elevationValue,
-        isActive,
-      },
-      this.units,
-    );
+    return new Reservoir(internalId, coordinates, {
+      type: "reservoir",
+      label:
+        label !== undefined
+          ? label
+          : this.labelGenerator.generateFor("reservoir", internalId),
+      head: headValue,
+      headPatternId,
+      elevation: elevationValue,
+      isActive,
+    });
   }
 
   buildTank({
@@ -341,72 +305,25 @@ export class AssetBuilder {
     diameter,
     overflow,
     isActive = true,
+    volumeCurveId,
   }: TankBuildData = {}) {
     const internalId = id ?? this._idGenerator.newId();
-    return new Tank(
-      internalId,
-      coordinates,
-      {
-        type: "tank",
-        label:
-          label !== undefined
-            ? label
-            : this.labelGenerator.generateFor("tank", internalId),
-        elevation: this.getTankValue("elevation", elevation),
-        initialLevel: this.getTankValue("initialLevel", initialLevel),
-        minLevel: this.getTankValue("minLevel", minLevel),
-        maxLevel: this.getTankValue("maxLevel", maxLevel),
-        minVolume: this.getTankValue("minVolume", minVolume),
-        diameter: this.getTankValue("diameter", diameter),
-        overflow: overflow ?? false,
-        isActive,
-      },
-      this.units,
-    );
-  }
-
-  buildLoggerPoint({
-    id,
-    label,
-    coordinates = [0, 0],
-    elevation = 0,
-    deviceId = "",
-    status = "unknown",
-    timestamp = "",
-    pressure = 0,
-    flow = 0,
-    level = 0,
-    temperature = 0,
-    batteryV = 0,
-    externalV = 0,
-    gsmPct = 0,
-    isActive = true,
-  }: LoggerPointBuildData = {}) {
-    const internalId = id ?? this._idGenerator.newId();
-    return new LoggerPoint(
-      internalId,
-      coordinates,
-      {
-        type: "loggerPoint",
-        label:
-          label !== undefined
-            ? label
-            : this.labelGenerator.generateFor("loggerPoint", internalId),
-        elevation,
-        deviceId,
-        status,
-        timestamp,
-        pressure,
-        flow,
-        level,
-        temperature,
-        batteryV,
-        externalV,
-        gsmPct,
-        isActive,
-      },
-      this.units,
-    );
+    return new Tank(internalId, coordinates, {
+      type: "tank",
+      label:
+        label !== undefined
+          ? label
+          : this.labelGenerator.generateFor("tank", internalId),
+      elevation: this.getTankValue("elevation", elevation),
+      initialLevel: this.getTankValue("initialLevel", initialLevel),
+      minLevel: this.getTankValue("minLevel", minLevel),
+      maxLevel: this.getTankValue("maxLevel", maxLevel),
+      minVolume: this.getTankValue("minVolume", minVolume),
+      diameter: this.getTankValue("diameter", diameter),
+      volumeCurveId,
+      overflow: overflow ?? false,
+      isActive,
+    });
   }
 
   private getPipeValue(name: PipeQuantity, candidate?: number) {

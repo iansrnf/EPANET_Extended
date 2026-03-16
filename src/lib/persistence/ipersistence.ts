@@ -2,8 +2,10 @@ import type { ISymbology } from "src/types";
 import { Promisable } from "type-fest";
 import { z } from "zod";
 import { HydraulicModel, ModelMoment } from "src/hydraulic-model";
-import { ModelMetadata } from "src/model-metadata";
-import type { SimulationState } from "src/state/jotai";
+import { ModelFactories } from "src/hydraulic-model/factories";
+import { ProjectSettings } from "src/lib/project-settings";
+import type { SimulationSettings } from "src/simulation/simulation-settings";
+import type { SimulationState } from "src/state/simulation";
 import type { MomentLog } from "src/lib/persistence/moment-log";
 
 export type PersistenceMetadataMemory = {
@@ -46,8 +48,11 @@ export interface IPersistence {
   useTransact(): (moment: ModelMoment) => void;
   useTransactImport(): (
     hydraulicModel: HydraulicModel,
-    modelMetadata: ModelMetadata,
+    factories: ModelFactories,
+    projectSettings: ProjectSettings,
     name: string,
+    simulationSettings: SimulationSettings,
+    options?: { autoElevations?: boolean },
   ) => void;
 }
 

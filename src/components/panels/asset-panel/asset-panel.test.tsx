@@ -1,14 +1,13 @@
 import { render, screen, waitFor, act } from "@testing-library/react";
-import {
-  Store,
-  dataAtom,
-  nullData,
-  stagingModelAtom,
-  simulationResultsAtom,
-} from "src/state/jotai";
+import { dataAtom, nullData } from "src/state/data";
+import { projectSettingsAtom } from "src/state/project-settings";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { simulationResultsAtom } from "src/state/simulation";
+import { Store } from "src/state";
 import { Provider as JotaiProvider, createStore } from "jotai";
 import { HydraulicModel, Pipe, Pump } from "src/hydraulic-model";
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { createMockResultsReader, SimulationData } from "src/__helpers__/state";
 import { PersistenceContext } from "src/lib/persistence/context";
 import { Persistence } from "src/lib/persistence/persistence";
 import userEvent from "@testing-library/user-event";
@@ -17,14 +16,12 @@ import FeatureEditor from "../feature-editor";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Valve } from "src/hydraulic-model/asset-types";
 import { TooltipProvider } from "@radix-ui/react-tooltip";
-import type { ResultsReader } from "src/simulation/results-reader";
 
 describe("AssetPanel", () => {
   describe("with a pipe", () => {
     it("can show its properties", () => {
       const IDS = { P1: 1, j1: 2, j2: 3 };
       const hydraulicModel = HydraulicModelBuilder.with()
-        .headlossFormula("D-W")
         .aJunction(IDS.j1, { label: "J1" })
         .aJunction(IDS.j2, { label: "J2" })
         .aPipe(IDS.P1, {
@@ -41,6 +38,10 @@ describe("AssetPanel", () => {
       const store = setInitialState({
         hydraulicModel,
         selectedAssetId: IDS.P1,
+      });
+      store.set(projectSettingsAtom, {
+        ...store.get(projectSettingsAtom),
+        headlossFormula: "D-W",
       });
 
       renderComponent(store);
@@ -102,23 +103,23 @@ describe("AssetPanel", () => {
           .aCustomerPoint(IDS.CP1, {
             label: "CP1",
             coordinates: [1, 2],
-            demands: [{ baseDemand: 25 }],
             connection: {
               pipeId: IDS.P1,
               junctionId: IDS.J1,
               snapPoint: [1, 2],
             },
           })
+          .aCustomerPointDemand(IDS.CP1, [{ baseDemand: 25 }])
           .aCustomerPoint(IDS.CP2, {
             label: "CP2",
             coordinates: [3, 4],
-            demands: [{ baseDemand: 30 }],
             connection: {
               pipeId: IDS.P1,
               junctionId: IDS.J1,
               snapPoint: [3, 4],
             },
           })
+          .aCustomerPointDemand(IDS.CP2, [{ baseDemand: 30 }])
           .build();
 
         const store = setInitialState({
@@ -153,23 +154,23 @@ describe("AssetPanel", () => {
           .aCustomerPoint(IDS.CP1, {
             label: "CP1",
             coordinates: [1, 2],
-            demands: [{ baseDemand: 25 }],
             connection: {
               pipeId: IDS.P1,
               junctionId: IDS.J1,
               snapPoint: [1, 2],
             },
           })
+          .aCustomerPointDemand(IDS.CP1, [{ baseDemand: 25 }])
           .aCustomerPoint(IDS.CP2, {
             label: "CP2",
             coordinates: [3, 4],
-            demands: [{ baseDemand: 30 }],
             connection: {
               pipeId: IDS.P1,
               junctionId: IDS.J1,
               snapPoint: [3, 4],
             },
           })
+          .aCustomerPointDemand(IDS.CP2, [{ baseDemand: 30 }])
           .build();
 
         const store = setInitialState({
@@ -235,13 +236,15 @@ describe("AssetPanel", () => {
           .aCustomerPoint(IDS.CP1, {
             label: "CP1",
             coordinates: [1, 2],
-            demands: [{ baseDemand: 25, patternId: IDS.PAT1 }],
             connection: {
               pipeId: IDS.P1,
               junctionId: IDS.J1,
               snapPoint: [1, 2],
             },
           })
+          .aCustomerPointDemand(IDS.CP1, [
+            { baseDemand: 25, patternId: IDS.PAT1 },
+          ])
           .build();
 
         const store = setInitialState({
@@ -267,13 +270,13 @@ describe("AssetPanel", () => {
           .aCustomerPoint(IDS.CP1, {
             label: "CP1",
             coordinates: [1, 2],
-            demands: [{ baseDemand: 25 }],
             connection: {
               pipeId: IDS.P1,
               junctionId: IDS.J1,
               snapPoint: [1, 2],
             },
           })
+          .aCustomerPointDemand(IDS.CP1, [{ baseDemand: 25 }])
           .build();
 
         const store = setInitialState({
@@ -429,13 +432,136 @@ describe("AssetPanel", () => {
       expectTextPropertyDisplayed("headloss (m)", "98");
       expectTextPropertyDisplayed("status", "Open - Cannot deliver pressure");
     });
+
+    it("shows the selected headloss curve for a GPV valve", () => {
+      const IDS = { V1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aCurve({
+          id: 10,
+          type: "headloss",
+          label: "HL_CURVE",
+          points: [
+            { x: 0, y: 0 },
+            { x: 100, y: 10 },
+          ],
+        })
+        .aValve(IDS.V1, { kind: "gpv", curveId: 10 })
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.V1,
+      });
+
+      renderComponent(store);
+
+      expect(
+        screen.getByRole("combobox", { name: /headloss curve/i }),
+      ).toHaveTextContent("HL_CURVE");
+    });
+
+    it("does not select a valve-type curve for a GPV valve", () => {
+      const IDS = { V1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aCurve({
+          id: 10,
+          type: "valve",
+          label: "VALVE_CURVE",
+          points: [
+            { x: 0, y: 0 },
+            { x: 100, y: 100 },
+          ],
+        })
+        .aCurve({
+          id: 11,
+          type: "headloss",
+          label: "HL_OTHER",
+          points: [
+            { x: 0, y: 0 },
+            { x: 50, y: 5 },
+          ],
+        })
+        .aValve(IDS.V1, { kind: "gpv", curveId: 10 })
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.V1,
+      });
+
+      renderComponent(store);
+
+      const combobox = screen.getByRole("combobox", {
+        name: /headloss curve/i,
+      });
+      expect(combobox).not.toHaveTextContent("VALVE_CURVE");
+      expect(combobox).not.toHaveTextContent("HL_OTHER");
+    });
+
+    it("does not select a headloss curve for a PCV valve", () => {
+      const IDS = { V1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aCurve({
+          id: 10,
+          type: "headloss",
+          label: "HL_CURVE",
+          points: [
+            { x: 0, y: 0 },
+            { x: 100, y: 10 },
+          ],
+        })
+        .aCurve({
+          id: 11,
+          type: "valve",
+          label: "VALVE_OTHER",
+          points: [
+            { x: 0, y: 0 },
+            { x: 100, y: 100 },
+          ],
+        })
+        .aValve(IDS.V1, { kind: "pcv", curveId: 10 })
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.V1,
+      });
+
+      renderComponent(store);
+
+      const combobox = screen.getByRole("combobox", { name: /curve/i });
+      expect(combobox).not.toHaveTextContent("HL_CURVE");
+      expect(combobox).not.toHaveTextContent("VALVE_OTHER");
+    });
+
+    it("shows the selected valve curve for a PCV valve", () => {
+      const IDS = { V1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aCurve({
+          id: 10,
+          type: "valve",
+          label: "PCV_CURVE",
+          points: [
+            { x: 0, y: 0 },
+            { x: 100, y: 100 },
+          ],
+        })
+        .aValve(IDS.V1, { kind: "pcv", curveId: 10 })
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.V1,
+      });
+
+      renderComponent(store);
+
+      expect(
+        screen.getByRole("combobox", { name: /curve/i }),
+      ).toHaveTextContent("PCV_CURVE");
+    });
   });
 
   describe("with a pump", () => {
     it("can show its properties", () => {
       const IDS = { PU1: 1, j1: 2, j2: 3 };
       const hydraulicModel = HydraulicModelBuilder.with()
-        .headlossFormula("D-W")
         .aJunction(IDS.j1, { label: "J1" })
         .aJunction(IDS.j2, { label: "J2" })
         .aPump(IDS.PU1, {
@@ -465,7 +591,6 @@ describe("AssetPanel", () => {
     it("shows properties for flow-vs-head definition", () => {
       const IDS = { PU1: 1, j1: 2, j2: 3 };
       const hydraulicModel = HydraulicModelBuilder.with()
-        .headlossFormula("D-W")
         .aJunction(IDS.j1, { label: "J1" })
         .aJunction(IDS.j2, { label: "J2" })
         .aPump(IDS.PU1, {
@@ -486,13 +611,12 @@ describe("AssetPanel", () => {
 
       expect(screen.getByDisplayValue("MY_PUMP")).toBeInTheDocument();
       expect(screen.getByText("Pump")).toBeInTheDocument();
-      expectPropertyDisplayed("speed", "0.8");
+      expectPropertyDisplayed("initial speed", "0.8");
     });
 
     it("shows properties for power defintion", () => {
       const IDS = { PU1: 1, j1: 2, j2: 3 };
       const hydraulicModel = HydraulicModelBuilder.with()
-        .headlossFormula("D-W")
         .aJunction(IDS.j1, { label: "J1" })
         .aJunction(IDS.j2, { label: "J2" })
         .aPump(IDS.PU1, {
@@ -518,7 +642,6 @@ describe("AssetPanel", () => {
     it("can change pump definition", async () => {
       const IDS = { PU1: 1, j1: 2, j2: 3 };
       const hydraulicModel = HydraulicModelBuilder.with()
-        .headlossFormula("D-W")
         .aJunction(IDS.j1, { label: "J1" })
         .aJunction(IDS.j2, { label: "J2" })
         .aPump(IDS.PU1, {
@@ -621,8 +744,8 @@ describe("AssetPanel", () => {
         .aJunction(IDS.J1, {
           label: "MY_JUNCTION",
           elevation: 10,
-          demands: [{ baseDemand: 100 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 100 }])
         .build();
       const store = setInitialState({
         hydraulicModel,
@@ -634,7 +757,6 @@ describe("AssetPanel", () => {
       expect(screen.getByDisplayValue("MY_JUNCTION")).toBeInTheDocument();
       expect(screen.getByText("Junction")).toBeInTheDocument();
       expectPropertyDisplayed("elevation (m)", "10");
-      expectTextPropertyDisplayed("elevation (psi)", "14.223");
       expectTextPropertyDisplayed("direct demand (l/s)", "100");
       expect(screen.queryAllByText("Not available").length).toBeGreaterThan(0);
     });
@@ -644,8 +766,8 @@ describe("AssetPanel", () => {
       const hydraulicModel = HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           elevation: 10,
-          demands: [{ baseDemand: 100 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 100 }])
         .build();
       const store = setInitialState({
         hydraulicModel,
@@ -660,7 +782,6 @@ describe("AssetPanel", () => {
       renderComponent(store);
 
       expectTextPropertyDisplayed("pressure (m)", "20");
-      expectTextPropertyDisplayed("pressure (psi)", "28.446");
       expectTextPropertyDisplayed("head (m)", "10");
       expectTextPropertyDisplayed("actual demand (l/s)", "20");
     });
@@ -670,8 +791,8 @@ describe("AssetPanel", () => {
       const hydraulicModel = HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           label: "MY_JUNCTION",
-          demands: [{ baseDemand: 50 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50 }])
         .aJunction(IDS.J2, { coordinates: [10, 0] })
         .aPipe(IDS.P1, {
           startNodeId: IDS.J1,
@@ -680,23 +801,23 @@ describe("AssetPanel", () => {
         .aCustomerPoint(IDS.CP1, {
           label: "CP1",
           coordinates: [1, 2],
-          demands: [{ baseDemand: 25 }],
           connection: {
             pipeId: IDS.P1,
             junctionId: IDS.J1,
             snapPoint: [1, 2],
           },
         })
+        .aCustomerPointDemand(IDS.CP1, [{ baseDemand: 25 }])
         .aCustomerPoint(IDS.CP2, {
           label: "CP2",
           coordinates: [3, 4],
-          demands: [{ baseDemand: 30 }],
           connection: {
             pipeId: IDS.P1,
             junctionId: IDS.J1,
             snapPoint: [3, 4],
           },
         })
+        .aCustomerPointDemand(IDS.CP2, [{ baseDemand: 30 }])
         .build();
 
       const store = setInitialState({
@@ -724,8 +845,8 @@ describe("AssetPanel", () => {
       const hydraulicModel = HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           label: "MY_JUNCTION",
-          demands: [{ baseDemand: 50 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50 }])
         .aJunction(IDS.J2, { coordinates: [10, 0] })
         .aPipe(IDS.P1, {
           startNodeId: IDS.J1,
@@ -734,23 +855,23 @@ describe("AssetPanel", () => {
         .aCustomerPoint(IDS.CP1, {
           label: "CP1",
           coordinates: [1, 2],
-          demands: [{ baseDemand: 25 }],
           connection: {
             pipeId: IDS.P1,
             junctionId: IDS.J1,
             snapPoint: [1, 2],
           },
         })
+        .aCustomerPointDemand(IDS.CP1, [{ baseDemand: 25 }])
         .aCustomerPoint(IDS.CP2, {
           label: "CP2",
           coordinates: [3, 4],
-          demands: [{ baseDemand: 30 }],
           connection: {
             pipeId: IDS.P1,
             junctionId: IDS.J1,
             snapPoint: [3, 4],
           },
         })
+        .aCustomerPointDemand(IDS.CP2, [{ baseDemand: 30 }])
         .build();
 
       const store = setInitialState({
@@ -780,8 +901,8 @@ describe("AssetPanel", () => {
       const hydraulicModel = HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           label: "MY_JUNCTION",
-          demands: [{ baseDemand: 100 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 100 }])
         .build();
       const store = setInitialState({
         hydraulicModel,
@@ -812,13 +933,15 @@ describe("AssetPanel", () => {
         .aCustomerPoint(IDS.CP1, {
           label: "CP1",
           coordinates: [1, 2],
-          demands: [{ baseDemand: 25, patternId: IDS.PAT1 }],
           connection: {
             pipeId: IDS.P1,
             junctionId: IDS.J1,
             snapPoint: [1, 2],
           },
         })
+        .aCustomerPointDemand(IDS.CP1, [
+          { baseDemand: 25, patternId: IDS.PAT1 },
+        ])
         .build();
 
       const store = setInitialState({
@@ -843,13 +966,13 @@ describe("AssetPanel", () => {
         .aCustomerPoint(IDS.CP1, {
           label: "CP1",
           coordinates: [1, 2],
-          demands: [{ baseDemand: 25 }],
           connection: {
             pipeId: IDS.P1,
             junctionId: IDS.J1,
             snapPoint: [1, 2],
           },
         })
+        .aCustomerPointDemand(IDS.CP1, [{ baseDemand: 25 }])
         .build();
 
       const store = setInitialState({
@@ -885,8 +1008,7 @@ describe("AssetPanel", () => {
       expect(screen.getByDisplayValue("MY_RESERVOIR")).toBeInTheDocument();
       expect(screen.getByText("Reservoir")).toBeInTheDocument();
       expectPropertyDisplayed("elevation (m)", "10");
-      expectTextPropertyDisplayed("elevation (psi)", "14.223");
-      expectPropertyDisplayed("head (m)", "100");
+      expectPropertyDisplayed("Head (m)", "100");
     });
   });
 
@@ -915,12 +1037,23 @@ describe("AssetPanel", () => {
       expect(screen.getByDisplayValue("MY_TANK")).toBeInTheDocument();
       expect(screen.getByText("Tank")).toBeInTheDocument();
       expectPropertyDisplayed("elevation (m)", "10");
-      expectTextPropertyDisplayed("elevation (psi)", "14.223");
       expectPropertyDisplayed("diameter (m)", "300");
       expectPropertyDisplayed("initial level (m)", "50");
-      expectPropertyDisplayed("min level (m)", "0");
-      expectPropertyDisplayed("max level (m)", "100");
-      expectPropertyDisplayed("min volume (m³)", "0");
+      expect(
+        screen.getByRole("textbox", {
+          name: new RegExp(`min volume`, "i"),
+        }),
+      ).toHaveValue("0");
+      expect(
+        screen.getByRole("textbox", {
+          name: new RegExp(`min level`, "i"),
+        }),
+      ).toHaveValue("0");
+      expect(
+        screen.getByRole("textbox", {
+          name: new RegExp(`max level`, "i"),
+        }),
+      ).toHaveValue("100");
       expect(
         screen.getByRole("checkbox", { name: /can overflow/i }),
       ).toBeChecked();
@@ -979,10 +1112,191 @@ describe("AssetPanel", () => {
       renderComponent(store);
 
       expectTextPropertyDisplayed("pressure (m)", "15.123");
-      expectTextPropertyDisplayed("pressure (psi)", "21.510");
       expectTextPropertyDisplayed("head (m)", "125.568");
       expectTextPropertyDisplayed("level (m)", "25.988");
       expectTextPropertyDisplayed("volume (m³)", "1,500.432");
+    });
+
+    it("shows shape selector defaulting to circular", () => {
+      const IDS = { T1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aTank(IDS.T1, {
+          label: "TANK1",
+          diameter: 300,
+          minLevel: 5,
+          maxLevel: 100,
+          minVolume: 10,
+        })
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.T1,
+      });
+
+      renderComponent(store);
+
+      expect(
+        screen.getByRole("combobox", { name: /geometry/i }),
+      ).toHaveTextContent(/circular/i);
+      expectPropertyDisplayed("diameter (m)", "300");
+      expect(
+        screen.getByRole("textbox", {
+          name: new RegExp(`min volume`, "i"),
+        }),
+      ).toHaveValue("10");
+      expect(
+        screen.getByRole("textbox", {
+          name: new RegExp(`min level`, "i"),
+        }),
+      ).toHaveValue("5");
+      expect(
+        screen.getByRole("textbox", {
+          name: new RegExp(`max level`, "i"),
+        }),
+      ).toHaveValue("100");
+    });
+
+    it("shows shape selector defaulting to curve-defined when tank has volume curve", () => {
+      const IDS = { T1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aCurve({
+          id: 10,
+          label: "VC1",
+          type: "volume",
+          points: [
+            { x: 0, y: 0 },
+            { x: 20, y: 5000 },
+          ],
+        })
+        .aTank(IDS.T1, {
+          label: "TANK1",
+          volumeCurveId: 10,
+          minLevel: 2,
+          maxLevel: 18,
+        })
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.T1,
+      });
+
+      renderComponent(store);
+
+      expect(
+        screen.getByRole("combobox", { name: /geometry/i }),
+      ).toHaveTextContent(/curve/i);
+      expect(
+        screen.queryByRole("textbox", {
+          name: /value for: diameter/i,
+        }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("textbox", {
+          name: /value for: min volume/i,
+        }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("combobox", { name: /volume curve/i }),
+      ).toHaveTextContent("VC1");
+    });
+
+    it("switches to curve-defined and submits when curve is selected", async () => {
+      const user = userEvent.setup();
+      const IDS = { T1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aCurve({
+          id: 10,
+          label: "VC1",
+          type: "volume",
+          points: [
+            { x: 0, y: 0 },
+            { x: 25, y: 8000 },
+          ],
+        })
+        .aTank(IDS.T1, {
+          label: "TANK1",
+          diameter: 300,
+          minLevel: 5,
+          maxLevel: 100,
+        })
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.T1,
+      });
+
+      renderComponent(store);
+
+      // Switch to curve-defined
+      const shapeSelector = screen.getByRole("combobox", {
+        name: /geometry/i,
+      });
+      await user.click(shapeSelector);
+      await user.click(screen.getByRole("option", { name: /curve/i }));
+
+      // Select a volume curve
+      const curveSelector = screen.getByRole("combobox", {
+        name: /volume curve/i,
+      });
+      await user.click(curveSelector);
+      await user.click(screen.getByRole("option", { name: /VC1/i }));
+
+      // Should apply curve bounds (read-only)
+      await waitFor(() => {
+        expect(
+          screen.getByRole("combobox", { name: /volume curve/i }),
+        ).toHaveTextContent("VC1");
+        expect(screen.getByText("25")).toBeInTheDocument();
+        expect(screen.getByText("8,000")).toBeInTheDocument();
+      });
+    });
+
+    it("switches back to circular and clears volume curve", async () => {
+      const user = userEvent.setup();
+      const IDS = { T1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aCurve({
+          id: 10,
+          label: "VC1",
+          type: "volume",
+          points: [
+            { x: 0, y: 0 },
+            { x: 20, y: 5000 },
+          ],
+        })
+        .aTank(IDS.T1, {
+          label: "TANK1",
+          volumeCurveId: 10,
+          diameter: 300,
+          minLevel: 2,
+          maxLevel: 18,
+        })
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.T1,
+      });
+
+      renderComponent(store);
+
+      expect(
+        screen.getByRole("combobox", { name: /geometry/i }),
+      ).toHaveTextContent("Volume curve");
+
+      // Switch back to circular
+      const definitionSelector = screen.getByRole("combobox", {
+        name: /geometry/i,
+      });
+      await user.click(definitionSelector);
+      await user.click(screen.getByRole("option", { name: /circular/i }));
+
+      // Should show diameter and minVolume again
+      await waitFor(() => {
+        expectPropertyDisplayed("diameter (m)", "300");
+      });
+      expect(
+        screen.queryByRole("combobox", { name: /volume curve/i }),
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -1350,12 +1664,12 @@ describe("AssetPanel", () => {
     const hydraulicModel = HydraulicModelBuilder.with()
       .aJunction(IDS.J1, {
         label: "Junction_1",
-        demands: [{ baseDemand: 100 }],
       })
+      .aJunctionDemand(IDS.J1, [{ baseDemand: 100 }])
       .aJunction(IDS.J2, {
         label: "Junction_2",
-        demands: [{ baseDemand: 200 }],
       })
+      .aJunctionDemand(IDS.J2, [{ baseDemand: 200 }])
       .aPipe(IDS.P1, {
         label: "Pipe_1",
         diameter: 150,
@@ -1411,115 +1725,6 @@ describe("AssetPanel", () => {
     expectPropertyDisplayed("length (m)", "1,000");
   });
 
-  type SimulationData = {
-    pipes?: Record<
-      number,
-      Partial<{
-        flow: number;
-        velocity: number;
-        headloss: number;
-        unitHeadloss: number;
-        status: "open" | "closed";
-      }>
-    >;
-    junctions?: Record<
-      number,
-      Partial<{ pressure: number; head: number; demand: number }>
-    >;
-    pumps?: Record<
-      number,
-      Partial<{
-        flow: number;
-        headloss: number;
-        status: "on" | "off";
-        statusWarning: "cannot-deliver-flow" | "cannot-deliver-head" | null;
-      }>
-    >;
-    valves?: Record<
-      number,
-      Partial<{
-        flow: number;
-        velocity: number;
-        headloss: number;
-        status: "active" | "open" | "closed";
-        statusWarning: "cannot-deliver-flow" | "cannot-deliver-pressure" | null;
-      }>
-    >;
-    tanks?: Record<
-      number,
-      Partial<{ pressure: number; head: number; level: number; volume: number }>
-    >;
-  };
-
-  const createMockResultsReader = (
-    data: SimulationData = {},
-  ): ResultsReader => {
-    return {
-      getPipe: (id: number) => {
-        const sim = data.pipes?.[id];
-        if (!sim) return null;
-        return {
-          type: "pipe",
-          flow: sim.flow ?? 0,
-          velocity: sim.velocity ?? 0,
-          headloss: sim.headloss ?? 0,
-          unitHeadloss: sim.unitHeadloss ?? 0,
-          status: sim.status ?? "open",
-        };
-      },
-      getJunction: (id: number) => {
-        const sim = data.junctions?.[id];
-        if (!sim) return null;
-        return {
-          type: "junction",
-          pressure: sim.pressure ?? 0,
-          head: sim.head ?? 0,
-          demand: sim.demand ?? 0,
-        };
-      },
-      getPump: (id: number) => {
-        const sim = data.pumps?.[id];
-        if (!sim) return null;
-        return {
-          type: "pump",
-          flow: sim.flow ?? 0,
-          headloss: sim.headloss ?? 0,
-          status: sim.status ?? "on",
-          statusWarning: sim.statusWarning ?? null,
-        };
-      },
-      getValve: (id: number) => {
-        const sim = data.valves?.[id];
-        if (!sim) return null;
-        return {
-          type: "valve",
-          flow: sim.flow ?? 0,
-          velocity: sim.velocity ?? 0,
-          headloss: sim.headloss ?? 0,
-          status: sim.status ?? "active",
-          statusWarning: sim.statusWarning ?? null,
-        };
-      },
-      getTank: (id: number) => {
-        const sim = data.tanks?.[id];
-        if (!sim) return null;
-        return {
-          type: "tank",
-          pressure: sim.pressure ?? 0,
-          head: sim.head ?? 0,
-          level: sim.level ?? 0,
-          volume: sim.volume ?? 0,
-        };
-      },
-      getAllPressures: () => [],
-      getAllHeads: () => [],
-      getAllDemands: () => [],
-      getAllFlows: () => [],
-      getAllVelocities: () => [],
-      getAllUnitHeadlosses: () => [],
-    };
-  };
-
   const setInitialState = ({
     store = createStore(),
     hydraulicModel = HydraulicModelBuilder.with().build(),
@@ -1573,8 +1778,8 @@ describe("AssetPanel", () => {
   const expectPropertyDisplayed = (name: string, value: string) => {
     const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     expect(
-      screen.getByLabelText(new RegExp(`label: ${escapedName}`, "i")),
-    ).toBeInTheDocument();
+      screen.getAllByLabelText(new RegExp(`label: ${escapedName}`, "i")).length,
+    ).toBeGreaterThan(0);
     expect(
       screen.getByRole("textbox", {
         name: new RegExp(`value for: ${escapedName}`, "i"),

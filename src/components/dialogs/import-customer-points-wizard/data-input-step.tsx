@@ -4,7 +4,6 @@ import { useUserTracking } from "src/infra/user-tracking";
 import { captureError } from "src/infra/error-tracking";
 import { useTranslate } from "src/hooks/use-translate";
 import { DropZone } from "src/components/drop-zone";
-import { WizardActions as WizardActionsComponent } from "src/components/wizard";
 import { parseGeoJson } from "src/lib/geojson-utils/parse-geojson";
 import type { Projection } from "src/hooks/use-projections";
 import {
@@ -12,12 +11,14 @@ import {
   customerPointsImportVideoUrl,
 } from "src/global-config";
 import { Trans } from "react-i18next";
+import { WizardActions as WizardActionsComponent } from "src/components/wizard";
 
 export const DataInputStep: React.FC<{
   onNext: () => void;
+  renderActions?: boolean;
   wizardState: WizardState & WizardActions;
   projections?: Map<string, Projection> | null;
-}> = ({ onNext, wizardState, projections }) => {
+}> = ({ onNext, renderActions = true, wizardState, projections }) => {
   const userTracking = useUserTracking();
   const translate = useTranslate();
 
@@ -255,7 +256,7 @@ export const DataInputStep: React.FC<{
               {/* Video title overlay */}
               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
                 <p className="text-white text-sm font-medium">
-                  GSCWD Customer Points Import Tutorial
+                  epanet-js Customer Points Import Tutorial
                 </p>
               </div>
             </div>
@@ -278,12 +279,14 @@ export const DataInputStep: React.FC<{
         </div>
       </div>
 
-      <WizardActionsComponent
-        nextAction={{
-          onClick: onNext,
-          disabled: !inputData,
-        }}
-      />
+      {renderActions && (
+        <WizardActionsComponent
+          nextAction={{
+            onClick: onNext,
+            disabled: !inputData,
+          }}
+        />
+      )}
     </>
   );
 };

@@ -7,9 +7,19 @@ import {
   Reservoir,
   Pump,
   Tank,
-  EPSTiming,
   PatternId,
+  Demands,
+  HeadlossFormula,
 } from "src/hydraulic-model";
+import type {
+  Timing,
+  SimulationSettings,
+} from "src/simulation/simulation-settings";
+import {
+  defaultHydraulicsValues,
+  defaultWaterQualityValues,
+  defaultEnergyValues,
+} from "src/simulation/simulation-settings";
 import {
   CustomerPoint,
   getActiveCustomerPoints,
@@ -17,18 +27,27 @@ import {
 import { CustomerPointsLookup } from "src/hydraulic-model/customer-points-lookup";
 import { Valve, AssetId } from "src/hydraulic-model/asset-types";
 import { checksum } from "src/infra/checksum";
+import { ProjectionMapper } from "src/projections";
+import { UnitsSpec } from "src/lib/project-settings/quantities-spec";
+import { Position } from "geojson";
 import { withDebugInstrumentation } from "src/infra/with-instrumentation";
 import {
   formatSimpleControl,
   formatRuleBasedControl,
   IdResolver,
 } from "src/hydraulic-model/controls";
-import { DemandPattern, DemandPatterns } from "src/hydraulic-model/demands";
+import {
+  Pattern,
+  Patterns,
+  getCustomerPointDemands,
+  getJunctionDemands,
+} from "src/hydraulic-model";
+import { CurveId, ICurve } from "src/hydraulic-model/curves";
 
 type SimulationPipeStatus = "Open" | "Closed" | "CV";
 type SimulationPumpStatus = "Open" | "Closed";
 type SimulationValveStatus = "Open" | "Closed";
-type EpanetValveType = "TCV" | "PRV" | "PSV" | "PBV" | "FCV";
+type EpanetValveType = "TCV" | "PRV" | "PSV" | "PBV" | "FCV" | "GPV" | "PCV";
 
 export type EpanetUnitSystem =
   | "LPS"
@@ -45,6 +64,81 @@ export type EpanetUnitSystem =
 export const defaultAccuracy = 0.001;
 export const defaultUnbalanced = "CONTINUE 10";
 export const defaultCustomersPatternId = "epanetjs_customers";
+
+const buildUnbalancedValue = (
+  settings: SimulationSettings,
+): string | undefined => {
+  if (settings.unbalancedMode === undefined) return undefined;
+  if (settings.unbalancedMode === "STOP") return "STOP";
+  if (settings.unbalancedExtraTrials && settings.unbalancedExtraTrials > 0) {
+    return `CONTINUE ${settings.unbalancedExtraTrials}`;
+  }
+  return "CONTINUE";
+};
+
+const buildQualityValue = (
+  settings: SimulationSettings,
+  hydraulicModel: HydraulicModel,
+  idMap: EpanetIds,
+): string => {
+  const type = settings.qualitySimulationType;
+  if (type === "NONE") return "NONE";
+  if (type === "AGE") return "AGE";
+  if (type === "TRACE") {
+    const nodeId = settings.qualityTraceNodeId;
+    if (nodeId === null) return "TRACE";
+    const node = hydraulicModel.assets.get(nodeId);
+    if (!node || !node.isNode) return "TRACE";
+    return `TRACE ${idMap.nodeId(node as NodeAsset)}`;
+  }
+  // CHEMICAL
+  const name = settings.qualityChemicalName;
+  return name ? `${name} ${settings.qualityMassUnit}` : "CHEMICAL";
+};
+
+const buildReactionsSection = (settings: SimulationSettings): string[] => {
+  const dq = defaultWaterQualityValues;
+  const lines: string[] = ["[REACTIONS]"];
+  if (settings.reactionBulkOrder !== dq.reactionBulkOrder)
+    lines.push(`Order Bulk\t${settings.reactionBulkOrder}`);
+  if (settings.reactionWallOrder !== dq.reactionWallOrder)
+    lines.push(`Order Wall\t${settings.reactionWallOrder}`);
+  if (settings.reactionTankOrder !== dq.reactionTankOrder)
+    lines.push(`Order Tank\t${settings.reactionTankOrder}`);
+  if (settings.reactionGlobalBulk !== dq.reactionGlobalBulk)
+    lines.push(`Global Bulk\t${settings.reactionGlobalBulk}`);
+  if (settings.reactionGlobalWall !== dq.reactionGlobalWall)
+    lines.push(`Global Wall\t${settings.reactionGlobalWall}`);
+  if (settings.reactionLimitingPotential !== dq.reactionLimitingPotential)
+    lines.push(`Limiting Potential\t${settings.reactionLimitingPotential}`);
+  if (settings.reactionRoughnessCorrelation !== dq.reactionRoughnessCorrelation)
+    lines.push(
+      `Roughness Correlation\t${settings.reactionRoughnessCorrelation}`,
+    );
+  return lines;
+};
+
+const buildEnergySection = (
+  settings: SimulationSettings,
+  idMap: EpanetIds,
+): string[] => {
+  const de = defaultEnergyValues;
+  const lines: string[] = ["[ENERGY]"];
+  if (settings.energyGlobalEfficiency !== de.energyGlobalEfficiency) {
+    lines.push(`Global Effic\t${settings.energyGlobalEfficiency}`);
+  }
+  if (settings.energyGlobalPrice !== de.energyGlobalPrice)
+    lines.push(`Global Price\t${settings.energyGlobalPrice}`);
+  if (settings.energyGlobalPatternId !== null) {
+    lines.push(
+      `Global Pattern\t${idMap.patternId(settings.energyGlobalPatternId)}`,
+    );
+  }
+  if (settings.energyDemandCharge !== de.energyDemandCharge)
+    lines.push(`Demand Charge\t${settings.energyDemandCharge}`);
+  return lines;
+};
+
 const defaultConstantPatternId = 0;
 
 const formatSecondsToTime = (seconds: number): string => {
@@ -61,34 +155,37 @@ const formatSecondsToTime = (seconds: number): string => {
   return `${hours}`;
 };
 
-const buildTimesSection = (epsTiming: EPSTiming): string[] => {
+const buildTimesSection = (timing: Timing): string[] => {
   const section = ["[TIMES]"];
 
-  const duration = epsTiming.duration ?? 0;
-  section.push(`Duration\t${formatSecondsToTime(duration)}`);
+  section.push(`Duration\t${formatSecondsToTime(timing.duration)}`);
 
-  if (epsTiming.hydraulicTimestep !== undefined) {
+  if (timing.duration > 0) {
     section.push(
-      `Hydraulic Timestep\t${formatSecondsToTime(epsTiming.hydraulicTimestep)}`,
+      `Hydraulic Timestep\t${formatSecondsToTime(timing.hydraulicTimestep)}`,
     );
-  }
-
-  if (epsTiming.reportTimestep !== undefined) {
     section.push(
-      `Report Timestep\t${formatSecondsToTime(epsTiming.reportTimestep)}`,
+      `Report Timestep\t${formatSecondsToTime(timing.reportTimestep)}`,
     );
-  }
-
-  if (epsTiming.patternTimestep !== undefined) {
     section.push(
-      `Pattern Timestep\t${formatSecondsToTime(epsTiming.patternTimestep)}`,
+      `Pattern Timestep\t${formatSecondsToTime(timing.patternTimestep)}`,
     );
+    if (timing.qualityTimestep) {
+      section.push(
+        `Quality Timestep\t${formatSecondsToTime(timing.qualityTimestep)}`,
+      );
+    }
+    if (timing.ruleTimestep) {
+      section.push(
+        `Rule Timestep\t${formatSecondsToTime(timing.ruleTimestep)}`,
+      );
+    }
   }
 
   return section;
 };
 
-const chooseUnitSystem = (units: HydraulicModel["units"]): EpanetUnitSystem => {
+export const chooseUnitSystem = (units: UnitsSpec): EpanetUnitSystem => {
   const flowUnit = units.flow;
   if (flowUnit === "l/s") return "LPS";
   if (flowUnit === "gal/min") return "GPM";
@@ -104,6 +201,30 @@ const chooseUnitSystem = (units: HydraulicModel["units"]): EpanetUnitSystem => {
   throw new Error(`Flow unit not supported ${flowUnit}`);
 };
 
+const unitToEpanetPressure: Record<string, string> = {
+  psi: "PSI",
+  kPa: "KPA",
+  mwc: "METERS",
+  fwc: "FEET",
+  bar: "BAR",
+};
+
+const US_UNIT_SYSTEMS: EpanetUnitSystem[] = [
+  "GPM",
+  "CFS",
+  "MGD",
+  "IMGD",
+  "AFD",
+];
+
+const isDefaultPressureForSystem = (
+  unitSystem: EpanetUnitSystem,
+  pressureUnit: string,
+): boolean => {
+  if (US_UNIT_SYSTEMS.includes(unitSystem)) return pressureUnit === "psi";
+  return pressureUnit === "mwc";
+};
+
 class EpanetIds {
   private strategy: "id" | "label";
   private assetIds: Map<AssetId, string>;
@@ -111,6 +232,7 @@ class EpanetIds {
   private nodeIds: Set<string>;
   private patternIds: Map<PatternId, string>;
   private patternLabels: Set<string>;
+  private curveIds: Map<CurveId, string>;
   private curveLabels: Set<string>;
 
   constructor({ strategy }: { strategy: "id" | "label" }) {
@@ -120,6 +242,7 @@ class EpanetIds {
     this.assetIds = new Map();
     this.patternIds = new Map();
     this.patternLabels = new Set();
+    this.curveIds = new Map();
     this.curveLabels = new Set();
   }
 
@@ -149,13 +272,25 @@ class EpanetIds {
     }
   }
 
-  curveId(link: LinkAsset) {
-    const curveId = this.ensureUnique(this.curveLabels, link.label);
-    this.curveLabels.add(curveId);
-    return curveId;
+  registerCurveId(curve: Pick<ICurve, "id" | "label">) {
+    if (this.curveIds.has(curve.id)) return this.curveIds.get(curve.id);
+    const label = this.ensureUnique(this.curveLabels, curve.label);
+    this.curveLabels.add(label);
+    this.curveIds.set(curve.id, label);
+    return label;
   }
 
-  registerPatternId(pattern: Pick<DemandPattern, "id" | "label">) {
+  curveId(curveId: CurveId): string {
+    return this.curveIds.get(curveId) ?? "*";
+  }
+
+  localCurveId(candidate: string) {
+    const label = this.ensureUnique(this.curveLabels, candidate);
+    this.curveLabels.add(label);
+    return label;
+  }
+
+  registerPatternId(pattern: Pick<Pattern, "id" | "label">) {
     if (this.patternIds.has(pattern.id))
       return this.patternIds.get(pattern.id)!;
     const label = this.ensureUnique(this.patternLabels, pattern.label);
@@ -165,7 +300,7 @@ class EpanetIds {
   }
 
   patternId(patternId: PatternId): string {
-    return this.patternIds.get(patternId) ?? String(patternId);
+    return this.patternIds.get(patternId) ?? "*";
   }
 
   private ensureUnique(
@@ -190,6 +325,7 @@ type InpSections = {
   pumps: string[];
   valves: string[];
   demands: string[];
+  emitters: string[];
   times: string[];
   report: string[];
   status: string[];
@@ -201,11 +337,16 @@ type InpSections = {
   vertices: string[];
   customers: string[];
   customersDemands: string[];
+  reactions: string[];
+  energy: string[];
   controls: string[];
   rules: string[];
 };
 
 type BuildOptions = {
+  simulationSettings: SimulationSettings;
+  units: UnitsSpec;
+  headlossFormula?: HeadlossFormula;
   geolocation?: boolean;
   madeBy?: boolean;
   labelIds?: boolean;
@@ -215,11 +356,13 @@ type BuildOptions = {
   usedPatterns?: boolean;
   usedCurves?: boolean;
   reservoirElevations?: boolean;
+  projectionMapper?: ProjectionMapper;
 };
 
 export const buildInp = withDebugInstrumentation(
-  (hydraulicModel: HydraulicModel, options: BuildOptions = {}): string => {
-    const defaultOptions: Required<BuildOptions> = {
+  (hydraulicModel: HydraulicModel, options: BuildOptions): string => {
+    const opts = {
+      headlossFormula: "H-W" as HeadlossFormula,
       geolocation: false,
       madeBy: false,
       labelIds: false,
@@ -229,11 +372,28 @@ export const buildInp = withDebugInstrumentation(
       usedPatterns: false,
       usedCurves: false,
       reservoirElevations: false,
+      ...options,
     };
-    const opts = { ...defaultOptions, ...options };
     const idMap = new EpanetIds({ strategy: opts.labelIds ? "label" : "id" });
-    const units = chooseUnitSystem(hydraulicModel.units);
-    const headlossFormula = hydraulicModel.headlossFormula;
+    const units = chooseUnitSystem(opts.units);
+    const headlossFormula = opts.headlossFormula;
+
+    const transformCoord: (p: Position) => Position =
+      opts.projectionMapper?.toSource ?? ((p: Position) => p);
+
+    idMap.registerPatternId({
+      id: defaultConstantPatternId,
+      label: "constant",
+    });
+
+    for (const pattern of hydraulicModel.patterns.values()) {
+      idMap.registerPatternId(pattern);
+    }
+
+    for (const curve of hydraulicModel.curves.values()) {
+      idMap.registerCurveId(curve);
+    }
+
     const sections: InpSections = {
       junctions: ["[JUNCTIONS]", ";Id\tElevation"],
       reservoirs: ["[RESERVOIRS]", ";Id\tHead\tPattern"],
@@ -248,22 +408,88 @@ export const buildInp = withDebugInstrumentation(
       pumps: ["[PUMPS]", ";Id\tStart\tEnd\tProperties"],
       valves: ["[VALVES]", ";Id\tStart\tEnd\tDiameter\tSetting\tMinorLoss"],
       demands: ["[DEMANDS]", ";Id\tDemand\tPattern\tCategory"],
-      times: buildTimesSection(hydraulicModel.epsTiming),
-      report: ["[REPORT]", "Status\tFULL", "Summary\tNo", "Page\t0"],
+      emitters: ["[EMITTERS]", ";Junction\tCoefficient"],
+      times: buildTimesSection(opts.simulationSettings.timing),
+      report: [
+        "[REPORT]",
+        `Status\t${opts.simulationSettings.statusReport}`,
+        "Summary\tNo",
+        "Page\t0",
+        ...(opts.simulationSettings.reportEnergy ? ["Energy\tYES"] : []),
+      ],
       status: ["[STATUS]", ";Id\tStatus"],
       curves: ["[CURVES]", ";Id\tX\tY"],
       patterns: ["[PATTERNS]", ";Id\tMultiplier"],
       options: [
         "[OPTIONS]",
-        "Quality\tNONE",
-        `Unbalanced\t${defaultUnbalanced}`,
-        `Accuracy\t${defaultAccuracy}`,
+        `Quality\t${buildQualityValue(opts.simulationSettings, hydraulicModel, idMap)}`,
+        `Unbalanced\t${buildUnbalancedValue(opts.simulationSettings) ?? defaultUnbalanced}`,
+        `Accuracy\t${opts.simulationSettings.accuracy ?? defaultAccuracy}`,
         `Units\t${units}`,
+        ...(!isDefaultPressureForSystem(units, opts.units.pressure as string)
+          ? [`Pressure\t${unitToEpanetPressure[opts.units.pressure as string]}`]
+          : []),
         `Headloss\t${headlossFormula}`,
-        `Demand Multiplier\t${hydraulicModel.demands.multiplier}`,
+        `Demand Multiplier\t${opts.simulationSettings.globalDemandMultiplier}`,
+        `Demand Model\t${opts.simulationSettings.demandModel}`,
+        ...(opts.simulationSettings.demandModel === "PDA"
+          ? [
+              `Minimum Pressure\t${opts.simulationSettings.minimumPressure}`,
+              `Required Pressure\t${opts.simulationSettings.requiredPressure}`,
+              `Pressure Exponent\t${opts.simulationSettings.pressureExponent}`,
+            ]
+          : []),
+        `Emitter Exponent\t${opts.simulationSettings.emitterExponent}`,
+        ...(!opts.simulationSettings.backflowAllowed
+          ? [`Backflow Allowed\tNO`]
+          : []),
+        ...(opts.simulationSettings.trials !== undefined
+          ? [`Trials\t${opts.simulationSettings.trials}`]
+          : []),
+        ...(opts.simulationSettings.headError !== undefined &&
+        opts.simulationSettings.headError !== defaultHydraulicsValues.headError
+          ? [`Headerror\t${opts.simulationSettings.headError}`]
+          : []),
+        ...(opts.simulationSettings.flowChange !== undefined &&
+        opts.simulationSettings.flowChange !==
+          defaultHydraulicsValues.flowChange
+          ? [`Flowchange\t${opts.simulationSettings.flowChange}`]
+          : []),
+        ...(opts.simulationSettings.checkFreq !== undefined &&
+        opts.simulationSettings.checkFreq !== defaultHydraulicsValues.checkFreq
+          ? [`Checkfreq\t${opts.simulationSettings.checkFreq}`]
+          : []),
+        ...(opts.simulationSettings.maxCheck !== undefined &&
+        opts.simulationSettings.maxCheck !== defaultHydraulicsValues.maxCheck
+          ? [`Maxcheck\t${opts.simulationSettings.maxCheck}`]
+          : []),
+        ...(opts.simulationSettings.dampLimit !== undefined &&
+        opts.simulationSettings.dampLimit !== defaultHydraulicsValues.dampLimit
+          ? [`Damplimit\t${opts.simulationSettings.dampLimit}`]
+          : []),
+        ...(opts.simulationSettings.viscosity !== undefined &&
+        opts.simulationSettings.viscosity !== defaultHydraulicsValues.viscosity
+          ? [`Viscosity\t${opts.simulationSettings.viscosity}`]
+          : []),
+        ...(opts.simulationSettings.specificGravity !== undefined &&
+        opts.simulationSettings.specificGravity !==
+          defaultHydraulicsValues.specificGravity
+          ? [`Specific Gravity\t${opts.simulationSettings.specificGravity}`]
+          : []),
+        ...(opts.simulationSettings.tolerance !==
+        defaultWaterQualityValues.tolerance
+          ? [`Tolerance\t${opts.simulationSettings.tolerance}`]
+          : []),
+        ...(opts.simulationSettings.diffusivity !==
+        defaultWaterQualityValues.diffusivity
+          ? [`Diffusivity\t${opts.simulationSettings.diffusivity}`]
+          : []),
         `Pattern\t${idMap.registerPatternId({ id: defaultConstantPatternId, label: "constant" })}`,
       ],
-      backdrop: ["[BACKDROP]", "Units\tDEGREES"],
+      backdrop: [
+        "[BACKDROP]",
+        `Units\t${opts.projectionMapper?.backdropUnits ?? "DEGREES"}`,
+      ],
       coordinates: ["[COORDINATES]", ";Node\tX-coord\tY-coord"],
       vertices: ["[VERTICES]", ";link\tX-coord\tY-coord"],
       customers: [
@@ -271,6 +497,8 @@ export const buildInp = withDebugInstrumentation(
         ";Id\tX-coord\tY-coord\tBaseDemand\tPipeId\tJunctionId\tSnapX\tSnapY",
       ],
       customersDemands: [";[CUSTOMERS_DEMANDS]", ";Id\tBaseDemand\tPatternId"],
+      reactions: buildReactionsSection(opts.simulationSettings),
+      energy: buildEnergySection(opts.simulationSettings, idMap),
       controls: ["[CONTROLS]"],
       rules: ["[RULES]"],
     };
@@ -278,8 +506,8 @@ export const buildInp = withDebugInstrumentation(
     const usedCurveIds = new Set<number>();
     const usedPatternIds = new Set<number>();
 
-    for (const pattern of hydraulicModel.demands.patterns.values()) {
-      idMap.registerPatternId(pattern); // Ensure pattern IDs are registered
+    if (opts.simulationSettings.energyGlobalPatternId !== null) {
+      usedPatternIds.add(opts.simulationSettings.energyGlobalPatternId);
     }
 
     for (const asset of hydraulicModel.assets.values()) {
@@ -291,6 +519,8 @@ export const buildInp = withDebugInstrumentation(
           opts.inactiveAssets,
           opts.reservoirElevations,
           asset as Reservoir,
+          usedPatternIds,
+          transformCoord,
         );
       }
 
@@ -300,7 +530,9 @@ export const buildInp = withDebugInstrumentation(
           idMap,
           opts.geolocation,
           opts.inactiveAssets,
+          usedCurveIds,
           asset as Tank,
+          transformCoord,
         );
       }
 
@@ -314,7 +546,9 @@ export const buildInp = withDebugInstrumentation(
           asset as Junction,
           hydraulicModel.customerPointsLookup,
           hydraulicModel.assets,
+          hydraulicModel.demands,
           usedPatternIds,
+          transformCoord,
         );
       }
 
@@ -326,6 +560,7 @@ export const buildInp = withDebugInstrumentation(
           opts.geolocation,
           opts.inactiveAssets,
           asset as Pipe,
+          transformCoord,
         );
       }
 
@@ -337,7 +572,9 @@ export const buildInp = withDebugInstrumentation(
           opts.geolocation,
           opts.inactiveAssets,
           usedCurveIds,
+          usedPatternIds,
           asset as Pump,
+          transformCoord,
         );
       }
 
@@ -348,7 +585,9 @@ export const buildInp = withDebugInstrumentation(
           hydraulicModel,
           opts.geolocation,
           opts.inactiveAssets,
+          usedCurveIds,
           asset as Valve,
+          transformCoord,
         );
       }
     }
@@ -361,6 +600,7 @@ export const buildInp = withDebugInstrumentation(
           hydraulicModel,
           customerPoint,
           usedPatternIds,
+          transformCoord,
         );
       }
     }
@@ -368,9 +608,9 @@ export const buildInp = withDebugInstrumentation(
     const includeCustomerPoints =
       opts.customerPoints && hydraulicModel.customerPoints.size > 0;
 
-    appendDemandPatterns(
+    appendPatterns(
       sections,
-      hydraulicModel.demands.patterns,
+      hydraulicModel.patterns,
       usedPatternIds,
       idMap,
       opts.usedPatterns,
@@ -380,6 +620,7 @@ export const buildInp = withDebugInstrumentation(
       sections,
       hydraulicModel.curves,
       usedCurveIds,
+      idMap,
       opts.usedCurves,
     );
 
@@ -387,6 +628,9 @@ export const buildInp = withDebugInstrumentation(
 
     const hasControls = sections.controls.length > 1;
     const hasRules = sections.rules.length > 1;
+    const hasEmitters = sections.emitters.length > 2;
+    const hasReactions = sections.reactions.length > 1;
+    const hasEnergy = sections.energy.length > 1;
 
     let content = [
       sections.junctions.join("\n"),
@@ -396,12 +640,15 @@ export const buildInp = withDebugInstrumentation(
       sections.pumps.join("\n"),
       sections.valves.join("\n"),
       sections.demands.join("\n"),
+      hasEmitters && sections.emitters.join("\n"),
       sections.status.join("\n"),
       sections.curves.join("\n"),
       sections.patterns.join("\n"),
       sections.times.join("\n"),
       sections.report.join("\n"),
       sections.options.join("\n"),
+      hasReactions && sections.reactions.join("\n"),
+      hasEnergy && sections.energy.join("\n"),
       opts.geolocation && sections.backdrop.join("\n"),
       opts.geolocation && sections.coordinates.join("\n"),
       opts.geolocation && sections.vertices.join("\n"),
@@ -415,6 +662,10 @@ export const buildInp = withDebugInstrumentation(
       .join("\n\n");
 
     if (opts.madeBy) {
+      const projection = opts.projectionMapper?.projection;
+      if (projection && projection !== "wgs84") {
+        content = `;PROJECTION ${projection}\n` + content;
+      }
       content = `;MADE BY EPANET-JS [${checksum(content)}]\n` + content;
     }
     return content;
@@ -429,6 +680,8 @@ const appendReservoir = (
   inactiveAssets: boolean,
   elevations: boolean,
   reservoir: Reservoir,
+  usedPatternIds: Set<number>,
+  transformCoord: (p: Position) => Position,
 ) => {
   if (!reservoir.isActive && !inactiveAssets) {
     return;
@@ -437,7 +690,12 @@ const appendReservoir = (
   const reservoirId = idMap.nodeId(reservoir);
   const commentPrefix = !reservoir.isActive ? ";" : "";
 
-  let reservoirLine = commentPrefix + [reservoirId, reservoir.head].join("\t");
+  const columns: (string | number)[] = [reservoirId, reservoir.head];
+  if (reservoir.headPatternId) {
+    columns.push(idMap.patternId(reservoir.headPatternId));
+    usedPatternIds.add(reservoir.headPatternId);
+  }
+  let reservoirLine = commentPrefix + columns.join("\t");
   if (elevations && reservoir.elevation) {
     reservoirLine += `\t;Elevation:${reservoir.elevation}`;
   }
@@ -445,7 +703,13 @@ const appendReservoir = (
   sections.reservoirs.push(reservoirLine);
 
   if (geolocation) {
-    appendNodeCoordinates(sections, idMap, reservoir, commentPrefix);
+    appendNodeCoordinates(
+      sections,
+      idMap,
+      reservoir,
+      transformCoord,
+      commentPrefix,
+    );
   }
 };
 
@@ -454,14 +718,15 @@ const appendTank = (
   idMap: EpanetIds,
   geolocation: boolean,
   inactiveAssets: boolean,
+  usedCurveIds: Set<number>,
   tank: Tank,
+  transformCoord: (p: Position) => Position,
 ) => {
   if (!tank.isActive && !inactiveAssets) {
     return;
   }
 
   const tankId = idMap.nodeId(tank);
-  const nullCurveId = "*";
   const commentPrefix = !tank.isActive ? ";" : "";
 
   sections.tanks.push(
@@ -474,13 +739,14 @@ const appendTank = (
         tank.maxLevel,
         tank.diameter,
         tank.minVolume,
-        nullCurveId,
+        tank.volumeCurveId ? idMap.curveId(tank.volumeCurveId) : "*",
         tank.overflow ? "YES" : "NO",
       ].join("\t"),
   );
   if (geolocation) {
-    appendNodeCoordinates(sections, idMap, tank, commentPrefix);
+    appendNodeCoordinates(sections, idMap, tank, transformCoord, commentPrefix);
   }
+  if (tank.volumeCurveId) usedCurveIds.add(tank.volumeCurveId);
 };
 
 const appendJunction = (
@@ -492,7 +758,9 @@ const appendJunction = (
   junction: Junction,
   customerPointsLookup: CustomerPointsLookup,
   assets: HydraulicModel["assets"],
+  demands: Demands,
   usedPatternIds: Set<number>,
+  transformCoord: (p: Position) => Position,
 ) => {
   if (!junction.isActive && !inactiveAssets) {
     return;
@@ -505,7 +773,8 @@ const appendJunction = (
     commentPrefix + [junctionId, junction.elevation].join("\t"),
   );
 
-  for (const demand of junction.demands) {
+  const junctionDemands = getJunctionDemands(demands, junction.id);
+  for (const demand of junctionDemands) {
     if (demand.baseDemand === 0) continue;
 
     const demandLine = demand.patternId
@@ -528,7 +797,7 @@ const appendJunction = (
 
     const demandsByPattern = new Map<number | undefined, number>();
     for (const cp of customerPoints) {
-      for (const demand of cp.demands) {
+      for (const demand of getCustomerPointDemands(demands, cp.id)) {
         if (demand.baseDemand === 0) continue;
         const currentTotal = demandsByPattern.get(demand.patternId) ?? 0;
         demandsByPattern.set(
@@ -552,8 +821,20 @@ const appendJunction = (
     }
   }
 
+  if (junction.emitterCoefficient > 0) {
+    sections.emitters.push(
+      commentPrefix + [junctionId, junction.emitterCoefficient].join("\t"),
+    );
+  }
+
   if (geolocation) {
-    appendNodeCoordinates(sections, idMap, junction, commentPrefix);
+    appendNodeCoordinates(
+      sections,
+      idMap,
+      junction,
+      transformCoord,
+      commentPrefix,
+    );
   }
 };
 
@@ -564,11 +845,8 @@ const appendPipe = (
   geolocation: boolean,
   inactiveAssets: boolean,
   pipe: Pipe,
+  transformCoord: (p: Position) => Position,
 ) => {
-  if (!isSimulationLink(hydraulicModel, pipe)) {
-    return;
-  }
-
   if (!pipe.isActive && !inactiveAssets) {
     return;
   }
@@ -591,7 +869,7 @@ const appendPipe = (
       ].join("\t"),
   );
   if (geolocation) {
-    appendLinkVertices(sections, idMap, pipe, commentPrefix);
+    appendLinkVertices(sections, idMap, pipe, transformCoord, commentPrefix);
   }
 };
 
@@ -602,12 +880,10 @@ const appendPump = (
   geolocation: boolean,
   inactiveAssets: boolean,
   usedCurveIds: Set<number>,
+  usedPatternIds: Set<number>,
   pump: Pump,
+  transformCoord: (p: Position) => Position,
 ) => {
-  if (!isSimulationLink(hydraulicModel, pump)) {
-    return;
-  }
-
   if (!pump.isActive && !inactiveAssets) {
     return;
   }
@@ -616,37 +892,84 @@ const appendPump = (
   const [startId, endId] = getLinkConnectionIds(hydraulicModel, idMap, pump);
   const commentPrefix = !pump.isActive ? ";" : "";
 
-  if (pump.definitionType === "curve") {
-    const curveId = idMap.curveId(pump);
-    sections.pumps.push(
-      commentPrefix +
-        [linkId, startId, endId, `HEAD ${curveId}`, `SPEED ${pump.speed}`].join(
-          "\t",
+  const speedPatternParts: string[] = [];
+  if (pump.speedPatternId) {
+    speedPatternParts.push(`PATTERN ${idMap.patternId(pump.speedPatternId)}`);
+    usedPatternIds.add(pump.speedPatternId);
+  }
+
+  switch (pump.definitionType) {
+    case "power":
+      sections.pumps.push(
+        commentPrefix +
+          [
+            linkId,
+            startId,
+            endId,
+            `POWER ${pump.power}`,
+            `SPEED ${pump.speed}`,
+            ...speedPatternParts,
+          ].join("\t"),
+      );
+      break;
+    case "curve":
+      const localCurveId = idMap.localCurveId(pump.label);
+      sections.pumps.push(
+        commentPrefix +
+          [
+            linkId,
+            startId,
+            endId,
+            `HEAD ${localCurveId}`,
+            `SPEED ${pump.speed}`,
+            ...speedPatternParts,
+          ].join("\t"),
+      );
+      sections.curves.push(";PUMP:");
+      pump.curve!.forEach((point) =>
+        sections.curves.push(
+          [localCurveId, String(point.x), String(point.y)].join("\t"),
         ),
-    );
-    pump.curve!.forEach((point) =>
-      sections.curves.push(
-        [curveId, String(point.x), String(point.y)].join("\t"),
-      ),
-    );
-  } else {
-    sections.pumps.push(
-      commentPrefix +
+      );
+      break;
+    case "curveId":
+      const curveId = pump.curveId ? idMap.curveId(pump.curveId) : "";
+
+      sections.pumps.push(
         [
           linkId,
           startId,
           endId,
-          `POWER ${pump.power}`,
+          `HEAD ${curveId}`,
           `SPEED ${pump.speed}`,
+          ...speedPatternParts,
         ].join("\t"),
-    );
+      );
+      if (pump.curveId) usedCurveIds.add(pump.curveId);
   }
 
   sections.status.push(
     commentPrefix + [linkId, pumpStatusFor(pump)].join("\t"),
   );
+
+  if (pump.efficiencyCurveId) {
+    sections.energy.push(
+      `Pump ${linkId} Efficiency\t${idMap.curveId(pump.efficiencyCurveId)}`,
+    );
+    usedCurveIds.add(pump.efficiencyCurveId);
+  }
+  if (pump.energyPrice !== undefined) {
+    sections.energy.push(`Pump ${linkId} Price\t${pump.energyPrice}`);
+  }
+  if (pump.energyPricePatternId) {
+    sections.energy.push(
+      `Pump ${linkId} Pattern\t${idMap.patternId(pump.energyPricePatternId)}`,
+    );
+    usedPatternIds.add(pump.energyPricePatternId);
+  }
+
   if (geolocation) {
-    appendLinkVertices(sections, idMap, pump, commentPrefix);
+    appendLinkVertices(sections, idMap, pump, transformCoord, commentPrefix);
   }
 };
 
@@ -656,30 +979,32 @@ const appendValve = (
   hydraulicModel: HydraulicModel,
   geolocation: boolean,
   inactiveAssets: boolean,
+  usedCurveIds: Set<number>,
   valve: Valve,
+  transformCoord: (p: Position) => Position,
 ) => {
-  if (!isSimulationLink(hydraulicModel, valve)) {
-    return;
-  }
-
   if (!valve.isActive && !inactiveAssets) {
     return;
   }
 
   const linkId = idMap.linkId(valve);
   const commentPrefix = !valve.isActive ? ";" : "";
+  const valveCurveId = valve.curveId ? idMap.curveId(valve.curveId) : "";
 
-  sections.valves.push(
-    commentPrefix +
-      [
-        linkId,
-        ...getLinkConnectionIds(hydraulicModel, idMap, valve),
-        String(valve.diameter),
-        kindFor(valve),
-        String(valve.setting),
-        String(valve.minorLoss),
-      ].join("\t"),
-  );
+  const valveData = [
+    linkId,
+    ...getLinkConnectionIds(hydraulicModel, idMap, valve),
+    String(valve.diameter),
+    kindFor(valve),
+    valve.kind === "gpv" ? valveCurveId : String(valve.setting),
+    String(valve.minorLoss),
+  ];
+  if (valve.kind === "pcv") {
+    valveData.push(valveCurveId);
+  }
+  if (valve.curveId) usedCurveIds.add(valve.curveId);
+
+  sections.valves.push(commentPrefix + valveData.join("\t"));
 
   if (valve.initialStatus !== "active") {
     const fixedStatus = valveFixedStatusFor(valve);
@@ -687,7 +1012,7 @@ const appendValve = (
   }
 
   if (geolocation) {
-    appendLinkVertices(sections, idMap, valve, commentPrefix);
+    appendLinkVertices(sections, idMap, valve, transformCoord, commentPrefix);
   }
 };
 
@@ -712,10 +1037,12 @@ const appendNodeCoordinates = (
   sections: InpSections,
   idMap: EpanetIds,
   node: NodeAsset,
+  transformCoord: (p: Position) => Position,
   commentPrefix = "",
 ) => {
+  const coords = transformCoord(node.coordinates);
   sections.coordinates.push(
-    commentPrefix + [idMap.nodeId(node), ...node.coordinates].join("\t"),
+    commentPrefix + [idMap.nodeId(node), ...coords].join("\t"),
   );
 };
 
@@ -723,11 +1050,13 @@ const appendLinkVertices = (
   sections: InpSections,
   idMap: EpanetIds,
   link: LinkAsset,
+  transformCoord: (p: Position) => Position,
   commentPrefix = "",
 ) => {
   for (const vertex of link.intermediateVertices) {
+    const coords = transformCoord(vertex);
     sections.vertices.push(
-      commentPrefix + [idMap.linkId(link), ...vertex].join("\t"),
+      commentPrefix + [idMap.linkId(link), ...coords].join("\t"),
     );
   }
 };
@@ -785,84 +1114,52 @@ const appendControls = (
   };
 
   for (const control of controls.simple) {
-    if (
-      control.assetReferences.some(
-        (reference) =>
-          !isSimulationAssetReference(hydraulicModel, reference.assetId),
-      )
-    ) {
-      continue;
-    }
     sections.controls.push(formatSimpleControl(control, idResolver));
   }
 
   for (const rule of controls.rules) {
-    if (
-      rule.assetReferences.some(
-        (reference) =>
-          !isSimulationAssetReference(hydraulicModel, reference.assetId),
-      )
-    ) {
-      continue;
-    }
     sections.rules.push(formatRuleBasedControl(rule, idResolver));
   }
 };
 
-const isSimulationAssetReference = (
-  hydraulicModel: HydraulicModel,
-  assetId: AssetId,
-) => {
-  const asset = hydraulicModel.assets.get(assetId);
-  if (!asset) return true;
-
-  if (asset.isNode) {
-    return asset.type !== "loggerPoint";
-  }
-
-  if (asset.isLink) {
-    return isSimulationLink(hydraulicModel, asset as LinkAsset);
-  }
-
-  return true;
-};
-
-const isSimulationLink = (hydraulicModel: HydraulicModel, link: LinkAsset) => {
-  const [startNodeId, endNodeId] = link.connections;
-  const startNode = hydraulicModel.assets.get(startNodeId);
-  const endNode = hydraulicModel.assets.get(endNodeId);
-
-  if (!startNode || !endNode) {
-    return false;
-  }
-
-  return (
-    startNode.isNode &&
-    endNode.isNode &&
-    startNode.type !== "loggerPoint" &&
-    endNode.type !== "loggerPoint"
-  );
+const CURVE_TYPE_TO_KEYWORD: Record<string, string> = {
+  pump: "PUMP",
+  efficiency: "EFFICIENCY",
+  volume: "VOLUME",
+  headloss: "HEADLOSS",
+  valve: "VALVE",
 };
 
 const appendCurves = (
   sections: InpSections,
   curves: HydraulicModel["curves"],
   usedCurveIds: Set<number>,
+  idMap: EpanetIds,
   usedCurvesOnly: boolean,
 ) => {
   for (const curve of curves.values()) {
     if (usedCurvesOnly && !usedCurveIds.has(curve.id)) continue;
+    const curveId = idMap.registerCurveId(curve);
+    const keyword = curve.type ? CURVE_TYPE_TO_KEYWORD[curve.type] : undefined;
+    if (keyword) sections.curves.push(`;${keyword}:`);
     for (const point of curve.points) {
       sections.curves.push(
-        [curve.label, String(point.x), String(point.y)].join("\t"),
+        [curveId, String(point.x), String(point.y)].join("\t"),
       );
     }
   }
 };
 
-const appendDemandPatterns = (
+const PATTERN_TYPE_TO_KEYWORD: Record<string, string> = {
+  demand: "DEMAND",
+  reservoirHead: "RESERVOIR",
+  pumpSpeed: "SPEED",
+  energyPrice: "ENERGY_PRICE",
+};
+
+const appendPatterns = (
   sections: InpSections,
-  patterns: DemandPatterns,
+  patterns: Patterns,
   usedPatternIds: Set<number>,
   idMap: EpanetIds,
   usedPatternsOnly: boolean,
@@ -873,6 +1170,11 @@ const appendDemandPatterns = (
   for (const pattern of patterns.values()) {
     const mappedId = idMap.patternId(pattern.id);
     if (usedPatternsOnly && !usedPatternIds.has(pattern.id)) continue;
+
+    const keyword = pattern.type
+      ? PATTERN_TYPE_TO_KEYWORD[pattern.type]
+      : undefined;
+    if (keyword) sections.patterns.push(`;${keyword}:`);
 
     const FACTORS_PER_LINE = 8;
     for (let i = 0; i < pattern.multipliers.length; i += FACTORS_PER_LINE) {
@@ -888,12 +1190,13 @@ const appendCustomerPoint = (
   hydraulicModel: HydraulicModel,
   customerPoint: CustomerPoint,
   usedPatternIds: Set<number>,
+  transformCoord: (p: Position) => Position,
 ) => {
   const connection = customerPoint.connection;
-  const [x, y] = customerPoint.coordinates;
+  const [x, y] = transformCoord(customerPoint.coordinates);
 
   if (connection) {
-    const [snapX, snapY] = connection.snapPoint;
+    const [snapX, snapY] = transformCoord(connection.snapPoint);
 
     const junction = hydraulicModel.assets.get(
       connection.junctionId,
@@ -918,7 +1221,11 @@ const appendCustomerPoint = (
     );
   }
 
-  for (const demand of customerPoint.demands) {
+  const demands = getCustomerPointDemands(
+    hydraulicModel.demands,
+    customerPoint.id,
+  );
+  for (const demand of demands) {
     const mappedPatternId = demand.patternId
       ? idMap.patternId(demand.patternId)
       : undefined;

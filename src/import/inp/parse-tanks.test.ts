@@ -55,32 +55,28 @@ describe("parse tanks", () => {
     expect(issues).toBeNull();
   });
 
-  it("registers CURVES section as used when tank references a volume curve", () => {
-    const lat = 10;
-    const lng = -10;
+  it("stores volumeCurveId", () => {
     const inp = `
     [TANKS]
-    ;ID   Elev.  InitLvl  MinLvl  MaxLvl  Diam  MinVol  VolCurve  Overflow
-    ;---------------------------------------------------------------------
-    T1    100     15       5       25     120   14       TANK1_VOL  YES
+    T1    100     15       5       25     120   0       VC1
+
+    [CURVES]
+    VC1\t0\t0
+    VC1\t10\t500
 
     [COORDINATES]
-    T1\t${lng}\t${lat}
+    T1\t10\t20
     `;
 
-    const { hydraulicModel, issues, stats } = parseInp(inp);
+    const { hydraulicModel } = parseInp(inp);
 
     const tank = getByLabel(hydraulicModel.assets, "T1") as Tank;
-    expect(tank.id).not.toBeUndefined();
-    expect(tank.type).toEqual("tank");
-    expect(tank.overflow).toEqual(true);
-    expect(tank.coordinates).toEqual([-10, 10]);
-
-    expect(stats.counts.get("[CURVES]")).toBeUndefined();
-    expect(issues?.hasTankCurves).toBe(1);
+    expect(tank.volumeCurveId).toBeDefined();
+    const curve = hydraulicModel.curves.get(tank.volumeCurveId!)!;
+    expect(curve.type).toBe("volume");
   });
 
-  it("does not register CURVES section when tank uses asterisk placeholder", () => {
+  it("does not register tank curve when tank uses asterisk placeholder", () => {
     const lat = 10;
     const lng = -10;
     const inp = `
@@ -93,16 +89,14 @@ describe("parse tanks", () => {
     T1\t${lng}\t${lat}
     `;
 
-    const { hydraulicModel, issues, stats } = parseInp(inp);
+    const { hydraulicModel } = parseInp(inp);
 
     const tank = getByLabel(hydraulicModel.assets, "T1") as Tank;
     expect(tank.id).not.toBeUndefined();
     expect(tank.type).toEqual("tank");
     expect(tank.overflow).toEqual(true);
     expect(tank.coordinates).toEqual([-10, 10]);
-
-    expect(stats.counts.get("[CURVES]")).toBeUndefined();
-    expect(issues?.hasTankCurves).toBeFalsy();
+    expect(tank.volumeCurveId).toBeUndefined();
   });
 
   it("sets overflow to false when tank overflow is NO", () => {

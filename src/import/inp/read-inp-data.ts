@@ -24,6 +24,8 @@ import {
   parseEnergy,
   parseEmitter,
   parseReaction,
+  parseReport,
+  parseSource,
 } from "./row-parsers";
 import { MAX_CUSTOMER_POINT_LABEL_LENGTH } from "src/hydraulic-model/customer-points";
 
@@ -49,8 +51,8 @@ const buildSectionParserDefinitions = (): SectionParserDefinition[] => [
   { names: ["COORDINATES", "COORDINATE"], parser: parsePosition },
   { names: ["RESERVOIRS", "RESERVOIR"], parser: parseReservoir },
   { names: ["ENERGY"], parser: parseEnergy },
-  { names: ["SOURCES"], parser: unsupported },
-  { names: ["REPORT"], parser: ignore },
+  { names: ["SOURCES"], parser: parseSource },
+  { names: ["REPORT"], parser: parseReport },
   { names: ["VERTICES", "VERTEX"], parser: parseVertex },
   { names: ["TANKS", "TANK"], parser: parseTank },
   { names: ["STATUS"], parser: parseStatus },
@@ -64,7 +66,34 @@ const buildSectionParserDefinitions = (): SectionParserDefinition[] => [
   { names: ["DEMANDS", "DEMAND"], parser: parseDemand },
   { names: ["EMITTERS"], parser: parseEmitter },
   { names: ["TAGS"], parser: unsupported },
+  { names: ["LEAKAGE"], parser: unsupported },
 ];
+
+// Sections where commented-out rows represent inactive assets or references to them.
+// Excludes shared data sections like CURVES and PATTERNS whose comments are type
+// indicators (e.g. ;PUMP:), not inactive asset data.
+const INACTIVE_ASSET_SECTIONS = new Set([
+  "[JUNCTIONS]",
+  "[JUNCTION]",
+  "[RESERVOIRS]",
+  "[RESERVOIR]",
+  "[TANKS]",
+  "[TANK]",
+  "[PIPES]",
+  "[PIPE]",
+  "[PUMPS]",
+  "[PUMP]",
+  "[VALVES]",
+  "[VALVE]",
+  "[COORDINATES]",
+  "[COORDINATE]",
+  "[VERTICES]",
+  "[VERTEX]",
+  "[STATUS]",
+  "[DEMANDS]",
+  "[DEMAND]",
+  "[EMITTERS]",
+]);
 
 const buildSectionParsers = (): SectionParsers => {
   const definitions = buildSectionParserDefinitions();
@@ -86,6 +115,7 @@ export const readInpData = (
 ): { inpData: InpData; stats: InpStats } => {
   const rows = inp.split("\n");
   let section: string | null = null;
+  let lastComment: string | null = null;
   const inpData = nullInpData();
   const sectionParsers = buildSectionParsers();
   const counts = new Map<string, number>();
@@ -111,7 +141,9 @@ export const readInpData = (
       issues,
       options,
       isCommented: startsWithComment,
+      previousComment: lastComment ?? undefined,
     });
+    lastComment = null;
   }
 
   for (const row of rows) {
@@ -141,12 +173,19 @@ export const readInpData = (
         continue;
       }
 
-      if (options?.inactiveAssets === true) parseRow(trimmedRow);
+      if (
+        options?.inactiveAssets === true &&
+        section &&
+        INACTIVE_ASSET_SECTIONS.has(section)
+      )
+        parseRow(trimmedRow);
+      lastComment = trimmedRow;
       continue;
     }
 
     if (isEnd(trimmedRow)) {
       section = null;
+      lastComment = null;
       continue;
     }
 
@@ -157,6 +196,7 @@ export const readInpData = (
     );
     if (newSectionName) {
       section = newSectionName;
+      lastComment = null;
       continue;
     }
     parseRow(trimmedRow);

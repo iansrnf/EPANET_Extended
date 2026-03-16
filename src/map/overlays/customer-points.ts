@@ -9,6 +9,7 @@ import { colors } from "src/lib/constants";
 import { Position } from "src/types";
 import { AssetsMap } from "src/hydraulic-model";
 import { Pipe } from "src/hydraulic-model/asset-types/pipe";
+import { EphemeralMoveCustomerPoint } from "src/state/drawing";
 
 interface ConnectionLineData {
   sourcePosition: [number, number];
@@ -32,6 +33,13 @@ const disabledStrokeColor = hexToArray(colors.gray400);
 const disabledConnectionLineColor = hexToArray(colors.gray300);
 
 const highlightFillColor = hexToArray(colors.cyan500);
+const previewLineColor = hexToArray(colors.indigo500);
+const oldConnectionLineColor = hexToArray(colors.indigo500, 0.4) as [
+  number,
+  number,
+  number,
+  number,
+];
 const haloFillColor = hexToArray(colors.cyan300, 0.8) as [
   number,
   number,
@@ -270,31 +278,53 @@ export const buildConnectCustomerPointsPreviewOverlay = (
   zoom: number,
   mode: "highlight" | "quiet" = "highlight",
 ): CustomerPointsOverlay => {
-  if (customerPoints.length === 0 || snapPoints.length === 0) {
+  if (customerPoints.length === 0) {
     return [];
   }
 
+  const isVisible = shouldShowOvelay(zoom);
+  const isQuietMode = mode === "quiet";
+
+  const oldConnectionLines: ConnectionLineData[] = [];
+  for (const customerPoint of customerPoints) {
+    if (customerPoint.snapPosition) {
+      oldConnectionLines.push({
+        sourcePosition: customerPoint.coordinates as [number, number],
+        targetPosition: customerPoint.snapPosition as [number, number],
+        customerPointId: customerPoint.id,
+      });
+    }
+  }
+
+  const oldConnectionLinesLayer = new LineLayer({
+    id: "customer-connect-old-lines-layer",
+    beforeId: "main-features-pipes",
+    data: oldConnectionLines,
+    getSourcePosition: (d: ConnectionLineData) => d.sourcePosition,
+    getTargetPosition: (d: ConnectionLineData) => d.targetPosition,
+    widthUnits: "meters",
+    getWidth: 0.8,
+    widthMinPixels: 0,
+    widthMaxPixels: 2,
+    getColor: oldConnectionLineColor,
+    antialiasing: true,
+    visible: isVisible,
+  });
+
+  if (snapPoints.length === 0) {
+    return [oldConnectionLinesLayer];
+  }
+
   const connectionLines: ConnectionLineData[] = [];
-
   for (let i = 0; i < customerPoints.length && i < snapPoints.length; i++) {
-    const customerPoint = customerPoints[i];
-    const snapPoint = snapPoints[i];
-
     connectionLines.push({
-      sourcePosition: customerPoint.coordinates as [number, number],
-      targetPosition: snapPoint as [number, number],
-      customerPointId: customerPoint.id,
+      sourcePosition: customerPoints[i].coordinates as [number, number],
+      targetPosition: snapPoints[i] as [number, number],
+      customerPointId: customerPoints[i].id,
     });
   }
 
-  const isVisible = shouldShowOvelay(zoom);
-
-  const isQuietMode = mode === "quiet";
-  const lineColor = isQuietMode ? connectionLineColor : highlightFillColor;
-  const pointFillColor = isQuietMode ? fillColor : highlightFillColor;
-  const pointStrokeColor = isQuietMode ? strokeColor : haloFillColor;
-  const pointRadius = isQuietMode ? 1.5 : 2;
-  const pointMaxRadius = isQuietMode ? 4 : 5;
+  const lineColor = isQuietMode ? connectionLineColor : previewLineColor;
 
   const previewConnectionLinesLayer = new PathLayer({
     id: "customer-connect-preview-lines-layer",
@@ -313,27 +343,83 @@ export const buildConnectCustomerPointsPreviewOverlay = (
     visible: isVisible,
   });
 
-  const highlightCustomerPointsLayer = new ScatterplotLayer({
-    id: "customer-connect-preview-points-layer",
-    beforeId: "ephemeral-junction-highlight",
-    data: customerPoints,
-    getPosition: (d: CustomerPoint) => d.coordinates as [number, number],
+  return [oldConnectionLinesLayer, previewConnectionLinesLayer];
+};
 
-    radiusUnits: "meters",
-    getRadius: pointRadius,
-    radiusMinPixels: 1,
-    radiusMaxPixels: pointMaxRadius,
+export const buildMovingCustomerPointOverlay = (
+  ephemeralState: EphemeralMoveCustomerPoint,
+  zoom: number,
+): CustomerPointsOverlay => {
+  const isVisible = shouldShowOvelay(zoom);
+  const layers: CustomerPointsOverlay = [];
 
-    getFillColor: pointFillColor,
-    stroked: true,
-    getLineColor: pointStrokeColor,
-    getLineWidth: 1,
-    lineWidthUnits: "pixels",
-    lineWidthMinPixels: 1,
-    lineWidthMaxPixels: 2,
-    antialiasing: true,
-    visible: isVisible,
-  });
+  const snapPosition = ephemeralState.customerPoint.snapPosition;
+  if (snapPosition) {
+    const connectionLineData: ConnectionLineData[] = [
+      {
+        sourcePosition: ephemeralState.movedCoordinates as [number, number],
+        targetPosition: snapPosition as [number, number],
+        customerPointId: ephemeralState.customerPoint.id,
+      },
+    ];
 
-  return [previewConnectionLinesLayer, highlightCustomerPointsLayer];
+    layers.push(
+      new LineLayer({
+        id: "moving-customer-connection-line-layer",
+        beforeId: "main-features-pipes",
+        data: connectionLineData,
+        getSourcePosition: (d: ConnectionLineData) => d.sourcePosition,
+        getTargetPosition: (d: ConnectionLineData) => d.targetPosition,
+        widthUnits: "meters",
+        getWidth: 0.8,
+        widthMinPixels: 0,
+        widthMaxPixels: 2,
+        getColor: connectionLineColor,
+        antialiasing: true,
+        visible: isVisible,
+      }),
+    );
+  }
+
+  layers.push(
+    new ScatterplotLayer({
+      id: "moving-customer-point-halo-layer",
+      beforeId: "ephemeral-junction-highlight",
+      data: [{ coordinates: ephemeralState.movedCoordinates }],
+      getPosition: (d: { coordinates: Position }) =>
+        d.coordinates as [number, number],
+      radiusUnits: "meters",
+      getRadius: 3,
+      radiusMinPixels: 0,
+      radiusMaxPixels: 6,
+      getFillColor: selectionHaloFillColor,
+      antialiasing: true,
+      visible: isVisible,
+    }),
+  );
+
+  layers.push(
+    new ScatterplotLayer({
+      id: "moving-customer-point-layer",
+      beforeId: "ephemeral-junction-highlight",
+      data: [{ coordinates: ephemeralState.movedCoordinates }],
+      getPosition: (d: { coordinates: Position }) =>
+        d.coordinates as [number, number],
+      radiusUnits: "meters",
+      getRadius: 1.5,
+      radiusMinPixels: 0,
+      radiusMaxPixels: 4,
+      getFillColor: selectionFillColor,
+      stroked: true,
+      getLineColor: selectionHaloFillColor,
+      getLineWidth: 1,
+      lineWidthUnits: "pixels",
+      lineWidthMinPixels: 1,
+      lineWidthMaxPixels: 2,
+      antialiasing: true,
+      visible: isVisible,
+    }),
+  );
+
+  return layers;
 };

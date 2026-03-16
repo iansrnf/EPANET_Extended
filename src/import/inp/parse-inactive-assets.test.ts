@@ -1,5 +1,7 @@
 import { parseInp } from "./parse-inp";
 import { buildInp } from "src/simulation/build-inp";
+import { presets } from "src/lib/project-settings/quantities-spec";
+import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
 import { Asset, AssetsMap } from "src/hydraulic-model";
 import { checksum } from "src/infra/checksum";
@@ -215,6 +217,8 @@ describe("parse inactive assets", () => {
 
     // Generate INP with inactive assets as comments
     const inp = buildInp(hydraulicModel, {
+      simulationSettings: defaultSimulationSettings,
+      units: presets.LPS.units,
       inactiveAssets: true,
       geolocation: true,
     });
@@ -273,7 +277,10 @@ describe("parse inactive assets", () => {
     const hydraulicModel = builder.build();
 
     // Generate INP with inactive assets excluded (default)
-    const inp = buildInp(hydraulicModel);
+    const inp = buildInp(hydraulicModel, {
+      simulationSettings: defaultSimulationSettings,
+      units: presets.LPS.units,
+    });
 
     expect(inp).not.toMatch(/^4\t/m); // J3 should not appear
     expect(inp).toMatch(/^1\t/m); // J1 should appear
@@ -312,6 +319,54 @@ J5    90    10
     expect(j3?.feature.properties.isActive).toBe(true);
     expect(j4?.feature.properties.isActive).toBe(false);
     expect(j5?.feature.properties.isActive).toBe(true);
+  });
+
+  it("does not parse curve type comments as curve data", () => {
+    const inp = `
+    [JUNCTIONS]
+    J1    100    0
+    J2    200    0
+
+    [CURVES]
+    ;PUMP:
+    C1    0    100
+    C1    500    80
+    C1    1000    50
+
+    [COORDINATES]
+    J1    10    20
+    J2    30    40
+    `;
+
+    const { hydraulicModel } = parseInp(createAppMadeInp(inp), {
+      inactiveAssets: true,
+    });
+
+    const curves = [...hydraulicModel.curves.values()];
+    expect(curves).toHaveLength(1);
+    expect(curves[0].label).toBe("C1");
+  });
+
+  it("does not parse pattern type comments as pattern data", () => {
+    const inp = `
+    [JUNCTIONS]
+    J1    100    50    pat1
+
+    [PATTERNS]
+    ;DEMAND:
+    pat1    1.0    1.2    0.8
+
+    [COORDINATES]
+    J1    0    0
+    `;
+
+    const { hydraulicModel } = parseInp(createAppMadeInp(inp), {
+      inactiveAssets: true,
+    });
+
+    const patterns = [...hydraulicModel.patterns.values()];
+    expect(patterns).toHaveLength(1);
+    expect(patterns[0].label).toBe("pat1");
   });
 
   it("ignores header comment lines in sections", () => {

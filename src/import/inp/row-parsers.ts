@@ -7,6 +7,8 @@ import {
 import { InpData, TankData } from "./inp-data";
 import { IssuesAccumulator } from "./issues";
 import { HeadlossFormula } from "src/hydraulic-model";
+import { CurveType } from "src/hydraulic-model/curves";
+import { PatternType } from "src/hydraulic-model/patterns";
 import { ValveKind } from "src/hydraulic-model/asset-types/valve";
 import { PipeStatus } from "src/hydraulic-model/asset-types/pipe";
 import { ParseInpOptions } from "./parse-inp";
@@ -18,6 +20,7 @@ export type RowParser = (params: {
   inpData: InpData;
   issues: IssuesAccumulator;
   options?: ParseInpOptions;
+  previousComment?: string;
 }) => void;
 
 export const commentIdentifier = ";";
@@ -32,7 +35,12 @@ const epanetDefaultOptions = {
   TRIALS: 40,
   PATTERN: "1",
   "DEMAND MULTIPLIER": 1.0,
+  "DEMAND MODEL": "DDA",
+  "MINIMUM PRESSURE": 0,
+  "REQUIRED PRESSURE": 0.1,
+  "PRESSURE EXPONENT": 0.5,
   "EMITTER EXPONENT": 0.5,
+  "BACKFLOW ALLOWED": "YES",
   QUALITY: "NONE",
   DIFFUSIVITY: 1.0,
   TOLERANCE: 0.01,
@@ -40,6 +48,8 @@ const epanetDefaultOptions = {
   CHECKFREQ: 2,
   MAXCHECK: 10,
   DAMPLIMIT: 0,
+  HEADERROR: 0,
+  FLOWCHANGE: 0,
 };
 
 const defaultOptions = {
@@ -50,51 +60,98 @@ const defaultOptions = {
 };
 
 export const ignore: RowParser = () => {};
+
+export const parseReport: RowParser = ({ trimmedRow, inpData }) => {
+  const upperRow = trimmedRow.toUpperCase();
+  if (upperRow.startsWith("ENERGY")) {
+    const value = upperRow.replace(/^ENERGY\s+/, "").trim();
+    inpData.report.energy = value === "YES";
+  }
+  if (upperRow.startsWith("STATUS")) {
+    const value = upperRow.replace(/^STATUS\s+/, "").trim();
+    if (value === "YES" || value === "NO" || value === "FULL") {
+      inpData.report.statusReport = value;
+    }
+  }
+};
 export const unsupported: RowParser = ({ sectionName, issues }) => {
   issues.addUsedSection(sectionName);
 };
 
-const defaultEnergySettings: Record<string, number> = {
-  "GLOBAL EFFICIENCY": 75,
-  "GLOBAL PRICE": 0,
-  "DEMAND CHARGE": 0,
-};
-
-export const parseEnergy: RowParser = ({
+export const parseSource: RowParser = ({
   sectionName,
   trimmedRow,
   inpData,
   issues,
 }) => {
+  issues.addUsedSection(sectionName);
+  const [, , , patternId] = readValues(trimmedRow);
+  if (patternId) {
+    inpData.sourcePatterns.add(patternId);
+  }
+};
+
+const defaultEnergySettings: Record<string, number | string> = {
+  "GLOBAL EFFICIENCY": 75,
+  "GLOBAL PRICE": 0,
+  "GLOBAL PATTERN": "",
+  "DEMAND CHARGE": 0,
+};
+
+export const parseEnergy: RowParser = ({ trimmedRow, inpData }) => {
   const upperRow = trimmedRow.toUpperCase();
 
   if (upperRow.startsWith("PUMP")) {
     const [, pumpId, keyword, value] = readValues(trimmedRow);
-    if (keyword?.toUpperCase() === "EFFICIENCY" && value) {
-      inpData.energyEfficiencyCurves.set(pumpId, value);
-    } else {
-      issues.addUsedSection(sectionName);
+    if (pumpId && keyword && value) {
+      const entry = inpData.energy.pumpEnergy.get(pumpId) ?? {};
+      const upperKeyword = keyword.toUpperCase();
+      if (upperKeyword.startsWith("EFFIC")) entry.efficiencyCurve = value;
+      else if (upperKeyword === "PATTERN") entry.pattern = value;
+      else if (upperKeyword === "PRICE") entry.price = parseFloat(value);
+      inpData.energy.pumpEnergy.set(pumpId, entry);
+    }
+    return;
+  }
+
+  if (upperRow.startsWith("GLOBAL EFFIC")) {
+    const rawValue = trimmedRow
+      .replace(/^GLOBAL\s+(EFFICIENCY|EFFIC)\s+/i, "")
+      .split(commentIdentifier)[0]
+      .trim();
+    const parsed = parseFloat(rawValue);
+    if (
+      !isNaN(parsed) &&
+      parsed !== defaultEnergySettings["GLOBAL EFFICIENCY"]
+    ) {
+      inpData.energy.globalEfficiency = parsed;
     }
     return;
   }
 
   const setting = readSetting(trimmedRow, defaultEnergySettings);
-  if (setting && setting.value !== setting.defaultValue) {
-    issues.addUsedSection(sectionName);
-  } else if (!setting) {
-    issues.addUsedSection(sectionName);
+  if (setting) {
+    const { name, value } = setting;
+    if (name === "GLOBAL PATTERN") {
+      inpData.energy.globalPattern = (value as string) || undefined;
+      return;
+    }
+    if (name === "GLOBAL PRICE") {
+      inpData.energy.globalPrice = value as number;
+      return;
+    }
+    if (name === "DEMAND CHARGE") {
+      inpData.energy.demandCharge = value as number;
+      return;
+    }
   }
 };
 
-export const parseEmitter: RowParser = ({
-  sectionName,
-  trimmedRow,
-  issues,
-}) => {
-  const [, coefficient] = readValues(trimmedRow);
+export const parseEmitter: RowParser = ({ trimmedRow, inpData }) => {
+  const [id, coefficient] = readValues(trimmedRow);
   const value = parseFloat(coefficient);
   if (!isNaN(value) && value !== 0) {
-    issues.addUsedSection(sectionName);
+    inpData.emitters.set(id, value);
   }
 };
 
@@ -111,13 +168,44 @@ const defaultReactionSettings: Record<string, number> = {
 export const parseReaction: RowParser = ({
   sectionName,
   trimmedRow,
+  inpData,
   issues,
 }) => {
   const setting = readSetting(trimmedRow, defaultReactionSettings);
-  if (setting && setting.value !== setting.defaultValue) {
-    issues.addUsedSection(sectionName);
-  } else if (!setting) {
-    // Unsupported Reaction settings
+
+  if (setting) {
+    const { name, value } = setting;
+    if (name === "ORDER BULK") {
+      inpData.reactions.bulkOrder = value as number;
+      return;
+    }
+    if (name === "ORDER WALL") {
+      inpData.reactions.wallOrder = value as number;
+      return;
+    }
+    if (name === "ORDER TANK") {
+      inpData.reactions.tankOrder = value as number;
+      return;
+    }
+    if (name === "GLOBAL BULK") {
+      inpData.reactions.globalBulk = value as number;
+      return;
+    }
+    if (name === "GLOBAL WALL") {
+      inpData.reactions.globalWall = value as number;
+      return;
+    }
+    if (name === "LIMITING POTENTIAL") {
+      inpData.reactions.limitingPotential = value as number;
+      return;
+    }
+    if (name === "ROUGHNESS CORRELATION") {
+      inpData.reactions.roughnessCorrelation = value as number;
+      return;
+    }
+  }
+
+  if (!setting) {
     issues.addUsedSection(sectionName);
   }
 };
@@ -125,14 +213,9 @@ export const parseReaction: RowParser = ({
 export const parseReservoir: RowParser = ({
   trimmedRow,
   inpData,
-  issues,
   isCommented,
 }) => {
   const [id, baseHead, patternId] = readValues(trimmedRow);
-
-  if (patternId) {
-    issues.addReservoirPattern();
-  }
 
   const comment = readComment(trimmedRow);
   const elevationMatch = comment.match(/Elevation:(-?\d+(?:\.\d+)?)/i);
@@ -168,12 +251,7 @@ export const parseJunction: RowParser = ({
   inpData.nodeIds.add(id);
 };
 
-export const parseValve: RowParser = ({
-  trimmedRow,
-  inpData,
-  issues,
-  isCommented,
-}) => {
+export const parseValve: RowParser = ({ trimmedRow, inpData, isCommented }) => {
   const [
     id,
     startNodeDirtyId,
@@ -185,19 +263,14 @@ export const parseValve: RowParser = ({
     curveId,
   ] = readValues(trimmedRow);
 
-  let kind = type.toLowerCase();
-  let headlossCurveId: string | undefined;
+  const kind = type.toLowerCase();
   let valveCurveId: string | undefined;
-
   if (kind === "gpv") {
-    issues.addGPVUsed();
-    headlossCurveId = setting;
-    kind = "tcv";
+    valveCurveId = setting;
   }
 
   if (kind === "pcv" && curveId) {
     valveCurveId = curveId;
-    issues.addPCVCurve();
   }
 
   inpData.valves.push({
@@ -209,17 +282,11 @@ export const parseValve: RowParser = ({
     setting: parseFloat(setting),
     minorLoss: parseFloat(minorLoss),
     curveId: valveCurveId,
-    headlossCurveId,
     isActive: !isCommented,
   });
 };
 
-export const parsePump: RowParser = ({
-  trimmedRow,
-  inpData,
-  issues,
-  isCommented,
-}) => {
+export const parsePump: RowParser = ({ trimmedRow, inpData, isCommented }) => {
   const [id, startNodeDirtyId, endNodeDirtyId, ...settingFields] =
     readValues(trimmedRow);
 
@@ -245,7 +312,6 @@ export const parsePump: RowParser = ({
 
     if (key === "PATTERN") {
       patternId = value;
-      issues.addPumpPattern();
     }
   }
 
@@ -261,13 +327,20 @@ export const parsePump: RowParser = ({
   });
 };
 
-export const parseCurve: RowParser = ({ trimmedRow, inpData }) => {
+export const parseCurve: RowParser = ({
+  trimmedRow,
+  inpData,
+  previousComment,
+}) => {
   const [curveId, x, y] = readValues(trimmedRow);
   const normalizedLabel = curveId.toUpperCase();
   const existing = inpData.curves.get(normalizedLabel);
   const points = existing?.points || [];
   points.push({ x: parseFloat(x), y: parseFloat(y) });
-  inpData.curves.set(normalizedLabel, { label: curveId, points });
+  const fallbackType = existing
+    ? existing.fallbackType
+    : detectCurveTypeFromComment(previousComment);
+  inpData.curves.set(normalizedLabel, { label: curveId, points, fallbackType });
 };
 
 export const parseStatus: RowParser = ({ trimmedRow, inpData }) => {
@@ -275,12 +348,7 @@ export const parseStatus: RowParser = ({ trimmedRow, inpData }) => {
   inpData.status.set(linkId, value.toUpperCase());
 };
 
-export const parseTank: RowParser = ({
-  trimmedRow,
-  inpData,
-  issues,
-  isCommented,
-}) => {
+export const parseTank: RowParser = ({ trimmedRow, inpData, isCommented }) => {
   const [
     id,
     elevation,
@@ -306,7 +374,6 @@ export const parseTank: RowParser = ({
 
   if (volumeCurveId && volumeCurveId !== "*") {
     tankData.volumeCurveId = volumeCurveId;
-    issues.addTankCurve();
   }
 
   if (overflow) {
@@ -376,13 +443,24 @@ export const parsePosition: RowParser = ({ trimmedRow, inpData }) => {
   inpData.coordinates.set(nodeId, [parseFloat(lng), parseFloat(lat)]);
 };
 
-export const parsePattern: RowParser = ({ trimmedRow, inpData }) => {
+export const parsePattern: RowParser = ({
+  trimmedRow,
+  inpData,
+  previousComment,
+}) => {
   const [patternId, ...values] = readValues(trimmedRow);
   const normalizedLabel = patternId.toUpperCase();
   const existing = inpData.patterns.get(normalizedLabel);
   const multipliers = existing?.multipliers || [];
   multipliers.push(...values.map((v) => parseFloat(v)));
-  inpData.patterns.set(normalizedLabel, { label: patternId, multipliers });
+  const fallbackType = existing
+    ? existing.fallbackType
+    : detectPatternTypeFromComment(previousComment);
+  inpData.patterns.set(normalizedLabel, {
+    label: patternId,
+    multipliers,
+    fallbackType,
+  });
 };
 
 export const parseVertex: RowParser = ({ trimmedRow, inpData }) => {
@@ -397,16 +475,13 @@ const defaultTimeSettings = {
   "HYDRAULIC TIMESTEP": "0",
   "REPORT TIMESTEP": "0",
   "PATTERN TIMESTEP": "0",
+  "QUALITY TIMESTEP": "0",
+  "RULE TIMESTEP": "0",
   "PATTERN START": "0",
   "REPORT START": "0",
   "START CLOCKTIME": "0",
   STATISTIC: "NONE",
 };
-
-const timeSettingsCoveredByOtherWarnings = [
-  "QUALITY TIMESTEP",
-  "RULE TIMESTEP",
-];
 
 const parseTimeToSeconds = (timeStr: string): number => {
   const trimmed = timeStr.trim().toUpperCase();
@@ -477,14 +552,6 @@ export const parseTimeSetting: RowParser = ({
   inpData,
   issues,
 }) => {
-  const upperRow = trimmedRow.toUpperCase();
-
-  for (const covered of timeSettingsCoveredByOtherWarnings) {
-    if (upperRow.startsWith(covered)) {
-      return;
-    }
-  }
-
   const setting = readSetting(trimmedRow, defaultTimeSettings);
   if (!setting) return;
 
@@ -498,13 +565,22 @@ export const parseTimeSetting: RowParser = ({
     inpData.times.duration = parseTimeToSeconds(value);
   }
   if (name === "HYDRAULIC TIMESTEP") {
-    inpData.times.hydraulicTimestep = parseTimeToSeconds(value);
+    const seconds = parseTimeToSeconds(value);
+    if (seconds > 0) inpData.times.hydraulicTimestep = seconds;
   }
   if (name === "REPORT TIMESTEP") {
-    inpData.times.reportTimestep = parseTimeToSeconds(value);
+    const seconds = parseTimeToSeconds(value);
+    if (seconds > 0) inpData.times.reportTimestep = seconds;
   }
   if (name === "PATTERN TIMESTEP") {
-    inpData.times.patternTimestep = parseTimeToSeconds(value);
+    const seconds = parseTimeToSeconds(value);
+    if (seconds > 0) inpData.times.patternTimestep = seconds;
+  }
+  if (name === "QUALITY TIMESTEP") {
+    inpData.times.qualityTimestep = parseTimeToSeconds(value);
+  }
+  if (name === "RULE TIMESTEP") {
+    inpData.times.ruleTimestep = parseTimeToSeconds(value);
   }
   if (name === "PATTERN START") {
     inpData.times.patternStart = parseTimeToSeconds(value);
@@ -533,11 +609,32 @@ export const parseTimeSetting: RowParser = ({
   }
 };
 
+const epanetToUnit: Record<string, string> = {
+  PSI: "psi",
+  KPA: "kPa",
+  METERS: "mwc",
+  FEET: "fwc",
+  BAR: "bar",
+};
+
+const parsePressureUnit = (row: string): string | undefined => {
+  const upper = row.split(commentIdentifier)[0].toUpperCase().trim();
+  const match = upper.match(/^PRESSURE\s+(PSI|KPA|METERS|FEET|BAR)$/);
+  if (!match) return undefined;
+  return epanetToUnit[match[1]];
+};
+
 export const parseOption: RowParser = ({
   trimmedRow,
   inpData,
   issues,
 }): void => {
+  const pressureUnit = parsePressureUnit(trimmedRow);
+  if (pressureUnit) {
+    inpData.options.pressureUnit = pressureUnit;
+    return;
+  }
+
   const option = readSetting(trimmedRow, defaultOptions);
   if (!option) return;
 
@@ -547,20 +644,58 @@ export const parseOption: RowParser = ({
     inpData.options.units = value as EpanetUnitSystem;
     return;
   }
+
   if (name === "HEADLOSS") {
     inpData.options.headlossFormula = value as HeadlossFormula;
     return;
   }
 
   if (name === "UNBALANCED") {
-    if (value !== defaultValue) {
-      issues.hasUnbalancedDiff(value as string, defaultValue as string);
+    const strValue = typeof value === "string" ? value : String(value);
+    const parts = strValue.trim().split(/\s+/);
+    const mode = parts[0] as "STOP" | "CONTINUE";
+    inpData.options.unbalancedMode = mode;
+    if (mode === "CONTINUE" && parts.length > 1) {
+      inpData.options.unbalancedExtraTrials = parseInt(parts[1], 10);
+    } else if (mode === "CONTINUE") {
+      inpData.options.unbalancedExtraTrials = 0;
     }
     return;
   }
 
   if (name === "DEMAND MULTIPLIER") {
     inpData.options.demandMultiplier = value as number;
+    return;
+  }
+
+  if (name === "DEMAND MODEL") {
+    inpData.options.demandModel = value as "DDA" | "PDA";
+    return;
+  }
+
+  if (name === "MINIMUM PRESSURE") {
+    inpData.options.minimumPressure = value as number;
+    return;
+  }
+
+  if (name === "REQUIRED PRESSURE") {
+    inpData.options.requiredPressure = value as number;
+    return;
+  }
+
+  if (name === "PRESSURE EXPONENT") {
+    inpData.options.pressureExponent = value as number;
+    return;
+  }
+
+  if (name === "EMITTER EXPONENT") {
+    inpData.options.emitterExponent = value as number;
+    return;
+  }
+
+  if (name === "BACKFLOW ALLOWED") {
+    const upperValue = (value as string).toUpperCase();
+    inpData.options.backflowAllowed = upperValue === "YES";
     return;
   }
 
@@ -572,15 +707,76 @@ export const parseOption: RowParser = ({
   if (name === "QUALITY") {
     const upperValue =
       typeof value === "string" ? value.toUpperCase() : String(value);
-    if (upperValue.startsWith("NONE")) return;
 
-    if (upperValue.startsWith("AGE")) {
-      issues.addWaterQualityType("AGE");
+    if (upperValue.startsWith("NONE")) {
+      inpData.options.qualitySimulationType = "NONE";
+    } else if (upperValue.startsWith("AGE")) {
+      inpData.options.qualitySimulationType = "AGE";
     } else if (upperValue.startsWith("TRACE")) {
-      issues.addWaterQualityType("TRACE");
+      inpData.options.qualitySimulationType = "TRACE";
+      const rawValue = trimmedRow
+        .split(commentIdentifier)[0]
+        .replace(/^\s*QUALITY\s+TRACE\s+/i, "")
+        .trim();
+      if (rawValue) inpData.options.qualityTraceNode = rawValue;
     } else {
-      issues.addWaterQualityType("CHEMICAL");
+      inpData.options.qualitySimulationType = "CHEMICAL";
+      const rawValue = trimmedRow
+        .split(commentIdentifier)[0]
+        .replace(/^\s*QUALITY\s+/i, "")
+        .trim();
+      const parts = rawValue.split(/\s+/);
+      if (parts[0]) inpData.options.qualityChemicalName = parts[0];
+      if (parts[1]) {
+        const unit = parts[1].toLowerCase();
+        inpData.options.qualityMassUnit = unit === "ug/l" ? "ug/L" : "mg/L";
+      }
     }
+    return;
+  }
+
+  if (name === "TRIALS") {
+    inpData.options.trials = value as number;
+    return;
+  }
+  if (name === "ACCURACY") {
+    inpData.options.accuracy = value as number;
+    return;
+  }
+  if (name === "HEADERROR") {
+    inpData.options.headError = value as number;
+    return;
+  }
+  if (name === "FLOWCHANGE") {
+    inpData.options.flowChange = value as number;
+    return;
+  }
+  if (name === "CHECKFREQ") {
+    inpData.options.checkFreq = value as number;
+    return;
+  }
+  if (name === "MAXCHECK") {
+    inpData.options.maxCheck = value as number;
+    return;
+  }
+  if (name === "DAMPLIMIT") {
+    inpData.options.dampLimit = value as number;
+    return;
+  }
+  if (name === "VISCOSITY") {
+    inpData.options.viscosity = value as number;
+    return;
+  }
+  if (name === "SPECIFIC GRAVITY") {
+    inpData.options.specificGravity = value as number;
+    return;
+  }
+  if (name === "TOLERANCE") {
+    inpData.options.tolerance = value as number;
+    return;
+  }
+  if (name === "DIFFUSIVITY") {
+    inpData.options.diffusivity = value as number;
     return;
   }
 
@@ -637,4 +833,45 @@ export const parseRule: RowParser = ({ trimmedRow, inpData }) => {
   } else {
     inpData.controls.ruleBased = trimmedRow;
   }
+};
+
+const CURVE_KEYWORDS: Record<string, CurveType> = {
+  PUMP: "pump",
+  EFFICIENCY: "efficiency",
+  VOLUME: "volume",
+  HEADLOSS: "headloss",
+  VALVE: "valve",
+};
+
+const PATTERN_KEYWORDS: Record<string, PatternType> = {
+  DEMAND: "demand",
+  RESERVOIR: "reservoirHead",
+  SPEED: "pumpSpeed",
+  ENERGY_PRICE: "energyPrice",
+};
+
+const countKeywordMatches = <T>(
+  comment: string,
+  keywords: Record<string, T>,
+): T | undefined => {
+  const words = comment
+    .toUpperCase()
+    .split(/[^A-Z]+/)
+    .filter(Boolean);
+  const matches = words.filter((w) => w in keywords);
+  return matches.length === 1 ? keywords[matches[0]] : undefined;
+};
+
+const detectCurveTypeFromComment = (
+  comment: string | undefined,
+): CurveType | undefined => {
+  if (!comment) return undefined;
+  return countKeywordMatches(comment, CURVE_KEYWORDS);
+};
+
+const detectPatternTypeFromComment = (
+  comment: string | undefined,
+): PatternType | undefined => {
+  if (!comment) return undefined;
+  return countKeywordMatches(comment, PATTERN_KEYWORDS);
 };

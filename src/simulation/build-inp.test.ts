@@ -1,6 +1,8 @@
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { SimulationSettingsBuilder } from "src/__helpers__/simulation-settings-builder";
 import { buildInp } from "./build-inp";
-import { presets } from "src/model-metadata/quantities-spec";
+import { presets } from "src/lib/project-settings/quantities-spec";
+import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 
 describe("build inp", () => {
   it("adds reservoirs", () => {
@@ -15,7 +17,10 @@ describe("build inp", () => {
       })
       .build();
 
-    const inp = buildInp(hydraulicModel);
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+    });
 
     expect(inp).toContain("[RESERVOIRS]");
     expect(inp).toContain("1\t10");
@@ -34,7 +39,11 @@ describe("build inp", () => {
       })
       .build();
 
-    const inp = buildInp(hydraulicModel, { reservoirElevations: true });
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+      reservoirElevations: true,
+    });
 
     expect(inp).toContain("[RESERVOIRS]");
     expect(inp).toContain("1\t10");
@@ -46,15 +55,18 @@ describe("build inp", () => {
     const hydraulicModel = HydraulicModelBuilder.with()
       .aJunction(IDS.J1, {
         elevation: 10,
-        demands: [{ baseDemand: 1 }],
       })
+      .aJunctionDemand(IDS.J1, [{ baseDemand: 1 }])
       .aJunction(IDS.J2, {
         elevation: 20,
-        demands: [{ baseDemand: 2 }],
       })
+      .aJunctionDemand(IDS.J2, [{ baseDemand: 2 }])
       .build();
 
-    const inp = buildInp(hydraulicModel);
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+    });
 
     expect(inp).toContain("[JUNCTIONS]");
     expect(inp).toContain("1\t10");
@@ -70,17 +82,20 @@ describe("build inp", () => {
       const hydraulicModel = HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           elevation: 10,
-          demands: [
-            { baseDemand: 5 },
-            { baseDemand: 10, patternId: IDS.PAT1 },
-            { baseDemand: 15, patternId: IDS.PAT2 },
-          ],
         })
+        .aJunctionDemand(IDS.J1, [
+          { baseDemand: 5 },
+          { baseDemand: 10, patternId: IDS.PAT1 },
+          { baseDemand: 15, patternId: IDS.PAT2 },
+        ])
         .aDemandPattern(IDS.PAT1, "residential", [0.8, 1.2, 1.0])
         .aDemandPattern(IDS.PAT2, "commercial", [1.0, 1.5, 0.5])
         .build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).toContain("[DEMANDS]");
       expect(inp).toContain("1\t5"); // constant demand
@@ -96,11 +111,14 @@ describe("build inp", () => {
       const hydraulicModel = HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           elevation: 10,
-          demands: [{ baseDemand: 25 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 25 }])
         .build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).toContain("1\t25"); //constant demand
       expect(inp).not.toContain("1\t25\t");
@@ -111,12 +129,15 @@ describe("build inp", () => {
       const hydraulicModel = HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           elevation: 10,
-          demands: [{ baseDemand: 30, patternId: IDS.PAT1 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 30, patternId: IDS.PAT1 }])
         .aDemandPattern(IDS.PAT1, "daily", [0.5, 1.0, 1.5])
         .build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).toContain(`1\t30\tdaily`);
     });
@@ -146,7 +167,10 @@ describe("build inp", () => {
       })
       .build();
 
-    const inp = buildInp(hydraulicModel);
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+    });
 
     expect(inp).toContain("[PIPES]");
     expect(inp).toContain("4\t1\t2\t10\t100\t1\t0\tOpen");
@@ -168,39 +192,13 @@ describe("build inp", () => {
       })
       .build();
 
-    const inp = buildInp(hydraulicModel);
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+    });
 
     expect(inp).toContain("[PIPES]");
     expect(inp).toContain("3\t1\t2\t15\t150\t1.5\t0\tCV");
-  });
-
-  it("ignores links and controls that reference logger points", () => {
-    const IDS = { LOGGER: 10, JUNCTION: 66, PIPE: 155 };
-    const hydraulicModel = HydraulicModelBuilder.with()
-      .aLoggerPoint(IDS.LOGGER, { label: "L1" })
-      .aJunction(IDS.JUNCTION, { label: "J66" })
-      .aPipe(IDS.PIPE, {
-        label: "P155",
-        startNodeId: IDS.LOGGER,
-        endNodeId: IDS.JUNCTION,
-        length: 164.97,
-        diameter: 300,
-        roughness: 130,
-        initialStatus: "open",
-      })
-      .aSimpleControl({
-        template: "LINK {{0}} OPEN IF NODE {{1}} ABOVE 10",
-        assetReferences: [
-          { assetId: IDS.PIPE, isActionTarget: true },
-          { assetId: IDS.LOGGER, isActionTarget: false },
-        ],
-      })
-      .build();
-
-    const inp = buildInp(hydraulicModel, { labelIds: true });
-
-    expect(inp).not.toContain("P155\tL1\tJ66");
-    expect(inp).not.toContain("LINK P155 OPEN IF NODE L1 ABOVE 10");
   });
 
   it("adds valves", () => {
@@ -229,7 +227,10 @@ describe("build inp", () => {
       })
       .build();
 
-    const inp = buildInp(hydraulicModel);
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+    });
 
     expect(inp).toContain("[VALVES]");
     expect(inp).toContain("4\t1\t2\t20\tTCV\t10\t0.1");
@@ -259,7 +260,10 @@ describe("build inp", () => {
       })
       .build();
 
-    const inp = buildInp(hydraulicModel);
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+    });
 
     expect(inp).toContain("[PUMPS]");
     expect(inp).toContain("4\t1\t2\tHEAD P1\tSPEED 0.8");
@@ -285,7 +289,10 @@ describe("build inp", () => {
       })
       .build();
 
-    const inp = buildInp(hydraulicModel);
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+    });
 
     expect(inp).toContain("[PUMPS]");
     expect(inp).toContain("4\t1\t2\tPOWER 100\tSPEED 0.7");
@@ -332,7 +339,10 @@ describe("build inp", () => {
       })
       .build();
 
-    const inp = buildInp(hydraulicModel);
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+    });
 
     expect(inp).toContain("[PUMPS]");
     expect(inp).toContain("5\t1\t2\tPOWER 10\tSPEED 0.7");
@@ -345,11 +355,16 @@ describe("build inp", () => {
   });
 
   it("includes simulation settings", () => {
-    const hydraulicModel = HydraulicModelBuilder.with()
-      .demandMultiplier(10)
+    const hydraulicModel = HydraulicModelBuilder.with().build();
+
+    const simulationSettings = SimulationSettingsBuilder.with()
+      .globalDemandMultiplier(10)
       .build();
 
-    const inp = buildInp(hydraulicModel);
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings,
+    });
 
     expect(inp).toContain("[TIMES]");
     expect(inp).toContain("Duration\t0");
@@ -369,10 +384,167 @@ describe("build inp", () => {
     expect(inp.split("\n").at(-1)).toEqual("[END]");
   });
 
+  it("includes demand model DDA without pressure fields", () => {
+    const hydraulicModel = HydraulicModelBuilder.with().build();
+
+    const simulationSettings = SimulationSettingsBuilder.with()
+      .demandModel("DDA")
+      .build();
+
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings,
+    });
+
+    expect(inp).toContain("Demand Model\tDDA");
+    expect(inp).not.toContain("Minimum Pressure");
+    expect(inp).not.toContain("Required Pressure");
+    expect(inp).not.toContain("Pressure Exponent");
+  });
+
+  it("includes demand model PDA with pressure fields", () => {
+    const hydraulicModel = HydraulicModelBuilder.with().build();
+
+    const simulationSettings = SimulationSettingsBuilder.with()
+      .demandModel("PDA")
+      .minimumPressure(5)
+      .requiredPressure(20)
+      .pressureExponent(0.8)
+      .build();
+
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings,
+    });
+
+    expect(inp).toContain("Demand Model\tPDA");
+    expect(inp).toContain("Minimum Pressure\t5");
+    expect(inp).toContain("Required Pressure\t20");
+    expect(inp).toContain("Pressure Exponent\t0.8");
+  });
+
+  it("writes Pressure option when non-default for unit system", () => {
+    const hydraulicModel = HydraulicModelBuilder.with().build();
+    const units = { ...presets.LPS.units, pressure: "kPa" as const };
+
+    const inp = buildInp(hydraulicModel, {
+      units,
+      simulationSettings: defaultSimulationSettings,
+    });
+
+    expect(inp).toContain("Pressure\tKPA");
+  });
+
+  it("does not write Pressure option when default for metric system", () => {
+    const hydraulicModel = HydraulicModelBuilder.with().build();
+
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+    });
+
+    expect(inp).not.toContain("Pressure\t");
+  });
+
+  it("does not write Pressure option when default for US system", () => {
+    const hydraulicModel = HydraulicModelBuilder.with().build();
+
+    const inp = buildInp(hydraulicModel, {
+      units: presets.GPM.units,
+      simulationSettings: defaultSimulationSettings,
+    });
+
+    expect(inp).not.toContain("Pressure\t");
+  });
+
+  it("writes Pressure option for US system with non-default pressure", () => {
+    const hydraulicModel = HydraulicModelBuilder.with().build();
+    const units = { ...presets.GPM.units, pressure: "bar" as const };
+
+    const inp = buildInp(hydraulicModel, {
+      units,
+      simulationSettings: defaultSimulationSettings,
+    });
+
+    expect(inp).toContain("Pressure\tBAR");
+  });
+
+  it("includes emitter exponent in output", () => {
+    const hydraulicModel = HydraulicModelBuilder.with().build();
+
+    const simulationSettings = SimulationSettingsBuilder.with()
+      .emitterExponent(0.7)
+      .build();
+
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings,
+    });
+
+    expect(inp).toContain("Emitter Exponent\t0.7");
+  });
+
+  it("exports TRACE with valid AssetId as node label", () => {
+    const TANK_ID = 1;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aTank(TANK_ID, { label: "Tank23" })
+      .build();
+
+    const simulationSettings = SimulationSettingsBuilder.with()
+      .qualitySimulationType("TRACE")
+      .qualityTraceNodeId(TANK_ID)
+      .build();
+
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings,
+    });
+
+    expect(inp).toContain("Quality\tTRACE 1");
+  });
+
+  it("exports TRACE with valid AssetId using label when labelIds enabled", () => {
+    const TANK_ID = 1;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aTank(TANK_ID, { label: "Tank23" })
+      .build();
+
+    const simulationSettings = SimulationSettingsBuilder.with()
+      .qualitySimulationType("TRACE")
+      .qualityTraceNodeId(TANK_ID)
+      .build();
+
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings,
+      labelIds: true,
+    });
+
+    expect(inp).toContain("Quality\tTRACE Tank23");
+  });
+
+  it("exports TRACE without node when AssetId is null", () => {
+    const hydraulicModel = HydraulicModelBuilder.with().build();
+
+    const simulationSettings = SimulationSettingsBuilder.with()
+      .qualitySimulationType("TRACE")
+      .qualityTraceNodeId(null)
+      .build();
+
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings,
+    });
+
+    expect(inp).toContain("Quality\tTRACE");
+  });
+
   it("includes visualization settings for epanet", () => {
     const hydraulicModel = HydraulicModelBuilder.with().build();
 
     const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
       geolocation: true,
     });
 
@@ -381,11 +553,13 @@ describe("build inp", () => {
   });
 
   it("includes haadloss formula", () => {
-    const hydraulicModel = HydraulicModelBuilder.with()
-      .headlossFormula("D-W")
-      .build();
+    const hydraulicModel = HydraulicModelBuilder.with().build();
 
-    const inp = buildInp(hydraulicModel);
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+      headlossFormula: "D-W",
+    });
 
     expect(inp).toContain("Headloss\tD-W");
   });
@@ -393,7 +567,10 @@ describe("build inp", () => {
   it("detects units based on the flow units of the model", () => {
     const hydraulicModel = HydraulicModelBuilder.with(presets.GPM).build();
 
-    const inp = buildInp(hydraulicModel);
+    const inp = buildInp(hydraulicModel, {
+      units: presets.GPM.units,
+      simulationSettings: defaultSimulationSettings,
+    });
 
     expect(inp).toContain("Units\tGPM");
   });
@@ -426,11 +603,16 @@ describe("build inp", () => {
       })
       .build();
 
-    const without = buildInp(hydraulicModel);
+    const without = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+    });
     expect(without).not.toContain("[COORDINATES]");
     expect(without).not.toContain("[VERTICES]");
 
     const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
       geolocation: true,
     });
 
@@ -453,6 +635,8 @@ describe("build inp", () => {
       .build();
 
     const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
       madeBy: true,
     });
 
@@ -485,6 +669,8 @@ describe("build inp", () => {
       .build();
 
     const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
       geolocation: true,
     });
 
@@ -500,7 +686,8 @@ describe("build inp", () => {
     it("includes customer demands without pattern when no pattern assigned", () => {
       const IDS = { J1: 1, P1: 2, CP1: 3 };
       const hydraulicModel = HydraulicModelBuilder.with()
-        .aJunction(IDS.J1, { elevation: 10, demands: [{ baseDemand: 50 }] })
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50 }])
         .aPipe(IDS.P1, {
           startNodeId: IDS.J1,
           endNodeId: IDS.J1,
@@ -510,12 +697,14 @@ describe("build inp", () => {
           ],
         })
         .aCustomerPoint(IDS.CP1, {
-          demands: [{ baseDemand: 25 }],
           connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
         })
+        .aCustomerPointDemand(IDS.CP1, [{ baseDemand: 25 }])
         .build();
 
       const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
         customerDemands: true,
       });
 
@@ -536,7 +725,8 @@ describe("build inp", () => {
         PAT2: 101,
       };
       const hydraulicModel = HydraulicModelBuilder.with()
-        .aJunction(IDS.J1, { elevation: 10, demands: [{ baseDemand: 50 }] })
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50 }])
         .aPipe(IDS.P1, {
           startNodeId: IDS.J1,
           endNodeId: IDS.J1,
@@ -546,22 +736,30 @@ describe("build inp", () => {
           ],
         })
         .aCustomerPoint(IDS.CP1, {
-          demands: [{ baseDemand: 10, patternId: IDS.PAT1 }],
           connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
         })
+        .aCustomerPointDemand(IDS.CP1, [
+          { baseDemand: 10, patternId: IDS.PAT1 },
+        ])
         .aCustomerPoint(IDS.CP2, {
-          demands: [{ baseDemand: 15, patternId: IDS.PAT1 }],
           connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
         })
+        .aCustomerPointDemand(IDS.CP2, [
+          { baseDemand: 15, patternId: IDS.PAT1 },
+        ])
         .aCustomerPoint(IDS.CP3, {
-          demands: [{ baseDemand: 20, patternId: IDS.PAT2 }],
           connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
         })
+        .aCustomerPointDemand(IDS.CP3, [
+          { baseDemand: 20, patternId: IDS.PAT2 },
+        ])
         .aDemandPattern(IDS.PAT1, "residential", [1, 1.2, 0.8])
         .aDemandPattern(IDS.PAT2, "commercial", [0.5, 1.5, 1.0])
         .build();
 
       const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
         customerDemands: true,
       });
 
@@ -580,7 +778,8 @@ describe("build inp", () => {
     it("marks customer demands with epanetjs_customers comment for re-import", () => {
       const IDS = { J1: 1, P1: 2, CP1: 3, PAT1: 100 };
       const hydraulicModel = HydraulicModelBuilder.with()
-        .aJunction(IDS.J1, { elevation: 10, demands: [{ baseDemand: 50 }] })
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50 }])
         .aPipe(IDS.P1, {
           startNodeId: IDS.J1,
           endNodeId: IDS.J1,
@@ -590,13 +789,17 @@ describe("build inp", () => {
           ],
         })
         .aCustomerPoint(IDS.CP1, {
-          demands: [{ baseDemand: 25, patternId: IDS.PAT1 }],
           connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
         })
+        .aCustomerPointDemand(IDS.CP1, [
+          { baseDemand: 25, patternId: IDS.PAT1 },
+        ])
         .aDemandPattern(IDS.PAT1, "residential", [1, 1.2, 0.8])
         .build();
 
       const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
         customerDemands: true,
       });
 
@@ -610,7 +813,8 @@ describe("build inp", () => {
     it("handles multiple customer points on same junction without patterns", () => {
       const IDS = { J1: 1, P1: 2, CP1: 3, CP2: 4 };
       const hydraulicModel = HydraulicModelBuilder.with()
-        .aJunction(IDS.J1, { elevation: 10, demands: [{ baseDemand: 50 }] })
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50 }])
         .aPipe(IDS.P1, {
           startNodeId: IDS.J1,
           endNodeId: IDS.J1,
@@ -620,16 +824,18 @@ describe("build inp", () => {
           ],
         })
         .aCustomerPoint(IDS.CP1, {
-          demands: [{ baseDemand: 25 }],
           connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
         })
+        .aCustomerPointDemand(IDS.CP1, [{ baseDemand: 25 }])
         .aCustomerPoint(IDS.CP2, {
-          demands: [{ baseDemand: 30 }],
           connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
         })
+        .aCustomerPointDemand(IDS.CP2, [{ baseDemand: 30 }])
         .build();
 
       const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
         customerDemands: true,
       });
 
@@ -642,7 +848,8 @@ describe("build inp", () => {
     it("does not include customer demands when disabled", () => {
       const IDS = { J1: 1, P1: 2, CP1: 3 };
       const hydraulicModel = HydraulicModelBuilder.with()
-        .aJunction(IDS.J1, { elevation: 10, demands: [{ baseDemand: 50 }] })
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50 }])
         .aPipe(IDS.P1, {
           startNodeId: IDS.J1,
           endNodeId: IDS.J1,
@@ -652,12 +859,14 @@ describe("build inp", () => {
           ],
         })
         .aCustomerPoint(IDS.CP1, {
-          demands: [{ baseDemand: 25 }],
           connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
         })
+        .aCustomerPointDemand(IDS.CP1, [{ baseDemand: 25 }])
         .build();
 
       const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
         customerDemands: false,
       });
 
@@ -669,7 +878,8 @@ describe("build inp", () => {
     it("skips customer demands when they are zero", () => {
       const IDS = { J1: 1, P1: 2, CP1: 3 };
       const hydraulicModel = HydraulicModelBuilder.with()
-        .aJunction(IDS.J1, { elevation: 10, demands: [{ baseDemand: 50 }] })
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50 }])
         .aPipe(IDS.P1, {
           startNodeId: IDS.J1,
           endNodeId: IDS.J1,
@@ -679,12 +889,14 @@ describe("build inp", () => {
           ],
         })
         .aCustomerPoint(IDS.CP1, {
-          demands: [{ baseDemand: 0 }],
           connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
         })
+        .aCustomerPointDemand(IDS.CP1, [{ baseDemand: 0 }])
         .build();
 
       const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
         customerDemands: true,
       });
 
@@ -708,15 +920,19 @@ describe("build inp", () => {
           ],
         })
         .aCustomerPoint(IDS.CP1, {
-          demands: [{ baseDemand: 25, patternId: IDS.PAT1 }],
           coordinates: [1, 1],
           connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
         })
+        .aCustomerPointDemand(IDS.CP1, [
+          { baseDemand: 25, patternId: IDS.PAT1 },
+        ])
         .aDemandPattern(IDS.PAT1, "daily_pattern", [0.8, 1.0, 1.2, 1.0])
         .aDemandPattern(IDS.PAT2, "unused_pattern", [0.5, 1.5, 1.0])
         .build();
 
       const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
         customerDemands: true,
         customerPoints: true,
       });
@@ -739,15 +955,19 @@ describe("build inp", () => {
           ],
         })
         .aCustomerPoint(IDS.CP1, {
-          demands: [{ baseDemand: 25, patternId: IDS.PAT1 }],
           coordinates: [1, 1],
           connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
         })
+        .aCustomerPointDemand(IDS.CP1, [
+          { baseDemand: 25, patternId: IDS.PAT1 },
+        ])
         .aDemandPattern(IDS.PAT1, "daily_pattern", [0.8, 1.0, 1.2, 1.0])
         .aDemandPattern(IDS.PAT2, "unused_pattern", [0.5, 1.5, 1.0])
         .build();
 
       const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
         customerDemands: true,
         customerPoints: true,
         usedPatterns: true,
@@ -771,18 +991,20 @@ describe("build inp", () => {
           endNodeId: IDS.J2,
         })
         .aCustomerPoint(IDS.CP1, {
-          demands: [
-            { baseDemand: 10, patternId: IDS.PAT1 },
-            { baseDemand: 5, patternId: IDS.PAT2 },
-          ],
           coordinates: [1.5, 2.5],
           connection: { pipeId: IDS.P1, junctionId: IDS.J1 },
         })
+        .aCustomerPointDemand(IDS.CP1, [
+          { baseDemand: 10, patternId: IDS.PAT1 },
+          { baseDemand: 5, patternId: IDS.PAT2 },
+        ])
         .aDemandPattern(IDS.PAT1, "pat1", [1, 2])
         .aDemandPattern(IDS.PAT2, "pat2", [0.5, 1.5])
         .build();
 
       const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
         customerPoints: true,
         geolocation: true,
       });
@@ -795,22 +1017,28 @@ describe("build inp", () => {
 
   describe("times section", () => {
     it("outputs duration from epsTiming", () => {
-      const hydraulicModel = HydraulicModelBuilder.with()
-        .eps({ duration: 86400 }) // 24 hours
-        .build();
+      const hydraulicModel = HydraulicModelBuilder.with().build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({ duration: 86400 })
+          .build(), // 24 hours
+      });
 
       expect(inp).toContain("[TIMES]");
       expect(inp).toContain("Duration\t24");
     });
 
     it("outputs hydraulic timestep when defined", () => {
-      const hydraulicModel = HydraulicModelBuilder.with()
-        .eps({ duration: 86400, hydraulicTimestep: 3600 }) // 1 hour timestep
-        .build();
+      const hydraulicModel = HydraulicModelBuilder.with().build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({ duration: 86400, hydraulicTimestep: 3600 }) // 1 hour timestep
+          .build(),
+      });
 
       expect(inp).toContain("[TIMES]");
       expect(inp).toContain("Duration\t24");
@@ -818,69 +1046,87 @@ describe("build inp", () => {
     });
 
     it("outputs report timestep when defined", () => {
-      const hydraulicModel = HydraulicModelBuilder.with()
-        .eps({ duration: 86400, reportTimestep: 7200 }) // 2 hour timestep
-        .build();
+      const hydraulicModel = HydraulicModelBuilder.with().build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({ duration: 86400, reportTimestep: 7200 }) // 2 hour timestep
+          .build(),
+      });
 
       expect(inp).toContain("[TIMES]");
       expect(inp).toContain("Report Timestep\t2");
     });
 
     it("outputs pattern timestep when defined", () => {
-      const hydraulicModel = HydraulicModelBuilder.with()
-        .eps({ duration: 86400, patternTimestep: 10800 }) // 3 hour timestep
-        .build();
+      const hydraulicModel = HydraulicModelBuilder.with().build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({ duration: 86400, patternTimestep: 10800 }) // 3 hour timestep
+          .build(),
+      });
 
       expect(inp).toContain("[TIMES]");
       expect(inp).toContain("Pattern Timestep\t3");
     });
 
     it("formats time with minutes when not on the hour", () => {
-      const hydraulicModel = HydraulicModelBuilder.with()
-        .eps({ duration: 5400 }) // 1 hour 30 minutes
-        .build();
+      const hydraulicModel = HydraulicModelBuilder.with().build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({ duration: 5400 })
+          .build(), // 1 hour 30 minutes
+      });
 
       expect(inp).toContain("Duration\t1:30");
     });
 
     it("formats time with seconds when not on the minute", () => {
-      const hydraulicModel = HydraulicModelBuilder.with()
-        .eps({ duration: 3723 }) // 1 hour 2 minutes 3 seconds
-        .build();
+      const hydraulicModel = HydraulicModelBuilder.with().build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({ duration: 3723 })
+          .build(), // 1 hour 2 minutes 3 seconds
+      });
 
       expect(inp).toContain("Duration\t1:02:03");
     });
 
     it("formats time as hours only when on exact hours", () => {
-      const hydraulicModel = HydraulicModelBuilder.with()
-        .eps({ duration: 172800 }) // 48 hours
-        .build();
+      const hydraulicModel = HydraulicModelBuilder.with().build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({ duration: 172800 }) // 48 hours
+          .build(),
+      });
 
       expect(inp).toContain("Duration\t48");
       expect(inp).not.toContain("Duration\t48:");
     });
 
     it("outputs all timing parameters when all are defined", () => {
-      const hydraulicModel = HydraulicModelBuilder.with()
-        .eps({
-          duration: 86400, // 24 hours
-          hydraulicTimestep: 3600, // 1 hour
-          reportTimestep: 7200, // 2 hours
-          patternTimestep: 10800, // 3 hours
-        })
-        .build();
+      const hydraulicModel = HydraulicModelBuilder.with().build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: SimulationSettingsBuilder.with()
+          .timing({
+            duration: 86400, // 24 hours
+            hydraulicTimestep: 3600, // 1 hour
+            reportTimestep: 7200, // 2 hours
+            patternTimestep: 10800, // 3 hours
+          })
+          .build(),
+      });
 
       expect(inp).toContain("[TIMES]");
       expect(inp).toContain("Duration\t24");
@@ -889,10 +1135,13 @@ describe("build inp", () => {
       expect(inp).toContain("Pattern Timestep\t3");
     });
 
-    it("outputs Duration 0 when no epsTiming is configured", () => {
+    it("outputs Duration 0 when no simulationSettings is configured", () => {
       const hydraulicModel = HydraulicModelBuilder.with().build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).toContain("[TIMES]");
       expect(inp).toContain("Duration\t0");
@@ -916,7 +1165,10 @@ describe("build inp", () => {
         })
         .build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).toContain("[JUNCTIONS]");
       expect(inp).toContain("1\t10");
@@ -939,7 +1191,11 @@ describe("build inp", () => {
         })
         .build();
 
-      const inp = buildInp(hydraulicModel, { inactiveAssets: true });
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+        inactiveAssets: true,
+      });
 
       expect(inp).toContain("[JUNCTIONS]");
       expect(inp).toContain("1\t10");
@@ -976,6 +1232,8 @@ describe("build inp", () => {
         .build();
 
       const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
         geolocation: true,
         inactiveAssets: true,
       });
@@ -1019,7 +1277,11 @@ describe("build inp", () => {
         })
         .build();
 
-      const inp = buildInp(hydraulicModel, { inactiveAssets: true });
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+        inactiveAssets: true,
+      });
 
       expect(inp).toContain(";1\t100");
       expect(inp).toContain(";2\t200");
@@ -1032,17 +1294,21 @@ describe("build inp", () => {
       const hydraulicModel = HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           elevation: 10,
-          demands: [{ baseDemand: 50 }],
           isActive: true,
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50 }])
         .aJunction(IDS.J2, {
           elevation: 20,
-          demands: [{ baseDemand: 75 }],
           isActive: false,
         })
+        .aJunctionDemand(IDS.J2, [{ baseDemand: 75 }])
         .build();
 
-      const inp = buildInp(hydraulicModel, { inactiveAssets: true });
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+        inactiveAssets: true,
+      });
 
       expect(inp).toContain("[DEMANDS]");
       expect(inp).toContain("1\t50");
@@ -1064,7 +1330,11 @@ describe("build inp", () => {
         })
         .build();
 
-      const inp = buildInp(hydraulicModel, { inactiveAssets: true });
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+        inactiveAssets: true,
+      });
 
       expect(inp).toContain(";3\t1\t2\tHEAD P1\tSPEED 1");
       expect(inp).toContain(";3\tOpen");
@@ -1075,10 +1345,14 @@ describe("build inp", () => {
     it("uses 'constant' as default pattern label", () => {
       const IDS = { J1: 1 };
       const hydraulicModel = HydraulicModelBuilder.with()
-        .aJunction(IDS.J1, { elevation: 10, demands: [{ baseDemand: 50 }] })
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50 }])
         .build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).toContain("Pattern\tconstant");
       expect(inp).toContain("constant\t1");
@@ -1089,12 +1363,15 @@ describe("build inp", () => {
       const hydraulicModel = HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           elevation: 10,
-          demands: [{ baseDemand: 50, patternId: IDS.PAT1 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50, patternId: IDS.PAT1 }])
         .aDemandPattern(IDS.PAT1, "constant", [1.2, 0.8, 1.0])
         .build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       // System default pattern is registered first, so it gets "constant"
       // User pattern with same label gets deduplicated to "constant.1"
@@ -1110,18 +1387,21 @@ describe("build inp", () => {
       const hydraulicModel = HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           elevation: 10,
-          demands: [{ baseDemand: 50, patternId: IDS.PAT1 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50, patternId: IDS.PAT1 }])
         .aJunction(IDS.J2, {
           elevation: 20,
-          demands: [{ baseDemand: 30 }], // constant demand, no pattern
         })
+        .aJunctionDemand(IDS.J2, [{ baseDemand: 30 }]) // constant demand, no pattern
         .aDemandPattern(IDS.PAT1, "residential", [0.8, 1.2, 1.0])
         .aDemandPattern(IDS.PAT2, "commercial", [1.0, 1.5, 0.5])
         .aDemandPattern(IDS.PAT3, "industrial", [0.5, 1.0, 1.5])
         .build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).toContain("[PATTERNS]");
       expect(inp).toContain("Pattern\tconstant");
@@ -1137,18 +1417,22 @@ describe("build inp", () => {
       const hydraulicModel = HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           elevation: 10,
-          demands: [{ baseDemand: 50, patternId: IDS.PAT1 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 50, patternId: IDS.PAT1 }])
         .aJunction(IDS.J2, {
           elevation: 20,
-          demands: [{ baseDemand: 30 }], // constant demand, no pattern
         })
+        .aJunctionDemand(IDS.J2, [{ baseDemand: 30 }]) // constant demand, no pattern
         .aDemandPattern(IDS.PAT1, "residential", [0.8, 1.2, 1.0])
         .aDemandPattern(IDS.PAT2, "commercial", [1.0, 1.5, 0.5])
         .aDemandPattern(IDS.PAT3, "industrial", [0.5, 1.0, 1.5])
         .build();
 
-      const inp = buildInp(hydraulicModel, { usedPatterns: true });
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+        usedPatterns: true,
+      });
 
       expect(inp).toContain("[PATTERNS]");
       expect(inp).toContain("Pattern\tconstant");
@@ -1164,12 +1448,16 @@ describe("build inp", () => {
       const hydraulicModel = HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           elevation: 10,
-          demands: [{ baseDemand: 0, patternId: IDS.PAT1 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 0, patternId: IDS.PAT1 }])
         .aDemandPattern(IDS.PAT1, "residential", [0.8, 1.2, 1.0])
         .build();
 
-      const inp = buildInp(hydraulicModel, { usedPatterns: true });
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+        usedPatterns: true,
+      });
 
       expect(inp).not.toContain(`residential\t`); // Pattern not included
       expect(inp).not.toContain(`1\t0\tresidential`); // Demand not included
@@ -1180,16 +1468,19 @@ describe("build inp", () => {
       const hydraulicModel = HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           elevation: 10,
-          demands: [{ baseDemand: 25, patternId: IDS.PAT1 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 25, patternId: IDS.PAT1 }])
         .aJunction(IDS.J2, {
           elevation: 20,
-          demands: [{ baseDemand: 50, patternId: IDS.PAT1 }],
         })
+        .aJunctionDemand(IDS.J2, [{ baseDemand: 50, patternId: IDS.PAT1 }])
         .aDemandPattern(IDS.PAT1, "residential", [0.8, 1.2, 1.0])
         .build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).toContain(`residential\t0.8\t1.2\t1`);
       expect(inp).toContain(`1\t25\tresidential`);
@@ -1205,12 +1496,15 @@ describe("build inp", () => {
       const hydraulicModel = HydraulicModelBuilder.with()
         .aJunction(IDS.J1, {
           elevation: 10,
-          demands: [{ baseDemand: 100, patternId: IDS.PAT1 }],
         })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 100, patternId: IDS.PAT1 }])
         .aDemandPattern(IDS.PAT1, "hourly", hourlyPattern)
         .build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       const line1 = `hourly\t0.5\t0.4\t0.3\t0.3\t0.4\t0.6\t0.9\t1.2`;
       const line2 = `hourly\t1.3\t1.2\t1.1\t1\t1\t1.1\t1.2\t1.3`;
@@ -1219,11 +1513,153 @@ describe("build inp", () => {
     });
   });
 
+  describe("reservoir head patterns", () => {
+    it("includes head pattern ID in reservoir line", () => {
+      const IDS = { R1: 1, PAT1: 100 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, {
+          head: 150,
+          headPatternId: IDS.PAT1,
+        })
+        .aPattern(IDS.PAT1, "head_pat", [1.0, 1.2, 0.8], "reservoirHead")
+        .build();
+
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
+
+      expect(inp).toContain("[RESERVOIRS]");
+      expect(inp).toContain("1\t150\thead_pat");
+      expect(inp).toContain("[PATTERNS]");
+      expect(inp).toContain("head_pat\t1\t1.2\t0.8");
+    });
+
+    it("omits pattern column when no head pattern is assigned", () => {
+      const IDS = { R1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, { head: 100 })
+        .build();
+
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
+
+      expect(inp).toContain("1\t100");
+      expect(inp).not.toContain("1\t100\t");
+    });
+
+    it("marks head pattern as used when usedPatterns is true", () => {
+      const IDS = { R1: 1, PAT1: 100, PAT2: 101 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, {
+          head: 150,
+          headPatternId: IDS.PAT1,
+        })
+        .aPattern(IDS.PAT1, "head_pat", [1.0, 1.2, 0.8], "reservoirHead")
+        .aPattern(IDS.PAT2, "unused_pat", [0.5, 1.5], "reservoirHead")
+        .build();
+
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+        usedPatterns: true,
+      });
+
+      expect(inp).toContain("head_pat\t1\t1.2\t0.8");
+      expect(inp).not.toContain("unused_pat");
+    });
+  });
+
+  describe("pump speed patterns", () => {
+    it("includes PATTERN keyword in pump line", () => {
+      const IDS = { N1: 1, N2: 2, PUMP1: 3, PAT1: 100 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aNode(IDS.N1)
+        .aNode(IDS.N2)
+        .aPump(IDS.PUMP1, {
+          startNodeId: IDS.N1,
+          endNodeId: IDS.N2,
+          definitionType: "power",
+          power: 50,
+          speed: 1.0,
+          speedPatternId: IDS.PAT1,
+        })
+        .aPattern(IDS.PAT1, "speed_pat", [1.0, 0.8, 1.2], "pumpSpeed")
+        .build();
+
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
+
+      expect(inp).toContain("[PUMPS]");
+      expect(inp).toContain("PATTERN speed_pat");
+      expect(inp).toContain("[PATTERNS]");
+      expect(inp).toContain("speed_pat\t1\t0.8\t1.2");
+    });
+
+    it("omits PATTERN keyword when no speed pattern is assigned", () => {
+      const IDS = { N1: 1, N2: 2, PUMP1: 3 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aNode(IDS.N1)
+        .aNode(IDS.N2)
+        .aPump(IDS.PUMP1, {
+          startNodeId: IDS.N1,
+          endNodeId: IDS.N2,
+          definitionType: "power",
+          power: 50,
+          speed: 1.0,
+        })
+        .build();
+
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
+
+      expect(inp).toContain("[PUMPS]");
+      expect(inp).toContain("3\t1\t2\tPOWER 50\tSPEED 1");
+      expect(inp).not.toContain("3\t1\t2\tPOWER 50\tSPEED 1\tPATTERN");
+    });
+
+    it("marks speed pattern as used when usedPatterns is true", () => {
+      const IDS = { N1: 1, N2: 2, PUMP1: 3, PAT1: 100, PAT2: 101 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aNode(IDS.N1)
+        .aNode(IDS.N2)
+        .aPump(IDS.PUMP1, {
+          startNodeId: IDS.N1,
+          endNodeId: IDS.N2,
+          definitionType: "power",
+          power: 50,
+          speed: 1.0,
+          speedPatternId: IDS.PAT1,
+        })
+        .aPattern(IDS.PAT1, "speed_pat", [1.0, 0.8, 1.2], "pumpSpeed")
+        .aPattern(IDS.PAT2, "unused_pat", [0.5, 1.5], "pumpSpeed")
+        .build();
+
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+        usedPatterns: true,
+      });
+
+      expect(inp).toContain("speed_pat\t1\t0.8\t1.2");
+      expect(inp).not.toContain("unused_pat");
+    });
+  });
+
   describe("controls section", () => {
     it("does not include CONTROLS section when controls.simple is empty", () => {
       const hydraulicModel = HydraulicModelBuilder.with().build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).not.toContain("[CONTROLS]");
     });
@@ -1244,7 +1680,10 @@ describe("build inp", () => {
         })
         .build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).toContain("[CONTROLS]");
       expect(inp).toContain("LINK P1 OPEN IF NODE T1 ABOVE 100");
@@ -1260,7 +1699,10 @@ describe("build inp", () => {
         })
         .build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).toContain("[CONTROLS]");
       expect(inp).toContain(
@@ -1273,7 +1715,10 @@ describe("build inp", () => {
     it("does not include RULES section when controls.ruleBased is empty", () => {
       const hydraulicModel = HydraulicModelBuilder.with().build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).not.toContain("[RULES]");
     });
@@ -1296,7 +1741,10 @@ THEN LINK P1 STATUS IS CLOSED`,
         })
         .build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).toContain(`[RULES]
 RULE 1
@@ -1318,7 +1766,10 @@ THEN LINK P1 STATUS IS OPEN ;activate pump`,
         })
         .build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).toContain("[RULES]");
       expect(inp).toContain(";main tank control");
@@ -1354,7 +1805,10 @@ THEN LINK {{1}} STATUS IS OPEN`,
         })
         .build();
 
-      const inp = buildInp(hydraulicModel);
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
 
       expect(inp).toContain("LINK 3 OPEN IF NODE 1 ABOVE 100");
       expect(inp).toContain("IF NODE 1 LEVEL > 100");
@@ -1390,11 +1844,89 @@ THEN LINK {{1}} STATUS IS OPEN`,
         })
         .build();
 
-      const inp = buildInp(hydraulicModel, { labelIds: true });
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+        labelIds: true,
+      });
 
       expect(inp).toContain("LINK Pipe-1 OPEN IF NODE Tank-A ABOVE 100");
       expect(inp).toContain("IF NODE Tank-A LEVEL > 100");
       expect(inp).toContain("THEN LINK Pipe-1 STATUS IS OPEN");
+    });
+  });
+
+  describe("emitters", () => {
+    it("writes [EMITTERS] section when junctions have emitter coefficients", () => {
+      const IDS = { J1: 1, J2: 2 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aJunction(IDS.J1, { emitterCoefficient: 0.5 })
+        .aJunction(IDS.J2, { emitterCoefficient: 1.2 })
+        .build();
+
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
+
+      expect(inp).toContain("[EMITTERS]");
+      expect(inp).toContain("1\t0.5");
+      expect(inp).toContain("2\t1.2");
+    });
+
+    it("omits [EMITTERS] section when no junctions have emitter coefficients", () => {
+      const IDS = { J1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aJunction(IDS.J1, { elevation: 10 })
+        .build();
+
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
+
+      expect(inp).not.toContain("[EMITTERS]");
+    });
+
+    it("omits junctions with zero emitter coefficient from [EMITTERS] section", () => {
+      const IDS = { J1: 1, J2: 2 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aJunction(IDS.J1, { emitterCoefficient: 0.5 })
+        .aJunction(IDS.J2, { emitterCoefficient: 0 })
+        .build();
+
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
+      const emittersSection = inp.split("[EMITTERS]")[1]?.split("[")[0] ?? "";
+
+      expect(inp).toContain("[EMITTERS]");
+      expect(emittersSection).toContain("1\t0.5");
+      expect(emittersSection).not.toContain("2\t");
+    });
+  });
+
+  describe("energy section", () => {
+    it("includes global pattern in energy and patterns sections with usedPatterns", () => {
+      const IDS = { J1: 1, PAT1: 100, PAT2: 101 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aPattern(IDS.PAT1, "Pricing", [0.5, 1.0, 1.5])
+        .aPattern(IDS.PAT2, "unused_pat", [1.0, 2.0])
+        .build();
+
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: SimulationSettingsBuilder.with()
+          .energyGlobalPatternId(IDS.PAT1)
+          .build(),
+        usedPatterns: true,
+      });
+
+      expect(inp).toContain("Global Pattern\tPricing");
+      expect(inp).toContain("Pricing\t0.5\t1\t1.5");
+      expect(inp).not.toContain("unused_pat");
     });
   });
 });

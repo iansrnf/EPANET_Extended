@@ -19,7 +19,8 @@ import { BottomPanel, LeftSidePanel, SidePanel } from "src/components/panels";
 import { MapContext } from "src/map";
 import Notifications from "src/components/notifications";
 import { atom, useAtom } from "jotai";
-import { defaultSplits, dialogAtom, splitsAtom } from "src/state/jotai";
+import { dialogAtom } from "src/state/dialog";
+import { defaultSplits, splitsAtom } from "src/state/layout";
 import clsx from "clsx";
 import {
   DndContext,
@@ -50,6 +51,7 @@ import { AppLoader } from "./app-loader";
 import { PrivacyBanner } from "./privacy-banner";
 import { usePrivacySettings } from "src/hooks/use-privacy-settings";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { persistLayerConfigAtom } from "src/state/store";
 import { initStorage } from "src/infra/storage";
 import { useIsSnapshotLocked } from "src/hooks/use-is-snapshot-locked";
 import { useIsCustomerAllocationDisabled } from "src/hooks/use-is-customer-allocation-disabled";
@@ -75,8 +77,14 @@ export function EpanetApp() {
   const { enableAllTracking } = usePrivacySettings();
   const hasIdentifiedRef = useRef(false);
   const isCursorFamilyEnabled = useFeatureFlag("FLAG_CURSOR_FAMILY");
+  const isPersistLayerConfigOn = useFeatureFlag("FLAG_RESTORE_MAP_PREFERENCES");
+  const [, setPersistLayerConfig] = useAtom(persistLayerConfigAtom);
   const isSnapshotLocked = useIsSnapshotLocked();
   const isCustomerAllocationDisabled = useIsCustomerAllocationDisabled();
+
+  useEffect(() => {
+    setPersistLayerConfig(isPersistLayerConfigOn);
+  }, [isPersistLayerConfigOn, setPersistLayerConfig]);
 
   useEffect(() => {
     void initStorage();
@@ -151,8 +159,8 @@ export function EpanetApp() {
     <main
       className={
         isCursorFamilyEnabled
-          ? "ff-cursor-family brand-theme h-dvh flex flex-col bg-white dark:bg-gray-800"
-          : "brand-theme h-dvh flex flex-col bg-white dark:bg-gray-800"
+          ? "ff-cursor-family h-dvh flex flex-col bg-white dark:bg-gray-800"
+          : "h-dvh flex flex-col bg-white dark:bg-gray-800"
       }
     >
       <MapContext.Provider value={map}>
@@ -166,7 +174,7 @@ export function EpanetApp() {
         <div
           className={clsx(
             layout === "VERTICAL" && "flex-col h-full",
-            "flex flex-grow relative border-t border-gray-200 dark:border-gray-900 brand-divider",
+            "flex flex-grow relative border-t border-gray-200 dark:border-gray-900",
             "pb-10",
           )}
         >

@@ -1,7 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommandContainer } from "./__helpers__/command-container";
-import { Store, simulationAtom, SimulationState } from "src/state/jotai";
+import { simulationAtom, SimulationState } from "src/state/simulation";
+import { Store } from "src/state";
 import { setInitialState } from "src/__helpers__/state";
 import { useChangeTimestep } from "./change-timestep";
 import {
@@ -265,6 +266,7 @@ describe("useChangeTimestep", () => {
       status: "success",
       report: "REPORT",
       modelVersion: "1",
+      settingsVersion: "",
       metadata: createMetadataBuffer(timestepCount),
       simulationIds: {
         nodeIds: [],

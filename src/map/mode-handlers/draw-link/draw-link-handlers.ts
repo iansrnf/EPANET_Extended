@@ -2,14 +2,13 @@ import type { HandlerContext, Position } from "src/types";
 import type { MapEngine } from "src/map";
 import noop from "lodash/noop";
 import {
-  modeAtom,
-  Mode,
   ephemeralStateAtom,
   EphemeralEditingState,
-  selectionAtom,
   pipeDrawingDefaultsAtom,
-  cursorStyleAtom,
-} from "src/state/jotai";
+} from "src/state/drawing";
+import { cursorStyleAtom } from "src/state/map";
+import { modeAtom, Mode } from "src/state/mode";
+import { selectionAtom } from "src/state/selection";
 import { useSetAtom, useAtom, useAtomValue } from "jotai";
 import { getMapCoord } from "../utils";
 import { useRef } from "react";
@@ -127,6 +126,7 @@ function checkLoopedLinkConditions(
 export function useDrawLinkHandlers({
   rep,
   hydraulicModel,
+  units,
   map,
   linkType,
   sourceLink,
@@ -146,7 +146,8 @@ export function useDrawLinkHandlers({
   const transact = rep.useTransact();
   const userTracking = useUserTracking();
   const usingTouchEvents = useRef<boolean>(false);
-  const { assetBuilder, units } = hydraulicModel;
+  const { assetBuilder } = hydraulicModel;
+  const lengthUnit = units.length;
   const { findSnappingCandidate } = useSnapping(map, hydraulicModel.assets);
 
   const { isShiftHeld, isControlHeld } = useKeyboardState();
@@ -316,6 +317,7 @@ export function useDrawLinkHandlers({
       endNode,
       startPipeId,
       endPipeId,
+      lengthUnit,
     });
 
     userTracking.capture({ name: "asset.created", type: link.type });
@@ -510,7 +512,10 @@ export function useDrawLinkHandlers({
           getMapCoord(e);
 
         const linkCopy = drawing.link.copy();
-        linkCopy.extendTo(nextCoordinates);
+        linkCopy.setCoordinates([
+          ...linkCopy.coordinates.slice(0, -1),
+          nextCoordinates,
+        ]);
 
         const shouldShowDraftJunction =
           isEndAndContinueOn() && !snappingCandidate;

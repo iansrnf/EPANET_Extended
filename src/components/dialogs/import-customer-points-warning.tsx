@@ -1,8 +1,6 @@
-import { DialogHeader, DialogButtons } from "src/components/dialog";
-import { Button } from "../elements";
+import { BaseDialog, SimpleDialogActions } from "src/components/dialog";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
-import { WarningIcon } from "src/icons";
 
 export const ImportCustomerPointsWarningDialog = ({
   onContinue,
@@ -30,35 +28,26 @@ export const ImportCustomerPointsWarningDialog = ({
   };
 
   return (
-    <>
-      <DialogHeader
-        title={translate("importCustomerPoints.label")}
-        titleIcon={WarningIcon}
-        variant="danger"
-      />
-      <div className="text-sm">
+    <BaseDialog
+      title={translate("importCustomerPoints.label")}
+      size="md"
+      isOpen={true}
+      onClose={handleCancel}
+      footer={
+        <SimpleDialogActions
+          action={translate("importCustomerPointsWarning.deleteAndImport")}
+          onAction={handleProceed}
+          actionVariant="danger"
+          onClose={handleCancel}
+        />
+      }
+    >
+      <div className="p-4 text-sm">
         <p>{translate("importCustomerPointsWarning.explain")}</p>
         <p className="mt-2">
           {translate("importCustomerPointsWarning.question")}
         </p>
       </div>
-      <DialogButtons>
-        <Button
-          type="submit"
-          variant="danger"
-          aria-label={translate("importCustomerPointsWarning.deleteAndImport")}
-          onClick={handleProceed}
-        >
-          {translate("importCustomerPointsWarning.deleteAndImport")}
-        </Button>
-        <Button
-          variant="default"
-          aria-label={translate("cancel")}
-          onClick={handleCancel}
-        >
-          {translate("cancel")}
-        </Button>
-      </DialogButtons>
-    </>
+    </BaseDialog>
   );
 };

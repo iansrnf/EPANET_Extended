@@ -2,10 +2,10 @@ import { screen, render, waitFor } from "@testing-library/react";
 import { CommandContainer } from "./__helpers__/command-container";
 import {
   SimulationFinished,
-  Store,
   simulationAtom,
   simulationResultsAtom,
-} from "src/state/jotai";
+} from "src/state/simulation";
+import { Store } from "src/state";
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
 import { setInitialState } from "src/__helpers__/state";
 import userEvent from "@testing-library/user-event";
@@ -32,7 +32,8 @@ describe("Run simulation", () => {
     const IDS = { r1: 1, j1: 2, p1: 3 } as const;
     const hydraulicModel = HydraulicModelBuilder.with()
       .aReservoir(IDS.r1)
-      .aJunction(IDS.j1, { demands: [{ baseDemand: 1 }] })
+      .aJunction(IDS.j1)
+      .aJunctionDemand(IDS.j1, [{ baseDemand: 1 }])
       .aPipe(IDS.p1, { startNodeId: IDS.r1, endNodeId: IDS.j1 })
       .build();
     const store = setInitialState({ hydraulicModel });
@@ -199,7 +200,8 @@ describe("Run simulation", () => {
     const IDS = { r1: 1, j1: 2, p1: 3 } as const;
     return HydraulicModelBuilder.with()
       .aReservoir(IDS.r1)
-      .aJunction(IDS.j1, { demands: [{ baseDemand: 1 }] })
+      .aJunction(IDS.j1)
+      .aJunctionDemand(IDS.j1, [{ baseDemand: 1 }])
       .aPipe(IDS.p1, { startNodeId: IDS.r1, endNodeId: IDS.j1 })
       .build();
   };
@@ -208,7 +210,8 @@ describe("Run simulation", () => {
     const IDS = { r1: 1, j1: 2, p1: 3 } as const;
     return HydraulicModelBuilder.with()
       .aReservoir(IDS.r1, { head: 0 })
-      .aJunction(IDS.j1, { demands: [{ baseDemand: 10 }] })
+      .aJunction(IDS.j1)
+      .aJunctionDemand(IDS.j1, [{ baseDemand: 10 }])
       .aPipe(IDS.p1, { startNodeId: IDS.r1, endNodeId: IDS.j1 })
       .build();
   };

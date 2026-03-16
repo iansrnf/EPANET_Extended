@@ -1,12 +1,11 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
 import userEvent from "@testing-library/user-event";
-import {
-  Store,
-  fileInfoAtom,
-  momentLogAtom,
-  stagingModelAtom,
-} from "src/state/jotai";
+import { fileInfoAtom } from "src/state/file-system";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { projectSettingsAtom } from "src/state/project-settings";
+import { momentLogAtom } from "src/state/model-changes";
+import { Store } from "src/state";
 import { MomentLog } from "src/lib/persistence/moment-log";
 import { fMoment } from "../lib/persistence/moment";
 import { useNewProject } from "./create-new-project";
@@ -30,8 +29,7 @@ describe("create new project", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /create/i }));
 
-    const hydraulicModel = store.get(stagingModelAtom);
-    expect(hydraulicModel.units.flow).toEqual("gal/min");
+    expect(store.get(projectSettingsAtom).units.flow).toEqual("gal/min");
   });
 
   it("allows to chooose the headloss formula", async () => {
@@ -48,8 +46,7 @@ describe("create new project", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /create/i }));
 
-    const hydraulicModel = store.get(stagingModelAtom);
-    expect(hydraulicModel.headlossFormula).toEqual("D-W");
+    expect(store.get(projectSettingsAtom).headlossFormula).toEqual("D-W");
   });
 
   it("erases the previous state", async () => {
@@ -82,7 +79,7 @@ describe("create new project", () => {
 
     const hydraulicModel = store.get(stagingModelAtom);
     expect(hydraulicModel.assets.size).toEqual(0);
-    expect(hydraulicModel.units.flow).toEqual("l/s");
+    expect(store.get(projectSettingsAtom).units.flow).toEqual("l/s");
 
     const momentLog = store.get(momentLogAtom);
     expect(momentLog.getDeltas().length).toEqual(0);

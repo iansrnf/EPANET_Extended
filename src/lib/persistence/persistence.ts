@@ -1,27 +1,27 @@
 import type { IWrappedFeatureInput } from "src/types";
 import once from "lodash/once";
 import type { IPersistenceWithSnapshots } from "src/lib/persistence/ipersistence";
-import { EMPTY_MOMENT, MomentInput, Moment } from "src/lib/persistence/moment";
+import { MomentInput, Moment } from "src/lib/persistence/moment";
 import { generateKeyBetween } from "fractional-indexing";
 import { worktreeAtom } from "src/state/scenarios";
 import type { Snapshot, Worktree } from "src/lib/worktree/types";
+import { Data, dataAtom, nullData } from "src/state/data";
+import {
+  ephemeralStateAtom,
+  pipeDrawingDefaultsAtom,
+  autoElevationsAtom,
+} from "src/state/drawing";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { splitsAtom, defaultSplits } from "src/state/layout";
+import { modeAtom } from "src/state/mode";
+import { momentLogAtom } from "src/state/model-changes";
+import { selectionAtom } from "src/state/selection";
 import {
   type SimulationState,
-  Data,
-  dataAtom,
-  Store,
-  momentLogAtom,
-  nullData,
   simulationAtom,
   initialSimulationState,
-  modeAtom,
-  ephemeralStateAtom,
-  selectionAtom,
-  splitsAtom,
-  defaultSplits,
-  pipeDrawingDefaultsAtom,
-  stagingModelAtom,
-} from "src/state/jotai";
+} from "src/state/simulation";
+import { Store } from "src/state";
 import { baseModelAtom } from "src/state/hydraulic-model";
 import { simulationResultsAtom } from "src/state/simulation";
 import { getFreshAt, trackMoment } from "./shared";
@@ -35,7 +35,8 @@ import {
 import { ModelMoment } from "src/hydraulic-model";
 import { Asset } from "src/hydraulic-model";
 import { nanoid } from "nanoid";
-import { ModelMetadata } from "src/model-metadata";
+import type { ProjectSettings } from "src/lib/project-settings";
+import { projectSettingsAtom } from "src/state/project-settings";
 import { MomentLog } from "./moment-log";
 import { Mode } from "src/state/mode";
 import { getSimulationForState } from "src/lib/worktree";
@@ -44,10 +45,15 @@ import {
   linkSymbologyAtom,
   nodeSymbologyAtom,
   savedSymbologiesAtom,
-} from "src/state/symbology";
+} from "src/state/map-symbology";
 import { nullSymbologySpec } from "src/map/symbology";
 import { mapSyncMomentAtom, MomentPointer } from "src/state/map";
 import { USelection } from "src/selection";
+import { toDemandAssignments } from "src/hydraulic-model/model-operation";
+import type { SimulationSettings } from "src/simulation/simulation-settings";
+import { simulationSettingsAtom } from "src/state/simulation-settings";
+import { ModelFactories } from "src/hydraulic-model/factories";
+import { modelFactoriesAtom } from "src/state/model-factories";
 
 const MAX_CHANGES_BEFORE_MAP_SYNC = 500;
 
@@ -61,8 +67,11 @@ export class Persistence implements IPersistenceWithSnapshots {
   useTransactImport() {
     return (
       hydraulicModel: HydraulicModel,
-      modelMetadata: ModelMetadata,
+      factories: ModelFactories,
+      projectSettings: ProjectSettings,
       name: string,
+      simulationSettings: SimulationSettings,
+      options?: { autoElevations?: boolean },
     ) => {
       const momentLog = new MomentLog();
 
@@ -72,11 +81,14 @@ export class Persistence implements IPersistenceWithSnapshots {
         note: `Import ${name}`,
         putAssets: assets,
         deleteAssets: [],
-        putDemands: hydraulicModel.demands,
-        putEPSTiming: hydraulicModel.epsTiming,
+        patchAssetsAttributes: [],
+        putDemands: {
+          assignments: toDemandAssignments(hydraulicModel.demands),
+        },
         putControls: hydraulicModel.controls,
         putCustomerPoints: [...hydraulicModel.customerPoints.values()],
         putCurves: hydraulicModel.curves,
+        putPatterns: hydraulicModel.patterns,
       };
 
       trackMoment({ note: snapshotMoment.note!, putAssets: assets });
@@ -94,14 +106,16 @@ export class Persistence implements IPersistenceWithSnapshots {
       this.store.set(splitsAtom, defaultSplits);
       this.store.set(stagingModelAtom, hydraulicModel);
       this.store.set(baseModelAtom, hydraulicModel);
+      this.store.set(modelFactoriesAtom, factories);
       this.store.set(dataAtom, {
         ...nullData,
         folderMap: new Map(),
-        modelMetadata,
       });
+      this.store.set(projectSettingsAtom, projectSettings);
       this.store.set(momentLogAtom, momentLog);
       this.store.set(mapSyncMomentAtom, { pointer: -1, version: 0 });
       this.store.set(simulationAtom, initialSimulationState);
+      this.store.set(simulationResultsAtom, null);
       this.store.set(nodeSymbologyAtom, nullSymbologySpec.node);
       this.store.set(linkSymbologyAtom, nullSymbologySpec.link);
       this.store.set(savedSymbologiesAtom, new Map());
@@ -109,8 +123,15 @@ export class Persistence implements IPersistenceWithSnapshots {
       this.store.set(ephemeralStateAtom, { type: "none" });
       this.store.set(selectionAtom, { type: "none" });
       this.store.set(pipeDrawingDefaultsAtom, {});
+      this.store.set(autoElevationsAtom, options?.autoElevations ?? true);
+      this.store.set(simulationSettingsAtom, simulationSettings);
 
-      this.resetWorktree(snapshotMoment, hydraulicModel.version, momentLog);
+      this.resetWorktree(
+        snapshotMoment,
+        hydraulicModel.version,
+        momentLog,
+        simulationSettings,
+      );
     };
   }
 
@@ -118,6 +139,7 @@ export class Persistence implements IPersistenceWithSnapshots {
     moment: Moment,
     version: string,
     momentLog: MomentLog,
+    simulationSettings: SimulationSettings,
   ): void {
     const mainSnapshot: Snapshot = {
       id: "main",
@@ -127,6 +149,7 @@ export class Persistence implements IPersistenceWithSnapshots {
       version,
       momentLog,
       simulation: initialSimulationState,
+      simulationSettings,
       status: "open",
     };
 
@@ -154,16 +177,19 @@ export class Persistence implements IPersistenceWithSnapshots {
       const isTruncatingHistory = momentLog.nextRedo() !== null;
 
       trackMoment(moment);
-      const forwardMoment = {
-        ...EMPTY_MOMENT,
-        note: moment.note,
-        deleteAssets: moment.deleteAssets || [],
-        putAssets: moment.putAssets || [],
-        putDemands: moment.putDemands,
-        putEPSTiming: moment.putEPSTiming,
-        putControls: moment.putControls,
-        putCustomerPoints: moment.putCustomerPoints,
-        putCurves: moment.putCurves,
+      const {
+        note,
+        deleteAssets,
+        putAssets,
+        patchAssetsAttributes,
+        ...optionalFields
+      } = moment;
+      const forwardMoment: Moment = {
+        note,
+        deleteAssets: deleteAssets || [],
+        putAssets: putAssets || [],
+        patchAssetsAttributes: patchAssetsAttributes || [],
+        ...optionalFields,
       };
       const newStateId = nanoid();
 
@@ -307,6 +333,7 @@ export class Persistence implements IPersistenceWithSnapshots {
     this.setModelVersion(snapshot.version);
     this.store.set(simulationAtom, finalSimulation);
     this.store.set(simulationResultsAtom, resultsReader);
+    this.store.set(simulationSettingsAtom, snapshot.simulationSettings);
 
     const selection = this.store.get(selectionAtom);
     const validatedSelection = USelection.clearInvalidIds(
@@ -314,9 +341,7 @@ export class Persistence implements IPersistenceWithSnapshots {
       stagingModel.assets,
       stagingModel.customerPoints,
     );
-    if (validatedSelection !== selection) {
-      this.store.set(selectionAtom, validatedSelection);
-    }
+    this.store.set(selectionAtom, { ...validatedSelection });
   }
 
   private async loadSimulationResults(
@@ -400,11 +425,10 @@ export class Persistence implements IPersistenceWithSnapshots {
     const momentLogDeltas = snapshot.momentLog.getDeltas();
     allDeltas.push(...momentLogDeltas);
 
-    const ctx = this.store.get(dataAtom);
+    const { defaults } = this.store.get(projectSettingsAtom);
     const currentHydraulicModel = this.store.get(stagingModelAtom);
     const model = initializeHydraulicModel({
-      units: currentHydraulicModel.units,
-      defaults: ctx.modelMetadata.quantities.defaults,
+      defaults,
       idGenerator: currentHydraulicModel.assetBuilder.idGenerator,
     });
 
@@ -434,7 +458,8 @@ export class Persistence implements IPersistenceWithSnapshots {
     const updatedHydraulicModel = updateHydraulicModelAssets(hydraulicModel);
 
     const updatedCustomerPoints =
-      (forwardMoment.putCustomerPoints || []).length > 0
+      (forwardMoment.putCustomerPoints || []).length > 0 ||
+      (forwardMoment.deleteCustomerPoints || []).length > 0
         ? new Map(hydraulicModel.customerPoints)
         : hydraulicModel.customerPoints;
 
@@ -456,7 +481,6 @@ export class Persistence implements IPersistenceWithSnapshots {
           return sortAts(a[1], b[1]);
         }),
       ),
-      modelMetadata: ctx.modelMetadata,
     });
     return reverseMoment;
   }
@@ -503,7 +527,10 @@ export class Persistence implements IPersistenceWithSnapshots {
     const deltasSinceLastSync = momentLog.getDeltas(lastSyncPointer);
     const editedAssetsCount = deltasSinceLastSync.reduce(
       (count, moment) =>
-        count + moment.deleteAssets.length + moment.putAssets.length,
+        count +
+        moment.deleteAssets.length +
+        moment.putAssets.length +
+        moment.patchAssetsAttributes.length,
       0,
     );
     return editedAssetsCount > MAX_CHANGES_BEFORE_MAP_SYNC;

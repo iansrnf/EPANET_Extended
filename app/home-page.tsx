@@ -7,9 +7,7 @@ import * as T from "@radix-ui/react-tooltip";
 import { Suspense } from "react";
 import { PersistenceProvider } from "src/lib/persistence";
 import { Provider, createStore } from "jotai";
-import { Store, layerConfigAtom } from "src/state/jotai";
-import { newFeatureId } from "src/lib/id";
-import { basemaps } from "src/map/basemaps";
+import { Store } from "src/state";
 import { AuthProvider } from "src/auth";
 import dynamic from "next/dynamic";
 
@@ -64,25 +62,6 @@ function ScratchpadInner({ store }: { store: Store }) {
 
 const Play = () => {
   const store = createStore();
-  const layerId = newFeatureId();
-
-  store.set(
-    layerConfigAtom,
-    new Map([
-      [
-        layerId,
-        {
-          ...basemaps.monochrome,
-          at: "a0",
-          opacity: 1,
-          tms: false,
-          labelVisibility: true,
-          visibility: true,
-          id: layerId,
-        },
-      ],
-    ]),
-  );
 
   return (
     <Provider key="play" store={store}>

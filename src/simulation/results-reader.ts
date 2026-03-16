@@ -35,8 +35,26 @@ export type TankSimulation = {
   type: "tank";
   pressure: number;
   head: number;
+  netFlow: number;
   level: number;
   volume: number;
+};
+
+export type ReservoirSimulation = {
+  type: "reservoir";
+  pressure: number;
+  head: number;
+  netFlow: number;
+};
+
+export type PumpEnergySummary = {
+  utilization: number;
+  averageEfficiency: number;
+  averageKwPerFlowUnit: number;
+  averageKw: number;
+  peakKw: number;
+  averageCostPerDay: number;
+  demandCharge: number;
 };
 
 export interface ResultsReader {
@@ -45,6 +63,8 @@ export interface ResultsReader {
   getJunction: (junctionId: number) => JunctionSimulation | null;
   getPipe: (pipeId: number) => PipeSimulation | null;
   getTank: (tankId: number) => TankSimulation | null;
+  getReservoir: (reservoirId: number) => ReservoirSimulation | null;
+  getPumpEnergy: (pumpId: number) => PumpEnergySummary | null;
 
   getAllPressures: () => number[];
   getAllHeads: () => number[];

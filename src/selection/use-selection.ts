@@ -1,6 +1,8 @@
 import { useSetAtom } from "jotai";
 import { USelection } from "./selection";
-import { Sel, TabOption, selectionAtom, tabAtom } from "src/state/jotai";
+import type { Sel } from "./types";
+import { TabOption, tabAtom } from "src/state/layout";
+import { selectionAtom } from "src/state/selection";
 import { Asset, AssetId } from "src/hydraulic-model";
 import { useUserTracking } from "src/infra/user-tracking";
 

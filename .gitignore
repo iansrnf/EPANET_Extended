@@ -72,5 +72,3 @@ specs/
 
 # Benchmark data files
 **/.benchmark/
-.codex_preserve_backup/
-From_Source/

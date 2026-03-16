@@ -1,6 +1,6 @@
 import { CurveId, CurvePoint, Curves, ICurve } from "../curves";
+import { PatternId } from "../patterns";
 import { Link, LinkProperties } from "./link";
-import { Unit } from "src/quantity";
 
 export const pumpStatuses = ["on", "off"] as const;
 export type PumpStatus = (typeof pumpStatuses)[number];
@@ -15,25 +15,18 @@ export type PumpProperties = {
   definitionType: PumpDefintionType;
   power: number;
   speed: number;
+  speedPatternId?: PatternId;
   curveId?: CurveId;
   curve?: CurvePoint[];
+  efficiencyCurveId?: CurveId;
+  energyPrice?: number;
+  energyPricePatternId?: PatternId;
 } & LinkProperties;
 
-export const pumpQuantities = [
-  "flow",
-  "head",
-  "designFlow",
-  "designHead",
-  "power",
-  "speed",
-];
+export const pumpQuantities = ["flow", "head", "power", "speed"];
 export type PumpQuantity = (typeof pumpQuantities)[number];
 
 export class Pump extends Link<PumpProperties> {
-  getUnit(quantity: PumpQuantity): Unit {
-    return this.units[quantity];
-  }
-
   get initialStatus() {
     return this.properties.initialStatus;
   }
@@ -50,12 +43,28 @@ export class Pump extends Link<PumpProperties> {
     return this.properties.speed;
   }
 
+  get speedPatternId() {
+    return this.properties.speedPatternId;
+  }
+
   get curveId() {
     return this.properties.curveId;
   }
 
   get curve() {
     return this.properties.curve;
+  }
+
+  get efficiencyCurveId() {
+    return this.properties.efficiencyCurveId;
+  }
+
+  get energyPrice() {
+    return this.properties.energyPrice;
+  }
+
+  get energyPricePatternId() {
+    return this.properties.energyPricePatternId;
   }
 
   getCurve = (curves: Curves): ICurve | CurvePoint[] | undefined => {
@@ -72,14 +81,9 @@ export class Pump extends Link<PumpProperties> {
   };
 
   copy() {
-    return new Pump(
-      this.id,
-      [...this.coordinates],
-      {
-        ...this.properties,
-        curve: this.properties.curve?.map((p) => ({ ...p })),
-      },
-      this.units,
-    );
+    return new Pump(this.id, [...this.coordinates], {
+      ...this.properties,
+      curve: this.properties.curve?.map((p) => ({ ...p })),
+    });
   }
 }

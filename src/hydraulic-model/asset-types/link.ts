@@ -1,14 +1,8 @@
 import { Feature, Position } from "geojson";
-import {
-  BaseAsset,
-  AssetId,
-  AssetProperties,
-  AssetUnits,
-  NO_ASSET_ID,
-} from "./base-asset";
+import { BaseAsset, AssetId, AssetProperties, NO_ASSET_ID } from "./base-asset";
 import measureLength from "@turf/length";
 import { isSamePosition } from "src/lib/geometry";
-import { convertTo } from "src/quantity";
+import { Unit, convertTo } from "src/quantity";
 
 export type LinkConnections = [start: AssetId, end: AssetId];
 
@@ -33,9 +27,8 @@ export class Link<T> extends BaseAsset<T & LinkProperties> {
     id: AssetId,
     coordinates: Position[],
     properties: T & LinkProperties,
-    units: AssetUnits,
   ) {
-    super(id, { type: "LineString", coordinates }, properties, units);
+    super(id, { type: "LineString", coordinates }, properties);
   }
 
   get isLink() {
@@ -107,14 +100,6 @@ export class Link<T> extends BaseAsset<T & LinkProperties> {
     this.setCoordinates([...this.coordinates, vertex]);
   }
 
-  extendTo(position: Position) {
-    this.setCoordinates([...this.coordinates.slice(0, -1), position]);
-  }
-
-  getUnit(quantity: "length") {
-    return this.units[quantity];
-  }
-
   setCoordinates(newCoordinates: Position[]) {
     if (newCoordinates.length < 2) {
       throw new Error(
@@ -123,19 +108,19 @@ export class Link<T> extends BaseAsset<T & LinkProperties> {
     }
 
     this.geometry.coordinates = newCoordinates;
-
-    const lengthInMeters =
-      measureLength(this.feature, { units: "kilometers" }) * 1000;
-    const length = parseFloat(
-      convertTo(
-        { value: lengthInMeters, unit: "m" },
-        this.getUnit("length"),
-      ).toFixed(2),
-    );
-
-    this.properties.length = length;
   }
 }
+
+export const computeLinkLength = (
+  link: Link<unknown>,
+  lengthUnit: Unit,
+): number => {
+  const lengthInMeters =
+    measureLength(link.feature, { units: "kilometers" }) * 1000;
+  return parseFloat(
+    convertTo({ value: lengthInMeters, unit: "m" }, lengthUnit).toFixed(2),
+  );
+};
 
 export const findLargestSegment = <T>(link: Link<T>): [Position, Position] => {
   let maxLength = -1;

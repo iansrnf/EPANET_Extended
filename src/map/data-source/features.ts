@@ -7,10 +7,11 @@ import { colorFor } from "src/map/symbology/range-color-rule";
 import { strokeColorFor } from "src/lib/color";
 import { localizeDecimal } from "src/infra/i18n/numbers";
 import {
-  Quantities,
+  FormattingSpec,
+  UnitsSpec,
   QuantityProperty,
-} from "src/model-metadata/quantities-spec";
-import { JunctionQuantity } from "src/hydraulic-model/asset-types/junction";
+  getDecimals,
+} from "src/lib/project-settings/quantities-spec";
 import {
   isSimulationProperty,
   type ResultsReader,
@@ -23,7 +24,8 @@ export const buildFeatureId = (assetId: AssetId) => assetId;
 export const buildOptimizedAssetsSource = (
   assets: AssetsMap,
   symbology: SymbologySpec,
-  quantities: Quantities,
+  units: UnitsSpec,
+  formatting: FormattingSpec,
   translateUnit: (unit: Unit) => string,
   simulationResults?: ResultsReader | null,
 ): Feature[] => {
@@ -48,7 +50,8 @@ export const buildOptimizedAssetsSource = (
           asset as Pipe,
           feature,
           symbology.link,
-          quantities,
+          units,
+          formatting,
           translateUnit,
           simulationResults,
         );
@@ -58,7 +61,8 @@ export const buildOptimizedAssetsSource = (
           asset as Junction,
           feature,
           symbology.node,
-          quantities,
+          units,
+          formatting,
           translateUnit,
           simulationResults,
         );
@@ -83,17 +87,18 @@ const appendPipeProps = (
   pipe: Pipe,
   feature: Feature,
   linkSymbology: LinkSymbology,
-  quantities: Quantities,
+  units: UnitsSpec,
+  formatting: FormattingSpec,
   translateUnit: (unit: Unit) => string,
   simulationResults?: ResultsReader | null,
 ) => {
   appendPipeStatus(pipe, feature, simulationResults);
-  appendPipeArrowProps(pipe, feature, simulationResults);
   appendPipeSymbologyProps(
     pipe,
     feature,
     linkSymbology,
-    quantities,
+    units,
+    formatting,
     translateUnit,
     simulationResults,
   );
@@ -103,7 +108,8 @@ const appendJunctionProps = (
   junction: Junction,
   feature: Feature,
   nodeSymbology: NodeSymbology,
-  quantities: Quantities,
+  units: UnitsSpec,
+  formatting: FormattingSpec,
   translateUnit: (unit: Unit) => string,
   simulationResults?: ResultsReader | null,
 ) => {
@@ -111,7 +117,8 @@ const appendJunctionProps = (
     junction,
     feature,
     nodeSymbology,
-    quantities,
+    units,
+    formatting,
     translateUnit,
     simulationResults,
   );
@@ -166,28 +173,28 @@ export const appendValveStatus = (
 export const appendPipeArrowProps = (
   pipe: Pipe,
   feature: Feature,
+  units: UnitsSpec,
   simulationResults?: ResultsReader | null,
 ) => {
   const pipeSimulation = simulationResults?.getPipe(pipe.id);
   const status = pipeSimulation?.status ?? null;
   const flow = pipeSimulation?.flow ?? null;
-  const isReverse = flow !== null && flow < 0;
-  const flowMagnitude = flow === null ? 0 : Math.abs(flow);
+  const isReverse = flow && flow < 0;
   feature.properties!.length = convertTo(
-    { value: pipe.length, unit: pipe.getUnit("length") },
+    { value: pipe.length, unit: units.length },
     "m",
   );
   feature.properties!.hasArrow =
-    pipe.isActive && (status ?? pipe.initialStatus) !== "closed";
+    (status ?? pipe.initialStatus) === "open" && flow !== null;
   feature.properties!.rotation = isReverse ? -180 : 0;
-  feature.properties!.flowMagnitude = flowMagnitude;
 };
 
 const appendPipeSymbologyProps = (
   pipe: Pipe,
   feature: Feature,
   linkSymbology: LinkSymbology,
-  quantities: Quantities,
+  units: UnitsSpec,
+  formatting: FormattingSpec,
   translateUnit: (unit: Unit) => string,
   simulationResults?: ResultsReader | null,
 ) => {
@@ -209,14 +216,15 @@ const appendPipeSymbologyProps = (
 
   if (!!linkSymbology.labelRule) {
     const labelProperty = linkSymbology.labelRule;
-    const unit = pipe.getUnit(labelProperty);
+    const unit = units[labelProperty as QuantityProperty];
     const localizedNumber = localizeDecimal(numericValue, {
-      decimals: quantities.getDecimals(labelProperty as QuantityProperty),
+      decimals: getDecimals(formatting, labelProperty as QuantityProperty),
     });
     const unitText = unit ? translateUnit(unit) : "";
     feature.properties!.label = `${localizedNumber} ${unitText}`;
   }
   feature.properties!.color = colorFor(linkSymbology.colorRule, numericValue);
+  appendPipeArrowProps(pipe, feature, units, simulationResults);
 };
 
 // Maps symbology property names to simulation property names
@@ -229,28 +237,14 @@ const appendJunctionSymbologyProps = (
   junction: Junction,
   feature: Feature,
   nodeSymbology: NodeSymbology,
-  quantities: Quantities,
+  units: UnitsSpec,
+  formatting: FormattingSpec,
   translateUnit: (unit: Unit) => string,
   simulationResults?: ResultsReader | null,
 ) => {
   if (!nodeSymbology.colorRule) return;
 
   const property = nodeSymbology.colorRule.property;
-  const elevationUnit = quantities.getUnit("elevation");
-  const convertValueForUnit = (
-    rawValue: number,
-    rawProperty: string,
-    targetUnit: Unit | null,
-  ): number => {
-    if (rawProperty === "pressure" && targetUnit === "mwc") {
-      return convertTo({ value: rawValue, unit: "psi" }, "mwc");
-    }
-    if (rawProperty === "elevation" && targetUnit === "psi") {
-      if (elevationUnit === "m") return rawValue * 1.42233433;
-      if (elevationUnit === "ft") return rawValue * 0.4333;
-    }
-    return rawValue;
-  };
 
   // Only read from simulation results if property is a simulation property
   let value: number | null;
@@ -264,30 +258,18 @@ const appendJunctionSymbologyProps = (
     value = junction[property as keyof Junction] as number | null;
   }
   const numericValue = value !== null ? value : 0;
-  const numericValueForSymbology = convertValueForUnit(
-    numericValue,
-    property,
-    nodeSymbology.colorRule.unit,
-  );
 
   if (!!nodeSymbology.labelRule) {
     const labelProperty = nodeSymbology.labelRule;
-    const unit =
-      labelProperty === property &&
-      (property === "pressure" || property === "elevation")
-        ? nodeSymbology.colorRule.unit
-        : junction.getUnit(labelProperty as JunctionQuantity);
-    const localizedNumber = localizeDecimal(
-      convertValueForUnit(numericValue, labelProperty, unit),
-      {
-        decimals: quantities.getDecimals(labelProperty as QuantityProperty),
-      },
-    );
+    const unit = units[labelProperty as QuantityProperty];
+    const localizedNumber = localizeDecimal(numericValue, {
+      decimals: getDecimals(formatting, labelProperty as QuantityProperty),
+    });
     const unitText = unit ? translateUnit(unit) : "";
     feature.properties!.label = `${localizedNumber} ${unitText}`;
   }
 
-  const fillColor = colorFor(nodeSymbology.colorRule, numericValueForSymbology);
+  const fillColor = colorFor(nodeSymbology.colorRule, numericValue);
   const strokeColor = strokeColorFor(fillColor);
 
   feature.properties!.color = fillColor;

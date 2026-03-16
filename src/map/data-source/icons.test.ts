@@ -2,49 +2,7 @@ import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
 import { buildIconPointsSource } from "./icons";
 import { AssetId } from "src/hydraulic-model";
 import { Point } from "geojson";
-import type { ResultsReader } from "src/simulation/results-reader";
-import { aNodeSymbology } from "src/__helpers__/state";
-
-const createMockResultsReader = (
-  data: {
-    pipes?: Record<number, { status?: "open" | "closed" }>;
-    valves?: Record<number, { status?: "active" | "open" | "closed" }>;
-  } = {},
-): ResultsReader => ({
-  getPipe: (id) => {
-    const sim = data.pipes?.[id];
-    if (!sim) return null;
-    return {
-      type: "pipe",
-      flow: 0,
-      velocity: 0,
-      headloss: 0,
-      unitHeadloss: 0,
-      status: sim.status ?? "open",
-    };
-  },
-  getValve: (id) => {
-    const sim = data.valves?.[id];
-    if (!sim) return null;
-    return {
-      type: "valve",
-      flow: 0,
-      velocity: 0,
-      headloss: 0,
-      status: sim.status ?? "active",
-      statusWarning: null,
-    };
-  },
-  getPump: () => null,
-  getJunction: () => null,
-  getTank: () => null,
-  getAllPressures: () => [],
-  getAllHeads: () => [],
-  getAllDemands: () => [],
-  getAllFlows: () => [],
-  getAllVelocities: () => [],
-  getAllUnitHeadlosses: () => [],
-});
+import { createMockResultsReader } from "src/__helpers__/state";
 
 describe("build icons source", () => {
   describe("for pumps", () => {
@@ -291,73 +249,6 @@ describe("build icons source", () => {
       expect(features.length).toEqual(1);
       const { properties } = features[0];
       expect(properties?.icon).toEqual("pipe-cv-open");
-    });
-  });
-
-  describe("for logger points", () => {
-    it("adds live pressure label and color when logger is connected", () => {
-      const IDS = { l1: 1 } as const;
-      const selectedAssets: Set<AssetId> = new Set();
-      const { assets } = HydraulicModelBuilder.with()
-        .aLoggerPoint(IDS.l1, {
-          coordinates: [10, 1],
-          deviceId: "pi-sim-001",
-          isActive: true,
-        })
-        .build();
-
-      const nodeSymbology = aNodeSymbology({
-        colorRule: {
-          property: "pressure",
-          unit: "psi",
-          breaks: [10, 20],
-          colors: ["#111111", "#222222", "#333333"],
-        },
-      });
-
-      const features = buildIconPointsSource(
-        assets,
-        selectedAssets,
-        null,
-        nodeSymbology,
-        {
-          "pi-sim-001": {
-            connected: true,
-            pressurePsi: 15,
-          },
-        },
-      );
-
-      expect(features.length).toEqual(1);
-      const { properties } = features[0];
-      expect(properties?.type).toEqual("loggerPoint");
-      expect(properties?.liveConnected).toEqual(true);
-      expect(properties?.livePressureLabel).toEqual("15.00 psi");
-      expect(properties?.livePressureColor).toEqual("#222222");
-    });
-
-    it("does not mark live-connected when logger is disconnected", () => {
-      const IDS = { l1: 1 } as const;
-      const selectedAssets: Set<AssetId> = new Set();
-      const { assets } = HydraulicModelBuilder.with()
-        .aLoggerPoint(IDS.l1, {
-          coordinates: [10, 1],
-          deviceId: "pi-sim-001",
-          isActive: true,
-        })
-        .build();
-
-      const features = buildIconPointsSource(assets, selectedAssets, null, null, {
-        "pi-sim-001": {
-          connected: false,
-          pressurePsi: 15,
-        },
-      });
-
-      expect(features.length).toEqual(1);
-      const { properties } = features[0];
-      expect(properties?.liveConnected).toEqual(false);
-      expect(properties?.livePressureLabel).toEqual("15.00 psi");
     });
   });
 });

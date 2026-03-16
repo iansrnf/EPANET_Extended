@@ -1,14 +1,9 @@
-import { DialogHeader } from "../dialog";
+import { BaseDialog, SimpleDialogActions } from "../dialog";
 import { useTranslate } from "src/hooks/use-translate";
-import {
-  SimpleDialogActions,
-  SimpleDialogButtons,
-} from "src/components/dialog";
 import { Trans } from "react-i18next";
 
 import { Button } from "../elements";
 import { useState } from "react";
-import { Form, Formik } from "formik";
 import { newsletterUrl, projectionConverterUrl } from "src/global-config";
 import { ParserIssues } from "src/import/inp";
 import { useShowWelcome } from "src/commands/show-welcome";
@@ -18,38 +13,23 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   GlobeIcon,
-  ErrorIcon,
-  WarningIcon,
   SubscribeIcon,
 } from "src/icons";
 
 const roadmapUrls = {
   waterQuality:
     "https://roadmap.epanetjs.com/simulation-engine/p/standard-water-quality-analysis",
-  gpv: "https://roadmap.epanetjs.com/network-elements/p/gpv-general-purpose-valve",
-  patterns:
-    "https://roadmap.epanetjs.com/data-libraries/p/manage-time-series-patterns",
-  reservoirPatterns:
-    "https://roadmap.epanetjs.com/element-properties/p/define-reservoir-patterns",
-  tankCurves:
-    "https://roadmap.epanetjs.com/element-properties/p/define-tank-curves",
-  pumpCurves:
-    "https://roadmap.epanetjs.com/element-properties/p/define-pump-curves",
-  pcv: "https://roadmap.epanetjs.com/network-elements/p/pcv-positional-control-valve",
 } as const;
 
 export const GeocodingNotSupportedDialog = ({
-  onClose: _onClose,
+  onClose,
+  onImportNonProjected,
 }: {
   onClose: () => void;
+  onImportNonProjected: () => void;
 }) => {
   const translate = useTranslate();
-  const showWelcome = useShowWelcome();
   const userTracking = useUserTracking();
-
-  const goToWelcome = () => {
-    showWelcome({ source: "geocodeError" });
-  };
 
   const handleReprojectNetwork = () => {
     userTracking.capture({
@@ -58,13 +38,24 @@ export const GeocodingNotSupportedDialog = ({
     window.open(projectionConverterUrl);
   };
   return (
-    <>
-      <DialogHeader
-        title={translate("geocodingNotSupported")}
-        titleIcon={WarningIcon}
-        variant="warning"
-      />
-      <div className="text-sm">
+    <BaseDialog
+      title={translate("geocodingNotSupported")}
+      size="md"
+      isOpen={true}
+      onClose={onClose}
+      footer={
+        <SimpleDialogActions
+          action={translate("reprojectNetwork")}
+          onAction={handleReprojectNetwork}
+          autoFocusSubmit={true}
+          secondary={{
+            action: translate("loadInXYGrid"),
+            onClick: onImportNonProjected,
+          }}
+        />
+      }
+    >
+      <div className="p-4 text-sm">
         <p className="pb-4">
           <Trans
             i18nKey="geocodingNotSupportedDetail"
@@ -84,20 +75,7 @@ export const GeocodingNotSupportedDialog = ({
           />
         </p>
       </div>
-      <SimpleDialogButtons>
-        <Button
-          type="button"
-          variant="primary"
-          autoFocus={true}
-          onClick={handleReprojectNetwork}
-        >
-          {translate("reprojectNetwork")}
-        </Button>
-        <Button type="button" variant="default" onClick={goToWelcome}>
-          {translate("seeDemoNetworks")}
-        </Button>
-      </SimpleDialogButtons>
-    </>
+    </BaseDialog>
   );
 };
 
@@ -115,29 +93,28 @@ export const MissingCoordinatesDialog = ({
     showWelcome({ source: "missingCoordinatesError" });
   };
   return (
-    <>
-      <DialogHeader
-        title={translate("missingCoordinates")}
-        titleIcon={ErrorIcon}
-        variant="danger"
-      />
-      <Formik onSubmit={() => onClose()} initialValues={{}}>
-        <Form>
-          <div className="text-sm">
-            <p className="pb-2">{translate("missingCoordinatesDetail")}</p>
-            <CoordinatesIssues issues={issues} />
-          </div>
-          <SimpleDialogActions
-            autoFocusSubmit={true}
-            action={translate("understood")}
-            secondary={{
-              action: translate("seeDemoNetworks"),
-              onClick: goToWelcome,
-            }}
-          />
-        </Form>
-      </Formik>
-    </>
+    <BaseDialog
+      title={translate("missingCoordinates")}
+      size="md"
+      isOpen={true}
+      onClose={onClose}
+      footer={
+        <SimpleDialogActions
+          action={translate("understood")}
+          onAction={onClose}
+          autoFocusSubmit={true}
+          secondary={{
+            action: translate("seeDemoNetworks"),
+            onClick: goToWelcome,
+          }}
+        />
+      }
+    >
+      <div className="p-4 text-sm">
+        <p className="pb-2">{translate("missingCoordinatesDetail")}</p>
+        <CoordinatesIssues issues={issues} />
+      </div>
+    </BaseDialog>
   );
 };
 
@@ -154,32 +131,30 @@ export const InpIssuesDialog = ({
   const goToWelcome = () => {
     showWelcome({ source: "inpIssues" });
   };
-  return (
-    <>
-      <DialogHeader
-        title={translate("inpNotFullySupported")}
-        titleIcon={WarningIcon}
-        variant="warning"
-      />
-      <Formik onSubmit={() => onClose()} initialValues={{}}>
-        <Form>
-          <div className="text-sm">
-            <p className="pb-2">{translate("inpNotFullySupportedDetail")}</p>
-            <IssuesSummary issues={issues} />
-            <SubscribeCTA source="inpIssues" />
-          </div>
 
-          <SimpleDialogActions
-            autoFocusSubmit={true}
-            action={translate("understood")}
-            secondary={{
-              action: translate("seeDemoNetworks"),
-              onClick: goToWelcome,
-            }}
-          />
-        </Form>
-      </Formik>
-    </>
+  return (
+    <BaseDialog
+      title={translate("inpNotFullySupported")}
+      size="md"
+      isOpen={true}
+      onClose={onClose}
+      footer={
+        <SimpleDialogActions
+          action={translate("understood")}
+          onAction={onClose}
+          secondary={{
+            action: translate("seeDemoNetworks"),
+            onClick: goToWelcome,
+          }}
+        />
+      }
+    >
+      <div className="p-4 text-sm">
+        <p className="pb-2">{translate("inpNotFullySupportedDetail")}</p>
+        <IssuesSummary issues={issues} />
+        <SubscribeCTA source="inpIssues" />
+      </div>
+    </BaseDialog>
   );
 };
 
@@ -416,71 +391,16 @@ const IssuesSummary = ({ issues }: { issues: ParserIssues }) => {
               </div>
             </div>
           )}
-          {(issues.gpvValves || issues.hasPCVCurves) && (
-            <div>
-              <p>{translate("ignoredValuesDetected", "[VALVES]")}:</p>
-              <div className="flex flex-col gap-y-1 items-start">
-                {issues.gpvValves && (
-                  <RoadmapLink href={roadmapUrls.gpv}>
-                    - {translate("valueIgnored", "GPV", "TCV")}
-                  </RoadmapLink>
-                )}
-                {issues.hasPCVCurves && (
-                  <RoadmapLink href={roadmapUrls.pcv}>
-                    - {translate("pcvCurves", String(issues.hasPCVCurves))}
-                  </RoadmapLink>
-                )}
-              </div>
-            </div>
-          )}
-          {issues.hasReservoirPatterns && (
-            <div>
-              <p>{translate("ignoredValuesDetected", "[RESERVOIRS]")}:</p>
-              <div className="flex flex-col gap-y-1 items-start">
-                <RoadmapLink href={roadmapUrls.reservoirPatterns}>
-                  -{" "}
-                  {translate(
-                    "reservoirPatterns",
-                    String(issues.hasReservoirPatterns),
-                  )}
-                </RoadmapLink>
-              </div>
-            </div>
-          )}
-          {issues.hasTankCurves && (
-            <div>
-              <p>{translate("ignoredValuesDetected", "[TANKS]")}:</p>
-              <div className="flex flex-col gap-y-1 items-start">
-                <RoadmapLink href={roadmapUrls.tankCurves}>
-                  - {translate("tankCurves", String(issues.hasTankCurves))}
-                </RoadmapLink>
-              </div>
-            </div>
-          )}
-          {(issues.hasPumpPatterns || issues.hasPumpCurves) && (
+          {issues.hasUndefinedPumpCurve && (
             <div>
               <p>{translate("ignoredValuesDetected", "[PUMPS]")}:</p>
               <div className="flex flex-col gap-y-1 items-start">
-                {issues.hasPumpPatterns && (
-                  <RoadmapLink href={roadmapUrls.patterns}>
-                    -{" "}
-                    {translate("pumpPatterns", String(issues.hasPumpPatterns))}
-                  </RoadmapLink>
-                )}
-                {issues.hasPumpCurves && (
-                  <RoadmapLink href={roadmapUrls.pumpCurves}>
-                    - {translate("pumpCurves", String(issues.hasPumpCurves))}
-                  </RoadmapLink>
-                )}
-              </div>
-            </div>
-          )}
-          {issues.hasUnusedCurves && (
-            <div>
-              <p>{translate("ignoredValuesDetected", "[CURVES]")}:</p>
-              <div className="flex flex-col gap-y-1 items-start">
                 <span>
-                  - {translate("unusedCurves", String(issues.hasUnusedCurves))}
+                  -{" "}
+                  {translate(
+                    "undefinedPumpCurves",
+                    String(issues.hasUndefinedPumpCurve),
+                  )}
                 </span>
               </div>
             </div>

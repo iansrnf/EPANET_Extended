@@ -28,9 +28,11 @@ const MAP_OPTIONS: Omit<mapboxgl.MapboxOptions, "container"> = {
   fadeDuration: 0,
   antialias: true,
   doubleClickZoom: false,
+  preserveDrawingBuffer: true,
 };
 
 const sourceUpdateTimeoutFor = (totalFeatures: number): number => {
+  if (totalFeatures === 0) return 200;
   if (totalFeatures < 1000) return 2000;
   if (totalFeatures < 10000) return 5000;
 
@@ -186,15 +188,6 @@ export class MapEngine {
     for (const layerId of layerIds) {
       this.map.setLayoutProperty(layerId, "visibility", "visible");
     }
-  }
-
-  setMapboxLogoVisibility(isVisible: boolean) {
-    const container = this.map.getContainer();
-    const logo = container.querySelector(
-      ".mapboxgl-ctrl-logo",
-    ) as HTMLElement | null;
-    if (!logo) return;
-    logo.style.display = isVisible ? "" : "none";
   }
 
   addLayer(layer: mapboxgl.AnyLayer, beforeId?: string) {
@@ -369,11 +362,6 @@ export class MapEngine {
       });
 
       callback();
-
-      if (!updateSize) {
-        clearTimeout(timeout);
-        resolve();
-      }
     });
   }
 }

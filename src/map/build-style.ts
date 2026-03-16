@@ -14,7 +14,15 @@ function getEmptyStyle() {
     sprite: "mapbox://sprites/mapbox/streets-v8",
     glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf",
     sources: {},
-    layers: [],
+    layers: [
+      {
+        id: "background",
+        type: "background",
+        paint: {
+          "background-color": "#F5F5F5",
+        },
+      },
+    ],
   };
   return style;
 }
@@ -65,9 +73,10 @@ export function defineEmptySources(style: Style) {
   style.sources["icons"] = emptyGeoJSONSource;
   style.sources["selected-features"] = emptyGeoJSONSource;
   style.sources["ephemeral"] = emptyGeoJSONSource;
+  style.sources["grid"] = emptyGeoJSONSource;
 }
 
-import type { PreviewProperty } from "src/state/jotai";
+import type { PreviewProperty } from "src/state/map-symbology";
 import type { ISymbology } from "src/types";
 import { reservoirLayers, pipesLayer, junctionsLayer } from "src/map/layers";
 import { pipeArrows, checkValveIcons } from "src/map/layers/pipes";
@@ -77,7 +86,6 @@ import { valveIcons, valveLines } from "src/map/layers/valves";
 import { linkLabelsLayer } from "src/map/layers/link-labels";
 import { nodeLabelsLayer } from "src/map/layers/node-labels";
 import { tankLayers } from "src/map/layers/tank";
-import { loggerPointLayers } from "src/map/layers/logger-points";
 import {
   ephemeralDraftLineLayer,
   ephemeralIconHighlightLayers,
@@ -88,6 +96,7 @@ import {
   ephemeralSelectionFillLayer,
   ephemeralSelectionOutlineLayer,
 } from "src/map/layers/ephemeral-state";
+import { gridMinorLayer, gridMajorLayer } from "src/map/layers/grid";
 import {
   selectedPipesLayer,
   selectedPumpLinesLayer,
@@ -159,6 +168,8 @@ export function makeLayers({
   previewProperty: PreviewProperty;
 }): mapboxgl.AnyLayer[] {
   return [
+    gridMinorLayer(),
+    gridMajorLayer(),
     ephemeralHaloLayer({ source: "ephemeral" }),
     pipesLayer({
       source: "main-features",
@@ -262,7 +273,6 @@ export function makeLayers({
     }),
     ...reservoirLayers({ sources: ["icons"] }),
     ...tankLayers({ sources: ["icons"] }),
-    ...loggerPointLayers({ sources: ["icons"] }),
     selectedIconsLayer({
       source: "selected-features",
       layerId: "selected-icons",

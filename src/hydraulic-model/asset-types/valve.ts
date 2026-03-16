@@ -1,5 +1,5 @@
+import { CurveId } from "../curves";
 import { Link, LinkProperties } from "./link";
-import { Unit } from "src/quantity";
 
 export const valveStatuses = ["active", "open", "closed"] as const;
 export type ValveStatus = (typeof valveStatuses)[number];
@@ -7,8 +7,17 @@ export type ValveStatusWarning =
   | "cannot-deliver-flow"
   | "cannot-deliver-pressure";
 
-export const valveKinds = ["prv", "psv", "fcv", "pbv", "tcv"] as const;
-export const controlKinds = ["prv", "psv", "fcv", "pbv"];
+export const valveKinds = [
+  "prv",
+  "psv",
+  "fcv",
+  "pbv",
+  "tcv",
+  "gpv",
+  "pcv",
+] as const;
+
+export const controlKinds = ["prv", "psv", "fcv", "pbv", "gpv"];
 export type ValveKind = (typeof valveKinds)[number];
 
 export type ValveProperties = {
@@ -18,16 +27,13 @@ export type ValveProperties = {
   kind: ValveKind;
   setting: number;
   initialStatus: ValveStatus;
+  curveId?: CurveId;
 } & LinkProperties;
 
 export const valveQuantities = ["diameter", "minorLoss", "setting"];
 export type ValveQuantity = (typeof valveQuantities)[number];
 
 export class Valve extends Link<ValveProperties> {
-  getUnit(quantity: ValveQuantity): Unit {
-    return this.units[quantity];
-  }
-
   get diameter() {
     return this.properties.diameter;
   }
@@ -48,14 +54,21 @@ export class Valve extends Link<ValveProperties> {
     return this.properties.initialStatus;
   }
 
+  get curveId() {
+    return this.properties.curveId;
+  }
+
   copy() {
-    return new Valve(
-      this.id,
-      [...this.coordinates],
-      {
-        ...this.properties,
-      },
-      this.units,
-    );
+    return new Valve(this.id, [...this.coordinates], {
+      ...this.properties,
+    });
   }
 }
+
+export const valveCurveTypeFrom = (
+  valveKind: ValveKind,
+): "headloss" | "valve" | undefined => {
+  if (valveKind === "gpv") return "headloss";
+  if (valveKind === "pcv") return "valve";
+  return;
+};

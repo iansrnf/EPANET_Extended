@@ -4,6 +4,8 @@ import {
   PipeStatus,
 } from "src/hydraulic-model/asset-types/pipe";
 import { ValveKind } from "src/hydraulic-model/asset-types/valve";
+import { CurveType } from "src/hydraulic-model/curves";
+import { PatternType } from "src/hydraulic-model/patterns";
 import { EpanetUnitSystem } from "src/simulation/build-inp";
 
 export type PipeData = {
@@ -67,18 +69,19 @@ export type ValveData = {
   setting: number;
   minorLoss: number;
   curveId?: string;
-  headlossCurveId?: string;
   isActive: boolean;
 };
 
 export type CurveData = {
   label: string;
   points: { x: number; y: number }[];
+  fallbackType?: CurveType;
 };
 
 export type PatternData = {
   label: string;
   multipliers: number[];
+  fallbackType?: PatternType;
 };
 
 export type DemandData = {
@@ -106,6 +109,12 @@ export type CustomerPointData =
       snapPoint?: undefined;
     };
 
+export type PumpEnergyData = {
+  efficiencyCurve?: string;
+  pattern?: string;
+  price?: number;
+};
+
 export type InpData = {
   junctions: JunctionData[];
   reservoirs: ReservoirData[];
@@ -118,25 +127,72 @@ export type InpData = {
   vertices: ItemData<Position[]>;
   demands: ItemData<DemandData[]>;
   customerDemands: ItemData<DemandData[]>;
+  emitters: ItemData<number>;
   patterns: ItemData<PatternData>;
   status: ItemData<string>;
   curves: ItemData<CurveData>;
-  energyEfficiencyCurves: ItemData<string>;
+  sourcePatterns: Set<string>;
   options: {
     units: EpanetUnitSystem;
     headlossFormula: HeadlossFormula;
+    pressureUnit?: string;
     demandMultiplier: number;
     defaultPattern?: string;
+    demandModel?: "DDA" | "PDA";
+    minimumPressure?: number;
+    requiredPressure?: number;
+    pressureExponent?: number;
+    emitterExponent?: number;
+    backflowAllowed?: boolean;
+    trials?: number;
+    accuracy?: number;
+    unbalancedMode?: "STOP" | "CONTINUE";
+    unbalancedExtraTrials?: number;
+    headError?: number;
+    flowChange?: number;
+    checkFreq?: number;
+    maxCheck?: number;
+    dampLimit?: number;
+    viscosity?: number;
+    specificGravity?: number;
+    qualitySimulationType?: "NONE" | "CHEMICAL" | "AGE" | "TRACE";
+    qualityChemicalName?: string;
+    qualityMassUnit?: "mg/L" | "ug/L";
+    qualityTraceNode?: string;
+    tolerance?: number;
+    diffusivity?: number;
+  };
+  reactions: {
+    bulkOrder?: number;
+    wallOrder?: number;
+    tankOrder?: number;
+    globalBulk?: number;
+    globalWall?: number;
+    limitingPotential?: number;
+    roughnessCorrelation?: number;
+  };
+  energy: {
+    globalEfficiency?: number;
+    globalPrice?: number;
+    globalPattern?: string;
+    demandCharge?: number;
+    pumpEnergy: ItemData<PumpEnergyData>;
   };
   times: {
     duration?: number;
     hydraulicTimestep?: number;
     reportTimestep?: number;
     patternTimestep?: number;
+    qualityTimestep?: number;
+    ruleTimestep?: number;
     patternStart?: number;
     reportStart?: number;
     startClocktime?: number;
     statistic?: string;
+  };
+  report: {
+    energy?: boolean;
+    statusReport?: "YES" | "NO" | "FULL";
   };
   controls: {
     simple: string;
@@ -198,12 +254,16 @@ export const nullInpData = (): InpData => {
     vertices: new ItemData(),
     demands: new ItemData(),
     customerDemands: new ItemData(),
+    emitters: new ItemData(),
     patterns: new ItemData(),
     status: new ItemData(),
     curves: new ItemData(),
-    energyEfficiencyCurves: new ItemData(),
+    sourcePatterns: new Set(),
     options: { units: "GPM", headlossFormula: "H-W", demandMultiplier: 1 },
+    reactions: {},
+    energy: { pumpEnergy: new ItemData() },
     times: {},
+    report: {},
     controls: { simple: "", ruleBased: "" },
     nodeIds: new NodeIds(),
   };

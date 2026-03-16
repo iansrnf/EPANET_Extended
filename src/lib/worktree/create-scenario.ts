@@ -1,19 +1,19 @@
 import type { Worktree, Snapshot } from "./types";
+import type { SimulationSettings } from "src/simulation/simulation-settings";
 import { MomentLog } from "src/lib/persistence/moment-log";
+import { EMPTY_MOMENT } from "src/lib/persistence/moment";
 import { nanoid } from "nanoid";
 
 export const createScenario = (
   worktree: Worktree,
+  simulationSettings: SimulationSettings,
 ): { scenario: Snapshot; worktree: Worktree } => {
   const mainSnapshot = worktree.snapshots.get(worktree.mainId);
   if (!mainSnapshot) {
     throw new Error("Main snapshot not found");
   }
 
-  const baseMoment = mainSnapshot.deltas[0];
-  if (!baseMoment) {
-    throw new Error("Cannot create scenario: no model imported yet");
-  }
+  const baseMoment = mainSnapshot.deltas[0] ?? EMPTY_MOMENT;
   const newNumber = worktree.highestScenarioNumber + 1;
   const newMomentLog = new MomentLog();
   newMomentLog.setSnapshot(baseMoment, mainSnapshot.version);
@@ -26,6 +26,7 @@ export const createScenario = (
     version: mainSnapshot.version,
     momentLog: newMomentLog,
     simulation: null,
+    simulationSettings,
     status: "open",
   };
 

@@ -1,11 +1,8 @@
 import type { HandlerContext } from "src/types";
-import {
-  modeAtom,
-  Mode,
-  ephemeralStateAtom,
-  cursorStyleAtom,
-  selectionAtom,
-} from "src/state/jotai";
+import { ephemeralStateAtom } from "src/state/drawing";
+import { cursorStyleAtom } from "src/state/map";
+import { modeAtom, Mode } from "src/state/mode";
+import { selectionAtom } from "src/state/selection";
 import noop from "lodash/noop";
 import { useSetAtom, useAtom, useAtomValue } from "jotai";
 import { getMapCoord } from "../utils";
@@ -16,13 +13,14 @@ import { useElevations } from "../../elevations/use-elevations";
 import { useSnapping } from "../hooks/use-snapping";
 import { useSelection } from "src/selection";
 
-type NodeType = "junction" | "reservoir" | "tank" | "loggerPoint";
+type NodeType = "junction" | "reservoir" | "tank";
 
 export function useDrawNodeHandlers({
   hydraulicModel,
   rep,
   nodeType,
   map,
+  units,
   readonly = false,
 }: HandlerContext & { nodeType: NodeType }): Handlers {
   const setMode = useSetAtom(modeAtom);
@@ -31,7 +29,6 @@ export function useDrawNodeHandlers({
   const selection = useAtomValue(selectionAtom);
   const transact = rep.useTransact();
   const userTracking = useUserTracking();
-  const { units } = hydraulicModel;
   const { fetchElevation, prefetchTile } = useElevations(units.elevation);
   const { findSnappingCandidate } = useSnapping(map, hydraulicModel.assets);
   const { selectAsset } = useSelection(selection);
@@ -47,6 +44,7 @@ export function useDrawNodeHandlers({
       coordinates,
       elevation,
       pipeIdToSplit,
+      lengthUnit: units.length,
     });
     transact(moment);
     userTracking.capture({ name: "asset.created", type: nodeType });

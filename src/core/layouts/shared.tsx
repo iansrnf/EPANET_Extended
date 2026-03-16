@@ -12,8 +12,8 @@ export function LayoutHead({
 }: React.PropsWithChildren<Pick<LayoutProps, "title">>) {
   return (
     <Head>
-      <title>{title || "GSCWD"}</title>
-      <link rel="icon" href="/images/logo-gscwd.png" />
+      <title>{title || "epanet-js"}</title>
+      <link rel="icon" href="/favicon.ico" />
       {children}
     </Head>
   );

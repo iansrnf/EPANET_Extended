@@ -1,8 +1,6 @@
-import { DialogHeader, DialogButtons } from "src/components/dialog";
-import { Button } from "../elements";
+import { BaseDialog, SimpleDialogActions } from "src/components/dialog";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
-import { WarningIcon } from "src/icons";
 
 export const DeleteScenarioConfirmationDialog = ({
   scenarioId,
@@ -36,32 +34,26 @@ export const DeleteScenarioConfirmationDialog = ({
   };
 
   return (
-    <>
-      <DialogHeader
-        title={translate("scenarios.deleteConfirmation.title")}
-        titleIcon={WarningIcon}
-        variant="danger"
-      />
-      <div className="text-sm">
+    <BaseDialog
+      title={translate("scenarios.deleteConfirmation.title")}
+      size="xs"
+      isOpen={true}
+      onClose={handleCancel}
+      footer={
+        <SimpleDialogActions
+          action={translate("scenarios.deleteConfirmation.confirm")}
+          onAction={handleConfirm}
+          actionVariant="danger"
+          secondary={{
+            action: translate("dialog.cancel"),
+            onClick: handleCancel,
+          }}
+        />
+      }
+    >
+      <div className="p-4 text-sm text-gray-700">
         <p>{translate("scenarios.deleteConfirmation.message", scenarioName)}</p>
       </div>
-      <DialogButtons>
-        <Button
-          type="submit"
-          variant="danger"
-          aria-label={translate("scenarios.deleteConfirmation.confirm")}
-          onClick={handleConfirm}
-        >
-          {translate("scenarios.deleteConfirmation.confirm")}
-        </Button>
-        <Button
-          variant="default"
-          aria-label={translate("cancel")}
-          onClick={handleCancel}
-        >
-          {translate("cancel")}
-        </Button>
-      </DialogButtons>
-    </>
+    </BaseDialog>
   );
 };

@@ -9,7 +9,8 @@ import {
   SubNetwork,
 } from "src/lib/network-review/connectivity-trace";
 import { USelection, useSelection } from "src/selection";
-import { selectionAtom, stagingModelAtom } from "src/state/jotai";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { selectionAtom } from "src/state/selection";
 import {
   CheckType,
   EmptyState,
@@ -37,7 +38,11 @@ export const ConnectivityTrace = ({ onGoBack }: { onGoBack: () => void }) => {
 
   useEffect(
     function recomputeConnectivityTrace() {
-      void checkConnectivityTrace();
+      const abortController = new AbortController();
+      void checkConnectivityTrace(abortController.signal);
+      return () => {
+        abortController.abort();
+      };
     },
     [checkConnectivityTrace],
   );
@@ -229,14 +234,35 @@ const useCheckConnectivityTrace = () => {
   const { startLoading, finishLoading, isLoading } = useLoadingStatus();
   const isReady = useRef(false);
 
-  const checkConnectivityTrace = useCallback(async () => {
-    startLoading();
-    await deferToAllowRender();
-    const result = await findConnectivityTrace(hydraulicModel);
-    setSubnetworks(result);
-    finishLoading();
-    isReady.current = true;
-  }, [hydraulicModel, startLoading, finishLoading]);
+  const checkConnectivityTrace = useCallback(
+    async (signal?: AbortSignal) => {
+      startLoading();
+      await deferToAllowRender();
+
+      if (signal?.aborted) return;
+
+      try {
+        const result = await findConnectivityTrace(
+          hydraulicModel,
+          "array",
+          signal,
+        );
+
+        if (!signal?.aborted) {
+          setSubnetworks(result);
+          finishLoading();
+          isReady.current = true;
+        }
+      } catch (error) {
+        if ((error as Error).name === "AbortError") {
+          return;
+        }
+        finishLoading();
+        throw error;
+      }
+    },
+    [hydraulicModel, startLoading, finishLoading],
+  );
 
   return {
     checkConnectivityTrace,

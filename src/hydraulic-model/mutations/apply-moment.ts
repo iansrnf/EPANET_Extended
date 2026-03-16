@@ -1,10 +1,13 @@
 import { HydraulicModel } from "../hydraulic-model";
 import { ModelMoment, ReverseMoment } from "../model-operation";
+import type { AssetPatch, DemandAssignment } from "../model-operation";
 import { Asset, LinkAsset } from "../asset-types";
 import { AssetId } from "../assets-map";
-import { CustomerPoint } from "../customer-points";
+import { CustomerPoint, CustomerPointId } from "../customer-points";
 import { Curves } from "../curves";
-import { Demands } from "../demands";
+import { Patterns } from "../patterns";
+import { isDebugOn } from "src/infra/debug-mode";
+import { CustomerAssignedDemands, JunctionAssignedDemands } from "../demands";
 
 type PutAssetResult = {
   oldAsset: Asset | undefined;
@@ -15,24 +18,35 @@ export const applyMomentToModel = (
   hydraulicModel: HydraulicModel,
   moment: ModelMoment,
 ): ReverseMoment => {
+  if (isDebugOn) {
+    assertNoPutPatchOverlap(moment);
+  }
+
   const reverseMoment: ReverseMoment = {
     note: `Reverse: ${moment.note}`,
     putAssets: [],
     deleteAssets: [],
+    patchAssetsAttributes: [],
     putCustomerPoints: [],
   };
 
   if (moment.putDemands) {
-    reverseMoment.putDemands = hydraulicModel.demands;
-  }
-  if (moment.putEPSTiming) {
-    reverseMoment.putEPSTiming = hydraulicModel.epsTiming;
+    const reverseAssignements = putDemandAssignments(
+      hydraulicModel,
+      moment.putDemands.assignments || [],
+    );
+    reverseMoment.putDemands = {
+      assignments: reverseAssignements,
+    };
   }
   if (moment.putControls) {
     reverseMoment.putControls = hydraulicModel.controls;
   }
   if (moment.putCurves) {
     reverseMoment.putCurves = hydraulicModel.curves;
+  }
+  if (moment.putPatterns) {
+    reverseMoment.putPatterns = hydraulicModel.patterns;
   }
 
   for (const id of moment.deleteAssets || []) {
@@ -51,19 +65,30 @@ export const applyMomentToModel = (
     }
   }
 
+  for (const patch of moment.patchAssetsAttributes || []) {
+    const reversePatch = patchAssetAttributes(hydraulicModel, patch);
+    if (reversePatch) {
+      reverseMoment.patchAssetsAttributes.push(reversePatch);
+    }
+  }
+
   for (const cp of moment.putCustomerPoints || []) {
     const oldCp = putCustomerPoint(hydraulicModel, cp);
     if (oldCp) {
       reverseMoment.putCustomerPoints.push(oldCp);
+    } else {
+      if (!reverseMoment.deleteCustomerPoints) {
+        reverseMoment.deleteCustomerPoints = [];
+      }
+      reverseMoment.deleteCustomerPoints.push(cp.id);
     }
   }
 
-  if (moment.putDemands) {
-    putDemands(hydraulicModel, moment.putDemands);
-  }
-
-  if (moment.putEPSTiming) {
-    hydraulicModel.epsTiming = moment.putEPSTiming;
+  for (const cpId of moment.deleteCustomerPoints || []) {
+    const deletedCp = deleteCustomerPoint(hydraulicModel, cpId);
+    if (deletedCp) {
+      reverseMoment.putCustomerPoints.push(deletedCp);
+    }
   }
 
   if (moment.putControls) {
@@ -72,6 +97,10 @@ export const applyMomentToModel = (
 
   if (moment.putCurves) {
     putCurves(hydraulicModel, moment.putCurves);
+  }
+
+  if (moment.putPatterns) {
+    putPatterns(hydraulicModel, moment.putPatterns);
   }
 
   return reverseMoment;
@@ -152,6 +181,19 @@ const putCustomerPoint = (
   return oldVersion;
 };
 
+const deleteCustomerPoint = (
+  hydraulicModel: HydraulicModel,
+  id: CustomerPointId,
+): CustomerPoint | undefined => {
+  const cp = hydraulicModel.customerPoints.get(id);
+  if (!cp) return undefined;
+
+  hydraulicModel.customerPointsLookup.removeConnection(cp);
+  hydraulicModel.customerPoints.delete(id);
+
+  return cp;
+};
+
 const putCurves = (hydraulicModel: HydraulicModel, curves: Curves): void => {
   for (const curve of hydraulicModel.curves.values()) {
     hydraulicModel.labelManager.remove(curve.label, "curve", curve.id);
@@ -162,12 +204,126 @@ const putCurves = (hydraulicModel: HydraulicModel, curves: Curves): void => {
   }
 };
 
-const putDemands = (hydraulicModel: HydraulicModel, demands: Demands): void => {
-  for (const pattern of hydraulicModel.demands.patterns.values()) {
+const patchAssetAttributes = (
+  hydraulicModel: HydraulicModel,
+  patch: AssetPatch,
+): AssetPatch | undefined => {
+  const asset = hydraulicModel.assets.get(patch.id);
+  if (!asset) return undefined;
+
+  const reverseProperties: Record<string, unknown> = {};
+  for (const [key] of Object.entries(patch.properties)) {
+    reverseProperties[key] = asset.getProperty(key);
+  }
+
+  const updatedAsset = asset.copy();
+  for (const [key, value] of Object.entries(patch.properties)) {
+    updatedAsset.setProperty(key, value);
+  }
+  hydraulicModel.assets.set(patch.id, updatedAsset);
+
+  if ("label" in patch.properties) {
+    hydraulicModel.labelManager.remove(
+      reverseProperties.label as string,
+      asset.type,
+      asset.id,
+    );
+    hydraulicModel.labelManager.register(
+      updatedAsset.label,
+      updatedAsset.type,
+      updatedAsset.id,
+    );
+  }
+
+  return {
+    id: patch.id,
+    type: patch.type,
+    properties: reverseProperties,
+  } as AssetPatch;
+};
+
+const putPatterns = (
+  hydraulicModel: HydraulicModel,
+  patterns: Patterns,
+): void => {
+  for (const pattern of hydraulicModel.patterns.values()) {
     hydraulicModel.labelManager.remove(pattern.label, "pattern", pattern.id);
   }
-  hydraulicModel.demands = demands;
-  for (const pattern of demands.patterns.values()) {
+  hydraulicModel.patterns = patterns;
+  for (const pattern of patterns.values()) {
     hydraulicModel.labelManager.register(pattern.label, "pattern", pattern.id);
+  }
+};
+
+const putDemandAssignments = (
+  hydraulicModel: HydraulicModel,
+  assignments: DemandAssignment[],
+): DemandAssignment[] => {
+  if (!assignments.length) return [];
+  const { junctions: junctionsDemands, customerPoints: customersDemands } =
+    hydraulicModel.demands;
+
+  let updatedJunctionsDemands: JunctionAssignedDemands | undefined = undefined;
+  let updatedCustomerPointsDemands: CustomerAssignedDemands | undefined =
+    undefined;
+
+  const reverseAssignments: DemandAssignment[] = [];
+  assignments.forEach((demandAssignement) => {
+    if ("customerPointId" in demandAssignement) {
+      if (!updatedCustomerPointsDemands)
+        updatedCustomerPointsDemands = new Map(customersDemands);
+      const customerDemands = customersDemands.get(
+        demandAssignement.customerPointId,
+      );
+      reverseAssignments.push({
+        customerPointId: demandAssignement.customerPointId,
+        demands: customerDemands || [],
+      });
+      if (demandAssignement.demands.length === 0) {
+        updatedCustomerPointsDemands.delete(demandAssignement.customerPointId);
+      } else {
+        updatedCustomerPointsDemands.set(
+          demandAssignement.customerPointId,
+          demandAssignement.demands,
+        );
+      }
+    } else {
+      if (!updatedJunctionsDemands)
+        updatedJunctionsDemands = new Map(junctionsDemands);
+      const demands = junctionsDemands.get(demandAssignement.junctionId);
+      reverseAssignments.push({
+        junctionId: demandAssignement.junctionId,
+        demands: demands || [],
+      });
+      if (demandAssignement.demands.length === 0) {
+        updatedJunctionsDemands.delete(demandAssignement.junctionId);
+      } else {
+        updatedJunctionsDemands.set(
+          demandAssignement.junctionId,
+          demandAssignement.demands,
+        );
+      }
+    }
+  });
+  hydraulicModel.demands = {
+    ...hydraulicModel.demands,
+    junctions: updatedJunctionsDemands || junctionsDemands,
+    customerPoints: updatedCustomerPointsDemands || customersDemands,
+  };
+  return reverseAssignments;
+};
+
+const assertNoPutPatchOverlap = (moment: ModelMoment): void => {
+  const putAssets = moment.putAssets;
+  const patchAssets = moment.patchAssetsAttributes;
+  if (!putAssets?.length || !patchAssets?.length) return;
+
+  const putIds = new Set(putAssets.map((a) => a.id));
+  for (const patch of patchAssets) {
+    if (putIds.has(patch.id)) {
+      throw new Error(
+        `Moment "${moment.note}" has both putAssets and patchAssetsAttributes for asset ${patch.id}`,
+      );
+    }
   }
 };

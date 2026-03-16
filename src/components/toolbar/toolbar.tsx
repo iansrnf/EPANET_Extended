@@ -13,17 +13,11 @@ import {
   PanelLeftActiveIcon,
   PanelRightActiveIcon,
   PanelRightIcon,
-  PlayIcon,
-  PauseIcon,
 } from "src/icons";
 import Modes from "../modes";
 import { useAtomValue } from "jotai";
-import {
-  simulationAtom,
-  selectedFeaturesAtom,
-  selectionAtom,
-  splitsAtom,
-} from "src/state/jotai";
+import { splitsAtom } from "src/state/layout";
+import { simulationAtom } from "src/state/simulation";
 import {
   saveAsShortcut,
   saveShortcut,
@@ -48,12 +42,10 @@ import {
   toggleNetworkReviewShortcut,
   useToggleNetworkReview,
 } from "src/commands/toggle-network-review";
-import { ContextActions } from "../context-actions";
 import {
   toggleSidePanelShortcut,
   useToggleSidePanel,
 } from "src/commands/toggle-side-panel";
-import { useLiveSeriesStore } from "src/store/liveSeriesStore";
 
 export const Toolbar = ({
   readonly = false,
@@ -73,22 +65,13 @@ export const Toolbar = ({
   const { undo, redo } = useHistoryControl();
 
   const simulation = useAtomValue(simulationAtom);
-  const liveLogger = useLiveSeriesStore((s) => s.liveLogger);
-  const setLiveLogger = useLiveSeriesStore((s) => s.setLiveLogger);
-  const selectedWrappedFeatures = useAtomValue(selectedFeaturesAtom);
-  const selection = useAtomValue(selectionAtom);
-
   const isMdOrLarger = useBreakpoint("md");
   const isSmOrLarger = useBreakpoint("sm");
-
-  const shouldHideContextActions =
-    selectedWrappedFeatures.length === 1 &&
-    selection.type !== "singleCustomerPoint";
 
   return (
     <div
       className="relative flex flex-row items-center justify-between overflow-x-auto sm:overflow-visible
-          border-t border-gray-200 dark:border-gray-900 brand-divider brand-surface px-2 h-12"
+          border-t border-gray-200 dark:border-gray-900 px-2 h-12"
     >
       <div className="flex flex-row items-center justify-start">
         <CreateNewDropdown />
@@ -165,22 +148,10 @@ export const Toolbar = ({
         )}
         {isMdOrLarger && (
           <>
-            <Modes replaceGeometryForId={null} disabled={readonly} />
+            <Modes disabled={readonly} />
             <Divider />
           </>
         )}
-        <MenuAction
-          label={liveLogger.enabled ? "Pause live websocket" : "Play live websocket"}
-          role="button"
-          onClick={() => {
-            setLiveLogger((prev) => ({
-              ...prev,
-              enabled: !prev.enabled,
-            }));
-          }}
-        >
-          {liveLogger.enabled ? <PauseIcon /> : <PlayIcon />}
-        </MenuAction>
         <MenuAction
           label={translate("simulate")}
           role="button"
@@ -217,13 +188,6 @@ export const Toolbar = ({
         </MenuAction>
         <Divider />
         <OperationalDataDropdown />
-
-        {isMdOrLarger && !shouldHideContextActions && (
-          <>
-            <ContextActions />
-            <div className="flex-auto" />
-          </>
-        )}
       </div>
       <div className="flex flex-row items-center justify-end">
         {isSmOrLarger && <LayoutActions />}
@@ -233,9 +197,7 @@ export const Toolbar = ({
 };
 
 const Divider = () => {
-  return (
-    <div className="border-r-2 border-gray-100 h-8 mx-1 brand-divider"></div>
-  );
+  return <div className="border-r-2 border-gray-100 h-8 mx-1"></div>;
 };
 
 const LayoutActions = () => {

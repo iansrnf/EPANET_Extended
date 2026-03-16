@@ -1,4 +1,5 @@
 import type { HandlerContext, DragTarget } from "src/types";
+import type { Sel } from "src/selection/types";
 import type { FlatbushLike } from "src/lib/generate-flatbush-instance";
 import React, {
   useRef,
@@ -12,21 +13,17 @@ import React, {
 import clsx from "clsx";
 import throttle from "lodash/throttle";
 import mapboxgl /*, { LngLatBoundsLike } */ from "mapbox-gl";
+import { dataAtom, Data } from "src/state/data";
+import { projectSettingsAtom } from "src/state/project-settings";
+import { ephemeralStateAtom, EphemeralEditingState } from "src/state/drawing";
+import { stagingModelAtom } from "src/state/hydraulic-model";
 import {
-  ephemeralStateAtom,
-  modeAtom,
-  Mode,
-  dataAtom,
-  selectedFeaturesAtom,
   cursorStyleAtom,
-  Sel,
-  Data,
-  EphemeralEditingState,
   satelliteModeOnAtom,
   currentZoomAtom,
-  stagingModelAtom,
-  layerConfigAtom,
-} from "src/state/jotai";
+} from "src/state/map";
+import { modeAtom, Mode } from "src/state/mode";
+import { selectedFeaturesAtom } from "src/state/selection";
 import { MapEngine } from "./map-engine";
 import { EmptyIndex } from "src/lib/generate-flatbush-instance";
 import * as CM from "@radix-ui/react-context-menu";
@@ -57,7 +54,6 @@ import { supportEmail } from "src/global-config";
 import { MapHandlers } from "./types";
 import { PipeDrawingFloatingPanel } from "src/components/pipe-drawing-floating-panel";
 import { useIsSnapshotLocked } from "src/hooks/use-is-snapshot-locked";
-import { useLiveLoggerConnection } from "./use-live-logger-connection";
 mapboxgl.accessToken = env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 mapboxgl.setRTLTextPlugin(
@@ -81,7 +77,7 @@ const exposeAppStateInWindow = (
 const noop = () => null;
 const debug = isDebugOn
   ? (
-      e: mapboxgl.MapboxEvent,
+      e: mapboxgl.MapboxEvent<any>,
       mode: Mode,
       selection: Sel,
       dragTargetRef: MutableRefObject<DragTarget | null>,
@@ -100,12 +96,6 @@ const debug = isDebugOn
     }
   : noop;
 
-const PIPE_FLOW_ARROW_LAYERS = [
-  "main-features-pipe-arrows",
-  "delta-features-pipe-arrows",
-  "selected-pipe-arrows",
-] as const;
-
 export const MapCanvas = memo(function MapCanvas({
   setMap,
 }: {
@@ -114,6 +104,7 @@ export const MapCanvas = memo(function MapCanvas({
   const rep = usePersistence();
 
   const data = useAtomValue(dataAtom);
+  const { units } = useAtomValue(projectSettingsAtom);
   const ephemeralState = useAtomValue(ephemeralStateAtom);
   const [currentZoom, setCurrentZoom] = useAtom(currentZoomAtom);
 
@@ -138,7 +129,6 @@ export const MapCanvas = memo(function MapCanvas({
   const selection = data.selection;
   const mode = useAtomValue(modeAtom);
   const cursor = useAtomValue(cursorStyleAtom);
-  const layerConfigs = useAtomValue(layerConfigAtom);
   const isSnapshotLocked = useIsSnapshotLocked();
   const [initError, setInitError] = useState<boolean>(false);
 
@@ -165,12 +155,10 @@ export const MapCanvas = memo(function MapCanvas({
   );
 
   useMapStateUpdates(mapRef.current);
-  useLiveLoggerConnection();
 
   useEffect(() => {
     if (mapRef.current) return;
     if (!mapDivRef.current || !mapHandlers) return;
-    let animationFrameId: number | null = null;
 
     try {
       mapRef.current = new MapEngine({
@@ -179,28 +167,6 @@ export const MapCanvas = memo(function MapCanvas({
         onControlClick,
       });
       setMap(mapRef.current);
-
-      const map = mapRef.current.map;
-      let iconOffset = 0;
-      const animatePipeFlow = () => {
-        iconOffset += 0.1;
-        if (iconOffset > 2.5) iconOffset = -2.5;
-
-        const iconOffsetExpression: mapboxgl.Expression = [
-          "case",
-          ["<", ["coalesce", ["get", "rotation"], 0], 0],
-          ["literal", [-iconOffset, 0]],
-          ["literal", [iconOffset, 0]],
-        ];
-
-        for (const layerId of PIPE_FLOW_ARROW_LAYERS) {
-          if (map.getLayer(layerId)) {
-            map.setLayoutProperty(layerId, "icon-offset", iconOffsetExpression);
-          }
-        }
-        animationFrameId = requestAnimationFrame(animatePipeFlow);
-      };
-      animationFrameId = requestAnimationFrame(animatePipeFlow);
     } catch (error) {
       if (error && (error as Error).message.match(/webgl/i)) {
         setInitError(true);
@@ -210,9 +176,6 @@ export const MapCanvas = memo(function MapCanvas({
     }
 
     return () => {
-      if (animationFrameId !== null) {
-        cancelAnimationFrame(animationFrameId);
-      }
       setMap(null);
       if (mapRef.current && "remove" in mapRef.current) {
         mapRef.current.remove();
@@ -220,15 +183,6 @@ export const MapCanvas = memo(function MapCanvas({
       mapRef.current = null;
     };
   }, [mapRef, mapDivRef, setMap, onControlClick]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const isMapboxBasemap = [...layerConfigs.values()].some(
-      (layer) => layer.isBasemap && layer.type === "MAPBOX",
-    );
-    map.setMapboxLogoVisibility(isMapboxBasemap);
-  }, [layerConfigs]);
 
   if (isDebugOn) (window as any).mapEngine = mapRef.current;
 
@@ -238,6 +192,7 @@ export const MapCanvas = memo(function MapCanvas({
     mode,
     dragTargetRef,
     hydraulicModel,
+    units,
     folderMap,
     selection,
     map: mapRef.current!,
@@ -306,15 +261,13 @@ export const MapCanvas = memo(function MapCanvas({
 
       HANDLERS[mode.mode].double(e);
     },
-    onMoveEnd(e: mapboxgl.MapboxEvent) {
+    onMoveEnd(e: mapboxgl.MapboxEvent & mapboxgl.EventData) {
       debug(e, mode.mode, selection, dragTargetRef, "onMouseMoveEnd");
     },
-    onMove: throttle((e: mapboxgl.MapboxEvent) => {
+    onMove: throttle((e: mapboxgl.MapboxEvent & mapboxgl.EventData) => {
       debug(e, mode.mode, selection, dragTargetRef, "onMove");
       const center = e.target.getCenter().toArray();
-      const boundsObj = e.target.getBounds();
-      if (!boundsObj) return;
-      const bounds = boundsObj.toArray();
+      const bounds = e.target.getBounds().toArray();
       return {
         center,
         bounds,
@@ -421,9 +374,18 @@ export const MapCanvas = memo(function MapCanvas({
     if (cursor === "crosshair-add") return "cursor-crosshair-add";
     if (cursor === "crosshair-subtract") return "cursor-crosshair-subtract";
 
+    if (cursor === "pointer-add") return "cursor-pointer-add";
+    if (cursor === "pointer-subtract") return "cursor-pointer-subtract";
+
     if (cursor === "move") return "cursor-move";
 
-    if (mode.mode !== Mode.NONE) return "cursor-crosshair";
+    if (
+      mode.mode !== Mode.NONE &&
+      mode.mode !== Mode.BOUNDARY_TRACE_SELECT &&
+      mode.mode !== Mode.UPSTREAM_TRACE_SELECT &&
+      mode.mode !== Mode.DOWNSTREAM_TRACE_SELECT
+    )
+      return "cursor-crosshair";
 
     if (cursor === "pointer") return "placemark-cursor-pointer";
 

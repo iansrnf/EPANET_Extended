@@ -23,7 +23,8 @@ import {
 } from "src/map/symbology/range-color-rule";
 import { useTranslate } from "src/hooks/use-translate";
 import { useCallback, useMemo, useState } from "react";
-import { simulationResultsAtom, stagingModelAtom } from "src/state/jotai";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { simulationResultsAtom } from "src/state/simulation";
 import {
   getSortedSimulationValues,
   isSimulationProperty,
@@ -32,12 +33,11 @@ import {
 import { Selector } from "src/components/form/selector";
 import * as d3 from "d3-array";
 import { useUserTracking } from "src/infra/user-tracking";
-import { useSymbologyState } from "src/state/symbology";
+import { useSymbologyState } from "src/state/map-symbology";
 import { LinkSymbology, NodeSymbology } from "src/map/symbology";
 import { getSortedValues } from "src/hydraulic-model/assets-map";
 import { notify } from "./notifications";
 import { ErrorIcon, AddIcon, DeleteIcon, RefreshIcon } from "src/icons";
-import { Unit, convertTo } from "src/quantity";
 
 type ErrorType = "rampShouldBeAscending" | "notEnoughData";
 
@@ -47,7 +47,7 @@ export const RangeColorRuleEditor = ({
   geometryType?: "node" | "link";
 }) => {
   const translate = useTranslate();
-  const { assets, units } = useAtomValue(stagingModelAtom);
+  const { assets } = useAtomValue(stagingModelAtom);
   const {
     linkSymbology,
     nodeSymbology,
@@ -85,36 +85,18 @@ export const RangeColorRuleEditor = ({
   const sortedData = useMemo(() => {
     const property = initialColorRule.property;
     const absValues = Boolean(initialColorRule.absValues);
-    const elevationToPsi = (value: number, sourceUnit: Unit): number => {
-      if (sourceUnit === "m") return value * 1.42233433;
-      if (sourceUnit === "ft") return value * 0.4333;
-      return value;
-    };
-    const mapSymbologyUnit = (values: number[]) => {
-      if (property === "pressure" && initialColorRule.unit === "mwc") {
-        return values.map((value) => convertTo({ value, unit: "psi" }, "mwc"));
-      }
-      if (property === "elevation" && initialColorRule.unit === "psi") {
-        return values.map((value) => elevationToPsi(value, units.elevation));
-      }
-      return values;
-    };
 
     if (simulationResults && isSimulationProperty(property)) {
-      return mapSymbologyUnit(
-        getSortedSimulationValues(simulationResults, property, {
-          absValues,
-        }),
-      );
+      return getSortedSimulationValues(simulationResults, property, {
+        absValues,
+      });
     }
 
-    return mapSymbologyUnit(getSortedValues(assets, property, { absValues }));
+    return getSortedValues(assets, property, { absValues });
   }, [
     assets,
-    units.elevation,
     initialColorRule.property,
     initialColorRule.absValues,
-    initialColorRule.unit,
     simulationResults,
   ]);
 

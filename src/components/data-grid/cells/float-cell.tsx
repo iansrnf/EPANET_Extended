@@ -1,23 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import clsx from "clsx";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import {
   normalizeNumericInput,
   parseNumericInput,
 } from "src/components/form/numeric-input-utils";
-import { CellProps, GridColumn } from "../types";
+import { localizeDecimal } from "src/infra/i18n/numbers";
+import { CellProps, EditMode, GridColumn } from "../types";
 
 function formatLocaleNumber(value: number | null | undefined): string {
   if (value === null || value === undefined) return "";
-
-  const strValue = value.toString();
-  const decimalIndex = strValue.indexOf(".");
-  const decimalPlaces =
-    decimalIndex >= 0 ? strValue.length - decimalIndex - 1 : 0;
-
-  return new Intl.NumberFormat(undefined, {
-    minimumFractionDigits: decimalPlaces,
-    maximumFractionDigits: decimalPlaces,
-    useGrouping: true,
-  }).format(value);
+  return localizeDecimal(value, { decimals: 9 });
 }
 
 type FloatCellProps = CellProps<number | null> & {
@@ -33,16 +25,27 @@ export function FloatCell({
 }: FloatCellProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [editValue, setEditValue] = useState("");
+  const [hasError, setHasError] = useState(false);
   const shouldCommitOnBlurRef = useRef(false);
+  const [prevEditMode, setPrevEditMode] = useState<EditMode>(false);
 
-  useEffect(() => {
+  if (editMode && editMode !== prevEditMode) {
+    setPrevEditMode(editMode);
+    setEditValue(formatLocaleNumber(value));
+    setHasError(false);
+    shouldCommitOnBlurRef.current = true;
+  }
+  if (!editMode && prevEditMode) {
+    setPrevEditMode(false);
+    setHasError(false);
+  }
+
+  useLayoutEffect(() => {
     if (editMode) {
-      shouldCommitOnBlurRef.current = true;
-      setEditValue(formatLocaleNumber(value));
       inputRef.current?.focus();
       inputRef.current?.select();
     }
-  }, [editMode, value]);
+  }, [editMode]);
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -53,6 +56,9 @@ export function FloatCell({
       if (newValue === editValue) return;
       if (rawValue.length > 0 && newValue.length === 0) return;
       setEditValue(newValue);
+      setHasError(
+        newValue.trim() !== "" && parseNumericInput(newValue) === null,
+      );
     },
     [editValue],
   );
@@ -76,6 +82,7 @@ export function FloatCell({
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter") {
         e.preventDefault();
+        shouldCommitOnBlurRef.current = false;
         commit();
       } else if (e.key === "Escape") {
         e.preventDefault();
@@ -96,7 +103,14 @@ export function FloatCell({
   const formattedValue = formatLocaleNumber(value);
 
   return (
-    <div className="w-full h-full flex items-center">
+    <div
+      className={clsx(
+        "w-full h-full flex items-center",
+        hasError &&
+          editMode &&
+          "z-[2] bg-orange-100 dark:bg-orange-900/30 ring-1 ring-orange-500 dark:ring-orange-700",
+      )}
+    >
       <input
         ref={inputRef}
         type="text"

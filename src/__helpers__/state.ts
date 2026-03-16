@@ -1,35 +1,35 @@
 import { createStore } from "jotai";
 import { HydraulicModelBuilder } from "./hydraulic-model-builder";
 import { MomentLog } from "src/lib/persistence/moment-log";
+import { dataAtom, nullData } from "src/state/data";
+import { FileInfo, fileInfoAtom } from "src/state/file-system";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { layerConfigAtom } from "src/state/map";
+import { modeAtom } from "src/state/mode";
+import { momentLogAtom } from "src/state/model-changes";
 import {
-  FileInfo,
-  Sel,
   SimulationFinished,
   SimulationState,
-  Store,
-  dataAtom,
-  fileInfoAtom,
   initialSimulationState,
-  layerConfigAtom,
-  momentLogAtom,
-  nullData,
   simulationAtom,
-  modeAtom,
-  stagingModelAtom,
   simulationResultsAtom,
-} from "src/state/jotai";
+} from "src/state/simulation";
+import { simulationSettingsAtom } from "src/state/simulation-settings";
+import { Store } from "src/state";
 import type { ResultsReader } from "src/simulation/results-reader";
 import { Mode } from "src/state/mode";
 import { Asset, HydraulicModel } from "src/hydraulic-model";
 import { ExportOptions } from "src/types/export";
 import { ILayerConfig, LayerConfigMap } from "src/types";
+import type { Sel } from "src/selection/types";
 import { nanoid } from "nanoid";
 import { LinkSymbology, NodeSymbology } from "src/map/symbology";
+import type { SimulationSettings } from "src/simulation/simulation-settings";
 import {
   RangeColorRule,
   nullRangeColorRule,
 } from "src/map/symbology/range-color-rule";
-import { linkSymbologyAtom, nodeSymbologyAtom } from "src/state/symbology";
+import { linkSymbologyAtom, nodeSymbologyAtom } from "src/state/map-symbology";
 import {
   LabelRule,
   nullSymbologySpec,
@@ -50,6 +50,7 @@ export const setInitialState = ({
   locale = "en",
   mode = Mode.NONE,
   simulationResults = null,
+  simulationSettings,
 }: {
   store?: Store;
   hydraulicModel?: HydraulicModel;
@@ -63,6 +64,7 @@ export const setInitialState = ({
   locale?: Locale;
   mode?: Mode;
   simulationResults?: ResultsReader | null;
+  simulationSettings?: SimulationSettings;
 } = {}): Store => {
   store.set(stagingModelAtom, hydraulicModel);
   store.set(dataAtom, {
@@ -79,6 +81,9 @@ export const setInitialState = ({
   store.set(modeAtom, { mode });
   if (simulationResults) {
     store.set(simulationResultsAtom, simulationResults);
+  }
+  if (simulationSettings) {
+    store.set(simulationSettingsAtom, simulationSettings);
   }
 
   return store;
@@ -124,6 +129,7 @@ export const aSimulationSuccess = ({
     status: "success",
     report,
     modelVersion,
+    settingsVersion: "",
   };
 };
 
@@ -135,6 +141,7 @@ export const aSimulationFailure = ({
     status: "failure",
     report,
     modelVersion,
+    settingsVersion: "",
   };
 };
 
@@ -218,17 +225,50 @@ export const nullSelection: Sel = { type: "none" };
 export type SimulationData = {
   pipes?: Record<
     number,
-    { flow?: number; velocity?: number; status?: "open" | "closed" }
+    Partial<{
+      flow: number;
+      velocity: number;
+      headloss: number;
+      unitHeadloss: number;
+      status: "open" | "closed";
+    }>
   >;
   junctions?: Record<
     number,
-    { pressure?: number; head?: number; demand?: number }
+    Partial<{ pressure: number; head: number; demand: number }>
   >;
-  pumps?: Record<number, { status?: "on" | "off" }>;
-  valves?: Record<number, { status?: "active" | "open" | "closed" }>;
+  pumps?: Record<
+    number,
+    Partial<{
+      flow: number;
+      headloss: number;
+      status: "on" | "off";
+      statusWarning: "cannot-deliver-flow" | "cannot-deliver-head" | null;
+    }>
+  >;
+  valves?: Record<
+    number,
+    Partial<{
+      flow: number;
+      velocity: number;
+      headloss: number;
+      status: "active" | "open" | "closed";
+      statusWarning: "cannot-deliver-flow" | "cannot-deliver-pressure" | null;
+    }>
+  >;
   tanks?: Record<
     number,
-    { pressure?: number; head?: number; level?: number; volume?: number }
+    Partial<{
+      pressure: number;
+      head: number;
+      netFlow: number;
+      level: number;
+      volume: number;
+    }>
+  >;
+  reservoirs?: Record<
+    number,
+    Partial<{ pressure: number; head: number; netFlow: number }>
   >;
 };
 
@@ -242,8 +282,8 @@ export const createMockResultsReader = (
       type: "pipe",
       flow: sim.flow ?? 0,
       velocity: sim.velocity ?? 0,
-      headloss: 0,
-      unitHeadloss: 0,
+      headloss: sim.headloss ?? 0,
+      unitHeadloss: sim.unitHeadloss ?? 0,
       status: sim.status ?? "open",
     };
   },
@@ -262,10 +302,10 @@ export const createMockResultsReader = (
     if (!sim) return null;
     return {
       type: "pump",
-      flow: 0,
-      headloss: 0,
+      flow: sim.flow ?? 0,
+      headloss: sim.headloss ?? 0,
       status: sim.status ?? "on",
-      statusWarning: null,
+      statusWarning: sim.statusWarning ?? null,
     };
   },
   getValve: (id) => {
@@ -273,11 +313,11 @@ export const createMockResultsReader = (
     if (!sim) return null;
     return {
       type: "valve",
-      flow: 0,
-      velocity: 0,
-      headloss: 0,
+      flow: sim.flow ?? 0,
+      velocity: sim.velocity ?? 0,
+      headloss: sim.headloss ?? 0,
       status: sim.status ?? "active",
-      statusWarning: null,
+      statusWarning: sim.statusWarning ?? null,
     };
   },
   getTank: (id) => {
@@ -287,8 +327,19 @@ export const createMockResultsReader = (
       type: "tank",
       pressure: sim.pressure ?? 0,
       head: sim.head ?? 0,
+      netFlow: sim.netFlow ?? 0,
       level: sim.level ?? 0,
       volume: sim.volume ?? 0,
+    };
+  },
+  getReservoir: (id) => {
+    const sim = data.reservoirs?.[id];
+    if (!sim) return null;
+    return {
+      type: "reservoir",
+      pressure: sim.pressure ?? 0,
+      head: sim.head ?? 0,
+      netFlow: sim.netFlow ?? 0,
     };
   },
   getAllPressures: () =>
@@ -301,4 +352,5 @@ export const createMockResultsReader = (
   getAllVelocities: () =>
     Object.values(data.pipes ?? {}).map((p) => p.velocity ?? 0),
   getAllUnitHeadlosses: () => [],
+  getPumpEnergy: () => null,
 });

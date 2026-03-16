@@ -2,18 +2,16 @@ import { CloseIcon, InfoIcon } from "src/icons";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import clsx from "clsx";
 import { useAtom, useAtomValue } from "jotai";
-import {
-  dialogAtom,
-  ephemeralStateAtom,
-  hideHintsAtom,
-  selectionAtom,
-  simulationAtom,
-  stagingModelAtom,
-} from "src/state/jotai";
+import { dialogAtom } from "src/state/dialog";
+import { ephemeralStateAtom } from "src/state/drawing";
+import { stagingModelAtom } from "src/state/hydraulic-model";
+import { selectionAtom } from "src/state/selection";
+import { simulationAtom } from "src/state/simulation";
+import { hideHintsAtom } from "src/state/user-settings";
 import { Mode, modeAtom } from "src/state/mode";
 import { localizeKeybinding } from "src/infra/i18n";
 import { useTranslate } from "src/hooks/use-translate";
-import { symbologyAtom } from "src/state/symbology";
+import { symbologyAtom } from "src/state/map-symbology";
 import { useIsSnapshotLocked } from "src/hooks/use-is-snapshot-locked";
 import { PropsWithChildren } from "react";
 
@@ -155,6 +153,14 @@ export function Hints() {
             />
           );
         }
+      }
+      if (selection.type === "singleCustomerPoint" && !isSnapshotLocked) {
+        return (
+          <Hint
+            hintId={"DRAG_CUSTOMER_POINT"}
+            text={translate("onboardingMoveCustomerPoint")}
+          />
+        );
       }
       break;
     }
@@ -371,6 +377,31 @@ export function Hints() {
             localizeKeybinding("shift"),
             localizeKeybinding("alt"),
           )}
+        />
+      );
+    }
+    case Mode.BOUNDARY_TRACE_SELECT: {
+      return (
+        <Hint
+          hintId={"TRACE_BOUNDARY"}
+          text={translate("traceSelection.boundaryHint")}
+          secondaryText={translate("traceSelection.boundarySecondaryHint")}
+        />
+      );
+    }
+    case Mode.UPSTREAM_TRACE_SELECT: {
+      return (
+        <Hint
+          hintId={"TRACE_UPSTREAM"}
+          text={translate("traceSelection.upstreamHint")}
+        />
+      );
+    }
+    case Mode.DOWNSTREAM_TRACE_SELECT: {
+      return (
+        <Hint
+          hintId={"TRACE_DOWNSTREAM"}
+          text={translate("traceSelection.downstreamHint")}
         />
       );
     }

@@ -1,4 +1,5 @@
 export type { HydraulicModel } from "./hydraulic-model";
+export type { Projection } from "src/projections";
 export {
   initializeHydraulicModel,
   updateHydraulicModelAssets,
@@ -15,12 +16,15 @@ export type { AssetId } from "./assets-map";
 export { filterAssets, getNode, AssetsMap } from "./assets-map";
 export type {
   ModelOperation,
+  OptionalMomentFields,
   ModelMoment,
   ReverseMoment,
+  AssetPatch,
 } from "./model-operation";
 export { BaseAsset } from "./asset-types";
 export type {
   AssetStatus,
+  AssetPropertiesMap,
   PipeProperties,
   NodeAsset,
   LinkAsset,
@@ -30,19 +34,32 @@ export type {
   Pipe,
   Pump,
   Tank,
+  Valve,
 } from "./asset-types";
+export { calculateAverageHead } from "./asset-types";
 export { Topology } from "./topology";
 
 export type { HeadlossFormula } from "./asset-types/pipe";
 export { headlossFormulas } from "./asset-types/pipe";
 export type { LinkType, NodeType, AssetType } from "./asset-types/types";
-export type { EPSTiming } from "./eps-timing";
 export type {
   PatternMultipliers,
   PatternId,
-  DemandPatterns,
-  Demands,
-  JunctionDemand,
+  PatternType,
+  Pattern,
+  Patterns,
+} from "./patterns";
+export {
+  getNextPatternId,
+  deepClonePatterns,
+  differentPatternsCount,
+} from "./patterns";
+export type { Demands, Demand } from "./demands";
+export {
+  createEmptyDemands,
+  getJunctionDemands,
+  getCustomerPointDemands,
+  calculateAverageDemand,
+  getTotalCustomerDemand,
 } from "./demands";
-export type { IdGenerator } from "./id-generator";
 export { applyMomentToModel } from "./mutations/apply-moment";

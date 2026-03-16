@@ -19,24 +19,32 @@ type StyleOptions = {
   disableHoverEffects?: boolean;
   variant?: "default" | "warning";
 };
-export const triggerStylesFor = (styleOptions: StyleOptions) => {
+export const triggerStylesFor = (
+  styleOptions: StyleOptions,
+  { disabled = false } = {},
+) => {
   const effectiveStyleOptions = { ...defaultStyleOptions, ...styleOptions };
   const isWarning = effectiveStyleOptions.variant === "warning";
   return clsx(
-    "flex items-center gap-x-2 text-gray-700 w-full",
-    !effectiveStyleOptions.disableHoverEffects &&
+    "flex items-center gap-x-2 w-full",
+    disabled
+      ? "text-gray-500 dark:text-gray-500 cursor-not-allowed bg-gray-100 dark:bg-gray-800"
+      : "text-gray-700 bg-white dark:bg-gray-900",
+    !disabled &&
+      !effectiveStyleOptions.disableHoverEffects &&
       "focus:justify-between hover:border hover:rounded-sm hover:border-gray-200 hover:justify-between min-w-[90px]",
     "border rounded-sm justify-between",
     isWarning
       ? "border-orange-500 dark:border-orange-700"
       : {
-          "border-gray-300": effectiveStyleOptions.border,
+          "border-gray-200": effectiveStyleOptions.border,
           "border-transparent": !effectiveStyleOptions.border,
         },
     `px-${effectiveStyleOptions.paddingX} py-${effectiveStyleOptions.paddingY}`,
     effectiveStyleOptions.textSize,
     "pl-min-2",
-    !effectiveStyleOptions.disableHoverEffects &&
+    !disabled &&
+      !effectiveStyleOptions.disableHoverEffects &&
       (isWarning
         ? "focus:ring-inset focus:ring-1 focus:ring-orange-500 dark:focus:ring-orange-700"
         : "focus:ring-inset focus:ring-1 focus:ring-purple-500 focus:bg-purple-300/10"),
@@ -109,9 +117,11 @@ type SelectorPropsBase<T extends string | number> = {
   tabIndex?: number;
   styleOptions?: StyleOptions;
   listClassName?: string;
+  stickyGroupClassName?: string;
   disableFocusOnClose?: boolean;
   onDropdownInteraction?: () => void;
   disabled?: boolean;
+  stickyFirstGroup?: boolean;
 };
 
 type SelectorPropsNonNullable<T extends string | number> =
@@ -150,10 +160,12 @@ export function Selector<T extends string | number>({
   disableFocusOnClose = false,
   styleOptions = {},
   listClassName,
+  stickyGroupClassName,
   nullable = false,
   placeholder,
   onDropdownInteraction,
   disabled = false,
+  stickyFirstGroup = false,
 }: SelectorProps<T>) {
   const allOptions = useMemo(() => flattenOptions(options), [options]);
   const optionGroups = useMemo(() => normalizeGroups(options), [options]);
@@ -166,7 +178,8 @@ export function Selector<T extends string | number>({
 
   const handleOpenChange = (open: boolean) => {
     onDropdownInteraction?.();
-    if (open && allOptions.length <= 1) {
+    const minOptions = stickyFirstGroup ? 1 : 2;
+    if (open && allOptions.length < minOptions) {
       return;
     }
     setOpen(open);
@@ -180,14 +193,11 @@ export function Selector<T extends string | number>({
   };
 
   const triggerStyles = useMemo(() => {
-    return clsx(
-      triggerStylesFor(styleOptions),
-      disabled && "opacity-60 cursor-not-allowed bg-gray-50 dark:bg-gray-800",
-    );
+    return triggerStylesFor(styleOptions, { disabled });
   }, [styleOptions, disabled]);
 
   const contentStyles = useMemo(() => {
-    return `bg-white w-full border ${effectiveStyleOptions.textSize} rounded-md shadow-md z-50`;
+    return `bg-white min-w-[var(--radix-select-trigger-width)] border ${effectiveStyleOptions.textSize} rounded-md shadow-md z-50 overflow-hidden`;
   }, [effectiveStyleOptions.textSize]);
 
   const handleValueChange = (newValue: string) => {
@@ -220,7 +230,12 @@ export function Selector<T extends string | number>({
           tabIndex={tabIndex}
           className={triggerStyles}
         >
-          <div className="text-nowrap overflow-hidden text-ellipsis">
+          <div
+            className={clsx(
+              "text-nowrap overflow-hidden text-ellipsis w-full text-left",
+              selected == null && nullable && "italic text-gray-500",
+            )}
+          >
             <Select.Value placeholder={nullable ? placeholder : undefined} />
           </div>
           <Select.Icon className="px-1">
@@ -230,40 +245,77 @@ export function Selector<T extends string | number>({
 
         <Select.Portal>
           <Select.Content
+            position="popper"
+            sideOffset={4}
             onKeyDown={handleKeyDown}
             onCloseAutoFocus={(e) => disableFocusOnClose && e.preventDefault()}
             className={contentStyles}
           >
-            <Select.Viewport className="p-1">
-              {optionGroups.map((group, groupIndex) => (
-                <Select.Group key={groupIndex}>
-                  {groupIndex > 0 && (
-                    <Select.Separator className="h-px bg-gray-200 my-1" />
-                  )}
-                  {group.map((option) => (
-                    <Select.Item
-                      key={String(option.value)}
-                      value={String(option.value)}
-                      disabled={option.disabled}
-                      className={clsx([
-                        "flex items-center justify-between gap-4 px-2 py-2 focus:bg-purple-300/40",
-                        {
-                          "cursor-pointer": !option.disabled,
-                          "text-gray-400": !!option.disabled,
-                        },
-                        listClassName,
-                      ])}
-                    >
-                      <Select.ItemText>
-                        {option.description ? option.description : option.label}
-                      </Select.ItemText>
-                      <Select.ItemIndicator className="ml-auto">
-                        <CheckIcon className="text-purple-700" />
-                      </Select.ItemIndicator>
-                    </Select.Item>
-                  ))}
-                </Select.Group>
-              ))}
+            {stickyFirstGroup && optionGroups.length > 1 && (
+              <Select.Group className="p-1 pb-0">
+                {optionGroups[0].map((option) => (
+                  <Select.Item
+                    key={String(option.value)}
+                    value={String(option.value)}
+                    disabled={option.disabled}
+                    className={clsx([
+                      "flex items-center justify-between gap-4 px-2 py-2 focus:bg-purple-300/40",
+                      {
+                        "cursor-pointer": !option.disabled,
+                        "text-gray-400": !!option.disabled,
+                      },
+                      stickyGroupClassName ?? listClassName,
+                    ])}
+                  >
+                    <Select.ItemText>
+                      {option.description ? option.description : option.label}
+                    </Select.ItemText>
+                    <Select.ItemIndicator className="ml-auto">
+                      <CheckIcon className="text-purple-700" />
+                    </Select.ItemIndicator>
+                  </Select.Item>
+                ))}
+                {optionGroups.slice(1).some((g) => g.length > 0) && (
+                  <Select.Separator className="h-px bg-gray-200 mt-1" />
+                )}
+              </Select.Group>
+            )}
+            <Select.Viewport className="max-h-60 overflow-y-auto scroll-shadows">
+              <div className="p-1">
+                {(stickyFirstGroup ? optionGroups.slice(1) : optionGroups).map(
+                  (group, groupIndex) => (
+                    <Select.Group key={groupIndex}>
+                      {groupIndex > 0 && (
+                        <Select.Separator className="h-px bg-gray-200 my-1" />
+                      )}
+                      {group.map((option) => (
+                        <Select.Item
+                          key={String(option.value)}
+                          value={String(option.value)}
+                          disabled={option.disabled}
+                          className={clsx([
+                            "flex items-center justify-between gap-4 px-2 py-2 focus:bg-purple-300/40",
+                            {
+                              "cursor-pointer": !option.disabled,
+                              "text-gray-400": !!option.disabled,
+                            },
+                            listClassName,
+                          ])}
+                        >
+                          <Select.ItemText>
+                            {option.description
+                              ? option.description
+                              : option.label}
+                          </Select.ItemText>
+                          <Select.ItemIndicator className="ml-auto">
+                            <CheckIcon className="text-purple-700" />
+                          </Select.ItemIndicator>
+                        </Select.Item>
+                      ))}
+                    </Select.Group>
+                  ),
+                )}
+              </div>
             </Select.Viewport>
           </Select.Content>
         </Select.Portal>

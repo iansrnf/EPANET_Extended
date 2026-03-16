@@ -1,9 +1,6 @@
-import { DialogHeader } from "src/components/dialog";
+import { BaseDialog, SimpleDialogActions } from "src/components/dialog";
 import { useTranslate } from "src/hooks/use-translate";
-import { Button } from "../elements";
-import { DialogButtons } from "src/components/dialog";
 import { useSaveInp } from "src/commands/save-inp";
-import { HelpIcon } from "src/icons";
 
 export const UnsavedChangesDialog = ({
   onContinue,
@@ -29,32 +26,26 @@ export const UnsavedChangesDialog = ({
   };
 
   return (
-    <>
-      <DialogHeader title={translate("unsavedChanges")} titleIcon={HelpIcon} />
-      <div className="text-sm">
+    <BaseDialog
+      title={translate("unsavedChanges")}
+      size="md"
+      isOpen={true}
+      onClose={onClose}
+      footer={
+        <SimpleDialogActions
+          action={translate("saveAndContinue")}
+          onAction={() => void handleSaveAndContinue()}
+          secondary={{
+            action: translate("dialog.discardChanges"),
+            onClick: handleDiscardChanges,
+          }}
+          onClose={onClose}
+        />
+      }
+    >
+      <div className="p-4 text-sm">
         <p>{translate("unsavedChangesQuestion")}</p>
       </div>
-      <DialogButtons>
-        <Button
-          type="submit"
-          autoFocus
-          variant="primary"
-          aria-label={translate("saveAndContinue")}
-          onClick={handleSaveAndContinue}
-        >
-          {translate("saveAndContinue")}
-        </Button>
-        <Button
-          type="submit"
-          aria-label={translate("discardChanges")}
-          onClick={handleDiscardChanges}
-        >
-          {translate("discardChanges")}
-        </Button>
-        <Button type="submit" onClick={onClose}>
-          {translate("cancel")}
-        </Button>
-      </DialogButtons>
-    </>
+    </BaseDialog>
   );
 };

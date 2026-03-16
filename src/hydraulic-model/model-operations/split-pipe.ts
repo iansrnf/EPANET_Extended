@@ -6,8 +6,9 @@ import { CustomerPoint } from "../customer-points";
 import { findJunctionForCustomerPoint } from "../utilities/junction-assignment";
 import { lineString, point } from "@turf/helpers";
 import { findNearestPointOnLine } from "src/lib/geometry";
-import measureLength from "@turf/length";
 import { Position } from "src/types";
+import { computeLinkLength } from "../asset-types/link";
+import { Unit } from "src/quantity";
 
 type CopyablePipeProperties = Pick<
   PipeProperties,
@@ -18,17 +19,23 @@ type CopyablePipePropertyKeys = keyof CopyablePipeProperties;
 type SplitPipeInput = {
   pipe: Pipe;
   splits: NodeAsset[];
+  lengthUnit: Unit;
 };
 
 export const splitPipe: ModelOperation<SplitPipeInput> = (
   hydraulicModel,
-  { pipe, splits },
+  { pipe, splits, lengthUnit },
 ) => {
   if (splits.length === 0) {
     throw new Error("At least one split is required");
   }
 
-  const newPipes = splitPipeIteratively(hydraulicModel, pipe, splits);
+  const newPipes = splitPipeIteratively(
+    hydraulicModel,
+    pipe,
+    splits,
+    lengthUnit,
+  );
 
   const reconnectedCustomerPoints = updateCustomerPoints(
     hydraulicModel,
@@ -111,6 +118,7 @@ const splitPipeIteratively = (
   hydraulicModel: HydraulicModel,
   originalPipe: Pipe,
   splits: NodeAsset[],
+  lengthUnit: Unit,
 ): Pipe[] => {
   if (splits.length === 0) {
     return [originalPipe];
@@ -133,6 +141,7 @@ const splitPipeIteratively = (
       hydraulicModel,
       targetPipe,
       splitToProcess,
+      lengthUnit,
     );
 
     currentPipes.splice(targetPipeIndex, 1, pipe1, pipe2);
@@ -166,6 +175,7 @@ const splitPipeAtPoint = (
   hydraulicModel: HydraulicModel,
   pipe: Pipe,
   split: NodeAsset,
+  lengthUnit: Unit,
 ): [Pipe, Pipe] => {
   const matchingVertexIndex = findMatchingVertexIndex(
     pipe.coordinates,
@@ -173,11 +183,23 @@ const splitPipeAtPoint = (
   );
 
   if (isValidVertexSplit(matchingVertexIndex, pipe.coordinates.length)) {
-    return splitPipeAtVertex(hydraulicModel, pipe, split, matchingVertexIndex);
+    return splitPipeAtVertex(
+      hydraulicModel,
+      pipe,
+      split,
+      matchingVertexIndex,
+      lengthUnit,
+    );
   }
 
   const segmentIndex = findNearestSegment(pipe.coordinates, split.coordinates);
-  return splitPipeAtNewPoint(hydraulicModel, pipe, split, segmentIndex);
+  return splitPipeAtNewPoint(
+    hydraulicModel,
+    pipe,
+    split,
+    segmentIndex,
+    lengthUnit,
+  );
 };
 
 const splitPipeAtVertex = (
@@ -185,11 +207,19 @@ const splitPipeAtVertex = (
   pipe: Pipe,
   split: NodeAsset,
   vertexIndex: number,
+  lengthUnit: Unit,
 ): [Pipe, Pipe] => {
   const coords1 = pipe.coordinates.slice(0, vertexIndex + 1);
   const coords2 = pipe.coordinates.slice(vertexIndex);
 
-  return buildPipePair(hydraulicModel, pipe, split, coords1, coords2);
+  return buildPipePair(
+    hydraulicModel,
+    pipe,
+    split,
+    coords1,
+    coords2,
+    lengthUnit,
+  );
 };
 
 const splitPipeAtNewPoint = (
@@ -197,6 +227,7 @@ const splitPipeAtNewPoint = (
   pipe: Pipe,
   split: NodeAsset,
   segmentIndex: number,
+  lengthUnit: Unit,
 ): [Pipe, Pipe] => {
   const coords1 = [
     ...pipe.coordinates.slice(0, segmentIndex + 1),
@@ -207,7 +238,14 @@ const splitPipeAtNewPoint = (
     ...pipe.coordinates.slice(segmentIndex + 1),
   ];
 
-  return buildPipePair(hydraulicModel, pipe, split, coords1, coords2);
+  return buildPipePair(
+    hydraulicModel,
+    pipe,
+    split,
+    coords1,
+    coords2,
+    lengthUnit,
+  );
 };
 
 const findMatchingVertexIndex = (
@@ -262,6 +300,7 @@ const buildPipePair = (
   split: NodeAsset,
   coords1: Position[],
   coords2: Position[],
+  lengthUnit: Unit,
 ): [Pipe, Pipe] => {
   const [originalStartNodeId, originalEndNodeId] = originalPipe.connections;
 
@@ -281,8 +320,8 @@ const buildPipePair = (
 
   copyPipeProperties(originalPipe, pipe1);
   copyPipeProperties(originalPipe, pipe2);
-  updatePipeLength(pipe1);
-  updatePipeLength(pipe2);
+  updatePipeLength(pipe1, lengthUnit);
+  updatePipeLength(pipe2, lengthUnit);
 
   return [pipe1, pipe2];
 };
@@ -305,9 +344,8 @@ const copyPipeProperties = (source: Pipe, target: Pipe) => {
   }
 };
 
-const updatePipeLength = (pipe: Pipe) => {
-  const length = measureLength(pipe.feature, { units: "meters" });
-  pipe.setProperty("length", length);
+const updatePipeLength = (pipe: Pipe, lengthUnit: Unit) => {
+  pipe.setProperty("length", computeLinkLength(pipe, lengthUnit));
 };
 
 const findTargetPipeForCustomerPoint = (

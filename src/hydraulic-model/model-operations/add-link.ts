@@ -10,6 +10,8 @@ import { HydraulicModel } from "../hydraulic-model";
 import { CustomerPoint } from "../customer-points";
 import { inferNodeIsActive } from "../utilities/active-topology";
 import { copyPipePropertiesToLink } from "./mutations/copy-link-properties";
+import { computeLinkLength } from "../asset-types/link";
+import { Unit } from "src/quantity";
 
 type InputData = {
   link: LinkAsset;
@@ -17,10 +19,11 @@ type InputData = {
   endNode: NodeAsset;
   startPipeId?: AssetId;
   endPipeId?: AssetId;
+  lengthUnit: Unit;
 };
 
 export const addLink: ModelOperation<InputData> = (hydraulicModel, data) => {
-  const { link, startNode, endNode, startPipeId, endPipeId } = data;
+  const { link, startNode, endNode, startPipeId, endPipeId, lengthUnit } = data;
   const linkCopy = link.copy();
   const startNodeCopy = startNode.copy();
   const endNodeCopy = endNode.copy();
@@ -34,6 +37,7 @@ export const addLink: ModelOperation<InputData> = (hydraulicModel, data) => {
   linkCopy.setConnections(startNodeCopy.id, endNodeCopy.id);
   forceSpatialConnectivity(linkCopy, startNodeCopy, endNodeCopy);
   removeRedundantVertices(linkCopy);
+  linkCopy.setProperty("length", computeLinkLength(linkCopy, lengthUnit));
 
   linkCopy.setProperty(
     "isActive",
@@ -73,6 +77,7 @@ export const addLink: ModelOperation<InputData> = (hydraulicModel, data) => {
     startPipeId,
     endPipeId,
     hydraulicModel,
+    lengthUnit,
   });
 
   return {
@@ -183,6 +188,7 @@ const handlePipeSplits = ({
   startPipeId,
   endPipeId,
   hydraulicModel,
+  lengthUnit,
 }: {
   link: LinkAsset;
   startNode: NodeAsset;
@@ -190,6 +196,7 @@ const handlePipeSplits = ({
   startPipeId?: AssetId;
   endPipeId?: AssetId;
   hydraulicModel: HydraulicModel;
+  lengthUnit: Unit;
 }): {
   putAssets: Asset[];
   deleteAssets: AssetId[];
@@ -236,6 +243,7 @@ const handlePipeSplits = ({
     const splitResult = splitPipe(hydraulicModel, {
       pipe,
       splits: splitConfig.splitNodes,
+      lengthUnit,
     });
     allPutAssets.push(...splitResult.putAssets!);
     allPutCustomerPoints.push(...(splitResult.putCustomerPoints || []));

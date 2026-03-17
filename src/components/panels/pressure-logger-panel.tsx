@@ -14,6 +14,9 @@ import {
   TextRow,
 } from "src/components/panels/asset-panel/ui-components";
 import { loggerTelemetryAtom } from "src/state/logger-telemetry";
+import { LineGraph, StyledPointValue } from "src/components/graphs";
+import { localizeDecimal } from "src/infra/i18n/numbers";
+import { colors } from "src/lib/constants";
 
 export function PressureLoggerPanel() {
   const selection = useAtomValue(selectionAtom);
@@ -57,6 +60,30 @@ export function PressureLoggerPanel() {
     };
   }, [loggerTelemetry.readingsByDeviceId, pressureLogger, translate]);
 
+  const pressureHistory = useMemo(() => {
+    if (!pressureLogger) return [];
+    return loggerTelemetry.pressureHistoryByDeviceId[pressureLogger.label] ?? [];
+  }, [loggerTelemetry.pressureHistoryByDeviceId, pressureLogger]);
+
+  const pressureHistoryPoints = useMemo<StyledPointValue[]>(() => {
+    if (!pressureLogger || pressureHistory.length === 0) return [];
+
+    const sampleCount =
+      loggerTelemetry.pressureSampleCountByDeviceId[pressureLogger.label] ??
+      pressureHistory.length;
+    const startingMinute = Math.max(sampleCount - pressureHistory.length, 0);
+
+    return pressureHistory.map((reading, index) => ({
+      x: startingMinute + index,
+      y: reading.psi,
+      itemStyle: { color: colors.purple500 },
+    }));
+  }, [
+    loggerTelemetry.pressureSampleCountByDeviceId,
+    pressureHistory,
+    pressureLogger,
+  ]);
+
   if (!pressureLogger || !coordinates) return null;
 
   return (
@@ -87,6 +114,28 @@ export function PressureLoggerPanel() {
         </span>
       </div>
       <SectionList gap={3} padding={4}>
+        <SectionWrapper title="Pressure Graph" section="simulationResults">
+          <div className="rounded border border-gray-200 bg-white p-3">
+            <div className="h-56">
+              <LineGraph
+                points={pressureHistoryPoints}
+                linePoints={pressureHistoryPoints}
+                showPoints={false}
+                tooltipTrigger="axis"
+                xAxisLabel="Time"
+                yAxisLabel="Pressure (psi)"
+                xAxisMin={0}
+                xAxisValueFormatter={formatGraphMinute}
+                yAxisValueFormatter={(value) =>
+                  localizeDecimal(value, { decimals: 2 })
+                }
+              />
+            </div>
+            <div className="mt-2 text-xs text-gray-500">
+              {pressureHistoryPoints.length} / 500 points
+            </div>
+          </div>
+        </SectionWrapper>
         <SectionWrapper title="Live Status" section="modelAttributes">
           <TextRow
             name="status"
@@ -132,3 +181,12 @@ export function PressureLoggerPanel() {
     </div>
   );
 }
+
+const formatGraphMinute = (value: number) => {
+  const totalMinutes = Math.max(0, Math.round(value));
+  const hours = Math.floor(totalMinutes / 60)
+    .toString()
+    .padStart(2, "0");
+  const minutes = (totalMinutes % 60).toString().padStart(2, "0");
+  return `${hours}:${minutes}`;
+};

@@ -160,6 +160,8 @@ export const nullMapState: MapState = {
   loggerTelemetry: {
     connectionState: "idle",
     readingsByDeviceId: {},
+    pressureHistoryByDeviceId: {},
+    pressureSampleCountByDeviceId: {},
     lastError: null,
   },
   currentZoom: DEFAULT_ZOOM,

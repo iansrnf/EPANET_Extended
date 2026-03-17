@@ -7,6 +7,7 @@ import {
   initialLoggerTelemetryState,
   loggerTelemetryAtom,
   type LoggerTelemetryReading,
+  recordLoggerTelemetryReading,
 } from "src/state/logger-telemetry";
 
 const DEFAULT_LOGGER_STREAM_URL = "wss://logger-api.gscwd.app/stream";
@@ -204,13 +205,7 @@ export const useLoggerTelemetry = () => {
           const reading = parseLoggerTelemetryMessage(payload);
           if (!reading) return;
 
-          setLoggerTelemetry((prev) => ({
-            ...prev,
-            readingsByDeviceId: {
-              ...prev.readingsByDeviceId,
-              [reading.deviceId]: reading,
-            },
-          }));
+          setLoggerTelemetry((prev) => recordLoggerTelemetryReading(prev, reading));
         } catch (error) {
           setLoggerTelemetry((prev) => ({
             ...prev,

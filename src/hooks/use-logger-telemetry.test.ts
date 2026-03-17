@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { parseLoggerTelemetryMessage } from "./use-logger-telemetry";
+import {
+  initialLoggerTelemetryState,
+  MAX_LOGGER_HISTORY_POINTS,
+  recordLoggerTelemetryReading,
+} from "src/state/logger-telemetry";
 
 describe("parseLoggerTelemetryMessage", () => {
   it("reads direct psi values", () => {
@@ -60,5 +65,33 @@ describe("parseLoggerTelemetryMessage", () => {
         temp_or_status: "online",
       }),
     ).toBeNull();
+  });
+
+  it("stores a rolling pressure history with a maximum of 500 points", () => {
+    let state = initialLoggerTelemetryState;
+
+    for (let index = 0; index < MAX_LOGGER_HISTORY_POINTS + 5; index += 1) {
+      state = recordLoggerTelemetryReading(state, {
+          deviceId: "L1",
+          psi: index + 1,
+          timestamp: `2026-03-17T00:${String(index).padStart(2, "0")}:00`,
+      });
+    }
+
+    expect(state.readingsByDeviceId.L1?.psi).toBe(
+      MAX_LOGGER_HISTORY_POINTS + 5,
+    );
+    expect(state.pressureSampleCountByDeviceId.L1).toBe(
+      MAX_LOGGER_HISTORY_POINTS + 5,
+    );
+    expect(state.pressureHistoryByDeviceId.L1).toHaveLength(
+      MAX_LOGGER_HISTORY_POINTS,
+    );
+    expect(state.pressureHistoryByDeviceId.L1?.[0]?.psi).toBe(6);
+    expect(
+      state.pressureHistoryByDeviceId.L1?.[
+        MAX_LOGGER_HISTORY_POINTS - 1
+      ]?.psi,
+    ).toBe(MAX_LOGGER_HISTORY_POINTS + 5);
   });
 });

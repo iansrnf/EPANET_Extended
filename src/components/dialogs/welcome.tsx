@@ -210,7 +210,7 @@ export const WelcomeDialog = () => {
             {isMdOrLarger && showRecentSection && hasRecentFiles ? (
               <>
                 <h2 className="mt-[.2rem] pt-2 pb-2 font-bold text-gray-500">
-                  {translate("recent")}
+                  {translate("recentNetworks")}
                 </h2>
                 <div className="overflow-y-auto flex-1 min-h-0 mb-6 scroll-shadows max-h-[360px]">
                   <div className="flex flex-row flex-wrap gap-4">
@@ -372,7 +372,7 @@ const RecentFileCard = ({
 }) => (
   <div
     className="group flex flex-col rounded-lg border shadow-sm cursor-pointer hover:bg-gray-50 overflow-hidden shrink-0"
-    style={{ width: "145px" }}
+    style={{ width: "154px" }}
     onClick={onOpen}
   >
     <div
@@ -440,7 +440,7 @@ const DemoAsRecentCard = ({ demoNetwork }: { demoNetwork: DemoModel }) => {
   return (
     <div
       className="flex flex-col rounded-lg border shadow-sm cursor-pointer hover:bg-gray-50 overflow-hidden shrink-0"
-      style={{ width: "145px" }}
+      style={{ width: "154px" }}
       onClick={handleClick}
     >
       <div
@@ -462,7 +462,7 @@ const DemoAsRecentCard = ({ demoNetwork }: { demoNetwork: DemoModel }) => {
             {demoNetwork.name}
           </span>
           <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase bg-orange-100 text-orange-700 rounded-full shrink-0 leading-none">
-            {translate("demo")}
+            {translate("demoShort")}
           </span>
         </div>
         <span className="text-xs text-gray-500 truncate">

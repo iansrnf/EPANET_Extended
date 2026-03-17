@@ -36,6 +36,10 @@ import type { AssetId } from "src/hydraulic-model";
 import type { CustomerPoints } from "src/hydraulic-model/customer-points";
 import type { PressureLoggers } from "src/hydraulic-model/pressure-loggers";
 import type { PreviewProperty } from "src/state/map-symbology";
+import {
+  loggerTelemetryAtom,
+  type LoggerTelemetryState,
+} from "./logger-telemetry";
 
 export type MomentPointer = {
   pointer: number;
@@ -130,6 +134,7 @@ export type MapState = {
   isOffline: boolean;
   customerPoints: CustomerPoints;
   pressureLoggers: PressureLoggers;
+  loggerTelemetry: LoggerTelemetryState;
   currentZoom: number;
 };
 
@@ -152,6 +157,11 @@ export const nullMapState: MapState = {
   isOffline: false,
   customerPoints: new Map(),
   pressureLoggers: new Map(),
+  loggerTelemetry: {
+    connectionState: "idle",
+    readingsByDeviceId: {},
+    lastError: null,
+  },
   currentZoom: DEFAULT_ZOOM,
 } as const;
 
@@ -177,6 +187,7 @@ export const mapStateAtom = atom<MapState>((get) => {
   const simulation = get(simulationAtom);
   const customerPoints = get(customerPointsAtom);
   const pressureLoggers = get(pressureLoggersAtom);
+  const loggerTelemetry = get(loggerTelemetryAtom);
   const currentZoom = get(currentZoomAtom);
   const selectedAssetIds = new Set(USelection.toIds(selection));
 
@@ -198,6 +209,7 @@ export const mapStateAtom = atom<MapState>((get) => {
     isOffline,
     customerPoints,
     pressureLoggers,
+    loggerTelemetry,
     currentZoom,
   };
 });

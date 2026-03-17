@@ -97,6 +97,7 @@ const detectChanges = (
   hasNewSymbology: boolean;
   hasNewCustomerPoints: boolean;
   hasNewPressureLoggers: boolean;
+  hasNewPressureLoggerTelemetry: boolean;
   hasNewZoom: boolean;
   hasSyncMomentChanged: boolean;
 } => {
@@ -116,6 +117,8 @@ const detectChanges = (
     hasNewSymbology: state.symbology !== prev.symbology,
     hasNewCustomerPoints: state.customerPoints !== prev.customerPoints,
     hasNewPressureLoggers: state.pressureLoggers !== prev.pressureLoggers,
+    hasNewPressureLoggerTelemetry:
+      state.loggerTelemetry !== prev.loggerTelemetry,
     hasNewZoom: state.currentZoom !== prev.currentZoom,
     hasSyncMomentChanged: state.syncMomentVersion !== prev.syncMomentVersion,
   };
@@ -167,6 +170,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
       hasNewSimulation,
       hasNewCustomerPoints,
       hasNewPressureLoggers,
+      hasNewPressureLoggerTelemetry,
       hasNewZoom,
       hasSyncMomentChanged,
     } = changes;
@@ -297,11 +301,13 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           hasNewImport ||
           hasNewEditions ||
           hasNewStyles ||
-          hasNewPressureLoggers
+          hasNewPressureLoggers ||
+          hasNewPressureLoggerTelemetry
         ) {
           pressureLoggersOverlayRef.current = buildPressureLoggersOverlay(
             hydraulicModel.pressureLoggers,
             mapState.currentZoom,
+            mapState.loggerTelemetry.readingsByDeviceId,
           );
         }
 
@@ -413,11 +419,15 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         }
 
         if (
+          hasNewImport ||
+          hasNewStyles ||
           hasNewSymbology ||
           hasNewZoom ||
           hasNewSelection ||
           hasNewEphemeralState ||
           hasNewCustomerPoints ||
+          hasNewPressureLoggers ||
+          hasNewPressureLoggerTelemetry ||
           hasNewEditions
         ) {
           const shouldHideCustomerPointsOverlay =

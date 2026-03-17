@@ -13,10 +13,12 @@ import {
   SectionWrapper,
   TextRow,
 } from "src/components/panels/asset-panel/ui-components";
+import { loggerTelemetryAtom } from "src/state/logger-telemetry";
 
 export function PressureLoggerPanel() {
   const selection = useAtomValue(selectionAtom);
   const hydraulicModel = useAtomValue(stagingModelAtom);
+  const loggerTelemetry = useAtomValue(loggerTelemetryAtom);
   const translate = useTranslate();
   const zoomTo = useZoomTo();
 
@@ -33,6 +35,27 @@ export function PressureLoggerPanel() {
       latitude: String(lat),
     };
   }, [pressureLogger]);
+
+  const liveTelemetry = useMemo(() => {
+    if (!pressureLogger) return null;
+
+    const reading = loggerTelemetry.readingsByDeviceId[pressureLogger.label];
+    return {
+      status: reading?.status ?? translate("notAvailable"),
+      currentPressure: reading
+        ? `${reading.psi.toFixed(2)} psi`
+        : translate("notAvailable"),
+      lastUpdated: reading?.timestamp ?? translate("notAvailable"),
+      tempOrStatus: reading?.tempOrStatus ?? translate("notAvailable"),
+      batteryVoltage: reading?.batteryVoltage ?? translate("notAvailable"),
+      externalVoltage: reading?.externalVoltage ?? translate("notAvailable"),
+      gsmPercent:
+        reading?.gsmPercent !== undefined
+          ? `${reading.gsmPercent}%`
+          : translate("notAvailable"),
+      raw: reading?.raw ?? translate("notAvailable"),
+    };
+  }, [loggerTelemetry.readingsByDeviceId, pressureLogger, translate]);
 
   if (!pressureLogger || !coordinates) return null;
 
@@ -64,6 +87,40 @@ export function PressureLoggerPanel() {
         </span>
       </div>
       <SectionList gap={3} padding={4}>
+        <SectionWrapper title="Live Status" section="modelAttributes">
+          <TextRow
+            name="status"
+            value={liveTelemetry?.status ?? translate("notAvailable")}
+          />
+          <TextRow
+            name="pressure"
+            value={liveTelemetry?.currentPressure ?? translate("notAvailable")}
+          />
+          <TextRow
+            name="temp_or_status"
+            value={liveTelemetry?.tempOrStatus ?? translate("notAvailable")}
+          />
+          <TextRow
+            name="battery_v"
+            value={liveTelemetry?.batteryVoltage ?? translate("notAvailable")}
+          />
+          <TextRow
+            name="external_v"
+            value={liveTelemetry?.externalVoltage ?? translate("notAvailable")}
+          />
+          <TextRow
+            name="gsm_pct"
+            value={liveTelemetry?.gsmPercent ?? translate("notAvailable")}
+          />
+          <TextRow
+            name="raw"
+            value={liveTelemetry?.raw ?? translate("notAvailable")}
+          />
+          <TextRow
+            name="timestamp"
+            value={liveTelemetry?.lastUpdated ?? translate("notAvailable")}
+          />
+        </SectionWrapper>
         <SectionWrapper
           title={translate("coordinates")}
           section="modelAttributes"

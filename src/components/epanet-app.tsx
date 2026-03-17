@@ -55,6 +55,7 @@ import { persistLayerConfigAtom } from "src/state/store";
 import { initStorage } from "src/infra/storage";
 import { useIsSnapshotLocked } from "src/hooks/use-is-snapshot-locked";
 import { useIsCustomerAllocationDisabled } from "src/hooks/use-is-customer-allocation-disabled";
+import { useLoggerTelemetry } from "src/hooks/use-logger-telemetry";
 
 type ResolvedLayout = "HORIZONTAL" | "VERTICAL" | "FLOATING";
 
@@ -70,6 +71,7 @@ const persistentTransformAtom = atom<Transform>({
 
 export function EpanetApp() {
   const { isReady, progress } = useAppReady();
+  useLoggerTelemetry();
   const [map, setMap] = useState<MapEngine | null>(null);
   useWindowResizeSplits();
   const userTracking = useUserTracking();

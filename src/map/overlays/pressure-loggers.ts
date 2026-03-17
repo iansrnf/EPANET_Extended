@@ -1,10 +1,11 @@
-import { IconLayer, ScatterplotLayer } from "@deck.gl/layers";
+import { IconLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
 import {
   PressureLogger,
   PressureLoggers,
 } from "src/hydraulic-model/pressure-loggers";
 import { hexToArray } from "src/lib/color";
 import { colors } from "src/lib/constants";
+import type { LoggerTelemetryReading } from "src/state/logger-telemetry";
 
 const haloFillColor = hexToArray(colors.orange500, 0.35) as [
   number,
@@ -37,7 +38,7 @@ const asDataUrl = (svg: string) =>
 
 const pressureLoggerIconUrl = asDataUrl(pressureLoggerIconSvg({}));
 
-export type PressureLoggersLayer = IconLayer | ScatterplotLayer;
+export type PressureLoggersLayer = IconLayer | ScatterplotLayer | TextLayer;
 export type PressureLoggersOverlay = PressureLoggersLayer[];
 
 export const shouldShowPressureLoggerOverlay = (zoom: number) => zoom >= 12;
@@ -57,8 +58,12 @@ export const updatePressureLoggersOverlayVisibility = (
 export const buildPressureLoggersOverlay = (
   pressureLoggers: PressureLoggers,
   zoom: number,
+  readingsByDeviceId: Record<string, LoggerTelemetryReading>,
 ): PressureLoggersOverlay => {
   const data = Array.from(pressureLoggers.values());
+  const textData = data.filter((pressureLogger) =>
+    Boolean(readingsByDeviceId[pressureLogger.label]),
+  );
 
   return [
     new IconLayer({
@@ -79,6 +84,32 @@ export const buildPressureLoggersOverlay = (
       billboard: true,
       visible: shouldShowPressureLoggerOverlay(zoom),
       pickable: true,
+    }),
+    new TextLayer({
+      id: "pressure-loggers-value-layer",
+      beforeId: "ephemeral-junction-highlight",
+      data: textData,
+      getPosition: (d: PressureLogger) => d.coordinates as [number, number],
+      getText: (d: PressureLogger) => {
+        const reading = readingsByDeviceId[d.label];
+        return reading ? `${reading.psi.toFixed(2)} psi` : "";
+      },
+      getColor: hexToArray(colors.orange800),
+      getSize: 12,
+      sizeUnits: "pixels",
+      sizeMinPixels: 10,
+      sizeMaxPixels: 14,
+      getPixelOffset: [0, -22],
+      getTextAnchor: "middle",
+      getAlignmentBaseline: "bottom",
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      fontWeight: 700,
+      background: true,
+      getBackgroundColor: [255, 255, 255, 230],
+      getBorderColor: hexToArray(colors.amber300),
+      getBorderWidth: 1,
+      visible: shouldShowPressureLoggerOverlay(zoom),
+      pickable: false,
     }),
   ];
 };

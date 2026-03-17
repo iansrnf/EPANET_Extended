@@ -1,7 +1,7 @@
 import { useAtomValue } from "jotai";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Maybe } from "purify-ts/Maybe";
-import { ZoomToIcon } from "src/icons";
+import { WarningIcon, ZoomToIcon } from "src/icons";
 import { BBox } from "src/types";
 import { useZoomTo } from "src/hooks/use-zoom-to";
 import { selectionAtom } from "src/state/selection";
@@ -40,6 +40,7 @@ export function PressureLoggerPanel() {
   const hydraulicModel = useAtomValue(stagingModelAtom);
   const projectSettings = useAtomValue(projectSettingsAtom);
   const loggerTelemetry = useAtomValue(loggerTelemetryAtom);
+  const simulation = useAtomValue(simulationAtom);
   const translate = useTranslate();
   const zoomTo = useZoomTo();
 
@@ -77,6 +78,11 @@ export function PressureLoggerPanel() {
       raw: reading?.raw ?? translate("notAvailable"),
     };
   }, [loggerTelemetry.readingsByDeviceId, pressureLogger, translate]);
+
+  const livePressurePsi = useMemo(() => {
+    if (!pressureLogger) return null;
+    return loggerTelemetry.readingsByDeviceId[pressureLogger.label]?.psi ?? null;
+  }, [loggerTelemetry.readingsByDeviceId, pressureLogger]);
 
   const pressureHistory = useMemo(() => {
     if (!pressureLogger) return [];
@@ -145,6 +151,47 @@ export function PressureLoggerPanel() {
     simulationSeriesByNodeId,
   ]);
 
+  const connectedSimulationComparisons = useMemo(() => {
+    const currentTimestepIndex =
+      simulation.status === "success" || simulation.status === "warning"
+        ? (simulation.currentTimestepIndex ?? 0)
+        : null;
+
+    if (currentTimestepIndex === null || livePressurePsi === null) return [];
+
+    return connectedNodes
+      .map((node) => {
+        const series = simulationSeriesByNodeId[node.id];
+        if (!series) return null;
+
+        const maxIndex = series.values.length - 1;
+        if (maxIndex < 0) return null;
+
+        const simulatedPressure =
+          series.values[Math.min(currentTimestepIndex, maxIndex)] ?? null;
+        if (simulatedPressure === null) return null;
+
+        return {
+          nodeId: node.id,
+          nodeLabel: node.label,
+          simulatedPressure,
+          livePressure: livePressurePsi,
+          delta: livePressurePsi - simulatedPressure,
+        };
+      })
+      .filter(
+        (
+          comparison,
+        ): comparison is {
+          nodeId: number;
+          nodeLabel: string;
+          simulatedPressure: number;
+          livePressure: number;
+          delta: number;
+        } => Boolean(comparison),
+      );
+  }, [connectedNodes, livePressurePsi, simulation, simulationSeriesByNodeId]);
+
   if (!pressureLogger || !coordinates) return null;
 
   return (
@@ -175,6 +222,56 @@ export function PressureLoggerPanel() {
         </span>
       </div>
       <SectionList gap={3} padding={4}>
+        {connectedSimulationComparisons.length > 0 && (
+          <SectionWrapper
+            title="Live vs connected simulation (psi)"
+            section="simulationResults"
+          >
+            <div className="rounded-lg border border-sky-200 bg-sky-50 p-3">
+              <div className="space-y-3 text-sm text-gray-700">
+                {connectedSimulationComparisons.map((comparison) => {
+                  const showWarning =
+                    Math.abs(comparison.delta) >=
+                    LIVE_SIMULATION_DELTA_WARNING_PSI;
+
+                  return (
+                    <div
+                      key={comparison.nodeId}
+                      className="last:pb-0 border-b last:border-b-0 border-sky-100 pb-3"
+                    >
+                      <div className="font-medium text-gray-800">
+                        {comparison.nodeLabel} simulated:{" "}
+                        {localizeDecimal(comparison.simulatedPressure, {
+                          decimals: 3,
+                        })}
+                      </div>
+                      <div className="mt-1">
+                        {pressureLogger.label}:{" "}
+                        {localizeDecimal(comparison.livePressure, {
+                          decimals: 3,
+                        })}
+                      </div>
+                      <div className="mt-1 inline-flex items-center gap-1 text-gray-800">
+                        <span>
+                          {pressureLogger.label} - {comparison.nodeLabel} ={" "}
+                          {localizeDecimal(comparison.delta, {
+                            decimals: 3,
+                          })}
+                        </span>
+                        {showWarning && (
+                          <WarningIcon
+                            size="sm"
+                            className="text-red-500 shrink-0"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </SectionWrapper>
+        )}
         <SectionWrapper title="Pressure Graph" section="simulationResults">
           <div className="rounded border border-gray-200 bg-white p-3">
             {connectedNodes.length > 0 && (
@@ -295,6 +392,8 @@ const CONNECTED_NODE_SERIES_COLORS = [
   colors.green800,
   colors.amber500,
 ];
+
+const LIVE_SIMULATION_DELTA_WARNING_PSI = 5;
 
 const useConnectedNodeSimulationSeries = (
   connectedNodes: ConnectedPressureLoggerNode[],

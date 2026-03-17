@@ -21,6 +21,7 @@ import { useCustomerPointMoveState } from "./customer-point-move-state";
 import noop from "lodash/noop";
 import { useElevations } from "src/map/elevations/use-elevations";
 import { CustomerPoint } from "src/hydraulic-model/customer-points";
+import { PressureLogger } from "src/hydraulic-model/pressure-loggers";
 import { useSnapping } from "../hooks/use-snapping";
 import throttle from "lodash/throttle";
 import { useClickedAsset } from "../utils";
@@ -60,6 +61,7 @@ export function useNoneHandlers({
     removeFromSelection,
     getSelectionIds,
     selectCustomerPoint,
+    selectPressureLogger,
     selectAsset,
   } = useSelection(selection);
   const { isShiftHeld } = useKeyboardState();
@@ -108,7 +110,11 @@ export function useNoneHandlers({
       });
 
       for (const pickInfo of pickedObjects) {
-        if (pickInfo.layer?.id === "customer-points-layer" && pickInfo.object) {
+        if (
+          (pickInfo.layer?.id === "customer-points-layer" ||
+            pickInfo.layer?.id === "pressure-loggers-layer") &&
+          pickInfo.object
+        ) {
           hasClickableElement = true;
           break;
         }
@@ -134,6 +140,24 @@ export function useNoneHandlers({
     for (const pickInfo of pickedObjects) {
       if (pickInfo.layer?.id === "customer-points-layer" && pickInfo.object) {
         return pickInfo.object as CustomerPoint;
+      }
+    }
+
+    return null;
+  };
+
+  const getClickedPressureLogger = (
+    e: mapboxgl.MapMouseEvent | mapboxgl.MapTouchEvent,
+  ): PressureLogger | null => {
+    const pickedObjects = map.pickOverlayObjects({
+      x: e.point.x,
+      y: e.point.y,
+      radius: 7,
+    });
+
+    for (const pickInfo of pickedObjects) {
+      if (pickInfo.layer?.id === "pressure-loggers-layer" && pickInfo.object) {
+        return pickInfo.object as PressureLogger;
       }
     }
 
@@ -405,6 +429,13 @@ export function useNoneHandlers({
 
         if (clickedCustomerPoint) {
           selectCustomerPoint(clickedCustomerPoint.id);
+          return;
+        }
+
+        const clickedPressureLogger = getClickedPressureLogger(e);
+
+        if (clickedPressureLogger) {
+          selectPressureLogger(clickedPressureLogger.id);
           return;
         }
 

@@ -17,6 +17,7 @@ import {
   createEmptyDemands,
   Demand,
   Demands,
+  initializePressureLoggers,
   Patterns,
   PatternType,
 } from "src/hydraulic-model";
@@ -444,6 +445,7 @@ export class HydraulicModelBuilder {
       assets: this.assets,
       customerPoints: this.customerPointsMap,
       customerPointsLookup: lookup,
+      pressureLoggers: initializePressureLoggers(),
       assetBuilder: this.assetBuilder,
       labelManager: this.labelManager,
       topology: this.topology,

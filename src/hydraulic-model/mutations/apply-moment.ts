@@ -4,6 +4,7 @@ import type { AssetPatch, DemandAssignment } from "../model-operation";
 import { Asset, LinkAsset } from "../asset-types";
 import { AssetId } from "../assets-map";
 import { CustomerPoint, CustomerPointId } from "../customer-points";
+import { PressureLogger, PressureLoggerId } from "../pressure-loggers";
 import { Curves } from "../curves";
 import { Patterns } from "../patterns";
 import { isDebugOn } from "src/infra/debug-mode";
@@ -28,6 +29,7 @@ export const applyMomentToModel = (
     deleteAssets: [],
     patchAssetsAttributes: [],
     putCustomerPoints: [],
+    putPressureLoggers: [],
   };
 
   if (moment.putDemands) {
@@ -88,6 +90,28 @@ export const applyMomentToModel = (
     const deletedCp = deleteCustomerPoint(hydraulicModel, cpId);
     if (deletedCp) {
       reverseMoment.putCustomerPoints.push(deletedCp);
+    }
+  }
+
+  for (const pressureLogger of moment.putPressureLoggers || []) {
+    const oldPressureLogger = putPressureLogger(hydraulicModel, pressureLogger);
+    if (oldPressureLogger) {
+      reverseMoment.putPressureLoggers.push(oldPressureLogger);
+    } else {
+      if (!reverseMoment.deletePressureLoggers) {
+        reverseMoment.deletePressureLoggers = [];
+      }
+      reverseMoment.deletePressureLoggers.push(pressureLogger.id);
+    }
+  }
+
+  for (const pressureLoggerId of moment.deletePressureLoggers || []) {
+    const deletedPressureLogger = deletePressureLogger(
+      hydraulicModel,
+      pressureLoggerId,
+    );
+    if (deletedPressureLogger) {
+      reverseMoment.putPressureLoggers.push(deletedPressureLogger);
     }
   }
 
@@ -192,6 +216,26 @@ const deleteCustomerPoint = (
   hydraulicModel.customerPoints.delete(id);
 
   return cp;
+};
+
+const putPressureLogger = (
+  hydraulicModel: HydraulicModel,
+  pressureLogger: PressureLogger,
+): PressureLogger | undefined => {
+  const oldVersion = hydraulicModel.pressureLoggers.get(pressureLogger.id);
+  hydraulicModel.pressureLoggers.set(pressureLogger.id, pressureLogger);
+  return oldVersion;
+};
+
+const deletePressureLogger = (
+  hydraulicModel: HydraulicModel,
+  id: PressureLoggerId,
+): PressureLogger | undefined => {
+  const pressureLogger = hydraulicModel.pressureLoggers.get(id);
+  if (!pressureLogger) return undefined;
+
+  hydraulicModel.pressureLoggers.delete(id);
+  return pressureLogger;
 };
 
 const putCurves = (hydraulicModel: HydraulicModel, curves: Curves): void => {

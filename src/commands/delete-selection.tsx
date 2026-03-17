@@ -4,6 +4,7 @@ import { Asset } from "src/hydraulic-model";
 import {
   deleteAssets,
   removeCustomerPoints,
+  removePressureLoggers,
 } from "src/hydraulic-model/model-operations";
 import { AssetDeleted, useUserTracking } from "src/infra/user-tracking";
 import { usePersistence } from "src/lib/persistence";
@@ -84,11 +85,35 @@ export const useDeleteSelection = () => {
     [hydraulicModel, selection, transact, clearSelection, userTracking],
   );
 
+  const deleteSelectedPressureLogger = useCallback(
+    (_source: AssetDeleted["source"]) => {
+      if (selection.type !== "singlePressureLogger") return false;
+
+      const pressureLogger = hydraulicModel.pressureLoggers.get(selection.id);
+      if (!pressureLogger) return false;
+
+      clearSelection();
+
+      const moment = removePressureLoggers(hydraulicModel, {
+        pressureLoggerIds: [pressureLogger.id],
+      });
+      transact(moment);
+      return true;
+    },
+    [hydraulicModel, selection, transact, clearSelection],
+  );
+
   const deleteSelection = useCallback(
     ({ source }: { source: AssetDeleted["source"] }) => {
-      deleteSelectedAssets(source) || deleteSelectedCustomerPoint(source);
+      deleteSelectedAssets(source) ||
+        deleteSelectedCustomerPoint(source) ||
+        deleteSelectedPressureLogger(source);
     },
-    [deleteSelectedAssets, deleteSelectedCustomerPoint],
+    [
+      deleteSelectedAssets,
+      deleteSelectedCustomerPoint,
+      deleteSelectedPressureLogger,
+    ],
   );
 
   return deleteSelection;

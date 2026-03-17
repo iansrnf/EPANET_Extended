@@ -29,10 +29,12 @@ import {
   simulationAtom,
 } from "src/state/simulation";
 import { customerPointsAtom } from "src/state/hydraulic-model";
+import { pressureLoggersAtom } from "src/state/hydraulic-model";
 import { offlineAtom } from "src/state/offline";
 import { USelection } from "src/selection";
 import type { AssetId } from "src/hydraulic-model";
 import type { CustomerPoints } from "src/hydraulic-model/customer-points";
+import type { PressureLoggers } from "src/hydraulic-model/pressure-loggers";
 import type { PreviewProperty } from "src/state/map-symbology";
 
 export type MomentPointer = {
@@ -127,6 +129,7 @@ export type MapState = {
   movedAssetIds: Set<AssetId>;
   isOffline: boolean;
   customerPoints: CustomerPoints;
+  pressureLoggers: PressureLoggers;
   currentZoom: number;
 };
 
@@ -148,6 +151,7 @@ export const nullMapState: MapState = {
   movedAssetIds: new Set(),
   isOffline: false,
   customerPoints: new Map(),
+  pressureLoggers: new Map(),
   currentZoom: DEFAULT_ZOOM,
 } as const;
 
@@ -172,6 +176,7 @@ export const mapStateAtom = atom<MapState>((get) => {
   const symbology = get(symbologyAtom);
   const simulation = get(simulationAtom);
   const customerPoints = get(customerPointsAtom);
+  const pressureLoggers = get(pressureLoggersAtom);
   const currentZoom = get(currentZoomAtom);
   const selectedAssetIds = new Set(USelection.toIds(selection));
 
@@ -192,6 +197,7 @@ export const mapStateAtom = atom<MapState>((get) => {
     movedAssetIds,
     isOffline,
     customerPoints,
+    pressureLoggers,
     currentZoom,
   };
 });

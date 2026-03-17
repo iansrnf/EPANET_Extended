@@ -87,6 +87,7 @@ export class Persistence implements IPersistenceWithSnapshots {
         },
         putControls: hydraulicModel.controls,
         putCustomerPoints: [...hydraulicModel.customerPoints.values()],
+        putPressureLoggers: [...hydraulicModel.pressureLoggers.values()],
         putCurves: hydraulicModel.curves,
         putPatterns: hydraulicModel.patterns,
       };
@@ -340,6 +341,7 @@ export class Persistence implements IPersistenceWithSnapshots {
       selection,
       stagingModel.assets,
       stagingModel.customerPoints,
+      stagingModel.pressureLoggers,
     );
     this.store.set(selectionAtom, { ...validatedSelection });
   }
@@ -463,6 +465,12 @@ export class Persistence implements IPersistenceWithSnapshots {
         ? new Map(hydraulicModel.customerPoints)
         : hydraulicModel.customerPoints;
 
+    const updatedPressureLoggers =
+      (forwardMoment.putPressureLoggers || []).length > 0 ||
+      (forwardMoment.deletePressureLoggers || []).length > 0
+        ? new Map(hydraulicModel.pressureLoggers)
+        : hydraulicModel.pressureLoggers;
+
     const updatedCurves =
       forwardMoment.putCurves && forwardMoment.putCurves.size > 0
         ? new Map(hydraulicModel.curves)
@@ -472,6 +480,7 @@ export class Persistence implements IPersistenceWithSnapshots {
       ...updatedHydraulicModel,
       version: stateId,
       customerPoints: updatedCustomerPoints,
+      pressureLoggers: updatedPressureLoggers,
       curves: updatedCurves,
     });
     this.store.set(dataAtom, {

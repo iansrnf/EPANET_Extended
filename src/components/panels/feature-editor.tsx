@@ -6,6 +6,7 @@ import { selectedFeaturesAtom, selectionAtom } from "src/state/selection";
 import { MultiAssetPanel } from "./multi-asset-panel";
 import { AssetPanel } from "./asset-panel";
 import { CustomerPointPanel } from "./customer-point-panel";
+import { PressureLoggerPanel } from "./pressure-logger-panel";
 import { Asset } from "src/hydraulic-model";
 import { useIsSnapshotLocked } from "src/hooks/use-is-snapshot-locked";
 
@@ -17,6 +18,10 @@ export default function FeatureEditor() {
 
   if (selection.type === "singleCustomerPoint") {
     return <CustomerPointPanel />;
+  }
+
+  if (selection.type === "singlePressureLogger") {
+    return <PressureLoggerPanel />;
   }
 
   const content =

@@ -28,6 +28,10 @@ export function ContextActions() {
     );
   }
 
+  if (selection.type === "singlePressureLogger") {
+    return null;
+  }
+
   if (selectedWrappedFeatures.length === 0) return null;
 
   if (selectedWrappedFeatures.length > 1) return null;

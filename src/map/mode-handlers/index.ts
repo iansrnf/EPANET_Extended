@@ -4,6 +4,7 @@ import { useNoneHandlers } from "./none";
 import { useDrawNodeHandlers } from "./draw-node";
 import { useDrawLinkHandlers } from "./draw-link";
 import { useDrawCustomerPointHandlers } from "./draw-customer-point";
+import { useDrawPressureLoggerHandlers } from "./draw-pressure-logger";
 import { useConnectCustomerPointsHandlers } from "./connect-customer-points";
 import { useRedrawLinkHandlers } from "./redraw-link";
 import { useAreaSelectionHandlers } from "./area-selection";
@@ -49,8 +50,7 @@ export function useModeHandlers(handlerContext: HandlerContext) {
       linkType: "valve",
     }),
     [Mode.DRAW_CUSTOMER_POINT]: useDrawCustomerPointHandlers(handlerContext),
-    [Mode.DRAW_PRESSURE_LOGGER]:
-      useDrawCustomerPointHandlers(handlerContext),
+    [Mode.DRAW_PRESSURE_LOGGER]: useDrawPressureLoggerHandlers(handlerContext),
     [Mode.CONNECT_CUSTOMER_POINTS]:
       useConnectCustomerPointsHandlers(handlerContext),
     [Mode.REDRAW_LINK]: useRedrawLinkHandlers(handlerContext),

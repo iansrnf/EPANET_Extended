@@ -9,6 +9,7 @@ import { LabelManager } from "./label-manager";
 import { Demands, createEmptyDemands } from "./demands";
 import { CustomerPoints, initializeCustomerPoints } from "./customer-points";
 import { CustomerPointsLookup } from "./customer-points-lookup";
+import { PressureLoggers, initializePressureLoggers } from "./pressure-loggers";
 import { AssetIndex } from "./asset-index";
 import { Asset } from "./asset-types";
 import { Curves } from "./curves";
@@ -20,6 +21,7 @@ export type HydraulicModel = {
   assets: AssetsMap;
   customerPoints: CustomerPoints;
   customerPointsLookup: CustomerPointsLookup;
+  pressureLoggers: PressureLoggers;
   assetBuilder: AssetBuilder;
   topology: Topology;
   assetIndex: AssetIndex;
@@ -51,6 +53,7 @@ export const initializeHydraulicModel = ({
     assets,
     customerPoints: initializeCustomerPoints(),
     customerPointsLookup: new CustomerPointsLookup(),
+    pressureLoggers: initializePressureLoggers(),
     assetBuilder: new AssetBuilder(defaults, assetIdGenerator, labelManager),
     topology: new Topology(),
     assetIndex: new AssetIndex(assetIdGenerator, assets),

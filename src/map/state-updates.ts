@@ -52,6 +52,13 @@ import {
   updateCustomerPointsOverlayVisibility,
 } from "./overlays/customer-points";
 import { CustomerPoints } from "src/hydraulic-model/customer-points";
+import {
+  PressureLoggersOverlay,
+  buildPressureLoggersOverlay,
+  buildPressureLoggersSelectionOverlay,
+  updatePressureLoggersOverlayVisibility,
+} from "./overlays/pressure-loggers";
+import { PressureLoggers } from "src/hydraulic-model/pressure-loggers";
 import { junctionsSymbologyFilterExpression } from "./layers/junctions";
 
 const SELECTION_LAYERS: LayerId[] = [
@@ -89,6 +96,7 @@ const detectChanges = (
   hasNewSimulation: boolean;
   hasNewSymbology: boolean;
   hasNewCustomerPoints: boolean;
+  hasNewPressureLoggers: boolean;
   hasNewZoom: boolean;
   hasSyncMomentChanged: boolean;
 } => {
@@ -107,6 +115,7 @@ const detectChanges = (
     hasNewSimulation: state.simulation !== prev.simulation,
     hasNewSymbology: state.symbology !== prev.symbology,
     hasNewCustomerPoints: state.customerPoints !== prev.customerPoints,
+    hasNewPressureLoggers: state.pressureLoggers !== prev.pressureLoggers,
     hasNewZoom: state.currentZoom !== prev.currentZoom,
     hasSyncMomentChanged: state.syncMomentVersion !== prev.syncMomentVersion,
   };
@@ -127,7 +136,9 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
   const lastHiddenFeatures = useRef<Set<AssetId>>(new Set([]));
   const previousMapStateRef = useRef<MapState>(nullMapState);
   const customerPointsOverlayRef = useRef<CustomerPointsOverlay>([]);
+  const pressureLoggersOverlayRef = useRef<PressureLoggersOverlay>([]);
   const selectionDeckLayersRef = useRef<CustomerPointsOverlay>([]);
+  const pressureLoggerSelectionOverlayRef = useRef<PressureLoggersOverlay>([]);
   const ephemeralDeckLayersRef = useRef<CustomerPointsOverlay>([]);
   const gridRef = useRef<Grid | null>(null);
   const scaleControlRef = useRef<mapboxgl.ScaleControl | null>(null);
@@ -155,6 +166,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
       hasNewSymbology,
       hasNewSimulation,
       hasNewCustomerPoints,
+      hasNewPressureLoggers,
       hasNewZoom,
       hasSyncMomentChanged,
     } = changes;
@@ -282,6 +294,18 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         }
 
         if (
+          hasNewImport ||
+          hasNewEditions ||
+          hasNewStyles ||
+          hasNewPressureLoggers
+        ) {
+          pressureLoggersOverlayRef.current = buildPressureLoggersOverlay(
+            hydraulicModel.pressureLoggers,
+            mapState.currentZoom,
+          );
+        }
+
+        if (
           hasNewZoom ||
           hasNewSelection ||
           hasNewSymbology ||
@@ -304,6 +328,18 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
               ephemeralDeckLayersRef.current,
               mapState.currentZoom,
             );
+
+          pressureLoggersOverlayRef.current =
+            updatePressureLoggersOverlayVisibility(
+              pressureLoggersOverlayRef.current,
+              mapState.currentZoom,
+            );
+
+          pressureLoggerSelectionOverlayRef.current =
+            updatePressureLoggersOverlayVisibility(
+              pressureLoggerSelectionOverlayRef.current,
+              mapState.currentZoom,
+            );
         }
 
         if (hasNewEphemeralState) {
@@ -319,6 +355,15 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
               mapState.selection,
               hydraulicModel.assets,
               hydraulicModel.customerPoints,
+              mapState.currentZoom,
+            );
+        }
+
+        if (hasNewSelection || hasNewPressureLoggers) {
+          pressureLoggerSelectionOverlayRef.current =
+            buildSelectionOverlayForPressureLoggers(
+              mapState.selection,
+              hydraulicModel.pressureLoggers,
               mapState.currentZoom,
             );
         }
@@ -396,10 +441,12 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             ...(shouldHideCustomerPointsOverlay || !isCustomerPointsVisible
               ? []
               : customerPointsOverlayRef.current),
+            ...pressureLoggersOverlayRef.current,
             ...(shouldHideSelectionDuringMove ||
             shouldHideCustomerPointSelection
               ? []
               : selectionDeckLayersRef.current),
+            ...pressureLoggerSelectionOverlayRef.current,
             ...ephemeralDeckLayersRef.current,
           ];
           map.setOverlay(combinedOverlay);
@@ -760,6 +807,19 @@ const buildSelectionOverlayForCustomerPoints = (
     }
   }
   return [];
+};
+
+const buildSelectionOverlayForPressureLoggers = (
+  selection: Sel,
+  pressureLoggers: PressureLoggers,
+  zoom: number,
+): PressureLoggersOverlay => {
+  if (selection.type !== "singlePressureLogger") return [];
+
+  const pressureLogger = pressureLoggers.get(selection.id);
+  if (!pressureLogger) return [];
+
+  return buildPressureLoggersSelectionOverlay([pressureLogger], zoom);
 };
 
 function updateGrid({

@@ -287,6 +287,14 @@ export function Hints() {
         />
       );
     }
+    case Mode.DRAW_PRESSURE_LOGGER: {
+      return (
+        <Hint
+          hintId={"DRAW_PRESSURE_LOGGER"}
+          text={translate("pressureLogger")}
+        />
+      );
+    }
     case Mode.SELECT_RECTANGULAR: {
       if (ephemeralState.type === "areaSelect" && ephemeralState.isDrawing) {
         return (

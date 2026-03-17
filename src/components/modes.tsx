@@ -20,7 +20,14 @@ import {
   PressureLoggerIcon,
 } from "src/icons";
 
-const MODE_OPTIONS = [
+type DrawingModeOption = {
+  mode: Mode;
+  hotkey: string;
+  labelKey?: string;
+  Icon: () => JSX.Element;
+};
+
+const MODE_OPTIONS: readonly DrawingModeOption[] = [
   {
     mode: Mode.DRAW_JUNCTION,
     hotkey: "2",
@@ -53,19 +60,19 @@ const MODE_OPTIONS = [
   },
 ] as const;
 
-const CUSTOMER_POINT_MODE = {
+const CUSTOMER_POINT_MODE: DrawingModeOption = {
   mode: Mode.DRAW_CUSTOMER_POINT,
   hotkey: "8",
   labelKey: "customerPoint",
   Icon: () => <CustomerPointIcon />,
-} as const;
+};
 
-const PRESSURE_LOGGER_MODE = {
+const PRESSURE_LOGGER_MODE: DrawingModeOption = {
   mode: Mode.DRAW_PRESSURE_LOGGER,
   hotkey: "9",
   labelKey: "pressureLogger",
   Icon: () => <PressureLoggerIcon />,
-} as const;
+};
 
 export default memo(function Modes({
   disabled = false,
@@ -76,7 +83,11 @@ export default memo(function Modes({
   const setDrawingMode = useDrawingMode();
   const userTracking = useUserTracking();
   const translate = useTranslate();
-  const drawingModes = [...MODE_OPTIONS, CUSTOMER_POINT_MODE, PRESSURE_LOGGER_MODE];
+  const drawingModes = [
+    ...MODE_OPTIONS,
+    CUSTOMER_POINT_MODE,
+    PRESSURE_LOGGER_MODE,
+  ];
 
   return (
     <div className="flex items-center justify-start" role="radiogroup">

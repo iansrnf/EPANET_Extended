@@ -55,6 +55,11 @@ export const useSelection = (selection: Sel) => {
     setTab(TabOption.Asset);
   };
 
+  const selectPressureLogger = (pressureLoggerId: number) => {
+    setSelection(USelection.singlePressureLogger(pressureLoggerId));
+    setTab(TabOption.Asset);
+  };
+
   const removeFromSelection = (assetId: AssetId | AssetId[]) => {
     const newSelection = Array.isArray(assetId)
       ? USelection.removeSelectionIds(selection, assetId)
@@ -85,6 +90,7 @@ export const useSelection = (selection: Sel) => {
     selectAsset,
     selectAssets,
     selectCustomerPoint,
+    selectPressureLogger,
     getSelectionIds,
   };
 };

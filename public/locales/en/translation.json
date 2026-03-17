@@ -58,6 +58,7 @@
   "customers": "customers",
   "customer": "Customer",
   "customerPoint": "Customer point",
+  "pressureLogger": "Pressure Logger",
   "actualDemand": "Actual demand",
   "netFlow": "Net flow",
   "actualHead": "Head",

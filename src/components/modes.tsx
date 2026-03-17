@@ -17,8 +17,8 @@ import {
   ValveIcon,
   PipeIcon,
   CustomerPointIcon,
+  PressureLoggerIcon,
 } from "src/icons";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 
 const MODE_OPTIONS = [
   {
@@ -56,7 +56,15 @@ const MODE_OPTIONS = [
 const CUSTOMER_POINT_MODE = {
   mode: Mode.DRAW_CUSTOMER_POINT,
   hotkey: "8",
+  labelKey: "customerPoint",
   Icon: () => <CustomerPointIcon />,
+} as const;
+
+const PRESSURE_LOGGER_MODE = {
+  mode: Mode.DRAW_PRESSURE_LOGGER,
+  hotkey: "9",
+  labelKey: "pressureLogger",
+  Icon: () => <PressureLoggerIcon />,
 } as const;
 
 export default memo(function Modes({
@@ -68,10 +76,7 @@ export default memo(function Modes({
   const setDrawingMode = useDrawingMode();
   const userTracking = useUserTracking();
   const translate = useTranslate();
-  const isCreateCustomerOn = useFeatureFlag("FLAG_CREATE_CUSTOMER");
-  const drawingModes = isCreateCustomerOn
-    ? [...MODE_OPTIONS, CUSTOMER_POINT_MODE]
-    : MODE_OPTIONS;
+  const drawingModes = [...MODE_OPTIONS, CUSTOMER_POINT_MODE, PRESSURE_LOGGER_MODE];
 
   return (
     <div className="flex items-center justify-start" role="radiogroup">
@@ -94,21 +99,22 @@ export default memo(function Modes({
       </MenuAction>
       <SelectionTool />
       <TraceTool />
-      {drawingModes.map(({ mode, hotkey, Icon }) => {
+      {drawingModes.map(({ mode, hotkey, labelKey, Icon }) => {
         const modeInfo = MODE_INFO[mode];
+        const label = translate(labelKey ?? modeInfo.name);
 
         return (
           <MenuAction
             role="radio"
-            key={mode}
+            key={`${mode}-${hotkey}`}
             selected={currentMode === mode}
             readOnlyHotkey={hotkey}
-            label={translate(modeInfo.name)}
+            label={label}
             onClick={() => {
               userTracking.capture({
                 name: "drawingMode.enabled",
                 source: "toolbar",
-                type: modeInfo.name,
+                type: labelKey ?? modeInfo.name,
               });
               void setDrawingMode(mode);
             }}

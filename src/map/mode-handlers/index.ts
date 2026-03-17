@@ -49,6 +49,8 @@ export function useModeHandlers(handlerContext: HandlerContext) {
       linkType: "valve",
     }),
     [Mode.DRAW_CUSTOMER_POINT]: useDrawCustomerPointHandlers(handlerContext),
+    [Mode.DRAW_PRESSURE_LOGGER]:
+      useDrawCustomerPointHandlers(handlerContext),
     [Mode.CONNECT_CUSTOMER_POINTS]:
       useConnectCustomerPointsHandlers(handlerContext),
     [Mode.REDRAW_LINK]: useRedrawLinkHandlers(handlerContext),

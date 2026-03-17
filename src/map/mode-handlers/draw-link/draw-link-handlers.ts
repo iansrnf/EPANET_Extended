@@ -18,6 +18,7 @@ import { useSnapping } from "../hooks/use-snapping";
 import { captureError } from "src/infra/error-tracking";
 import { nextTick } from "process";
 import { AssetId, LinkAsset, NodeAsset } from "src/hydraulic-model";
+import { PressureLogger } from "src/hydraulic-model/pressure-loggers";
 import { useUserTracking } from "src/infra/user-tracking";
 import { LinkType } from "src/hydraulic-model";
 import { useElevations } from "src/map/elevations/use-elevations";
@@ -33,12 +34,19 @@ export type SnappingCandidate =
       id: AssetId;
       coordinates: Position;
       vertexIndex: number | null;
+    }
+  | {
+      type: "pressureLogger";
+      id: number;
+      coordinates: Position;
     };
 
 export type SubmitLinkParams = {
   startNode: NodeAsset;
+  startPressureLoggerId?: number;
   link: LinkAsset;
   endNode: NodeAsset;
+  endPressureLoggerId?: number;
   startPipeId?: AssetId;
   endPipeId?: AssetId;
 };
@@ -52,6 +60,7 @@ type DrawingState =
   | {
       isNull: false;
       startNode: NodeAsset;
+      startPressureLoggerId?: number;
       startPipeId?: AssetId;
       link: LinkAsset;
       snappingCandidate: SnappingCandidate | null;
@@ -107,8 +116,11 @@ function checkLoopedLinkConditions(
 
   const isLoopedLink =
     snappingCandidate !== null &&
-    snappingCandidate.type !== "pipe" &&
-    snappingCandidate.id === drawing.startNode.id;
+    ((snappingCandidate.type === "pressureLogger" &&
+      snappingCandidate.id === drawing.startPressureLoggerId) ||
+      (snappingCandidate.type !== "pipe" &&
+        snappingCandidate.type !== "pressureLogger" &&
+        snappingCandidate.id === drawing.startNode.id));
 
   const linkCopy = drawing.link.copy();
   const isHoveringEphemeralStart =
@@ -154,6 +166,40 @@ export function useDrawLinkHandlers({
   const setCursor = useSetAtom(cursorStyleAtom);
   const pipeDrawingDefaults = useAtomValue(pipeDrawingDefaultsAtom);
 
+  const getClickedPressureLogger = (
+    e: MapMouseEvent | MapTouchEvent,
+  ): PressureLogger | null => {
+    const pickedObjects = map.pickOverlayObjects({
+      x: e.point.x,
+      y: e.point.y,
+      radius: 7,
+    });
+
+    for (const pickInfo of pickedObjects) {
+      if (pickInfo.layer?.id === "pressure-loggers-layer" && pickInfo.object) {
+        return pickInfo.object as PressureLogger;
+      }
+    }
+
+    return null;
+  };
+
+  const getSnappingCandidate = (
+    e: MapMouseEvent | MapTouchEvent,
+    position: Position,
+  ): SnappingCandidate | null => {
+    const clickedPressureLogger = getClickedPressureLogger(e);
+    if (clickedPressureLogger) {
+      return {
+        type: "pressureLogger",
+        id: clickedPressureLogger.id,
+        coordinates: clickedPressureLogger.coordinates,
+      };
+    }
+
+    return findSnappingCandidate(e, position);
+  };
+
   const createLinkForType = (coordinates: Position[] = []) => {
     const startProperties = {
       label: "",
@@ -191,6 +237,7 @@ export function useDrawLinkHandlers({
       return {
         isNull: false,
         startNode: ephemeralState.startNode,
+        startPressureLoggerId: ephemeralState.startPressureLoggerId,
         startPipeId: ephemeralState.startPipeId,
         snappingCandidate: ephemeralState.snappingCandidate || null,
         link: ephemeralState.link as LinkAsset,
@@ -207,12 +254,14 @@ export function useDrawLinkHandlers({
 
   const setDrawing = ({
     startNode,
+    startPressureLoggerId,
     link,
     snappingCandidate,
     startPipeId,
     draftJunction,
   }: {
     startNode: NodeAsset;
+    startPressureLoggerId?: number;
     link: LinkAsset;
     snappingCandidate: SnappingCandidate | null;
     startPipeId?: AssetId;
@@ -223,6 +272,7 @@ export function useDrawLinkHandlers({
       link,
       linkType,
       startNode,
+      startPressureLoggerId,
       startPipeId,
       snappingCandidate,
       ...(sourceLink && { sourceLink }),
@@ -261,9 +311,11 @@ export function useDrawLinkHandlers({
 
   const startDrawing = ({
     startNode,
+    startPressureLoggerId,
     startPipeId,
   }: {
     startNode: NodeAsset;
+    startPressureLoggerId?: number;
     startPipeId?: AssetId;
   }) => {
     const coordinates = startNode.coordinates;
@@ -272,6 +324,7 @@ export function useDrawLinkHandlers({
 
     setDrawing({
       startNode,
+      startPressureLoggerId,
       link,
       snappingCandidate: null,
       startPipeId,
@@ -287,6 +340,7 @@ export function useDrawLinkHandlers({
     linkCopy.addVertex(coordinates);
     setDrawing({
       startNode: drawing.startNode,
+      startPressureLoggerId: drawing.startPressureLoggerId,
       startPipeId: drawing.startPipeId,
       link: linkCopy,
       snappingCandidate: null,
@@ -295,30 +349,46 @@ export function useDrawLinkHandlers({
 
   const submitLink = ({
     startNode,
+    startPressureLoggerId,
     link,
     endNode,
+    endPressureLoggerId,
     startPipeId,
     endPipeId,
-  }: {
-    startNode: NodeAsset;
-    link: LinkAsset;
-    endNode: NodeAsset;
-    startPipeId?: AssetId;
-    endPipeId?: AssetId;
-  }) => {
+  }: SubmitLinkParams) => {
     const length = measureLength(link.feature);
     if (!length) {
       return;
     }
 
+    const startEndpoint = startPressureLoggerId
+      ? resolvePressureLoggerEndpoint(startPressureLoggerId, startNode)
+      : { node: startNode };
+    const endEndpoint = endPressureLoggerId
+      ? resolvePressureLoggerEndpoint(endPressureLoggerId, endNode)
+      : { node: endNode };
+
     const moment = addLink(hydraulicModel, {
       link: link,
-      startNode,
-      endNode,
+      startNode: startEndpoint.node,
+      endNode: endEndpoint.node,
       startPipeId,
       endPipeId,
       lengthUnit,
     });
+    const pressureLoggerUpdates = [
+      startEndpoint.pressureLoggerUpdate,
+      endEndpoint.pressureLoggerUpdate,
+    ].filter((pressureLogger): pressureLogger is PressureLogger =>
+      Boolean(pressureLogger),
+    );
+
+    if (pressureLoggerUpdates.length > 0) {
+      moment.putPressureLoggers = [
+        ...(moment.putPressureLoggers || []),
+        ...pressureLoggerUpdates,
+      ];
+    }
 
     userTracking.capture({ name: "asset.created", type: link.type });
     transact(moment);
@@ -352,13 +422,61 @@ export function useDrawLinkHandlers({
       elevation,
     });
 
+  const createPressureLoggerBackingJunction = (
+    pressureLoggerId: number,
+    coordinates: Position,
+    elevation: number,
+  ) => {
+    const junction = createJunction(coordinates, elevation);
+    junction.setProperty("visibility", false);
+    junction.setProperty("pressureLoggerId", pressureLoggerId);
+    return junction;
+  };
+
+  const getPressureLogger = (pressureLoggerId: number): PressureLogger => {
+    const pressureLogger = hydraulicModel.pressureLoggers.get(pressureLoggerId);
+    if (!pressureLogger) {
+      throw new Error(`Pressure logger ${pressureLoggerId} not found`);
+    }
+    return pressureLogger;
+  };
+
+  const resolvePressureLoggerEndpoint = (
+    pressureLoggerId: number,
+    fallbackNode: NodeAsset,
+  ): { node: NodeAsset; pressureLoggerUpdate?: PressureLogger } => {
+    const pressureLogger = getPressureLogger(pressureLoggerId);
+    const backingJunctionId = pressureLogger.connection?.junctionId;
+
+    if (backingJunctionId !== undefined) {
+      const backingJunction = hydraulicModel.assets.get(backingJunctionId);
+      if (backingJunction && backingJunction.isNode) {
+        return { node: backingJunction as NodeAsset };
+      }
+    }
+
+    const junction = createPressureLoggerBackingJunction(
+      pressureLoggerId,
+      fallbackNode.coordinates,
+      fallbackNode.elevation,
+    );
+
+    return {
+      node: junction,
+      pressureLoggerUpdate: pressureLogger.connect({ junctionId: junction.id }),
+    };
+  };
+
   const handleSnappingClick = async (
     snappingCandidate: SnappingCandidate,
     clickPosition: Position,
     pointElevation: number,
   ) => {
     if (drawing.isNull) {
-      if (snappingCandidate.type === "pipe") {
+      if (
+        snappingCandidate.type === "pipe" ||
+        snappingCandidate.type === "pressureLogger"
+      ) {
         const startNode = createJunction(
           snappingCandidate.coordinates,
           await fetchElevation(
@@ -367,7 +485,14 @@ export function useDrawLinkHandlers({
         );
         startDrawing({
           startNode,
-          startPipeId: snappingCandidate.id,
+          startPressureLoggerId:
+            snappingCandidate.type === "pressureLogger"
+              ? snappingCandidate.id
+              : undefined,
+          startPipeId:
+            snappingCandidate.type === "pipe"
+              ? snappingCandidate.id
+              : undefined,
         });
       } else {
         startDrawing({
@@ -377,12 +502,18 @@ export function useDrawLinkHandlers({
     } else {
       const submitParams = {
         startNode: drawing.startNode,
+        startPressureLoggerId: drawing.startPressureLoggerId,
         startPipeId: drawing.startPipeId,
         link: drawing.link,
         endNode:
-          snappingCandidate.type === "pipe"
+          snappingCandidate.type === "pipe" ||
+          snappingCandidate.type === "pressureLogger"
             ? createJunction(clickPosition, pointElevation)
             : snappingCandidate,
+        endPressureLoggerId:
+          snappingCandidate.type === "pressureLogger"
+            ? snappingCandidate.id
+            : undefined,
         endPipeId:
           snappingCandidate.type === "pipe" ? snappingCandidate.id : undefined,
       };
@@ -417,7 +548,7 @@ export function useDrawLinkHandlers({
             e,
             currentPosition,
             isSnapping,
-            findSnappingCandidate,
+            getSnappingCandidate,
           );
           const check = checkLoopedLinkConditions(
             drawing,
@@ -435,13 +566,15 @@ export function useDrawLinkHandlers({
           e,
           getMapCoord(e),
           isSnapping,
-          findSnappingCandidate,
+          getSnappingCandidate,
         );
         const clickPosition = snappingCandidate
           ? snappingCandidate.coordinates
           : getMapCoord(e);
         const pointElevation =
-          snappingCandidate && snappingCandidate.type !== "pipe"
+          snappingCandidate &&
+          snappingCandidate.type !== "pipe" &&
+          snappingCandidate.type !== "pressureLogger"
             ? snappingCandidate.elevation
             : await fetchElevation(e.lngLat);
 
@@ -461,6 +594,7 @@ export function useDrawLinkHandlers({
         } else if (isEndAndContinueOn()) {
           const submitParams = {
             startNode: drawing.startNode,
+            startPressureLoggerId: drawing.startPressureLoggerId,
             startPipeId: drawing.startPipeId,
             link: drawing.link,
             endNode: createJunction(clickPosition, pointElevation),
@@ -501,7 +635,7 @@ export function useDrawLinkHandlers({
         e,
         getMapCoord(e),
         isSnapping,
-        findSnappingCandidate,
+        getSnappingCandidate,
       );
 
       if (drawing.isNull) {
@@ -558,7 +692,7 @@ export function useDrawLinkHandlers({
         e,
         currentPosition,
         isSnapping,
-        findSnappingCandidate,
+        getSnappingCandidate,
       );
       const check = checkLoopedLinkConditions(
         drawing,
@@ -583,6 +717,7 @@ export function useDrawLinkHandlers({
 
       const submitParams = {
         startNode,
+        startPressureLoggerId: drawing.startPressureLoggerId,
         startPipeId: drawing.startPipeId,
         link,
         endNode: endJunction,

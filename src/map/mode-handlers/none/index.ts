@@ -421,24 +421,25 @@ export function useNoneHandlers({
       }
     },
     click: (e) => {
-      const clickedAsset = getClickedAsset(e);
       e.preventDefault();
 
+      const clickedCustomerPoint = getClickedCustomerPoint(e);
+
+      if (clickedCustomerPoint) {
+        selectCustomerPoint(clickedCustomerPoint.id);
+        return;
+      }
+
+      const clickedPressureLogger = getClickedPressureLogger(e);
+
+      if (clickedPressureLogger) {
+        selectPressureLogger(clickedPressureLogger.id);
+        return;
+      }
+
+      const clickedAsset = getClickedAsset(e);
+
       if (!clickedAsset) {
-        const clickedCustomerPoint = getClickedCustomerPoint(e);
-
-        if (clickedCustomerPoint) {
-          selectCustomerPoint(clickedCustomerPoint.id);
-          return;
-        }
-
-        const clickedPressureLogger = getClickedPressureLogger(e);
-
-        if (clickedPressureLogger) {
-          selectPressureLogger(clickedPressureLogger.id);
-          return;
-        }
-
         if (isShiftHeld()) return;
 
         clearSelection();

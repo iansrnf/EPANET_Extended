@@ -102,6 +102,8 @@ class MapTestEngine {
     })),
   };
 
+  pickOverlayObjects = vi.fn().mockReturnValue([]);
+
   getSource(name: string): GeoJSONSourceRaw | null {
     return this.sources.get(name) || null;
   }

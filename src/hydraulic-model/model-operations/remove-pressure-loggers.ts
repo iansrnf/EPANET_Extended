@@ -16,8 +16,16 @@ export const removePressureLoggers: ModelOperation<InputData> = (
     throw new Error(`Pressure logger(s) not found: ${missingIds.join(", ")}`);
   }
 
+  const backingJunctionIds = pressureLoggerIds.flatMap((id) => {
+    const pressureLogger = model.pressureLoggers.get(id);
+    return pressureLogger?.connection?.junctionId !== undefined
+      ? [pressureLogger.connection.junctionId]
+      : [];
+  });
+
   return {
     note: "Remove pressure loggers",
+    deleteAssets: backingJunctionIds,
     deletePressureLoggers: pressureLoggerIds,
   };
 };

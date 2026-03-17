@@ -123,8 +123,9 @@ const buildDrawLinkSourceData = (
 ): Feature[] => {
   const features: Feature[] = [];
 
-  const iconProps = (type: Asset["type"]) => {
-    if (type === "junction" || type === "pipe") return {};
+  const iconProps = (type: Asset["type"] | "pressureLogger") => {
+    if (type === "junction" || type === "pipe" || type === "pressureLogger")
+      return {};
 
     return { icon: `${type}-highlight` };
   };

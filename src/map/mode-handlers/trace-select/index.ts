@@ -14,9 +14,11 @@ import { searchNearbyRenderedFeatures } from "src/map/search";
 import { clickableLayers } from "src/map/layers/layer";
 import { notify } from "src/components/notifications";
 import { Asset, Pipe, Valve } from "src/hydraulic-model/asset-types";
+import { PressureLogger } from "src/hydraulic-model/pressure-loggers";
 import { runTrace } from "src/lib/trace";
 import { useTranslate } from "src/hooks/use-translate";
 import { useKeyboardState } from "src/keyboard/use-keyboard-state";
+import { useSnapping } from "../hooks/use-snapping";
 
 const TRACE_MODE_MAP = {
   [Mode.BOUNDARY_TRACE_SELECT]: "boundary",
@@ -35,6 +37,7 @@ export function useTraceSelectHandlers({
   const traceMode = TRACE_MODE_MAP[modeWithOptions.mode as TraceModeKey];
 
   const { getClickedAsset } = useClickedAsset(map, hydraulicModel.assets);
+  const { findSnappingCandidate } = useSnapping(map, hydraulicModel.assets);
   const resultsReader = useAtomValue(simulationResultsAtom);
   const setMode = useSetAtom(modeAtom);
   const setCursor = useSetAtom(cursorStyleAtom);
@@ -44,6 +47,7 @@ export function useTraceSelectHandlers({
     clearSelection,
     extendSelection,
     removeFromSelection,
+    selectPressureLogger,
   } = useSelection(selection);
   const translate = useTranslate();
   const { isShiftHeld, isAltHeld } = useKeyboardState();
@@ -68,6 +72,24 @@ export function useTraceSelectHandlers({
     return "pointer";
   };
 
+  const getClickedPressureLogger = (
+    e: mapboxgl.MapMouseEvent | mapboxgl.MapTouchEvent,
+  ): PressureLogger | null => {
+    const pickedObjects = map.pickOverlayObjects({
+      x: e.point.x,
+      y: e.point.y,
+      radius: 7,
+    });
+
+    for (const pickInfo of pickedObjects) {
+      if (pickInfo.layer?.id === "pressure-loggers-layer" && pickInfo.object) {
+        return pickInfo.object as PressureLogger;
+      }
+    }
+
+    return null;
+  };
+
   const handleClick = async (
     e: mapboxgl.MapMouseEvent | mapboxgl.MapTouchEvent,
   ) => {
@@ -77,12 +99,16 @@ export function useTraceSelectHandlers({
     const operation = identifyOperation();
 
     const clickedAsset = getClickedAsset(e);
-    if (!clickedAsset) {
+    const clickedPressureLogger = clickedAsset
+      ? null
+      : getClickedPressureLogger(e);
+
+    if (!clickedAsset && !clickedPressureLogger) {
       if (!operation) clearSelection();
       return;
     }
 
-    if (isForbiddenTarget(clickedAsset, traceMode)) {
+    if (clickedAsset && isForbiddenTarget(clickedAsset, traceMode)) {
       return;
     }
 
@@ -93,7 +119,11 @@ export function useTraceSelectHandlers({
         title: translate("traceSelection.simulationRequired"),
         description: translate("traceSelection.simulationRequiredHint"),
       });
-      selectAsset(clickedAsset.id);
+      if (clickedAsset) {
+        selectAsset(clickedAsset.id);
+      } else if (clickedPressureLogger) {
+        selectPressureLogger(clickedPressureLogger.id);
+      }
       return;
     }
 
@@ -101,15 +131,42 @@ export function useTraceSelectHandlers({
     const startNodeIds: number[] = [];
     const startLinkIds: number[] = [];
 
-    if (clickedAsset.isLink) {
-      startLinkIds.push(clickedAsset.id);
+    if (clickedAsset) {
+      if (clickedAsset.isLink) {
+        startLinkIds.push(clickedAsset.id);
+      } else {
+        startNodeIds.push(clickedAsset.id);
+      }
     } else {
-      startNodeIds.push(clickedAsset.id);
+      if (!clickedPressureLogger) return;
+
+      const backingJunctionId = clickedPressureLogger.connection?.junctionId;
+      if (
+        backingJunctionId !== undefined &&
+        hydraulicModel.assets.has(backingJunctionId)
+      ) {
+        startNodeIds.push(backingJunctionId);
+      } else {
+        const snappingCandidate = findSnappingCandidate(
+          e,
+          clickedPressureLogger.coordinates,
+        );
+
+        if (snappingCandidate?.type === "pipe") {
+          startLinkIds.push(snappingCandidate.id);
+        } else if (snappingCandidate) {
+          startNodeIds.push(snappingCandidate.id);
+        }
+      }
     }
 
     // Only show intermediate selection when replacing (not appending/subtracting)
     if (!operation) {
-      selectAsset(clickedAsset.id);
+      if (clickedAsset) {
+        selectAsset(clickedAsset.id);
+      } else if (clickedPressureLogger) {
+        selectPressureLogger(clickedPressureLogger.id);
+      }
     }
 
     const abortController = new AbortController();
@@ -129,7 +186,8 @@ export function useTraceSelectHandlers({
 
       if (abortController.signal.aborted) return;
 
-      const idsToApply = assetIds.length > 0 ? assetIds : [clickedAsset.id];
+      const idsToApply =
+        assetIds.length > 0 ? assetIds : clickedAsset ? [clickedAsset.id] : [];
 
       if (operation === "add") {
         extendSelection(idsToApply);
@@ -158,7 +216,9 @@ export function useTraceSelectHandlers({
         (f) => !f.state || !f.state.hidden,
       );
 
-      if (visibleFeatures.length === 0) {
+      const hoveredPressureLogger = getClickedPressureLogger(e);
+
+      if (visibleFeatures.length === 0 && !hoveredPressureLogger) {
         setCursor("");
         return;
       }

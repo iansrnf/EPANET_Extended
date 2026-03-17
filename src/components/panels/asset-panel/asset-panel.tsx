@@ -666,8 +666,14 @@ const PipeEditor = ({
       key={pipe.id}
     >
       <SectionWrapper title={translate("connections")} section="connections">
-        <TextRow name="startNode" value={startNode ? startNode.label : ""} />
-        <TextRow name="endNode" value={endNode ? endNode.label : ""} />
+        <TextRow
+          name="startNode"
+          value={getEndpointLabel(hydraulicModel, startNode)}
+        />
+        <TextRow
+          name="endNode"
+          value={getEndpointLabel(hydraulicModel, endNode)}
+        />
       </SectionWrapper>
       <SectionWrapper
         title={translate("activeTopology")}
@@ -1629,8 +1635,14 @@ const ValveEditor = ({
       key={valve.id}
     >
       <SectionWrapper title={translate("connections")} section="connections">
-        <TextRow name="startNode" value={startNode ? startNode.label : ""} />
-        <TextRow name="endNode" value={endNode ? endNode.label : ""} />
+        <TextRow
+          name="startNode"
+          value={getEndpointLabel(hydraulicModel, startNode)}
+        />
+        <TextRow
+          name="endNode"
+          value={getEndpointLabel(hydraulicModel, endNode)}
+        />
       </SectionWrapper>
       <SectionWrapper
         title={translate("activeTopology")}
@@ -1840,8 +1852,14 @@ const PumpEditor = ({
       key={pump.id}
     >
       <SectionWrapper title={translate("connections")} section="connections">
-        <TextRow name="startNode" value={startNode ? startNode.label : ""} />
-        <TextRow name="endNode" value={endNode ? endNode.label : ""} />
+        <TextRow
+          name="startNode"
+          value={getEndpointLabel(hydraulicModel, startNode)}
+        />
+        <TextRow
+          name="endNode"
+          value={getEndpointLabel(hydraulicModel, endNode)}
+        />
       </SectionWrapper>
       <SectionWrapper
         title={translate("activeTopology")}
@@ -2005,6 +2023,19 @@ const PumpEditor = ({
 const pipeStatusLabel = (sim: Pick<PipeSimulation, "status"> | null) => {
   if (!sim) return "notAvailable";
   return "pipe." + sim.status;
+};
+
+const getEndpointLabel = (
+  hydraulicModel: HydraulicModel,
+  node: NodeAsset | null,
+): string => {
+  if (!node) return "";
+
+  const pressureLogger = Array.from(
+    hydraulicModel.pressureLoggers.values(),
+  ).find((logger) => logger.connection?.junctionId === node.id);
+
+  return pressureLogger?.label ?? node.label;
 };
 
 const pumpStatusLabel = (

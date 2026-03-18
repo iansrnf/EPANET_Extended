@@ -157,12 +157,18 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
   const pipeFlowOverlayRef = useRef<PipeFlowAnimationOverlay>([]);
   const baseDeckLayersRef = useRef<LayersList>([]);
   const pipeFlowAnimationFrameRef = useRef<number | null>(null);
+  const resultsReader = simulationResults;
+  const pipeFlowAnimationContextRef = useRef<{
+    assets: AssetsMap;
+    simulationResults: ResultsReader | null;
+  }>({
+    assets,
+    simulationResults: resultsReader,
+  });
   const gridRef = useRef<Grid | null>(null);
   const scaleControlRef = useRef<mapboxgl.ScaleControl | null>(null);
   const translate = useTranslate();
   const translateUnit = useTranslateUnit();
-
-  const resultsReader = simulationResults;
 
   const doUpdates = useCallback(() => {
     if (!map) return;
@@ -225,6 +231,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           pipeFlowOverlayRef,
           baseDeckLayersRef,
           pipeFlowAnimationFrameRef,
+          pipeFlowAnimationContextRef,
         });
 
         if (
@@ -905,6 +912,7 @@ const syncPipeFlowPulseAnimation = ({
   pipeFlowOverlayRef,
   baseDeckLayersRef,
   pipeFlowAnimationFrameRef,
+  pipeFlowAnimationContextRef,
 }: {
   map: MapEngine;
   assets: AssetsMap;
@@ -912,7 +920,16 @@ const syncPipeFlowPulseAnimation = ({
   pipeFlowOverlayRef: MutableRefObject<PipeFlowAnimationOverlay>;
   baseDeckLayersRef: MutableRefObject<LayersList>;
   pipeFlowAnimationFrameRef: MutableRefObject<number | null>;
+  pipeFlowAnimationContextRef: MutableRefObject<{
+    assets: AssetsMap;
+    simulationResults: ResultsReader | null;
+  }>;
 }) => {
+  pipeFlowAnimationContextRef.current = {
+    assets,
+    simulationResults: simulationResults ?? null,
+  };
+
   const hasSimulationResults = !!simulationResults;
 
   if (!hasSimulationResults) {
@@ -925,21 +942,38 @@ const syncPipeFlowPulseAnimation = ({
 
   map.hideLayers(PIPE_FLOW_PULSE_LAYERS);
 
-  if (pipeFlowAnimationFrameRef.current !== null) {
-    return;
-  }
+  const renderOverlay = (phase: number) => {
+    const {
+      assets: currentAssets,
+      simulationResults: currentSimulationResults,
+    } = pipeFlowAnimationContextRef.current;
 
-  const tick = (time: number) => {
-    const phase = (((time * 0.00012) % 1) + 1) % 1;
+    if (!currentSimulationResults) {
+      pipeFlowOverlayRef.current = [];
+      map.setOverlay(baseDeckLayersRef.current);
+      return;
+    }
+
     pipeFlowOverlayRef.current = buildPipeFlowAnimationOverlay({
-      assets,
-      simulationResults,
+      assets: currentAssets,
+      simulationResults: currentSimulationResults,
       phase,
     });
     map.setOverlay([
       ...baseDeckLayersRef.current,
       ...pipeFlowOverlayRef.current,
     ]);
+  };
+
+  renderOverlay((((performance.now() * 0.00012) % 1) + 1) % 1);
+
+  if (pipeFlowAnimationFrameRef.current !== null) {
+    return;
+  }
+
+  const tick = (time: number) => {
+    const phase = (((time * 0.00012) % 1) + 1) % 1;
+    renderOverlay(phase);
     pipeFlowAnimationFrameRef.current = window.requestAnimationFrame(tick);
   };
 

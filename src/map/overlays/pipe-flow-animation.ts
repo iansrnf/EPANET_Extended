@@ -34,6 +34,9 @@ const inactiveColor = hexToArray(colors.gray300, 0.75) as [
   number,
   number,
 ];
+const FLOW_ANIMATION_EPSILON = 1e-3;
+const VELOCITY_ANIMATION_EPSILON = 1e-3;
+const HEADLOSS_ANIMATION_EPSILON = 1e-3;
 
 export const buildPipeFlowAnimationOverlay = ({
   assets,
@@ -86,7 +89,7 @@ const buildAnimationPaths = (
     const pipe = asset as Pipe;
     const simulation = simulationResults.getPipe(pipe.id);
     if (!simulation || simulation.status !== "open") continue;
-    if (simulation.flow === 0) continue;
+    if (isEffectivelyZeroFlow(simulation)) continue;
 
     const coordinates = pipe.coordinates;
     if (coordinates.length < 2) continue;
@@ -158,7 +161,7 @@ const buildAnimatedSegments = (
         path: segmentPath,
         color: scaleAlpha(
           path.isActive ? activeColor : inactiveColor,
-          path.strength,
+          path.strength * 1.5,
         ),
       });
     }
@@ -302,4 +305,16 @@ const getPipeFlowDirection = (
   }
 
   return flow < 0 ? -1 : 1;
+};
+
+const isEffectivelyZeroFlow = (
+  simulation: ResultsReader["getPipe"] extends (...args: any[]) => infer T
+    ? NonNullable<T>
+    : never,
+) => {
+  return (
+    Math.abs(simulation.flow) <= FLOW_ANIMATION_EPSILON &&
+    Math.abs(simulation.velocity) <= VELOCITY_ANIMATION_EPSILON &&
+    Math.abs(simulation.headloss) <= HEADLOSS_ANIMATION_EPSILON
+  );
 };

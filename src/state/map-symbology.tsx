@@ -1,5 +1,6 @@
 import { atom, useAtom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
+import { useEffect } from "react";
 import { PersistenceMetadataMemory } from "src/lib/persistence/ipersistence";
 import { SYMBOLIZATION_NONE } from "src/types";
 import {
@@ -42,10 +43,11 @@ type SymbologyColorPreferences = Partial<
 
 export const defaultSymbologyColorPreferences: SymbologyColorPreferences = {};
 
-export const symbologyColorPreferencesAtom = atomWithStorage<SymbologyColorPreferences>(
-  "symbology-color-preferences",
-  defaultSymbologyColorPreferences,
-);
+export const symbologyColorPreferencesAtom =
+  atomWithStorage<SymbologyColorPreferences>(
+    "symbology-color-preferences",
+    defaultSymbologyColorPreferences,
+  );
 
 export const nodeSymbologyAtom = atom<NodeSymbology>(nullSymbologySpec.node);
 export const linkSymbologyAtom = atom<LinkSymbology>(nullSymbologySpec.link);
@@ -82,6 +84,21 @@ export const useSymbologyState = () => {
   );
 
   const isPersistOn = useFeatureFlag("FLAG_RESTORE_MAP_PREFERENCES");
+  const effectiveCustomerPointsSymbology = isPersistOn
+    ? customerPointsPreference
+    : customerPointsSymbology;
+
+  useEffect(() => {
+    if (!isPersistOn) return;
+    if (customerPointsSymbology === customerPointsPreference) return;
+
+    setCustomerPointsSymbology(customerPointsPreference);
+  }, [
+    customerPointsPreference,
+    customerPointsSymbology,
+    isPersistOn,
+    setCustomerPointsSymbology,
+  ]);
 
   const switchNodeSymbologyTo = (
     property: SupportedProperty | null,
@@ -128,6 +145,8 @@ export const useSymbologyState = () => {
     colors: string[];
     reversedRamp?: boolean;
   }) => {
+    if (!isPersistOn) return;
+
     const property = colorRule.property as SupportedProperty;
     const numIntervals = colorRule.colors.length;
     const rampColors = getColors(
@@ -181,15 +200,15 @@ export const useSymbologyState = () => {
     newCustomerPointsSymbology: CustomerPointsSymbology,
   ) => {
     setCustomerPointsSymbology(newCustomerPointsSymbology);
-    setCustomerPointPreference(newCustomerPointsSymbology);
+    if (isPersistOn) {
+      setCustomerPointPreference(newCustomerPointsSymbology);
+    }
   };
 
   return {
     linkSymbology,
     nodeSymbology,
-    customerPointsSymbology: isPersistOn
-      ? customerPointsPreference
-      : customerPointsSymbology,
+    customerPointsSymbology: effectiveCustomerPointsSymbology,
     symbologyPreferences,
     switchNodeSymbologyTo,
     switchLinkSymbologyTo,

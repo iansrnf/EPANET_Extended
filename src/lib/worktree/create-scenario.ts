@@ -26,6 +26,7 @@ export const createScenario = (
     version: mainSnapshot.version,
     momentLog: newMomentLog,
     simulation: null,
+    simulationSourceId: worktree.mainId,
     simulationSettings,
     status: "open",
   };

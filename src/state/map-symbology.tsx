@@ -40,8 +40,12 @@ type SymbologyColorPreferences = Partial<
   Record<SupportedProperty, RangeColorPreference>
 >;
 
-const symbologyColorPreferencesAtom =
-  atomWithStorage<SymbologyColorPreferences>("symbology-color-preferences", {});
+export const defaultSymbologyColorPreferences: SymbologyColorPreferences = {};
+
+export const symbologyColorPreferencesAtom = atomWithStorage<SymbologyColorPreferences>(
+  "symbology-color-preferences",
+  defaultSymbologyColorPreferences,
+);
 
 export const nodeSymbologyAtom = atom<NodeSymbology>(nullSymbologySpec.node);
 export const linkSymbologyAtom = atom<LinkSymbology>(nullSymbologySpec.link);

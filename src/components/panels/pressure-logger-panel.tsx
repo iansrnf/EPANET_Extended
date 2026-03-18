@@ -64,7 +64,7 @@ export function PressureLoggerPanel() {
     const reading = loggerTelemetry.readingsByDeviceId[pressureLogger.label];
     return {
       status: reading?.status ?? translate("notAvailable"),
-      currentPressure: reading
+      currentPressure: reading?.psi !== undefined
         ? `${reading.psi.toFixed(2)} psi`
         : translate("notAvailable"),
       lastUpdated: reading?.timestamp ?? translate("notAvailable"),
@@ -221,7 +221,7 @@ export function PressureLoggerPanel() {
           {translate("pressureLogger")}
         </span>
       </div>
-      <SectionList gap={3} padding={4}>
+      <SectionList gap={3} padding={4} overflow={true}>
         {connectedSimulationComparisons.length > 0 && (
           <SectionWrapper
             title="Live vs connected simulation (psi)"

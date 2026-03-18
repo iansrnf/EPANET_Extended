@@ -81,7 +81,6 @@ const extractPsi = (payload: LoggerPayload): number | null => {
     payload.value,
     payload.currentValue,
     payload.current_value,
-    payload.temp_or_status,
   ];
 
   const measuredValue = measuredValueCandidates
@@ -106,8 +105,6 @@ export const parseLoggerTelemetryMessage = (
   const messageType =
     typeof maybePayload.type === "string" ? maybePayload.type.trim() : "";
 
-  if (messageType === "device_status") return null;
-
   const deviceId =
     typeof maybePayload.deviceId === "string"
       ? maybePayload.deviceId.trim()
@@ -116,11 +113,19 @@ export const parseLoggerTelemetryMessage = (
   if (!deviceId) return null;
 
   const psi = extractPsi(maybePayload);
-  if (psi === null) return null;
+  const hasStatusTelemetry =
+    typeof maybePayload.status === "string" ||
+    maybePayload.temp_or_status !== undefined ||
+    maybePayload.battery_v !== undefined ||
+    maybePayload.external_v !== undefined ||
+    maybePayload.gsm_pct !== undefined ||
+    typeof maybePayload.raw === "string";
+
+  if (psi === null && !hasStatusTelemetry) return null;
 
   return {
     deviceId,
-    psi,
+    psi: psi ?? undefined,
     timestamp:
       typeof maybePayload.timestamp === "string" &&
       maybePayload.timestamp.trim() !== ""

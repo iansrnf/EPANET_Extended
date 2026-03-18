@@ -62,7 +62,7 @@ export const buildPressureLoggersOverlay = (
 ): PressureLoggersOverlay => {
   const data = Array.from(pressureLoggers.values());
   const textData = data.filter((pressureLogger) =>
-    Boolean(readingsByDeviceId[pressureLogger.label]),
+    typeof readingsByDeviceId[pressureLogger.label]?.psi === "number",
   );
 
   return [
@@ -92,7 +92,7 @@ export const buildPressureLoggersOverlay = (
       getPosition: (d: PressureLogger) => d.coordinates as [number, number],
       getText: (d: PressureLogger) => {
         const reading = readingsByDeviceId[d.label];
-        return reading ? `${reading.psi.toFixed(2)} psi` : "";
+        return reading?.psi !== undefined ? `${reading.psi.toFixed(2)} psi` : "";
       },
       getColor: hexToArray(colors.orange800),
       getSize: 12,

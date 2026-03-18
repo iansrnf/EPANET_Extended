@@ -9,7 +9,7 @@ export type LoggerConnectionState =
 
 export type LoggerTelemetryReading = {
   deviceId: string;
-  psi: number;
+  psi?: number;
   timestamp: string;
   messageType?: string;
   status?: string;
@@ -42,18 +42,26 @@ export const recordLoggerTelemetryReading = (
   state: LoggerTelemetryState,
   reading: LoggerTelemetryReading,
 ): LoggerTelemetryState => {
+  const existingReading = state.readingsByDeviceId[reading.deviceId];
   const existingHistory = state.pressureHistoryByDeviceId[reading.deviceId] ?? [];
-  const nextSampleCount =
-    (state.pressureSampleCountByDeviceId[reading.deviceId] ?? 0) + 1;
-  const nextHistory = [...existingHistory, reading].slice(
-    -MAX_LOGGER_HISTORY_POINTS,
-  );
+  const mergedReading = {
+    ...existingReading,
+    ...reading,
+  };
+  const hasPressureSample =
+    typeof reading.psi === "number" && Number.isFinite(reading.psi);
+  const nextSampleCount = hasPressureSample
+    ? (state.pressureSampleCountByDeviceId[reading.deviceId] ?? 0) + 1
+    : (state.pressureSampleCountByDeviceId[reading.deviceId] ?? 0);
+  const nextHistory = hasPressureSample
+    ? [...existingHistory, mergedReading].slice(-MAX_LOGGER_HISTORY_POINTS)
+    : existingHistory;
 
   return {
     ...state,
     readingsByDeviceId: {
       ...state.readingsByDeviceId,
-      [reading.deviceId]: reading,
+      [reading.deviceId]: mergedReading,
     },
     pressureHistoryByDeviceId: {
       ...state.pressureHistoryByDeviceId,

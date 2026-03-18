@@ -34,15 +34,30 @@ describe("parseLoggerTelemetryMessage", () => {
     });
   });
 
-  it("ignores device_status payloads", () => {
+  it("keeps device status payloads even without pressure", () => {
     expect(
       parseLoggerTelemetryMessage({
         deviceId: "L1",
         type: "device_status",
         timestamp: "2026-03-17T10:47:07",
-        temp_or_status: 30,
+        temp_or_status: 28,
+        battery_v: 7.36,
+        external_v: 5,
+        gsm_pct: 53,
+        raw: "SIMULATED_PRESSURE",
       }),
-    ).toBeNull();
+    ).toEqual({
+      deviceId: "L1",
+      psi: undefined,
+      timestamp: "2026-03-17T10:47:07",
+      messageType: "device_status",
+      status: undefined,
+      tempOrStatus: "28",
+      batteryVoltage: "7.36",
+      externalVoltage: "5",
+      gsmPercent: "53",
+      raw: "SIMULATED_PRESSURE",
+    });
   });
 
   it("converts supported non-psi values to psi", () => {
@@ -57,12 +72,28 @@ describe("parseLoggerTelemetryMessage", () => {
     expect(reading?.psi).toBeCloseTo(14.22, 2);
   });
 
-  it("ignores payloads without a device id or numeric reading", () => {
+  it("ignores payloads without a device id or telemetry fields", () => {
     expect(parseLoggerTelemetryMessage({ psi: 10 })).toBeNull();
     expect(
       parseLoggerTelemetryMessage({
         deviceId: "L1",
         temp_or_status: "online",
+      }),
+    ).toEqual({
+      deviceId: "L1",
+      psi: undefined,
+      timestamp: expect.any(String),
+      messageType: undefined,
+      status: undefined,
+      tempOrStatus: "online",
+      batteryVoltage: undefined,
+      externalVoltage: undefined,
+      gsmPercent: undefined,
+      raw: undefined,
+    });
+    expect(
+      parseLoggerTelemetryMessage({
+        deviceId: "L1",
       }),
     ).toBeNull();
   });
@@ -93,5 +124,36 @@ describe("parseLoggerTelemetryMessage", () => {
         MAX_LOGGER_HISTORY_POINTS - 1
       ]?.psi,
     ).toBe(MAX_LOGGER_HISTORY_POINTS + 5);
+  });
+
+  it("merges status-only updates into the latest device reading without adding history", () => {
+    let state = recordLoggerTelemetryReading(initialLoggerTelemetryState, {
+      deviceId: "L1",
+      psi: 42.25,
+      timestamp: "2026-03-17T10:47:07",
+    });
+
+    state = recordLoggerTelemetryReading(state, {
+      deviceId: "L1",
+      timestamp: "2026-03-17T10:48:07",
+      tempOrStatus: "28",
+      batteryVoltage: "7.36",
+      externalVoltage: "5",
+      gsmPercent: "53",
+      raw: "SIMULATED_PRESSURE",
+    });
+
+    expect(state.readingsByDeviceId.L1).toEqual({
+      deviceId: "L1",
+      psi: 42.25,
+      timestamp: "2026-03-17T10:48:07",
+      tempOrStatus: "28",
+      batteryVoltage: "7.36",
+      externalVoltage: "5",
+      gsmPercent: "53",
+      raw: "SIMULATED_PRESSURE",
+    });
+    expect(state.pressureSampleCountByDeviceId.L1).toBe(1);
+    expect(state.pressureHistoryByDeviceId.L1).toHaveLength(1);
   });
 });

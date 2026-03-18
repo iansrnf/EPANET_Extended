@@ -54,9 +54,14 @@ export interface LoggerPressureBucketPoint {
 export const buildLoggerPressurePoints = (
   pressureHistory: LoggerTelemetryReading[],
 ): LoggerPressureBucketPoint[] => {
-  if (pressureHistory.length === 0) return [];
+  const pressureSamples = pressureHistory.filter(
+    (reading): reading is LoggerTelemetryReading & { psi: number } =>
+      typeof reading.psi === "number" && Number.isFinite(reading.psi),
+  );
 
-  const parsedTimestamps = pressureHistory.map((reading) =>
+  if (pressureSamples.length === 0) return [];
+
+  const parsedTimestamps = pressureSamples.map((reading) =>
     Date.parse(reading.timestamp),
   );
   const hasValidTimestamps = parsedTimestamps.every((timestamp) =>
@@ -64,7 +69,7 @@ export const buildLoggerPressurePoints = (
   );
 
   if (!hasValidTimestamps) {
-    return pressureHistory.map((reading, index) => ({
+    return pressureSamples.map((reading, index) => ({
       x: index,
       y: reading.psi,
     }));
@@ -72,7 +77,7 @@ export const buildLoggerPressurePoints = (
 
   const firstTimestamp = parsedTimestamps[0]!;
 
-  return pressureHistory.map((reading, index) => ({
+  return pressureSamples.map((reading, index) => ({
     x: (parsedTimestamps[index]! - firstTimestamp) / 1000,
     y: reading.psi,
   }));

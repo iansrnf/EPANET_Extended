@@ -51,9 +51,11 @@ import {
   MousePointerClick,
   PanelLeft,
   PanelRight,
+  Pause,
   PencilLine,
   Pin,
   PinOff,
+  Play,
   Plus,
   RectangleHorizontal,
   Redo2,
@@ -131,7 +133,9 @@ export const ChevronRightIcon = icon(ChevronRight);
 export const ChevronDownIcon = icon(ChevronDown);
 export const ChevronLeftIcon = icon(ChevronLeft);
 export const ChevronsLeftIcon = icon(ChevronsLeft);
+export const PauseIcon = icon(Pause);
 export const CloseIcon = icon(X);
+export const PlayIcon = icon(Play);
 export const UploadIcon = icon(Upload);
 export const EarlyAccessIcon = icon(Star);
 export const LabelsIcon = icon(Type);

@@ -1,9 +1,14 @@
 import { useAtomValue } from "jotai";
 import clsx from "clsx";
-import { ChevronLeftIcon, ChevronRightIcon } from "src/icons";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PauseIcon,
+  PlayIcon,
+} from "src/icons";
 import { simulationAtom } from "src/state/simulation";
 import { Selector } from "./form/selector";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { useChangeTimestep } from "src/commands/change-timestep";
 import { getSimulationMetadata } from "src/simulation/epanet/simulation-metadata";
@@ -34,7 +39,7 @@ export const TimestepSelector = () => {
   );
 };
 
-type ChangeTimestepSource = "buttons" | "dropdown";
+type ChangeTimestepSource = "buttons" | "dropdown" | "autoplay";
 
 type TimestepSelectorUIProps = {
   currentTimestepIndex: number;
@@ -49,6 +54,7 @@ export const TimestepSelectorUI = ({
   reportTimestep,
   onChangeTimestep,
 }: TimestepSelectorUIProps) => {
+  const [isAutoplaying, setIsAutoplaying] = useState(false);
   const canGoPrevious = currentTimestepIndex > 0;
   const canGoNext = currentTimestepIndex < timestepCount - 1;
 
@@ -58,6 +64,39 @@ export const TimestepSelectorUI = ({
       value: String(i),
     }));
   }, [timestepCount, reportTimestep]);
+
+  useEffect(() => {
+    if (!isAutoplaying) return;
+
+    if (!canGoNext) {
+      setIsAutoplaying(false);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void onChangeTimestep(currentTimestepIndex + 1, "autoplay");
+    }, 2000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [canGoNext, currentTimestepIndex, isAutoplaying, onChangeTimestep]);
+
+  useEffect(() => {
+    if (currentTimestepIndex >= timestepCount - 1) {
+      setIsAutoplaying(false);
+    }
+  }, [currentTimestepIndex, timestepCount]);
+
+  const toggleAutoplay = () => {
+    if (!isAutoplaying && !canGoNext) {
+      void onChangeTimestep(0, "autoplay");
+      setIsAutoplaying(true);
+      return;
+    }
+
+    setIsAutoplaying((active) => !active);
+  };
 
   return (
     <div className="absolute top-3 right-3 flex items-center gap-1 p-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-black rounded-sm shadow-sm">
@@ -72,6 +111,20 @@ export const TimestepSelectorUI = ({
         aria-label="Previous timestep"
       >
         <ChevronLeftIcon />
+      </button>
+      <button
+        onClick={toggleAutoplay}
+        className={clsx(
+          "size-[1.875rem] p-1.5 rounded-sm transition-colors",
+          isAutoplaying
+            ? "bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-950 dark:text-violet-200 dark:hover:bg-violet-900"
+            : "hover:bg-gray-200 dark:hover:bg-gray-800",
+          "active:bg-gray-300 dark:active:bg-gray-600",
+        )}
+        aria-label={isAutoplaying ? "Pause autoplay" : "Play timeline"}
+        aria-pressed={isAutoplaying}
+      >
+        {isAutoplaying ? <PauseIcon /> : <PlayIcon />}
       </button>
       <button
         onClick={() => onChangeTimestep(currentTimestepIndex + 1, "buttons")}

@@ -13,7 +13,12 @@ import { usePersistenceWithSnapshots } from "src/lib/persistence";
 export const previousTimestepShortcut = "shift+left";
 export const nextTimestepShortcut = "shift+right";
 
-type ChangeTimestepSource = "shortcut" | "buttons" | "dropdown" | "quick-graph";
+type ChangeTimestepSource =
+  | "shortcut"
+  | "buttons"
+  | "dropdown"
+  | "quick-graph"
+  | "autoplay";
 
 export const useChangeTimestep = () => {
   const simulation = useAtomValue(simulationAtom);

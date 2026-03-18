@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useAtom } from "jotai";
 import { useNewProject } from "src/commands/create-new-project";
 import { useOpenInpFromFs } from "src/commands/open-inp-from-fs";
@@ -20,11 +19,9 @@ import {
   termsAndConditionsUrl,
 } from "src/global-config";
 import { Checkbox } from "../form/Checkbox";
-import { Button, LogoIconAndWordmarkIcon } from "../elements";
+import { Button, Loading, LogoIconAndWordmarkIcon } from "../elements";
 import {
   ArrowRightIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
   CloseIcon,
   FileIcon,
   FileSpreadsheetIcon,
@@ -33,12 +30,12 @@ import {
   EarlyAccessIcon,
 } from "src/icons";
 import { BaseDialog, DialogCloseX, useDialogState } from "../dialog";
-import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { Message } from "../message";
 import { DemoNetworkCard } from "../demo-network-card";
 import { DRUMCHAPEL, WATERDOWN } from "src/demo/demo-networks";
 import optimaticsLogoUrl from "src/assets/images/logos/optimatics-logo-black.webp";
 import type { RecentFileEntry } from "src/import/recent-files";
+import clsx from "clsx";
 
 export const WelcomeDialog = () => {
   const translate = useTranslate();
@@ -46,33 +43,8 @@ export const WelcomeDialog = () => {
   const createNew = useNewProject();
   const openInpFromFs = useOpenInpFromFs();
   const openModelBuilder = useOpenModelBuilder();
-  const openRecentFile = useOpenRecentFile();
   const userTracking = useUserTracking();
-  const {
-    recentFiles,
-    removeRecent,
-    isSupported: isRecentFilesSupported,
-  } = useRecentFiles();
   const isRecentFilesOn = useFeatureFlag("FLAG_RECENT_FILES");
-  const showRecentSection = isRecentFilesOn && isRecentFilesSupported;
-  const hasRecentFiles = recentFiles.length > 0;
-
-  const isMdOrLarger = useBreakpoint("md");
-
-  const demoModels: DemoModel[] = [
-    {
-      name: DRUMCHAPEL.name,
-      description: translate("demoUKStyleDescription"),
-      url: DRUMCHAPEL.url,
-      thumbnailUrl: DRUMCHAPEL.thumbnailUrl,
-    },
-    {
-      name: WATERDOWN.name,
-      description: translate("demoUSStyleDescription"),
-      url: WATERDOWN.url,
-      thumbnailUrl: WATERDOWN.thumbnailUrl,
-    },
-  ];
 
   const currentLocale = useLocale();
   const currentLanguage = languageConfig.find(
@@ -85,11 +57,11 @@ export const WelcomeDialog = () => {
   return (
     <BaseDialog size="lg" isOpen={true} onClose={closeDialog}>
       <LocaleProvider>
-        <div className="relative grid sm:grid-cols-[min-content_1fr] h-full overflow-hidden">
+        <div className="relative grid sm:grid-cols-[min-content_1fr]">
           <div className="absolute top-6 right-6 z-10">
             <DialogCloseX />
           </div>
-          <div className="bg-gray-50 border-r border-gray-200 rounded-tl-lg rounded-bl-lg col-span-1 md:w-max flex flex-col p-6 gap-6">
+          <div className="bg-gray-50 sm:border-r border-b sm:border-b-0 border-gray-200 rounded-t-lg sm:rounded-t-none sm:rounded-tl-lg sm:rounded-bl-lg col-span-1 md:w-max flex flex-col p-6 gap-6">
             <div className="pl-1">
               <LogoIconAndWordmarkIcon size={147} />
             </div>
@@ -97,18 +69,17 @@ export const WelcomeDialog = () => {
               <SmallDeviceWarning />
             </div>
             <div className="h-full flex flex-col gap-2">
-              {isMdOrLarger && (
-                <Button
-                  variant="quiet"
-                  onClick={() => {
-                    void createNew({ source: "welcome" });
-                  }}
-                  style={{ width: "100%" }}
-                >
-                  <FileIcon />
-                  {translate("startBlankProject")}
-                </Button>
-              )}
+              <Button
+                variant="quiet"
+                onClick={() => {
+                  void createNew({ source: "welcome" });
+                }}
+                className="hidden sm:flex"
+                style={{ width: "100%" }}
+              >
+                <FileIcon />
+                {translate("startBlankProject")}
+              </Button>
               <Button
                 variant="quiet"
                 onClick={() => {
@@ -167,25 +138,23 @@ export const WelcomeDialog = () => {
               </div>
 
               <div className="flex flex-col gap-2 mt-auto text-xs">
-                {isMdOrLarger && (
-                  <div className="mb-4 text-xs flex items-center gap-x-2">
-                    <Checkbox
-                      checked={userSettings.showWelcomeOnStart}
-                      onChange={() => {
-                        userSettings.showWelcomeOnStart
-                          ? userTracking.capture({ name: "welcome.hidden" })
-                          : userTracking.capture({
-                              name: "welcome.enabled",
-                            });
-                        setUserSettings((prev) => ({
-                          ...prev,
-                          showWelcomeOnStart: !prev.showWelcomeOnStart,
-                        }));
-                      }}
-                    />
-                    {translate("alwaysShowAtStart")}
-                  </div>
-                )}
+                <div className="mb-4 text-xs hidden sm:flex items-center gap-x-2">
+                  <Checkbox
+                    checked={userSettings.showWelcomeOnStart}
+                    onChange={() => {
+                      userSettings.showWelcomeOnStart
+                        ? userTracking.capture({ name: "welcome.hidden" })
+                        : userTracking.capture({
+                            name: "welcome.enabled",
+                          });
+                      setUserSettings((prev) => ({
+                        ...prev,
+                        showWelcomeOnStart: !prev.showWelcomeOnStart,
+                      }));
+                    }}
+                  />
+                  {translate("alwaysShowAtStart")}
+                </div>
                 <a href={termsAndConditionsUrl} target="_blank">
                   {translate("termsAndConditions")}
                 </a>
@@ -207,70 +176,9 @@ export const WelcomeDialog = () => {
               </div>
             )}
 
-            {isMdOrLarger && showRecentSection && hasRecentFiles ? (
-              <>
-                <h2 className="mt-[.2rem] pt-2 pb-2 font-bold text-gray-500">
-                  {translate("recentNetworks")}
-                </h2>
-                <div className="overflow-y-auto flex-1 min-h-0 mb-6 scroll-shadows max-h-[360px]">
-                  <div className="flex flex-row flex-wrap gap-4">
-                    {recentFiles.map((entry) => (
-                      <RecentFileCard
-                        key={entry.id}
-                        entry={entry}
-                        onOpen={() => openRecentFile(entry, "welcome")}
-                        onRemove={() => void removeRecent(entry.id)}
-                      />
-                    ))}
-                    {demoModels.map((demo, i) => (
-                      <DemoAsRecentCard key={`demo-${i}`} demoNetwork={demo} />
-                    ))}
-                  </div>
-                </div>
-              </>
-            ) : null}
+            {isRecentFilesOn ? <RecentNetworks /> : <DemoNetworks />}
 
-            {(!showRecentSection || !hasRecentFiles) && (
-              <DemoNetworks collapsible={false} />
-            )}
-            <div className="bg-gray-50 rounded-lg p-4 mt-6 text-xs text-center shrink-0">
-              <h3 className="text-gray-600 font-bold">
-                {translate("foundersPartnerTitle")}
-              </h3>
-              <a
-                href="https://optimatics.com/"
-                target="_blank"
-                onClick={() => {
-                  userTracking.capture({
-                    name: "foundersPartner.visited",
-                    link: "optimatics",
-                  });
-                }}
-              >
-                <img
-                  src={optimaticsLogoUrl.src}
-                  className="block m-auto h-16"
-                  height="64"
-                />
-              </a>
-              <p className="text-gray-600">
-                {translate("foundersPartnerDescription")}{" "}
-                <a
-                  href="https://help.epanetjs.com/Founding-Partner-program-2f6e18c9f0f680d8be27c05c0b5844bb"
-                  target="_blank"
-                  className="underline text-violet-500"
-                  onClick={() => {
-                    userTracking.capture({
-                      name: "foundersPartner.visited",
-                      link: "foundersPartners",
-                    });
-                  }}
-                >
-                  {translate("foundersPartnerLearnMore")}
-                </a>
-                .
-              </p>
-            </div>
+            <FoundingPartners />
           </div>
         </div>
         <div className="hidden sm:max-md:block mb-2">
@@ -278,6 +186,52 @@ export const WelcomeDialog = () => {
         </div>
       </LocaleProvider>
     </BaseDialog>
+  );
+};
+
+const FoundingPartners = () => {
+  const translate = useTranslate();
+  const userTracking = useUserTracking();
+
+  return (
+    <div className="bg-gray-50 rounded-lg p-4 mt-6 text-xs text-center shrink-0">
+      <h3 className="text-gray-600 font-bold">
+        {translate("foundersPartnerTitle")}
+      </h3>
+      <a
+        href="https://optimatics.com/"
+        target="_blank"
+        onClick={() => {
+          userTracking.capture({
+            name: "foundersPartner.visited",
+            link: "optimatics",
+          });
+        }}
+      >
+        <img
+          src={optimaticsLogoUrl.src}
+          className="block m-auto h-16"
+          height="64"
+        />
+      </a>
+      <p className="text-gray-600">
+        {translate("foundersPartnerDescription")}{" "}
+        <a
+          href="https://help.epanetjs.com/Founding-Partner-program-2f6e18c9f0f680d8be27c05c0b5844bb"
+          target="_blank"
+          className="underline text-violet-500"
+          onClick={() => {
+            userTracking.capture({
+              name: "foundersPartner.visited",
+              link: "foundersPartners",
+            });
+          }}
+        >
+          {translate("foundersPartnerLearnMore")}
+        </a>
+        .
+      </p>
+    </div>
   );
 };
 
@@ -310,9 +264,9 @@ const SmallDeviceWarning = () => {
   );
 };
 
-const DemoNetworks = ({ collapsible }: { collapsible: boolean }) => {
+const DemoNetworks = () => {
+  const isRecentFilesOn = useFeatureFlag("FLAG_RECENT_FILES");
   const translate = useTranslate();
-  const [open, setOpen] = useState(false);
 
   const demoModels = [
     {
@@ -329,35 +283,84 @@ const DemoNetworks = ({ collapsible }: { collapsible: boolean }) => {
     },
   ];
 
-  const isOpen = !collapsible || open;
-
   return (
     <div>
-      {collapsible ? (
-        <button
-          className="flex items-center gap-1 w-full mt-[.2rem] text-left pt-2 pb-2 font-bold text-gray-500 hover:text-gray-700"
-          onClick={() => setOpen(() => !isOpen)}
-        >
-          <h2>{translate("demoNetworksTitle")}</h2>
-          {isOpen ? (
-            <ChevronDownIcon size={16} />
-          ) : (
-            <ChevronRightIcon size={16} />
-          )}
-        </button>
-      ) : (
-        <h2 className="mt-[.2rem] pt-2 pb-2 font-bold text-gray-500">
-          {translate("demoNetworksTitle")}
-        </h2>
-      )}
-      {isOpen && (
-        <div className="grid grid-cols-2 gap-6">
-          {demoModels.map((demoModel, i) => (
-            <DemoNetworkCard key={i} demoNetwork={demoModel} />
+      <h2 className="pt-2 pb-2 font-bold text-gray-500">
+        {translate("demoNetworksTitle")}
+      </h2>
+
+      <div
+        className={clsx(
+          "grid grid-cols-2 gap-6",
+          isRecentFilesOn && "h-[270px]",
+        )}
+      >
+        {demoModels.map((demoModel, i) => (
+          <DemoNetworkCard key={i} demoNetwork={demoModel} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const RecentNetworks = () => {
+  const translate = useTranslate();
+  const {
+    recentFiles,
+    isLoading: isRecentFilesLoading,
+    removeRecent,
+    isSupported: isRecentFilesSupported,
+  } = useRecentFiles();
+  const openRecentFile = useOpenRecentFile();
+  const hasRecentFiles = recentFiles.length > 0;
+
+  const demoModels = [
+    {
+      name: DRUMCHAPEL.name,
+      description: translate("demoUKStyleDescription"),
+      url: DRUMCHAPEL.url,
+      thumbnailUrl: DRUMCHAPEL.thumbnailUrl,
+    },
+    {
+      name: WATERDOWN.name,
+      description: translate("demoUSStyleDescription"),
+      url: WATERDOWN.url,
+      thumbnailUrl: WATERDOWN.thumbnailUrl,
+    },
+  ];
+
+  if (!isRecentFilesSupported) return <DemoNetworks />;
+
+  if (!isRecentFilesLoading && !hasRecentFiles) return <DemoNetworks />;
+
+  if (isRecentFilesLoading)
+    return (
+      <div className="flex h-[310px]">
+        <Loading />
+      </div>
+    );
+
+  return (
+    <>
+      <h2 className="pt-2 pb-2 font-bold text-gray-500">
+        {translate("recentNetworks")}
+      </h2>
+      <div className="overflow-y-auto min-h-0 scroll-shadows h-[270px]">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {recentFiles.map((entry) => (
+            <RecentFileCard
+              key={entry.id}
+              entry={entry}
+              onOpen={() => openRecentFile(entry, "welcome")}
+              onRemove={() => void removeRecent(entry.id)}
+            />
+          ))}
+          {demoModels.map((demo, i) => (
+            <DemoAsRecentCard key={`demo-${i}`} demoNetwork={demo} />
           ))}
         </div>
-      )}
-    </div>
+      </div>
+    </>
   );
 };
 
@@ -371,8 +374,7 @@ const RecentFileCard = ({
   onRemove: () => void;
 }) => (
   <div
-    className="group flex flex-col rounded-lg border shadow-sm cursor-pointer hover:bg-gray-50 overflow-hidden shrink-0"
-    style={{ width: "154px" }}
+    className="group flex flex-col rounded-lg border shadow-sm cursor-pointer hover:bg-gray-50 overflow-hidden min-w-0"
     onClick={onOpen}
   >
     <div
@@ -439,8 +441,7 @@ const DemoAsRecentCard = ({ demoNetwork }: { demoNetwork: DemoModel }) => {
 
   return (
     <div
-      className="flex flex-col rounded-lg border shadow-sm cursor-pointer hover:bg-gray-50 overflow-hidden shrink-0"
-      style={{ width: "154px" }}
+      className="flex flex-col rounded-lg border shadow-sm cursor-pointer hover:bg-gray-50 overflow-hidden min-w-0"
       onClick={handleClick}
     >
       <div

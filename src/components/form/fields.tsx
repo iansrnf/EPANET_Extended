@@ -78,7 +78,7 @@ export const FieldList = ({ children }: { children: React.ReactNode }) => {
 
 export const InlineFieldLegacy = ({
   name,
-  layout = "fixed-label",
+  layout = "fluid-label",
   labelSize = "sm",
   align = "center",
   hasChanged = false,
@@ -86,7 +86,7 @@ export const InlineFieldLegacy = ({
   children,
 }: {
   name: string;
-  layout?: "fixed-label" | "half-split" | "label-flex-none";
+  layout?: "fixed-label" | "fluid-label" | "half-split" | "label-flex-none";
   labelSize?: "sm" | "md";
   align?: "start" | "center";
   hasChanged?: boolean;
@@ -95,37 +95,53 @@ export const InlineFieldLegacy = ({
 }) => {
   const isNested = useContext(NestedBlockContext) > 0;
   const useExtraMargin = useFeatureFlag("FLAG_UI_COLLAPSIBLE");
+  const isFluid = layout === "fluid-label";
+  const fluidLabelWidth = isNested
+    ? labelSize === "sm"
+      ? useExtraMargin
+        ? 49
+        : 57
+      : useExtraMargin
+        ? 102
+        : 110
+    : labelSize === "sm"
+      ? 67
+      : 120;
 
   const labelClasses = clsx("text-sm text-gray-500", {
     "max-w-[57px] w-full flex-shrink-0":
-      layout === "fixed-label" &&
+      (layout === "fixed-label" || isFluid) &&
       labelSize === "sm" &&
       isNested &&
       !useExtraMargin,
     "max-w-[49px] w-full flex-shrink-0":
-      layout === "fixed-label" &&
+      (layout === "fixed-label" || isFluid) &&
       labelSize === "sm" &&
       isNested &&
       useExtraMargin,
     "max-w-[67px] w-full flex-shrink-0":
-      layout === "fixed-label" && labelSize === "sm" && !isNested,
+      (layout === "fixed-label" || isFluid) && labelSize === "sm" && !isNested,
     "w-[110px] flex-shrink-0":
-      layout === "fixed-label" &&
+      (layout === "fixed-label" || isFluid) &&
       labelSize === "md" &&
       isNested &&
       !useExtraMargin,
     "w-[102px] flex-shrink-0":
-      layout === "fixed-label" &&
+      (layout === "fixed-label" || isFluid) &&
       labelSize === "md" &&
       isNested &&
       useExtraMargin,
     "w-[120px] flex-shrink-0":
-      layout === "fixed-label" && labelSize === "md" && !isNested,
+      (layout === "fixed-label" || isFluid) &&
+      labelSize === "md" &&
+      !isNested,
+    "grow shrink": isFluid,
     "w-1/2": layout === "half-split",
     "flex-none": layout === "label-flex-none",
   });
   const inputWrapperClasses = clsx({
     "min-w-0 flex-1": layout === "fixed-label",
+    "min-w-0 grow shrink": isFluid,
     "w-1/2": layout === "half-split",
     "w-3/4": layout === "label-flex-none",
   });
@@ -143,10 +159,19 @@ export const InlineFieldLegacy = ({
           "items-center": align === "center",
         })}
       >
-        <label className={labelClasses} aria-label={`label: ${name}`}>
+        <label
+          className={labelClasses}
+          style={isFluid ? { flexBasis: fluidLabelWidth } : undefined}
+          aria-label={`label: ${name}`}
+        >
           {name}
         </label>
-        <div className={inputWrapperClasses}>{children}</div>
+        <div
+          className={inputWrapperClasses}
+          style={isFluid ? { flexBasis: 150 } : undefined}
+        >
+          {children}
+        </div>
       </div>
     </BlockComparisonFieldLegacy>
   );
@@ -470,7 +495,7 @@ export const BlockComparisonField = (props: {
 
 const InlineFieldWithNesting = ({
   name,
-  layout = "fixed-label",
+  layout = "fluid-label",
   labelSize = "sm",
   align = "center",
   hasChanged = false,
@@ -478,7 +503,7 @@ const InlineFieldWithNesting = ({
   children,
 }: {
   name: string;
-  layout?: "fixed-label" | "half-split" | "label-flex-none";
+  layout?: "fixed-label" | "fluid-label" | "half-split" | "label-flex-none";
   labelSize?: "sm" | "md";
   align?: "start" | "center";
   hasChanged?: boolean;
@@ -490,22 +515,28 @@ const InlineFieldWithNesting = ({
   const baseLabelWidth =
     (labelSize === "sm" ? 90 : 140) - indentation * 4 - nestingDepth * 2;
   const labelStyle =
-    layout !== "fixed-label" ? undefined : { flexBasis: baseLabelWidth };
+    layout === "fixed-label" || layout === "fluid-label"
+      ? { flexBasis: baseLabelWidth }
+      : undefined;
 
   const hasNesting = indentation > 0 || nestingDepth > 0;
   const inputStyle =
-    layout === "fixed-label" && labelSize === "md" && hasNesting
+    layout === "fluid-label"
       ? { flexBasis: 150 }
+      : layout === "fixed-label" && labelSize === "md" && hasNesting
+        ? { flexBasis: 150 }
       : undefined;
 
   const labelClasses = clsx("text-sm text-gray-500 min-w-0", {
-    "grow shrink": layout === "fixed-label" && hasNesting,
+    "grow shrink":
+      layout === "fluid-label" || (layout === "fixed-label" && hasNesting),
     "flex-shrink-0": layout === "fixed-label" && !hasNesting,
     "w-1/2": layout === "half-split",
     "flex-none": layout === "label-flex-none",
   });
   const inputWrapperClasses = clsx("min-w-0", {
-    "grow shrink": layout === "fixed-label" && hasNesting,
+    "grow shrink":
+      layout === "fluid-label" || (layout === "fixed-label" && hasNesting),
     "flex-1": layout === "fixed-label" && !hasNesting,
     "w-1/2": layout === "half-split",
     "w-3/4": layout === "label-flex-none",
@@ -540,7 +571,7 @@ const InlineFieldWithNesting = ({
 
 export const InlineField = (props: {
   name: string;
-  layout?: "fixed-label" | "half-split" | "label-flex-none";
+  layout?: "fixed-label" | "fluid-label" | "half-split" | "label-flex-none";
   labelSize?: "sm" | "md";
   align?: "start" | "center";
   hasChanged?: boolean;

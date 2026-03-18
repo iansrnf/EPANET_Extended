@@ -2,6 +2,9 @@ export type LayerId =
   | "delta-features-pipes"
   | "main-features-pipes"
   | "selected-pipes"
+  | "main-features-pipe-flow-pulse"
+  | "delta-features-pipe-flow-pulse"
+  | "selected-pipe-flow-pulse"
   | "delta-features-junctions"
   | "main-features-junctions"
   | "selected-junctions"
@@ -27,6 +30,8 @@ export type LayerId =
 export const assetLayers: LayerId[] = [
   "delta-features-pipes",
   "main-features-pipes",
+  "main-features-pipe-flow-pulse",
+  "delta-features-pipe-flow-pulse",
   "delta-features-junctions",
   "main-features-junctions",
   "delta-features-junction-results",
@@ -46,6 +51,7 @@ export const clickableLayers: LayerId[] = assetLayers;
 
 export const editingLayers: string[] = [
   ...assetLayers,
+  "selected-pipe-flow-pulse",
   "main-features-pipe-arrows",
   "delta-features-pipe-arrows",
   "main-features-link-labels",

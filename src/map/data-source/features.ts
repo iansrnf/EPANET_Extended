@@ -5,6 +5,8 @@ import { Feature } from "src/types";
 import { AssetId, Valve } from "src/hydraulic-model/asset-types";
 import { colorFor } from "src/map/symbology/range-color-rule";
 import { strokeColorFor } from "src/lib/color";
+import { hexToArray } from "src/lib/color";
+import { colors } from "src/lib/constants";
 import { localizeDecimal } from "src/infra/i18n/numbers";
 import {
   FormattingSpec,
@@ -31,6 +33,7 @@ export const buildOptimizedAssetsSource = (
 ): Feature[] => {
   const strippedFeatures = [];
   const keepProperties: string[] = ["type", "isActive"];
+  const maxAbsFlow = getMaxAbsFlow(simulationResults);
 
   for (const asset of assets.values()) {
     if (asset.feature.properties?.visibility === false) {
@@ -53,7 +56,9 @@ export const buildOptimizedAssetsSource = (
           units,
           formatting,
           translateUnit,
+          colors.indigo900,
           simulationResults,
+          maxAbsFlow,
         );
         break;
       case "junction":
@@ -90,7 +95,9 @@ const appendPipeProps = (
   units: UnitsSpec,
   formatting: FormattingSpec,
   translateUnit: (unit: Unit) => string,
+  defaultColor: string,
   simulationResults?: ResultsReader | null,
+  maxAbsFlow: number = 0,
 ) => {
   appendPipeStatus(pipe, feature, simulationResults);
   appendPipeSymbologyProps(
@@ -100,7 +107,9 @@ const appendPipeProps = (
     units,
     formatting,
     translateUnit,
+    defaultColor,
     simulationResults,
+    maxAbsFlow,
   );
 };
 
@@ -174,19 +183,34 @@ export const appendPipeArrowProps = (
   pipe: Pipe,
   feature: Feature,
   units: UnitsSpec,
+  defaultColor: string,
   simulationResults?: ResultsReader | null,
+  maxAbsFlow: number = 0,
 ) => {
   const pipeSimulation = simulationResults?.getPipe(pipe.id);
   const status = pipeSimulation?.status ?? null;
   const flow = pipeSimulation?.flow ?? null;
-  const isReverse = flow && flow < 0;
+  const absFlow = flow === null ? 0 : Math.abs(flow);
+  const isReverse = flow !== null && flow < 0;
+  const isOpen = (status ?? pipe.initialStatus) === "open";
+  const hasFlowPulse = isOpen && flow !== null && absFlow > 0;
+  const pulseStrength =
+    maxAbsFlow > 0 ? Math.min(1, Math.max(0.2, absFlow / maxAbsFlow)) : 0;
+  const pulseColor = (feature.properties?.color as string) ?? defaultColor;
+  const [pulseColorR, pulseColorG, pulseColorB] = hexToArray(pulseColor);
+
   feature.properties!.length = convertTo(
     { value: pipe.length, unit: units.length },
     "m",
   );
-  feature.properties!.hasArrow =
-    (status ?? pipe.initialStatus) === "open" && flow !== null;
+  feature.properties!.hasArrow = isOpen && flow !== null;
   feature.properties!.rotation = isReverse ? -180 : 0;
+  feature.properties!.hasFlowPulse = hasFlowPulse;
+  feature.properties!.flowDirection = isReverse ? -1 : 1;
+  feature.properties!.pulseStrength = hasFlowPulse ? pulseStrength : 0;
+  feature.properties!.pulseColorR = pulseColorR;
+  feature.properties!.pulseColorG = pulseColorG;
+  feature.properties!.pulseColorB = pulseColorB;
 };
 
 const appendPipeSymbologyProps = (
@@ -196,25 +220,41 @@ const appendPipeSymbologyProps = (
   units: UnitsSpec,
   formatting: FormattingSpec,
   translateUnit: (unit: Unit) => string,
+  defaultColor: string,
   simulationResults?: ResultsReader | null,
+  maxAbsFlow: number = 0,
 ) => {
-  if (!linkSymbology.colorRule) return;
+  if (linkSymbology.colorRule) {
+    const property = linkSymbology.colorRule.property;
 
-  const property = linkSymbology.colorRule.property;
+    let value: number | null;
+    if (isSimulationProperty(property)) {
+      const pipeSimulation = simulationResults?.getPipe(pipe.id);
+      value = pipeSimulation
+        ? (pipeSimulation[property as keyof PipeSimulation] as number)
+        : null;
+    } else {
+      value = pipe[property as keyof Pipe] as number | null;
+    }
+    const numericValue = value !== null ? value : 0;
 
-  let value: number | null;
-  if (isSimulationProperty(property)) {
-    const pipeSimulation = simulationResults?.getPipe(pipe.id);
-    value = pipeSimulation
-      ? (pipeSimulation[property as keyof PipeSimulation] as number)
-      : null;
-  } else {
-    value = pipe[property as keyof Pipe] as number | null;
-  }
-  const numericValue = value !== null ? value : 0;
-
-  if (!!linkSymbology.labelRule) {
+    if (!!linkSymbology.labelRule) {
+      const labelProperty = linkSymbology.labelRule;
+      const unit = units[labelProperty as QuantityProperty];
+      const localizedNumber = localizeDecimal(numericValue, {
+        decimals: getDecimals(formatting, labelProperty as QuantityProperty),
+      });
+      const unitText = unit ? translateUnit(unit) : "";
+      feature.properties!.label = `${localizedNumber} ${unitText}`;
+    }
+    feature.properties!.color = colorFor(linkSymbology.colorRule, numericValue);
+  } else if (!!linkSymbology.labelRule) {
     const labelProperty = linkSymbology.labelRule;
+    const pipeSimulation = simulationResults?.getPipe(pipe.id);
+    const value = pipeSimulation
+      ? (pipeSimulation[labelProperty as keyof PipeSimulation] as number | null)
+      : (pipe[labelProperty as keyof Pipe] as number | null);
+    const numericValue = value !== null ? value : 0;
     const unit = units[labelProperty as QuantityProperty];
     const localizedNumber = localizeDecimal(numericValue, {
       decimals: getDecimals(formatting, labelProperty as QuantityProperty),
@@ -222,8 +262,15 @@ const appendPipeSymbologyProps = (
     const unitText = unit ? translateUnit(unit) : "";
     feature.properties!.label = `${localizedNumber} ${unitText}`;
   }
-  feature.properties!.color = colorFor(linkSymbology.colorRule, numericValue);
-  appendPipeArrowProps(pipe, feature, units, simulationResults);
+
+  appendPipeArrowProps(
+    pipe,
+    feature,
+    units,
+    defaultColor,
+    simulationResults,
+    maxAbsFlow,
+  );
 };
 
 // Maps symbology property names to simulation property names
@@ -297,3 +344,11 @@ function pick(
 
   return ret;
 }
+
+const getMaxAbsFlow = (simulationResults?: ResultsReader | null): number => {
+  if (!simulationResults) return 0;
+
+  return simulationResults
+    .getAllFlows()
+    .reduce((max, flow) => Math.max(max, Math.abs(flow)), 0);
+};

@@ -41,16 +41,17 @@ describe("build optimized source", () => {
 
     expect(features).toHaveLength(2);
     const [pipe, junction] = features;
-    expect(pipe.properties).toEqual({
-      type: "pipe",
-      status: "open",
-      isActive: true,
-    });
-    expect(pipe.properties).toEqual({
-      type: "pipe",
-      status: "open",
-      isActive: true,
-    });
+    expect(pipe.properties).toEqual(
+      expect.objectContaining({
+        type: "pipe",
+        status: "open",
+        isActive: true,
+        hasArrow: false,
+        hasFlowPulse: false,
+        flowDirection: 1,
+        pulseStrength: 0,
+      }),
+    );
     expect(pipe.geometry!.type).toEqual("LineString");
 
     expect(junction.properties).toEqual({ type: "junction", isActive: true });
@@ -220,6 +221,8 @@ describe("build optimized source", () => {
           status: "open",
           length: 14,
           hasArrow: true,
+          hasFlowPulse: true,
+          flowDirection: 1,
           rotation: 0,
         }),
       );
@@ -285,9 +288,11 @@ describe("build optimized source", () => {
       const [pipe, reversed] = features;
       expect(pipe.properties).toMatchObject({
         rotation: 0,
+        flowDirection: 1,
       });
       expect(reversed.properties).toMatchObject({
         rotation: -180,
+        flowDirection: -1,
       });
       expect(pipe.properties!.color).toEqual(reversed.properties!.color);
     });
@@ -348,12 +353,49 @@ describe("build optimized source", () => {
       expect(p1.properties).toMatchObject({
         color: expect.stringMatching("#"),
         hasArrow: true,
+        hasFlowPulse: false,
       });
       expect(p2.properties).toMatchObject({
         color: expect.stringMatching("#"),
         hasArrow: false,
+        hasFlowPulse: false,
       });
       expect(p1.properties!.color).toEqual(p2.properties!.color);
+    });
+
+    it("scales pulse strength from the absolute flow value", () => {
+      const IDS = { p1: 1, p2: 2 } as const;
+      const { assets } = HydraulicModelBuilder.with()
+        .aPipe(IDS.p1)
+        .aPipe(IDS.p2)
+        .build();
+      const simulationResults = createMockResultsReader({
+        pipes: {
+          [IDS.p1]: { flow: 5 },
+          [IDS.p2]: { flow: -10 },
+        },
+      });
+
+      const features = buildOptimizedAssetsSource(
+        assets,
+        symbology,
+        defaultUnits,
+        defaultFormatting,
+        fakeTranslateUnit,
+        simulationResults,
+      );
+
+      const [p1, p2] = features;
+      expect(p1.properties).toMatchObject({
+        hasFlowPulse: true,
+        flowDirection: 1,
+        pulseStrength: 0.5,
+      });
+      expect(p2.properties).toMatchObject({
+        hasFlowPulse: true,
+        flowDirection: -1,
+        pulseStrength: 1,
+      });
     });
 
     it("assigns lengths in meters", () => {

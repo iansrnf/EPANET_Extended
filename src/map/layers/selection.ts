@@ -4,6 +4,7 @@ import { LayerId } from "./layer";
 import { strokeColorFor } from "src/lib/color";
 import { junctionCircleSizes } from "./junctions";
 import { colors } from "src/lib/constants";
+import { buildPipeFlowPulseGradientExpression } from "./pipes";
 
 const COLOR_SELECTED_DEFAULT = colors.fuchsia500;
 const COLOR_SELECTED_CONTRAST = strokeColorFor(COLOR_SELECTED_DEFAULT);
@@ -45,6 +46,35 @@ export const selectedPipesLayer = ({
         ["literal", [2, 1]],
         ["literal", [1, 0]],
       ],
+    },
+  };
+};
+
+export const selectedPipeFlowPulseLayer = ({
+  source,
+  layerId,
+}: {
+  source: DataSource;
+  layerId: LayerId;
+}): LineLayer => {
+  return {
+    id: layerId,
+    type: "line",
+    source,
+    layout: {
+      "line-cap": "round",
+      "line-join": "round",
+    },
+    filter: [
+      "all",
+      ["==", ["get", "type"], "pipe"],
+      ["==", ["get", "hasFlowPulse"], true],
+    ],
+    paint: {
+      "line-opacity": 1,
+      "line-width": ["interpolate", ["linear"], ["zoom"], 12, 2, 16, 7],
+      "line-blur": ["interpolate", ["linear"], ["zoom"], 12, 0.4, 16, 1.1],
+      "line-gradient": buildPipeFlowPulseGradientExpression(0),
     },
   };
 };

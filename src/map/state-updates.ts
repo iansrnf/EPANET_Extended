@@ -1,6 +1,7 @@
 import type { Sel } from "src/selection/types";
 import { useAtomValue, useSetAtom } from "jotai";
 import { type MutableRefObject, useCallback, useRef } from "react";
+import { LayersList } from "@deck.gl/core";
 import { Unit } from "src/quantity";
 import { Moment } from "src/lib/persistence/moment";
 import { projectSettingsAtom } from "src/state/project-settings";
@@ -60,6 +61,10 @@ import {
 } from "./overlays/pressure-loggers";
 import { PressureLoggers } from "src/hydraulic-model/pressure-loggers";
 import { junctionsSymbologyFilterExpression } from "./layers/junctions";
+import {
+  buildPipeFlowAnimationOverlay,
+  PipeFlowAnimationOverlay,
+} from "./overlays/pipe-flow-animation";
 
 const SELECTION_LAYERS: LayerId[] = [
   "selected-pipes",
@@ -68,6 +73,12 @@ const SELECTION_LAYERS: LayerId[] = [
   "selected-junctions",
   "selected-icons-halo",
   "selected-icons",
+];
+
+const PIPE_FLOW_PULSE_LAYERS: LayerId[] = [
+  "main-features-pipe-flow-pulse",
+  "delta-features-pipe-flow-pulse",
+  "selected-pipe-flow-pulse",
 ];
 
 const getAssetIdsInMoments = (moments: Moment[]): Set<AssetId> => {
@@ -143,6 +154,9 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
   const selectionDeckLayersRef = useRef<CustomerPointsOverlay>([]);
   const pressureLoggerSelectionOverlayRef = useRef<PressureLoggersOverlay>([]);
   const ephemeralDeckLayersRef = useRef<CustomerPointsOverlay>([]);
+  const pipeFlowOverlayRef = useRef<PipeFlowAnimationOverlay>([]);
+  const baseDeckLayersRef = useRef<LayersList>([]);
+  const pipeFlowAnimationFrameRef = useRef<number | null>(null);
   const gridRef = useRef<Grid | null>(null);
   const scaleControlRef = useRef<mapboxgl.ScaleControl | null>(null);
   const translate = useTranslate();
@@ -202,6 +216,16 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           addEditingLayersToMap(map, mapState.stylesConfig);
           toggleAnalysisLayers(map, mapState.symbology);
         }
+
+        syncPipeFlowPulseAnimation({
+          map,
+          assets,
+          simulationResults:
+            mapState.simulation.status !== "running" ? resultsReader : null,
+          pipeFlowOverlayRef,
+          baseDeckLayersRef,
+          pipeFlowAnimationFrameRef,
+        });
 
         if (
           hasSyncMomentChanged ||
@@ -459,7 +483,8 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             ...pressureLoggerSelectionOverlayRef.current,
             ...ephemeralDeckLayersRef.current,
           ];
-          map.setOverlay(combinedOverlay);
+          baseDeckLayersRef.current = combinedOverlay;
+          map.setOverlay([...combinedOverlay, ...pipeFlowOverlayRef.current]);
         }
 
         setMapLoading(false);
@@ -483,6 +508,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
     resultsReader,
     isGridOn,
     isGridPreview,
+    pipeFlowAnimationFrameRef,
   ]);
 
   doUpdates();
@@ -871,3 +897,60 @@ function updateGrid({
     scaleControlRef.current = null;
   }
 }
+
+const syncPipeFlowPulseAnimation = ({
+  map,
+  assets,
+  simulationResults,
+  pipeFlowOverlayRef,
+  baseDeckLayersRef,
+  pipeFlowAnimationFrameRef,
+}: {
+  map: MapEngine;
+  assets: AssetsMap;
+  simulationResults?: ResultsReader | null;
+  pipeFlowOverlayRef: MutableRefObject<PipeFlowAnimationOverlay>;
+  baseDeckLayersRef: MutableRefObject<LayersList>;
+  pipeFlowAnimationFrameRef: MutableRefObject<number | null>;
+}) => {
+  const hasSimulationResults = !!simulationResults;
+
+  if (!hasSimulationResults) {
+    stopPipeFlowPulseAnimation(pipeFlowAnimationFrameRef);
+    pipeFlowOverlayRef.current = [];
+    map.setOverlay(baseDeckLayersRef.current);
+    map.hideLayers(PIPE_FLOW_PULSE_LAYERS);
+    return;
+  }
+
+  map.hideLayers(PIPE_FLOW_PULSE_LAYERS);
+
+  if (pipeFlowAnimationFrameRef.current !== null) {
+    return;
+  }
+
+  const tick = (time: number) => {
+    const phase = (((time * 0.00012) % 1) + 1) % 1;
+    pipeFlowOverlayRef.current = buildPipeFlowAnimationOverlay({
+      assets,
+      simulationResults,
+      phase,
+    });
+    map.setOverlay([
+      ...baseDeckLayersRef.current,
+      ...pipeFlowOverlayRef.current,
+    ]);
+    pipeFlowAnimationFrameRef.current = window.requestAnimationFrame(tick);
+  };
+
+  pipeFlowAnimationFrameRef.current = window.requestAnimationFrame(tick);
+};
+
+const stopPipeFlowPulseAnimation = (
+  pipeFlowAnimationFrameRef: MutableRefObject<number | null>,
+) => {
+  if (pipeFlowAnimationFrameRef.current !== null) {
+    window.cancelAnimationFrame(pipeFlowAnimationFrameRef.current);
+    pipeFlowAnimationFrameRef.current = null;
+  }
+};

@@ -32,6 +32,7 @@ const emptyGeoJSONSource = {
   data: emptyFeatureCollection,
   buffer: 4,
   tolerance: 0,
+  lineMetrics: true,
 } as const;
 
 export async function buildBaseStyle({
@@ -79,7 +80,11 @@ export function defineEmptySources(style: Style) {
 import type { PreviewProperty } from "src/state/map-symbology";
 import type { ISymbology } from "src/types";
 import { reservoirLayers, pipesLayer, junctionsLayer } from "src/map/layers";
-import { pipeArrows, checkValveIcons } from "src/map/layers/pipes";
+import {
+  pipeArrows,
+  checkValveIcons,
+  pipeFlowPulseLayer,
+} from "src/map/layers/pipes";
 import { junctionResultsLayer } from "src/map/layers/junctions";
 import { pumpIcons, pumpLines } from "src/map/layers/pumps";
 import { valveIcons, valveLines } from "src/map/layers/valves";
@@ -99,6 +104,7 @@ import {
 import { gridMinorLayer, gridMajorLayer } from "src/map/layers/grid";
 import {
   selectedPipesLayer,
+  selectedPipeFlowPulseLayer,
   selectedPumpLinesLayer,
   selectedValveLinesLayer,
   selectedPipeArrowsLayer,
@@ -181,9 +187,21 @@ export function makeLayers({
       layerId: "delta-features-pipes",
       symbology,
     }),
+    pipeFlowPulseLayer({
+      source: "main-features",
+      layerId: "main-features-pipe-flow-pulse",
+    }),
+    pipeFlowPulseLayer({
+      source: "delta-features",
+      layerId: "delta-features-pipe-flow-pulse",
+    }),
     selectedPipesLayer({
       source: "selected-features",
       layerId: "selected-pipes",
+    }),
+    selectedPipeFlowPulseLayer({
+      source: "selected-features",
+      layerId: "selected-pipe-flow-pulse",
     }),
     pumpLines({
       source: "main-features",

@@ -13,6 +13,7 @@ import {
 } from "./features";
 import type { ResultsReader } from "src/simulation/results-reader";
 import type { UnitsSpec } from "src/lib/project-settings/quantities-spec";
+import { LINE_COLORS_SELECTED } from "src/lib/constants";
 
 export const buildSelectionSource = (
   assets: AssetsMap,
@@ -25,6 +26,10 @@ export const buildSelectionSource = (
   if (selectedIds.length === 0) {
     return [];
   }
+  const maxAbsFlow =
+    simulationResults
+      ?.getAllFlows()
+      .reduce((max, flow) => Math.max(max, Math.abs(flow)), 0) ?? 0;
 
   const features: Feature[] = [];
 
@@ -44,7 +49,13 @@ export const buildSelectionSource = (
 
     if (asset.isLink) {
       features.push(
-        buildLinkSelectionFeature(asset, featureId, units, simulationResults),
+        buildLinkSelectionFeature(
+          asset,
+          featureId,
+          units,
+          simulationResults,
+          maxAbsFlow,
+        ),
       );
 
       const needsIcon =
@@ -72,6 +83,7 @@ const buildLinkSelectionFeature = (
   featureId: AssetId,
   units: UnitsSpec,
   simulationResults?: ResultsReader | null,
+  maxAbsFlow: number = 0,
 ): Feature => {
   const feature: Feature = {
     type: "Feature",
@@ -86,7 +98,14 @@ const buildLinkSelectionFeature = (
   switch (asset.type) {
     case "pipe":
       appendPipeStatus(asset as Pipe, feature, simulationResults);
-      appendPipeArrowProps(asset as Pipe, feature, units, simulationResults);
+      appendPipeArrowProps(
+        asset as Pipe,
+        feature,
+        units,
+        LINE_COLORS_SELECTED,
+        simulationResults,
+        maxAbsFlow,
+      );
       break;
     case "pump":
       appendPumpStatus(asset as Pump, feature, simulationResults);

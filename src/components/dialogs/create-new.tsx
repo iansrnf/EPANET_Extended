@@ -1,7 +1,6 @@
 import { useDialogState, BaseDialog, SimpleDialogActions } from "../dialog";
 import { Form, Formik } from "formik";
 import mapboxgl from "mapbox-gl";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import {
   Presets,
   presets,
@@ -80,7 +79,6 @@ type SubmitProps = {
 };
 
 export const CreateNew = () => {
-  const isEpanet23On = useFeatureFlag("FLAG_EPANET23");
   const translate = useTranslate();
   const rep = usePersistence();
   const transactImport = rep.useTransactImport();
@@ -174,7 +172,7 @@ export const CreateNew = () => {
   return (
     <BaseDialog
       title={translate("newProject")}
-      size={isEpanet23On ? "sm" : "md"}
+      size="sm"
       isOpen={true}
       onClose={handleCancel}
       footer={
@@ -199,140 +197,76 @@ export const CreateNew = () => {
         >
           {({ values, setFieldValue }) => (
             <Form ref={formRef}>
-              {isEpanet23On ? (
-                <>
-                  <div className="space-y-3">
-                    <ProjectionSelector
-                      compact
-                      selected={values.projection}
-                      onChange={(projection) => {
-                        void setFieldValue("projection", projection);
-                        if (projection === "xy-grid") {
-                          setGridHidden(false);
-                          setGridPreview(true);
-                          if (map) {
-                            map.map.jumpTo({
-                              center: XY_GRID_CENTER,
-                              zoom: XY_GRID_ZOOM,
-                            });
-                          }
-                        } else {
-                          setGridPreview(false);
-                          if (isCurrentProjectUnprojected) {
-                            setGridHidden(true);
-                          }
-                          if (map) {
-                            if (values.location?.bbox) {
-                              map.map.fitBounds(values.location.bbox, {
-                                padding: 50,
-                                animate: false,
-                              });
-                            } else if (originalMapStateRef.current) {
-                              map.setBounds(originalMapStateRef.current, {
-                                animate: false,
-                              });
-                            }
-                          }
-                        }
-                      }}
-                    />
-                    <LocationSearchSelector
-                      compact
-                      selected={values.location}
-                      onChange={(location) =>
-                        setFieldValue("location", location)
+              <div className="space-y-3">
+                <ProjectionSelector
+                  compact
+                  selected={values.projection}
+                  onChange={(projection) => {
+                    void setFieldValue("projection", projection);
+                    if (projection === "xy-grid") {
+                      setGridHidden(false);
+                      setGridPreview(true);
+                      if (map) {
+                        map.map.jumpTo({
+                          center: XY_GRID_CENTER,
+                          zoom: XY_GRID_ZOOM,
+                        });
                       }
-                      disabled={values.projection === "xy-grid"}
-                    />
-                  </div>
-                  <hr className="my-4" />
-                  <div className="space-y-2">
-                    <UnitsSystemSelector
-                      compact
-                      selected={values.unitsSpec}
-                      onChange={(specId) => {
-                        void setFieldValue("unitsSpec", specId);
-                        void setFieldValue(
-                          "pressureUnit",
-                          getDefaultPressureUnit(specId),
-                        );
-                      }}
-                    />
-                    <PressureUnitSelector
-                      selected={
-                        values.pressureUnit ??
-                        getDefaultPressureUnit(values.unitsSpec)
+                    } else {
+                      setGridPreview(false);
+                      if (isCurrentProjectUnprojected) {
+                        setGridHidden(true);
                       }
-                      onChange={(pu) => setFieldValue("pressureUnit", pu)}
-                    />
-                    <HeadlossFormulaSelector
-                      compact
-                      selected={values.headlossFormula}
-                      onChange={(headlossFormula) =>
-                        setFieldValue("headlossFormula", headlossFormula)
-                      }
-                    />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <ProjectionSelector
-                    selected={values.projection}
-                    onChange={(projection) => {
-                      void setFieldValue("projection", projection);
-                      if (projection === "xy-grid") {
-                        setGridHidden(false);
-                        setGridPreview(true);
-                        if (map) {
-                          map.map.jumpTo({
-                            center: XY_GRID_CENTER,
-                            zoom: XY_GRID_ZOOM,
+                      if (map) {
+                        if (values.location?.bbox) {
+                          map.map.fitBounds(values.location.bbox, {
+                            padding: 50,
+                            animate: false,
+                          });
+                        } else if (originalMapStateRef.current) {
+                          map.setBounds(originalMapStateRef.current, {
+                            animate: false,
                           });
                         }
-                      } else {
-                        setGridPreview(false);
-                        if (isCurrentProjectUnprojected) {
-                          setGridHidden(true);
-                        }
-                        if (map) {
-                          if (values.location?.bbox) {
-                            map.map.fitBounds(values.location.bbox, {
-                              padding: 50,
-                              animate: false,
-                            });
-                          } else if (originalMapStateRef.current) {
-                            map.setBounds(originalMapStateRef.current, {
-                              animate: false,
-                            });
-                          }
-                        }
                       }
-                    }}
-                  />
-                  <LocationSearchSelector
-                    selected={values.location}
-                    onChange={(location) => setFieldValue("location", location)}
-                    disabled={values.projection === "xy-grid"}
-                  />
-                  <hr className="my-2" />
-                  <UnitsSystemSelector
-                    selected={values.unitsSpec}
-                    onChange={(specId) => {
-                      void setFieldValue("unitsSpec", specId);
-                      void setFieldValue(
-                        "pressureUnit",
-                        getDefaultPressureUnit(specId),
-                      );
-                    }}
-                  />
-                  <HeadlossFormulaSelector
-                    selected={values.headlossFormula}
-                    onChange={(headlossFormula) =>
-                      setFieldValue("headlossFormula", headlossFormula)
                     }
-                  />
-                </>
-              )}
+                  }}
+                />
+                <LocationSearchSelector
+                  compact
+                  selected={values.location}
+                  onChange={(location) => setFieldValue("location", location)}
+                  disabled={values.projection === "xy-grid"}
+                />
+              </div>
+              <hr className="my-4" />
+              <div className="space-y-2">
+                <UnitsSystemSelector
+                  compact
+                  selected={values.unitsSpec}
+                  onChange={(specId) => {
+                    void setFieldValue("unitsSpec", specId);
+                    void setFieldValue(
+                      "pressureUnit",
+                      getDefaultPressureUnit(specId),
+                    );
+                  }}
+                />
+                <PressureUnitSelector
+                  selected={
+                    values.pressureUnit ??
+                    getDefaultPressureUnit(values.unitsSpec)
+                  }
+                  onChange={(pu) => setFieldValue("pressureUnit", pu)}
+                />
+                <HeadlossFormulaSelector
+                  compact
+                  selected={values.headlossFormula}
+                  onChange={(headlossFormula) =>
+                    setFieldValue("headlossFormula", headlossFormula)
+                  }
+                />
+              </div>
             </Form>
           )}
         </Formik>
@@ -431,7 +365,11 @@ const LocationSearchSelector = ({
 
   if (compact) {
     return (
-      <InlineField name={translate("location")} labelSize="md">
+      <InlineField
+        name={translate("location")}
+        layout="fixed-label"
+        labelSize="md"
+      >
         {selector}
       </InlineField>
     );
@@ -502,6 +440,7 @@ const UnitsSystemSelector = ({
     return (
       <InlineField
         name={translate("simulationSettings.flowUnits")}
+        layout="fixed-label"
         labelSize="md"
       >
         {selector}
@@ -546,7 +485,11 @@ const HeadlossFormulaSelector = ({
 
   if (compact) {
     return (
-      <InlineField name={translate("headlossFormula")} labelSize="md">
+      <InlineField
+        name={translate("headlossFormula")}
+        layout="fixed-label"
+        labelSize="md"
+      >
         {selector}
       </InlineField>
     );
@@ -580,6 +523,7 @@ const PressureUnitSelector = ({
   return (
     <InlineField
       name={translate("simulationSettings.pressureUnits")}
+      layout="fixed-label"
       labelSize="md"
     >
       <Selector

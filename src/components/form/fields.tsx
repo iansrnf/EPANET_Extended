@@ -305,9 +305,10 @@ export const CollapsibleSectionLegacy = ({
   children,
   action,
   hasChanged = false,
+  titleClassName: _titleClassName,
 }: {
   title: React.ReactNode;
-  variant?: "primary" | "secondary";
+  variant?: "primary" | "secondary" | "subtle";
   defaultOpen?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -315,6 +316,7 @@ export const CollapsibleSectionLegacy = ({
   children: React.ReactNode;
   action?: React.ReactNode;
   hasChanged?: boolean;
+  titleClassName?: string;
 }) => {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
 
@@ -359,9 +361,11 @@ export const CollapsibleSectionLegacy = ({
 export const NestedSectionLegacy = ({
   children,
   className,
+  indentation: _indentation,
 }: {
   children: React.ReactNode;
   className?: string;
+  indentation?: number;
 }) => {
   const parentDepth = useContext(NestedBlockContext);
   const useExtraMargin = useFeatureFlag("FLAG_UI_COLLAPSIBLE");
@@ -383,15 +387,17 @@ export const NestedSectionLegacy = ({
 const NestedSectionWithNesting = ({
   children,
   className,
+  indentation = 2,
 }: {
   children: React.ReactNode;
   className?: string;
+  indentation?: number;
 }) => {
   const parentDepth = useContext(NestedBlockContext);
   return (
     <NestedBlockContext.Provider value={parentDepth + 1}>
       <SectionList
-        indentation={2}
+        indentation={indentation}
         overflow={false}
         gap={1}
         className={clsx(
@@ -408,6 +414,7 @@ const NestedSectionWithNesting = ({
 export const NestedSection = (props: {
   children: React.ReactNode;
   className?: string;
+  indentation?: number;
 }) => {
   const useNesting = useFeatureFlag("FLAG_UI_COLLAPSIBLE");
   return useNesting ? (
@@ -555,9 +562,10 @@ const CollapsibleSectionWithNesting = ({
   children,
   action,
   hasChanged = false,
-  separator = true,
-  indicatorPosition = "right",
+  separator = false,
+  indicatorPosition = "left",
   autoIndent = true,
+  titleClassName: _titleClassName,
 }: {
   title: React.ReactNode;
   variant?: "primary" | "secondary" | "subtle";
@@ -571,6 +579,7 @@ const CollapsibleSectionWithNesting = ({
   separator?: boolean;
   indicatorPosition?: "left" | "right";
   autoIndent?: boolean;
+  titleClassName?: string;
 }) => {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
 
@@ -638,7 +647,7 @@ const CollapsibleSectionWithNesting = ({
 
 export const CollapsibleSection = (props: {
   title: React.ReactNode;
-  variant?: "primary" | "secondary";
+  variant?: "primary" | "secondary" | "subtle";
   defaultOpen?: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;

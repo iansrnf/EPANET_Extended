@@ -9,7 +9,7 @@ import { stagingModelAtom } from "src/state/hydraulic-model";
 import { SimulationState, simulationAtom } from "src/state/simulation";
 import { simulationSettingsAtom } from "src/state/simulation-settings";
 import * as Popover from "@radix-ui/react-popover";
-import { Button, StyledPopoverArrow, StyledPopoverContent } from "../elements";
+import { Button, StyledPopoverArrow, StyledPopoverContent } from "src/components/elements";
 import { HydraulicModel } from "src/hydraulic-model";
 import { ScenarioSwitcher } from "./scenario-switcher";
 

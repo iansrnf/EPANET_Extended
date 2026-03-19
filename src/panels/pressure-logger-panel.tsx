@@ -10,13 +10,13 @@ import { projectSettingsAtom } from "src/state/project-settings";
 import { simulationAtom } from "src/state/simulation";
 import { worktreeAtom } from "src/state/scenarios";
 import { useTranslate } from "src/hooks/use-translate";
-import { ActionButton } from "src/components/panels/asset-panel/actions/action-button";
+import { ActionButton } from "src/components/action-button";
 import { SectionList } from "src/components/form/fields";
 import { Checkbox } from "src/components/form/Checkbox";
 import {
   SectionWrapper,
   TextRow,
-} from "src/components/panels/asset-panel/ui-components";
+} from "src/panels/asset-panel/ui-components";
 import { loggerTelemetryAtom } from "src/state/logger-telemetry";
 import type { StyledPointValue } from "src/components/graphs";
 import { localizeDecimal } from "src/infra/i18n/numbers";

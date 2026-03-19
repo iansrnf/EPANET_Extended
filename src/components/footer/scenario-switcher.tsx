@@ -24,7 +24,7 @@ import {
   StyledItem,
   StyledTooltipArrow,
   TContent,
-} from "../elements";
+} from "src/components/elements";
 
 export const ScenarioSwitcher = () => {
   const translate = useTranslate();

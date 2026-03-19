@@ -33,7 +33,7 @@ import {
 } from "src/state/layout";
 import clsx from "clsx";
 import * as P from "@radix-ui/react-popover";
-import { StyledPopoverArrow, StyledPopoverContent } from "../../elements";
+import { StyledPopoverArrow, StyledPopoverContent } from "src/components/elements";
 import { CustomerPoint } from "src/hydraulic-model/customer-points";
 import {
   Patterns,

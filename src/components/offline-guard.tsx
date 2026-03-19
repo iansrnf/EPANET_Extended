@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { hideNotification, notify } from "./notifications";
+import { hideNotification, notify } from "src/components/notifications";
 import { useTranslate } from "src/hooks/use-translate";
 import { useSetAtom } from "jotai";
 import { offlineAtom } from "src/state/offline";

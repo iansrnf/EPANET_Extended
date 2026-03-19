@@ -41,7 +41,7 @@ import { match } from "ts-pattern";
 import { getTileJSON, get, getMapboxLayerURL } from "src/lib/utils";
 import clamp from "lodash/clamp";
 import { useLayerConfigState } from "src/map/layer-config";
-import { Selector } from "../form/selector";
+import { Selector } from "src/components/form/selector";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
 import { limits } from "src/user-plan";

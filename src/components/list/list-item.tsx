@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ItemAction, ItemActions } from "./item-actions";
-import { Button } from "../elements";
+import { Button } from "src/components/elements";
 
 type LabelledItem = {
   id: number;

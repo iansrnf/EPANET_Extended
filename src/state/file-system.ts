@@ -3,7 +3,7 @@ import type { FileSystemHandle } from "browser-fs-access";
 import type { ExportOptions } from "src/types/export";
 import { atomWithMachine } from "jotai-xstate";
 import { createMachine } from "xstate";
-import { RecentFilesStore, defaultDb } from "src/import/recent-files";
+import { RecentFilesStore, defaultRecentFilesDb } from "src/lib/recent-files/recent-files";
 
 export type FileInfo = {
   name: string;
@@ -42,4 +42,4 @@ export const isDemoNetworkAtom = atom(
   (get) => get(fileInfoAtom)?.isDemoNetwork ?? false,
 );
 
-export const recentFilesStoreAtom = atom(new RecentFilesStore(defaultDb()));
+export const recentFilesStoreAtom = atom(new RecentFilesStore(defaultRecentFilesDb()));

@@ -23,7 +23,7 @@ export const useEarlyAccess = () => {
         return;
       }
 
-      if (isSignedIn) {
+      if (!isAuthEnabled || isSignedIn) {
         callback();
       } else if (isAuthEnabled) {
         setDialogState({

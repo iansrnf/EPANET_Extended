@@ -184,8 +184,17 @@ export class MapEngine {
     );
   }
 
+  private hasLayer(layerId: LayerId): boolean {
+    return !!(
+      this.map &&
+      (this.map as any).style &&
+      this.map.getLayer(layerId)
+    );
+  }
+
   showLayers(layerIds: LayerId[]) {
     for (const layerId of layerIds) {
+      if (!this.hasLayer(layerId)) continue;
       this.map.setLayoutProperty(layerId, "visibility", "visible");
     }
   }
@@ -196,6 +205,7 @@ export class MapEngine {
 
   hideLayers(layerIds: LayerId[]) {
     for (const layerId of layerIds) {
+      if (!this.hasLayer(layerId)) continue;
       this.map.setLayoutProperty(layerId, "visibility", "none");
     }
   }
@@ -222,7 +232,7 @@ export class MapEngine {
   }
 
   setLayerFilter(layerId: LayerId, filter: mapboxgl.Expression): void {
-    if (!this.map || !(this.map as any).style) return;
+    if (!this.hasLayer(layerId)) return;
 
     this.map.setFilter(layerId, filter);
   }
@@ -232,8 +242,7 @@ export class MapEngine {
     name: string,
     value: mapboxgl.Expression | string | number,
   ): void {
-    if (!this.map || !(this.map as any).style) return;
-    if (!this.map.getLayer(layerId)) return;
+    if (!this.hasLayer(layerId)) return;
 
     this.map.setPaintProperty(layerId, name, value);
   }

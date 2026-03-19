@@ -6,7 +6,6 @@ import { AssetId, Valve } from "src/hydraulic-model/asset-types";
 import { colorFor } from "src/map/symbology/range-color-rule";
 import { strokeColorFor } from "src/lib/color";
 import { hexToArray } from "src/lib/color";
-import { colors } from "src/lib/constants";
 import { localizeDecimal } from "src/infra/i18n/numbers";
 import {
   FormattingSpec,
@@ -56,7 +55,7 @@ export const buildOptimizedAssetsSource = (
           units,
           formatting,
           translateUnit,
-          colors.indigo900,
+          symbology.link.defaults.color,
           simulationResults,
           maxAbsFlow,
         );
@@ -263,6 +262,10 @@ const appendPipeSymbologyProps = (
     feature.properties!.label = `${localizedNumber} ${unitText}`;
   }
 
+  feature.properties!.color =
+    (feature.properties!.color as string | undefined) ??
+    linkSymbology.defaults.color;
+
   appendPipeArrowProps(
     pipe,
     feature,
@@ -288,7 +291,13 @@ const appendJunctionSymbologyProps = (
   translateUnit: (unit: Unit) => string,
   simulationResults?: ResultsReader | null,
 ) => {
-  if (!nodeSymbology.colorRule) return;
+  if (!nodeSymbology.colorRule) {
+    feature.properties!.color = nodeSymbology.defaults.color;
+    feature.properties!.strokeColor = strokeColorFor(
+      nodeSymbology.defaults.color,
+    );
+    return;
+  }
 
   const property = nodeSymbology.colorRule.property;
 

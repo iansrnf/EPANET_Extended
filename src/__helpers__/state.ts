@@ -166,6 +166,7 @@ export const aNodeSymbology = ({
   return {
     colorRule,
     labelRule,
+    defaults: nullSymbologySpec.node.defaults,
   };
 };
 
@@ -180,6 +181,7 @@ export const aLinkSymbology = ({
   return {
     colorRule,
     labelRule,
+    defaults: nullSymbologySpec.link.defaults,
   };
 };
 

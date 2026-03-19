@@ -1,7 +1,11 @@
 import { HydraulicModel } from "src/hydraulic-model";
 import type { UnitsSpec } from "src/lib/project-settings/quantities-spec";
 import { initializeColorRule } from "./range-color-rule";
-import { NodeSymbology, LinkSymbology } from "./symbology-types";
+import {
+  NodeSymbology,
+  LinkSymbology,
+  nullSymbologySpec,
+} from "./symbology-types";
 import { nullLabelRule } from "./labeling";
 import { getSortedValues } from "src/hydraulic-model/assets-map";
 import {
@@ -62,12 +66,12 @@ type DefaultSymbologyBuilders = {
   actualDemand: SymbologyBuilderFn<NodeSymbology>;
   elevation: SymbologyBuilderFn<NodeSymbology>;
   head: SymbologyBuilderFn<NodeSymbology>;
-  none: () => () => { colorRule: null; labelRule: null };
+  none: () => () => NodeSymbology;
 };
 
 export const defaultSymbologyBuilders: DefaultSymbologyBuilders = {
   none: () => () => {
-    return { colorRule: null, labelRule: null };
+    return { ...nullSymbologySpec.node };
   },
 
   diameter:
@@ -90,6 +94,7 @@ export const defaultSymbologyBuilders: DefaultSymbologyBuilders = {
       return {
         colorRule: applyCustomColors(colorRule, preference),
         labelRule: nullLabelRule,
+        defaults: nullSymbologySpec.link.defaults,
       };
     },
 
@@ -113,6 +118,7 @@ export const defaultSymbologyBuilders: DefaultSymbologyBuilders = {
       return {
         colorRule: applyCustomColors(colorRule, preference),
         labelRule: nullLabelRule,
+        defaults: nullSymbologySpec.link.defaults,
       };
     },
 
@@ -137,6 +143,7 @@ export const defaultSymbologyBuilders: DefaultSymbologyBuilders = {
       return {
         colorRule: applyCustomColors(colorRule, preference),
         labelRule: nullLabelRule,
+        defaults: nullSymbologySpec.node.defaults,
       };
     },
 
@@ -164,6 +171,7 @@ export const defaultSymbologyBuilders: DefaultSymbologyBuilders = {
       return {
         colorRule: applyCustomColors(colorRule, preference),
         labelRule: nullLabelRule,
+        defaults: nullSymbologySpec.link.defaults,
       };
     },
 
@@ -192,6 +200,7 @@ export const defaultSymbologyBuilders: DefaultSymbologyBuilders = {
       return {
         colorRule: applyCustomColors(colorRule, preference),
         labelRule: nullLabelRule,
+        defaults: nullSymbologySpec.link.defaults,
       };
     },
 
@@ -223,6 +232,7 @@ export const defaultSymbologyBuilders: DefaultSymbologyBuilders = {
       return {
         colorRule: applyCustomColors(colorRule, preference),
         labelRule: nullLabelRule,
+        defaults: nullSymbologySpec.link.defaults,
       };
     },
 
@@ -248,6 +258,7 @@ export const defaultSymbologyBuilders: DefaultSymbologyBuilders = {
       return {
         colorRule: applyCustomColors(colorRule, preference),
         labelRule: nullLabelRule,
+        defaults: nullSymbologySpec.node.defaults,
       };
     },
 
@@ -276,6 +287,7 @@ export const defaultSymbologyBuilders: DefaultSymbologyBuilders = {
       return {
         colorRule: applyCustomColors(colorRule, preference),
         labelRule: nullLabelRule,
+        defaults: nullSymbologySpec.node.defaults,
       };
     },
 
@@ -301,6 +313,7 @@ export const defaultSymbologyBuilders: DefaultSymbologyBuilders = {
       return {
         colorRule: applyCustomColors(colorRule, preference),
         labelRule: nullLabelRule,
+        defaults: nullSymbologySpec.node.defaults,
       };
     },
 };

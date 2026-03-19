@@ -196,7 +196,11 @@ const SymbologyEditor = ({
   return (
     <Section title={title}>
       {isDefaultColorOn && (
-        <InlineField name={translate("defaultColor")} labelSize="sm">
+        <InlineField
+          name={translate("defaultColor")}
+          labelSize="sm"
+          layout="fixed-label"
+        >
           <div className="h-7 w-12 overflow-hidden rounded">
             <ColorPopover
               color={defaultColor}

@@ -531,6 +531,7 @@ const InlineFieldWithNesting = ({
     "grow shrink":
       layout === "fluid-label" || (layout === "fixed-label" && hasNesting),
     "flex-shrink-0": layout === "fixed-label" && !hasNesting,
+    "break-words": layout === "fixed-label" && labelSize === "sm",
     "w-1/2": layout === "half-split",
     "flex-none": layout === "label-flex-none",
   });

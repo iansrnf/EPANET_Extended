@@ -1,13 +1,15 @@
+import type { GeoTIFFImage } from "geotiff";
+
 export type GeoTiffTile = {
   id: string;
-  fileName: string;
-  fileSize: number;
+  file: File;
   width: number;
   height: number;
   bbox: [number, number, number, number];
   pixelToGps: number[];
   gpsToPixel: number[];
   noDataValue: number | null;
+  image: GeoTIFFImage;
 };
 
 export type GeoTiffElevationSource = {

@@ -937,6 +937,16 @@ export type UserEvent =
   | ScenarioDeleteDialogCancel
   | ScenarioToggled
   | ScenarioCycled
+  | { name: "elevationSource.added"; tileCount: number }
+  | { name: "elevationSource.deleted"; sourceType: string }
+  | {
+      name: "elevationSource.offsetChanged";
+      sourceType: string;
+      oldValue: number;
+      newValue: number;
+    }
+  | { name: "elevationSource.tilesAdded"; tileCount: number }
+  | { name: "elevationSource.tileDeleted" }
   | {
       name: "map.elevationOffset.changed";
       sourceType: string;

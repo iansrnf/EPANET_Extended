@@ -441,6 +441,7 @@ export class Persistence implements IPersistenceWithSnapshots {
     const model = initializeHydraulicModel({
       defaults,
       idGenerator: currentHydraulicModel.assetBuilder.idGenerator,
+      fillLabelGaps: currentHydraulicModel.labelManager.fillGaps,
     });
 
     for (const delta of allDeltas) {

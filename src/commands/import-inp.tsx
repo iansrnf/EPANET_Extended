@@ -41,6 +41,7 @@ export const useImportInp = () => {
   const userTracking = useUserTracking();
 
   const { addRecent } = useRecentFiles();
+  const isNewLabelsOn = useFeatureFlag("FLAG_NEW_LABELS");
 
   const importInp = useCallback(
     async (files: FileWithHandle[]) => {
@@ -77,6 +78,7 @@ export const useImportInp = () => {
         const parseOptions = {
           customerPoints: true,
           inactiveAssets: true,
+          fillLabelGaps: !isNewLabelsOn,
         };
 
         const completeImport = async (
@@ -228,6 +230,7 @@ export const useImportInp = () => {
     },
     [
       addRecent,
+      isNewLabelsOn,
       isReprojectOn,
       map,
       setDialogState,

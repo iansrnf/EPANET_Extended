@@ -5,6 +5,7 @@ import {
 } from "../components/dialog";
 import { Form, Formik } from "formik";
 import mapboxgl from "mapbox-gl";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 
 import {
   Presets,
@@ -60,6 +61,7 @@ type SubmitProps = {
 };
 
 export const CreateNew = () => {
+  const isNewLabelsOn = useFeatureFlag("FLAG_NEW_LABELS");
   const translate = useTranslate();
   const rep = usePersistence();
   const transactImport = rep.useTransactImport();
@@ -114,6 +116,7 @@ export const CreateNew = () => {
       };
       const hydraulicModel = initializeHydraulicModel({
         defaults: spec.defaults,
+        fillLabelGaps: !isNewLabelsOn,
       });
       const factories = initializeModelFactories();
       setGridPreview(false);
@@ -143,6 +146,7 @@ export const CreateNew = () => {
       transactImport,
       userTracking,
       setFileInfo,
+      isNewLabelsOn,
       map,
       setGridPreview,
       setGridHidden,

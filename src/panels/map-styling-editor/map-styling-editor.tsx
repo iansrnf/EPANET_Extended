@@ -19,23 +19,20 @@ import { defaultSymbologyBuilders } from "src/map/symbology/default-symbology-bu
 import { Checkbox } from "src/components/form/Checkbox";
 import { ColorRampSelector } from "src/components/color-ramp-selector";
 import { RangeColorRuleEditor } from "./range-color-rule-editor";
-import { StyledPopoverArrow, StyledPopoverContent, Button } from "src/components/elements";
+import {
+  StyledPopoverArrow,
+  StyledPopoverContent,
+} from "src/components/elements";
 import { RangeMode } from "src/map/symbology/range-color-rule";
 import { AddLayer, LayersEditor } from "./layers-editor";
 import { InlineField, Section, SectionList } from "src/components/form/fields";
 import { ColorPopover } from "src/components/color-popover";
-import {
-  Draggable,
-  DeleteIcon,
-  AddIcon,
-  LocateOffIcon,
-  MultipleValuesIcon,
-} from "src/icons";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { LegendRamp } from "src/components/legends";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { selectionAtom } from "src/state/selection";
 import { USelection } from "src/selection/selection";
+import { ElevationsConfig } from "./elevations-config";
 
 const colorPropertyLabelFor = (
   property: string,
@@ -65,7 +62,7 @@ export const MapStylingEditor = () => {
           properties={supportedLinkProperties}
         />
         <CustomerPointsSection />
-        {isDtmElevationsOn && <ElevationsSection />}
+        {isDtmElevationsOn && <ElevationsConfig />}
         {!isGridOn && (
           <Section title={translate("layers")} button={<AddLayer />}>
             <LayersEditor />
@@ -116,7 +113,6 @@ const SymbologyEditor = ({
   const isPersistMapPreferencesOn = useFeatureFlag(
     "FLAG_RESTORE_MAP_PREFERENCES",
   );
-
   const userTracking = useUserTracking();
 
   const handleColorByChange = (property: SelectOption) => {
@@ -209,7 +205,11 @@ const SymbologyEditor = ({
   };
   return (
     <Section title={title}>
-      <InlineField name={translate("colorBy")} labelSize="md">
+      <InlineField
+        name={translate("colorBy")}
+        labelSize="sm"
+        layout="fixed-label"
+      >
         <Selector
           ariaLabel={`${translate(geometryType)} ${translate("colorBy")}`}
           options={(["none", ...properties] as SelectOption[]).map((type) => {
@@ -234,26 +234,43 @@ const SymbologyEditor = ({
         <>
           {isSmOrLarger && (
             <>
-              <InlineField name={translate("range")} labelSize="md">
+              <InlineField
+                name={translate("range")}
+                labelSize="sm"
+                layout="fixed-label"
+              >
                 <RangeColorRuleEditorTrigger
                   mode={symbology.colorRule.mode}
                   numIntervals={symbology.colorRule.breaks.length + 1}
                   geometryType={geometryType}
                 />
               </InlineField>
-              <InlineField name={translate("ramp")} labelSize="md">
+              <InlineField
+                name={translate("ramp")}
+                labelSize="sm"
+                layout="fixed-label"
+              >
                 <ColorRampSelector geometryType={geometryType} />
               </InlineField>
             </>
           )}
           {!isSmOrLarger && (
-            <InlineField name="Legend" align="start" labelSize="md">
+            <InlineField
+              name="Legend"
+              align="start"
+              labelSize="sm"
+              layout="fixed-label"
+            >
               <div className="w-full px-2">
                 <LegendRamp colorRule={symbology.colorRule} />
               </div>
             </InlineField>
           )}
-          <InlineField name={translate("labels")} labelSize="md">
+          <InlineField
+            name={translate("labels")}
+            labelSize="sm"
+            layout="fixed-label"
+          >
             <Checkbox
               checked={!!symbology.labelRule}
               aria-label={`${translate(geometryType)} ${translate("labels")}`}
@@ -310,7 +327,11 @@ const CustomerPointsSection = () => {
 
   return (
     <Section title={translate("customerPoints")}>
-      <InlineField name={translate("visible")} labelSize="md">
+      <InlineField
+        name={translate("visible")}
+        labelSize="sm"
+        layout="fixed-label"
+      >
         <Checkbox
           checked={customerPointsSymbology.visible}
           aria-label={`${translate("customerPoints")} ${translate("visible")}`}
@@ -355,77 +376,3 @@ const RangeColorRuleEditorTrigger = ({
   );
 };
 
-const ElevationsSection = () => {
-  const translate = useTranslate();
-
-  return (
-    <Section title={translate("elevations")}>
-      <div className="flex flex-col gap-y-1">
-        <GeoTiffElevationSourceRow />
-        <GlobalDtmElevationSourceRow />
-        <Button variant="default" size="sm" className="w-full justify-center">
-          <AddIcon size="sm" />
-          {translate("addNewElevationData")}
-        </Button>
-      </div>
-    </Section>
-  );
-};
-
-const ElevationSourceRowShell = ({
-  name,
-  typeLabel,
-  children,
-}: {
-  name: string;
-  typeLabel: string;
-  children: React.ReactNode;
-}) => (
-  <div className="py-2 flex gap-x-2 items-start">
-    <div className="pt-0.5 opacity-20 hover:opacity-100 cursor-ns-resize">
-      <Draggable />
-    </div>
-    <div className="flex-auto">
-      <div className="flex gap-x-2 items-center">
-        <span className="block select-none truncate flex-auto text-sm">
-          {name}
-        </span>
-        {children}
-      </div>
-      <div className="opacity-50 font-semibold" style={{ fontSize: 10 }}>
-        {typeLabel}
-      </div>
-    </div>
-  </div>
-);
-
-const GeoTiffElevationSourceRow = () => {
-  const translate = useTranslate();
-  return (
-    <ElevationSourceRowShell
-      name={translate("userElevationData")}
-      typeLabel="GEOTIFF"
-    >
-      <button className="opacity-30 hover:opacity-100 select-none">
-        <MultipleValuesIcon />
-      </button>
-      <button className="opacity-50 hover:opacity-100 select-none text-red-500">
-        <DeleteIcon />
-      </button>
-    </ElevationSourceRowShell>
-  );
-};
-
-const GlobalDtmElevationSourceRow = () => {
-  const translate = useTranslate();
-  return (
-    <ElevationSourceRowShell
-      name={translate("mapboxDefaultData")}
-      typeLabel={translate("globalDtm").toUpperCase()}
-    >
-      <button className="opacity-30 hover:opacity-100 select-none">
-        <LocateOffIcon />
-      </button>
-    </ElevationSourceRowShell>
-  );
-};

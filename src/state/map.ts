@@ -31,6 +31,7 @@ import {
 import { customerPointsAtom } from "src/state/hydraulic-model";
 import { pressureLoggersAtom } from "src/state/hydraulic-model";
 import { offlineAtom } from "src/state/offline";
+import { mapOverlayFeaturesAtom } from "src/state/map-overlay";
 import { USelection } from "src/selection";
 import type { AssetId } from "src/hydraulic-model";
 import type { CustomerPoints } from "src/hydraulic-model/customer-points";
@@ -136,6 +137,7 @@ export type MapState = {
   pressureLoggers: PressureLoggers;
   loggerTelemetry: LoggerTelemetryState;
   currentZoom: number;
+  mapOverlayFeatures: GeoJSON.Feature[];
 };
 
 export const nullMapState: MapState = {
@@ -165,6 +167,7 @@ export const nullMapState: MapState = {
     lastError: null,
   },
   currentZoom: DEFAULT_ZOOM,
+  mapOverlayFeatures: [],
 } as const;
 
 export const stylesConfigAtom = atom<StylesConfig>((get) => {
@@ -191,6 +194,7 @@ export const mapStateAtom = atom<MapState>((get) => {
   const pressureLoggers = get(pressureLoggersAtom);
   const loggerTelemetry = get(loggerTelemetryAtom);
   const currentZoom = get(currentZoomAtom);
+  const mapOverlayFeatures = get(mapOverlayFeaturesAtom);
   const selectedAssetIds = new Set(USelection.toIds(selection));
 
   const movedAssetIds = get(movedAssetIdsAtom);
@@ -213,5 +217,6 @@ export const mapStateAtom = atom<MapState>((get) => {
     pressureLoggers,
     loggerTelemetry,
     currentZoom,
+    mapOverlayFeatures,
   };
 });

@@ -93,14 +93,19 @@ export const buildModel = (
   const spec = inpData.options.pressureUnit
     ? withPressureUnit(baseSpec, inpData.options.pressureUnit as Unit)
     : baseSpec;
-  const nodeIds = new ItemData<AssetId>();
-  const linkIds = new ItemData<AssetId>();
-  const factories = initializeModelFactories();
-
   const hydraulicModel = initializeHydraulicModel({
     defaults: spec.defaults,
     demands: createEmptyDemands(),
     fillLabelGaps: options?.fillLabelGaps,
+  });
+
+  const nodeIds = new ItemData<AssetId>();
+  const linkIds = new ItemData<AssetId>();
+  const factories = initializeModelFactories({
+    labelManager:
+      options?.fillLabelGaps === false
+        ? hydraulicModel.labelManager
+        : undefined,
   });
 
   const curvesContext: CurvesContext = initializeCurvesContext(

@@ -1,7 +1,29 @@
 import { useAtomValue, useSetAtom } from "jotai";
 import { useRef, useState } from "react";
+
 import * as Popover from "@radix-ui/react-popover";
 import { nanoid } from "nanoid";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import {
+  restrictToVerticalAxis,
+  restrictToFirstScrollableAncestor,
+} from "@dnd-kit/modifiers";
+import { CSS } from "@dnd-kit/utilities";
 import { useTranslate } from "src/hooks/use-translate";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { useUserTracking } from "src/infra/user-tracking";
@@ -33,19 +55,51 @@ import type {
 export const ElevationsConfig = () => {
   const translate = useTranslate();
   const sources = useAtomValue(elevationSourcesAtom);
-
+  const setSources = useSetAtom(elevationSourcesAtom);
   const reversedSources = [...sources].reverse();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = reversedSources.findIndex((source) => source.id === active.id);
+    const newIndex = reversedSources.findIndex((source) => source.id === over.id);
+    const reordered = arrayMove(reversedSources, oldIndex, newIndex);
+    setSources([...reordered].reverse());
+  };
 
   return (
     <Section title={translate("elevations")}>
       <div className="flex flex-col gap-y-1">
-        {reversedSources.map((source) =>
-          source.type === "geotiff" ? (
-            <GeoTiffElevationSourceRow key={source.id} source={source} />
-          ) : (
-            <TileServerElevationSourceRow key={source.id} source={source} />
-          ),
-        )}
+        <DndContext
+          onDragEnd={handleDragEnd}
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[
+            restrictToVerticalAxis,
+            restrictToFirstScrollableAncestor,
+          ]}
+        >
+          <SortableContext
+            items={reversedSources}
+            strategy={verticalListSortingStrategy}
+          >
+            {reversedSources.map((source) =>
+              source.type === "geotiff" ? (
+                <GeoTiffElevationSourceRow key={source.id} source={source} />
+              ) : (
+                <TileServerElevationSourceRow key={source.id} source={source} />
+              ),
+            )}
+          </SortableContext>
+        </DndContext>
         <AddElevationDataButton />
       </div>
     </Section>
@@ -53,31 +107,51 @@ export const ElevationsConfig = () => {
 };
 
 const ElevationSourceRowShell = ({
+  id,
   name,
   typeLabel,
   children,
 }: {
+  id: string;
   name: string;
   typeLabel: string;
   children: React.ReactNode;
-}) => (
-  <div className="py-2 flex gap-x-2 items-start">
-    <div className="pt-0.5 opacity-20 hover:opacity-100 cursor-ns-resize">
-      <Draggable />
-    </div>
-    <div className="flex-auto">
-      <div className="flex gap-x-2 items-center">
-        <span className="block select-none truncate flex-auto text-sm">
-          {name}
-        </span>
-        {children}
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition } =
+    useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="py-2 flex gap-x-2 items-start"
+    >
+      <div
+        className="pt-0.5 opacity-20 hover:opacity-100 cursor-ns-resize"
+        {...attributes}
+        {...listeners}
+      >
+        <Draggable />
       </div>
-      <div className="opacity-50 font-semibold" style={{ fontSize: 10 }}>
-        {typeLabel}
+      <div className="flex-auto">
+        <div className="flex gap-x-2 items-center">
+          <span className="block select-none truncate flex-auto text-sm">
+            {name}
+          </span>
+          {children}
+        </div>
+        <div className="opacity-50 font-semibold" style={{ fontSize: 10 }}>
+          {typeLabel}
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 const GeoTiffElevationSourceRow = ({
   source,
@@ -98,6 +172,7 @@ const GeoTiffElevationSourceRow = ({
 
   return (
     <ElevationSourceRowShell
+      id={source.id}
       name={translate("userElevationData")}
       typeLabel="GEOTIFF"
     >
@@ -149,10 +224,10 @@ const GeoTiffTilesPopover = ({
 
     const newTiles = results
       .filter(
-        (result): result is PromiseFulfilledResult<GeoTiffTile> =>
-          result.status === "fulfilled",
+        (r): r is PromiseFulfilledResult<GeoTiffTile> =>
+          r.status === "fulfilled",
       )
-      .map((result) => result.value);
+      .map((r) => r.value);
 
     if (newTiles.length === 0) return;
 
@@ -173,7 +248,7 @@ const GeoTiffTilesPopover = ({
     setSources((prev) => {
       const updated = prev.map((s) =>
         s.id === source.id && s.type === "geotiff"
-          ? { ...s, tiles: s.tiles.filter((tile) => tile.id !== tileId) }
+          ? { ...s, tiles: s.tiles.filter((t) => t.id !== tileId) }
           : s,
       );
       return updated.filter((s) => s.type !== "geotiff" || s.tiles.length > 0);
@@ -187,20 +262,20 @@ const GeoTiffTilesPopover = ({
       <ElevationOffsetField source={source} />
       <div className="overflow-y-auto max-h-[50vh] scroll-shadows border rounded">
         <div className="flex flex-col">
-        {source.tiles.map((tile) => (
-          <div
-            key={tile.id}
-            className="flex items-center justify-between gap-x-2 h-8 shrink-0 px-2 even:bg-gray-100 hover:bg-purple-100"
-          >
-            <span className="text-sm truncate">{tile.file.name}</span>
-            <button
-              className="opacity-50 hover:opacity-100 select-none text-red-500 shrink-0"
-              onClick={() => handleDeleteTile(tile.id)}
+          {source.tiles.map((tile) => (
+            <div
+              key={tile.id}
+              className="flex items-center justify-between gap-x-2 h-8 shrink-0 px-2 even:bg-gray-100 hover:bg-purple-100"
             >
-              <DeleteIcon />
-            </button>
-          </div>
-        ))}
+              <span className="text-sm truncate">{tile.file.name}</span>
+              <button
+                className="opacity-50 hover:opacity-100 select-none text-red-500 shrink-0"
+                onClick={() => handleDeleteTile(tile.id)}
+              >
+                <DeleteIcon />
+              </button>
+            </div>
+          ))}
         </div>
       </div>
       <input
@@ -238,6 +313,7 @@ const TileServerElevationSourceRow = ({
   const translate = useTranslate();
   return (
     <ElevationSourceRowShell
+      id={source.id}
       name={source.name}
       typeLabel={translate("globalDtm").toUpperCase()}
     >
@@ -349,10 +425,10 @@ const AddElevationDataButton = () => {
 
       const tiles = results
         .filter(
-          (result): result is PromiseFulfilledResult<GeoTiffTile> =>
-            result.status === "fulfilled",
+          (r): r is PromiseFulfilledResult<GeoTiffTile> =>
+            r.status === "fulfilled",
         )
-        .map((result) => result.value);
+        .map((r) => r.value);
 
       if (tiles.length === 0) return;
 

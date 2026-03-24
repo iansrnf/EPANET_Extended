@@ -37,6 +37,7 @@ import {
   Draggable,
   DeleteIcon,
   AddIcon,
+  LocateIcon,
   LocateOffIcon,
   MultipleValuesIcon,
 } from "src/icons";
@@ -44,6 +45,7 @@ import { NumericField } from "src/components/form/numeric-field";
 import { localizeDecimal } from "src/infra/i18n/numbers";
 import { convertTo } from "src/quantity";
 import { elevationSourcesAtom } from "src/state/elevation-sources";
+import { offlineAtom } from "src/state/offline";
 import { extractGeoTiffMetadata } from "src/lib/elevations";
 import type {
   ElevationSource,
@@ -51,6 +53,7 @@ import type {
   GeoTiffTile,
   TileServerElevationSource,
 } from "src/lib/elevations";
+import { ActionButton } from "src/components/action-button";
 
 export const ElevationsConfig = () => {
   const translate = useTranslate();
@@ -69,8 +72,9 @@ export const ElevationsConfig = () => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = reversedSources.findIndex((source) => source.id === active.id);
-    const newIndex = reversedSources.findIndex((source) => source.id === over.id);
+    // Work on the reversed array (display order), then reverse back for storage
+    const oldIndex = reversedSources.findIndex((s) => s.id === active.id);
+    const newIndex = reversedSources.findIndex((s) => s.id === over.id);
     const reordered = arrayMove(reversedSources, oldIndex, newIndex);
     setSources([...reordered].reverse());
   };
@@ -110,11 +114,13 @@ const ElevationSourceRowShell = ({
   id,
   name,
   typeLabel,
+  disabled = false,
   children,
 }: {
   id: string;
   name: string;
   typeLabel: string;
+  disabled?: boolean;
   children: React.ReactNode;
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition } =
@@ -132,7 +138,7 @@ const ElevationSourceRowShell = ({
       className="py-2 flex gap-x-2 items-start"
     >
       <div
-        className="pt-0.5 opacity-20 hover:opacity-100 cursor-ns-resize"
+        className="opacity-20 hover:opacity-100 cursor-ns-resize flex items-center h-8"
         {...attributes}
         {...listeners}
       >
@@ -140,12 +146,17 @@ const ElevationSourceRowShell = ({
       </div>
       <div className="flex-auto">
         <div className="flex gap-x-2 items-center">
-          <span className="block select-none truncate flex-auto text-sm">
+          <span
+            className={`block select-none truncate flex-auto text-sm ${disabled ? "opacity-50" : ""}`}
+          >
             {name}
           </span>
           {children}
         </div>
-        <div className="opacity-50 font-semibold" style={{ fontSize: 10 }}>
+        <div
+          className={`font-semibold ${disabled ? "opacity-40" : "opacity-50"}`}
+          style={{ fontSize: 10 }}
+        >
           {typeLabel}
         </div>
       </div>
@@ -178,9 +189,9 @@ const GeoTiffElevationSourceRow = ({
     >
       <Popover.Root>
         <Popover.Trigger asChild>
-          <button className="opacity-30 hover:opacity-100 select-none">
+          <Button variant="quiet/mode" className="h-8">
             <MultipleValuesIcon />
-          </button>
+          </Button>
         </Popover.Trigger>
         <Popover.Portal>
           <StyledPopoverContent
@@ -194,12 +205,13 @@ const GeoTiffElevationSourceRow = ({
           </StyledPopoverContent>
         </Popover.Portal>
       </Popover.Root>
-      <button
-        className="opacity-50 hover:opacity-100 select-none text-red-500"
+      <Button
+        variant="quiet/mode"
+        className="h-8 text-red-500"
         onClick={handleDelete}
       >
         <DeleteIcon />
-      </button>
+      </Button>
     </ElevationSourceRowShell>
   );
 };
@@ -260,23 +272,24 @@ const GeoTiffTilesPopover = ({
     <div className="flex flex-col gap-y-2">
       <div className="font-semibold text-sm">{source.name}</div>
       <ElevationOffsetField source={source} />
-      <div className="overflow-y-auto max-h-[50vh] scroll-shadows border rounded">
-        <div className="flex flex-col">
+      <div className="overflow-y-auto max-h-[30vh] scroll-shadows border rounded">
+        <ul className="flex flex-col">
           {source.tiles.map((tile) => (
-            <div
+            <li
               key={tile.id}
-              className="flex items-center justify-between gap-x-2 h-8 shrink-0 px-2 even:bg-gray-100 hover:bg-purple-100"
+              className="group flex items-center justify-between gap-x-2 h-8 shrink-0 px-2 even:bg-gray-100 hover:bg-purple-100"
             >
-              <span className="text-sm truncate">{tile.file.name}</span>
-              <button
-                className="opacity-50 hover:opacity-100 select-none text-red-500 shrink-0"
+              <span className="text-sm">{tile.file.name}</span>
+              <Button
+                variant="quiet/mode"
+                className="h-8 text-red-500"
                 onClick={() => handleDeleteTile(tile.id)}
               >
                 <DeleteIcon />
-              </button>
-            </div>
+              </Button>
+            </li>
           ))}
-        </div>
+        </ul>
       </div>
       <input
         ref={fileInputRef}
@@ -311,17 +324,30 @@ const TileServerElevationSourceRow = ({
   source: TileServerElevationSource;
 }) => {
   const translate = useTranslate();
+  const isOffline = useAtomValue(offlineAtom);
+  const setSources = useSetAtom(elevationSourcesAtom);
+
+  const toggleEnabled = () => {
+    setSources((prev) =>
+      prev.map((s) => (s.id === source.id ? { ...s, enabled: !s.enabled } : s)),
+    );
+    return Promise.resolve();
+  };
+
+  const isDisabled = isOffline || !source.enabled;
+
   return (
     <ElevationSourceRowShell
       id={source.id}
       name={source.name}
       typeLabel={translate("globalDtm").toUpperCase()}
+      disabled={isDisabled}
     >
       <Popover.Root>
-        <Popover.Trigger asChild>
-          <button className="opacity-30 hover:opacity-100 select-none">
+        <Popover.Trigger asChild disabled={isDisabled}>
+          <Button variant="quiet/mode" className="h-8">
             <MultipleValuesIcon />
-          </button>
+          </Button>
         </Popover.Trigger>
         <Popover.Portal>
           <StyledPopoverContent
@@ -335,9 +361,15 @@ const TileServerElevationSourceRow = ({
           </StyledPopoverContent>
         </Popover.Portal>
       </Popover.Root>
-      <button className="opacity-30 hover:opacity-100 select-none">
-        <LocateOffIcon />
-      </button>
+      <ActionButton
+        action={{
+          onSelect: toggleEnabled,
+          applicable: true,
+          disabled: isOffline,
+          label: source.enabled ? translate("disable") : translate("enable"),
+          icon: isDisabled ? <LocateIcon /> : <LocateOffIcon />,
+        }}
+      />
     </ElevationSourceRowShell>
   );
 };
@@ -377,12 +409,6 @@ const ElevationOffsetField = ({ source }: { source: ElevationSource }) => {
         s.id === source.id ? { ...s, elevationOffsetM: valueInMeters } : s,
       ),
     );
-    userTracking.capture({
-      name: "map.elevationOffset.changed",
-      sourceType: source.type,
-      oldValue: source.elevationOffsetM,
-      newValue: valueInMeters,
-    });
     userTracking.capture({
       name: "elevationSource.offsetChanged",
       sourceType: source.type,

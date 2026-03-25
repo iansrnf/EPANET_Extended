@@ -133,8 +133,7 @@ const detectChanges = (
       state.loggerTelemetry !== prev.loggerTelemetry,
     hasNewZoom: state.currentZoom !== prev.currentZoom,
     hasSyncMomentChanged: state.syncMomentVersion !== prev.syncMomentVersion,
-    hasNewMapOverlay:
-      state.mapOverlayFeatures !== prev.mapOverlayFeatures,
+    hasNewMapOverlay: state.mapOverlayFeatures !== prev.mapOverlayFeatures,
   };
 };
 

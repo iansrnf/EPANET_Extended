@@ -134,6 +134,24 @@ export function isPointInBbox(
   return lng >= west && lng <= east && lat >= south && lat <= north;
 }
 
+function bboxToPolygon(
+  bbox: [number, number, number, number],
+): GeoJSON.Polygon {
+  const [west, south, east, north] = bbox;
+  return {
+    type: "Polygon",
+    coordinates: [
+      [
+        [west, south],
+        [east, south],
+        [east, north],
+        [west, north],
+        [west, south],
+      ],
+    ],
+  };
+}
+
 export function buildCoverageFeature(
   tile: GeoTiffTile,
   {
@@ -142,7 +160,8 @@ export function buildCoverageFeature(
     showLabel,
   }: { isFilled: boolean; isDisabled: boolean; showLabel: boolean },
 ): GeoJSON.Feature {
-  const [west, south, east, north] = tile.bbox;
+  const geometry: GeoJSON.Geometry =
+    tile.coveragePolygon ?? bboxToPolygon(tile.bbox);
   return {
     type: "Feature",
     properties: {
@@ -151,18 +170,7 @@ export function buildCoverageFeature(
       isDisabled,
       ...(showLabel && { label: tile.file.name }),
     },
-    geometry: {
-      type: "Polygon",
-      coordinates: [
-        [
-          [west, south],
-          [east, south],
-          [east, north],
-          [west, north],
-          [west, south],
-        ],
-      ],
-    },
+    geometry,
   };
 }
 

@@ -9,6 +9,8 @@ export type GeoTiffTile = {
   pixelToGps: number[];
   gpsToPixel: number[];
   noDataValue: number | null;
+  /** Computed data boundary — replaces bbox for display when present. */
+  coveragePolygon?: GeoJSON.Geometry;
   image: GeoTIFFImage;
 };
 

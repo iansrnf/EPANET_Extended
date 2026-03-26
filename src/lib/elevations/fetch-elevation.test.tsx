@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fetchElevationFromSources } from "./fetch-elevation";
 import { fetchElevationForPoint } from "./tile-server-elevation";
 import type {
@@ -41,8 +41,11 @@ const aGeotiffSource = (
       width: 4,
       height: 4,
       bbox: [-4, 55, -3, 56],
-      pixelToGps: [0, 1, 0, 0, 0, 1],
-      gpsToPixel: [16, 4, 0, 224, 0, -4],
+      resolution: [1, 1] as [number, number],
+      crsUnit: "deg" as const,
+      verticalUnit: "m" as const,
+      pixelToCrs: [0, 1, 0, 0, 0, 1],
+      crsToPixel: [16, 4, 0, 224, 0, -4],
       noDataValue: -9999,
       image: {
         readRasters: vi.fn().mockResolvedValue([new Float32Array([42.5])]),
@@ -91,6 +94,14 @@ describe("fetchElevationFromSources", () => {
     ];
     const result = await fetchElevationFromSources(sources, -3.5, 55.5, "m");
     expect(result).toBe(52.5);
+  });
+
+  it("applies elevationOffsetM in the requested unit", async () => {
+    const sources: ElevationSource[] = [
+      aGeotiffSource({ elevationOffsetM: 10 }),
+    ];
+    const result = await fetchElevationFromSources(sources, -3.5, 55.5, "ft");
+    expect(result).toBeCloseTo(171.916, 1);
   });
 
   it("applies elevationOffsetM to tile-server results", async () => {

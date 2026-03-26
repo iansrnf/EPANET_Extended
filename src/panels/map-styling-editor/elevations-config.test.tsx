@@ -54,8 +54,11 @@ const aGeoTiffSource: GeoTiffElevationSource = {
       width: 100,
       height: 100,
       bbox: [-4.0, 55.0, -3.0, 56.0],
-      pixelToGps: [0, 1, 0, 0, 0, 1],
-      gpsToPixel: [0, 1, 0, 0, 0, 1],
+      resolution: [1, 1] as [number, number],
+      crsUnit: "deg" as const,
+      verticalUnit: "m" as const,
+      pixelToCrs: [0, 1, 0, 0, 0, 1],
+      crsToPixel: [0, 1, 0, 0, 0, 1],
       noDataValue: -9999,
       image: mockImage,
     },
@@ -65,8 +68,11 @@ const aGeoTiffSource: GeoTiffElevationSource = {
       width: 100,
       height: 100,
       bbox: [-3.0, 55.0, -2.0, 56.0],
-      pixelToGps: [0, 1, 0, 0, 0, 1],
-      gpsToPixel: [0, 1, 0, 0, 0, 1],
+      resolution: [1, 1] as [number, number],
+      crsUnit: "deg" as const,
+      verticalUnit: "m" as const,
+      pixelToCrs: [0, 1, 0, 0, 0, 1],
+      crsToPixel: [0, 1, 0, 0, 0, 1],
       noDataValue: -9999,
       image: mockImage,
     },
@@ -95,7 +101,7 @@ describe("ElevationsConfig", () => {
     renderComponent(store);
 
     expect(screen.getByText("User elevation data")).toBeInTheDocument();
-    expect(screen.getByText(/\dm grid – 2 files/)).toBeInTheDocument();
+    expect(screen.getByText(/\dm grid . 2 files/)).toBeInTheDocument();
   });
 
   it("displays sources in reverse order (default at bottom)", () => {
@@ -103,8 +109,8 @@ describe("ElevationsConfig", () => {
     store.set(elevationSourcesAtom, [aMapboxSource, aGeoTiffSource]);
     renderComponent(store);
 
-    const labels = screen.getAllByText(/grid – \d+ files?|GLOBAL DTM/);
-    expect(labels[0]).toHaveTextContent(/grid – \d+ files?/);
+    const labels = screen.getAllByText(/grid . \d+ files?|GLOBAL DTM/);
+    expect(labels[0]).toHaveTextContent(/grid . \d+ files?/);
     expect(labels[1]).toHaveTextContent("GLOBAL DTM");
   });
 
@@ -157,7 +163,7 @@ describe("ElevationsConfig", () => {
     renderComponent(store);
 
     const geotiffRow = screen
-      .getByText(/grid – \d+ files?/)
+      .getByText(/grid . \d+ files?/)
       .closest("[class*='py-2']")!;
     const deleteButton = geotiffRow.querySelector(".text-red-500")!;
     await user.click(deleteButton);
@@ -177,8 +183,11 @@ describe("ElevationsConfig", () => {
       width: 200,
       height: 200,
       bbox: [-4.0, 55.0, -3.0, 56.0],
-      pixelToGps: [0, 1, 0, 0, 0, 1],
-      gpsToPixel: [0, 1, 0, 0, 0, 1],
+      resolution: [1, 1] as [number, number],
+      crsUnit: "deg" as const,
+      verticalUnit: "m" as const,
+      pixelToCrs: [0, 1, 0, 0, 0, 1],
+      crsToPixel: [0, 1, 0, 0, 0, 1],
       noDataValue: -9999,
       image: mockImage,
     });
@@ -218,8 +227,11 @@ describe("ElevationsConfig", () => {
         width: 100,
         height: 100,
         bbox: [-4.0, 55.0, -3.0, 56.0],
-        pixelToGps: [0, 1, 0, 0, 0, 1],
-        gpsToPixel: [0, 1, 0, 0, 0, 1],
+        resolution: [1, 1] as [number, number],
+        crsUnit: "deg" as const,
+        verticalUnit: "m" as const,
+        pixelToCrs: [0, 1, 0, 0, 0, 1],
+        crsToPixel: [0, 1, 0, 0, 0, 1],
         noDataValue: null,
         image: mockImage,
       })
@@ -228,8 +240,11 @@ describe("ElevationsConfig", () => {
         width: 100,
         height: 100,
         bbox: [-3.0, 55.0, -2.0, 56.0],
-        pixelToGps: [0, 1, 0, 0, 0, 1],
-        gpsToPixel: [0, 1, 0, 0, 0, 1],
+        resolution: [1, 1] as [number, number],
+        crsUnit: "deg" as const,
+        verticalUnit: "m" as const,
+        pixelToCrs: [0, 1, 0, 0, 0, 1],
+        crsToPixel: [0, 1, 0, 0, 0, 1],
         noDataValue: null,
         image: mockImage,
       });
@@ -313,8 +328,11 @@ describe("ElevationsConfig", () => {
       width: 100,
       height: 100,
       bbox: [-2.0, 55.0, -1.0, 56.0],
-      pixelToGps: [0, 1, 0, 0, 0, 1],
-      gpsToPixel: [0, 1, 0, 0, 0, 1],
+      resolution: [1, 1] as [number, number],
+      crsUnit: "deg" as const,
+      verticalUnit: "m" as const,
+      pixelToCrs: [0, 1, 0, 0, 0, 1],
+      crsToPixel: [0, 1, 0, 0, 0, 1],
       noDataValue: null,
       image: mockImage,
     });
@@ -346,7 +364,7 @@ describe("ElevationsConfig", () => {
 
   const getGeotiffPopoverTrigger = () => {
     const geotiffRow = screen
-      .getByText(/grid – \d+ files?/)
+      .getByText(/grid . \d+ files?/)
       .closest("[class*='py-2']")!;
     return geotiffRow.querySelector("button")!;
   };

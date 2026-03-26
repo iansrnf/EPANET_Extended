@@ -13,9 +13,11 @@ export type CanonicalProjection = Projection & {
   id: "wgs84";
 };
 
-export type XYGridProjection = Projection & {
+export type XYGridProjection = {
   type: "xy-grid";
   id: "xy-grid";
+  name: string;
+  centroid: Position;
 };
 
 export type Proj4Projection = Projection & {
@@ -28,7 +30,7 @@ export const WGS84: CanonicalProjection = {
   id: "wgs84",
   name: "WGS 84",
 };
-export const XY_GRID: XYGridProjection = {
+export const XY_GRID: Projection = {
   type: "xy-grid",
   id: "xy-grid",
   name: "XY Grid",

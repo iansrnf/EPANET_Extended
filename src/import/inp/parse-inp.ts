@@ -260,7 +260,6 @@ const projectWithCode = (
 type Header = { isMadeByApp: boolean; sourceProjection?: Projection };
 
 const checksumRegexp = /\[([0-9A-Fa-f]{8})\]/;
-const projectionRegexp = /^;PROJECTION\s+(\S+)/;
 
 const parseHeader = (inp: string): Header => {
   const newLineIndex = inp.indexOf("\n");
@@ -278,16 +277,38 @@ const parseHeader = (inp: string): Header => {
   const computedChecksum = checksum(rest);
   if (inputChecksum !== computedChecksum) return { isMadeByApp: false };
 
-  const secondLineEnd = rest.indexOf("\n");
-  if (secondLineEnd === -1) return { isMadeByApp: true };
-
-  const secondLine = rest.substring(0, secondLineEnd);
-  const projectionMatch = secondLine.match(projectionRegexp);
-  const sourceProjection = projectionMatch
-    ? projectionFromId(projectionMatch[1])
-    : undefined;
+  const sourceProjection = parseProjectionMetadata(rest);
 
   return { isMadeByApp: true, sourceProjection };
+};
+
+const parseProjectionMetadata = (content: string): Projection | undefined => {
+  let id: string | undefined;
+  let name: string | undefined;
+  let code: string | undefined;
+
+  const lines = content.split("\n");
+  for (const line of lines) {
+    if (!line.startsWith(";")) break;
+
+    if (line.startsWith(";PROJECTION_TYPE ")) continue;
+    if (line.startsWith(";PROJECTION_PROJ4 ")) {
+      code = line.substring(";PROJECTION_PROJ4 ".length).trim();
+    } else if (line.startsWith(";PROJECTION_NAME ")) {
+      name = line.substring(";PROJECTION_NAME ".length).trim();
+    } else if (line.startsWith(";PROJECTION ")) {
+      id = line.substring(";PROJECTION ".length).trim();
+    }
+  }
+
+  if (id === "wgs84") return WGS84;
+  if (id === "xy-grid") return XY_GRID;
+
+  if (id && code) {
+    return { type: "proj4", id, name: name ?? id, code };
+  }
+
+  return id ? projectionFromId(id) : undefined;
 };
 
 const resolveTraceNodeId = (

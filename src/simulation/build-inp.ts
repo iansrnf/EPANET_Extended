@@ -672,6 +672,11 @@ export const buildInp = withDebugInstrumentation(
           ? opts.projection.id
           : opts.projection?.type;
       if (projectionId && projectionId !== "wgs84") {
+        if (opts.projection?.type === "proj4") {
+          content = `;PROJECTION_NAME ${opts.projection.name}\n` + content;
+          content = `;PROJECTION_PROJ4 ${opts.projection.code}\n` + content;
+          content = `;PROJECTION_TYPE ${opts.projection.type}\n` + content;
+        }
         content = `;PROJECTION ${projectionId}\n` + content;
       }
       content = `;MADE BY EPANET-JS [${checksum(content)}]\n` + content;

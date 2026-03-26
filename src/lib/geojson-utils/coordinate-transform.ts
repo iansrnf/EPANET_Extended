@@ -128,6 +128,13 @@ export function createProjectionTransformer(
   return (coord) => transformer.forward(coord) as [number, number];
 }
 
+export function createInverseProjectionTransformer(
+  sourceProjection: string,
+): (coord: [number, number]) => [number, number] {
+  const transformer = proj4("EPSG:4326", sourceProjection);
+  return (coord) => transformer.forward(coord) as [number, number];
+}
+
 export function convertGeoJsonToWGS84(
   geojson: FeatureCollection,
   sourceProjection: string,

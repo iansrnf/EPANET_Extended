@@ -1,6 +1,10 @@
 import { Position } from "geojson";
 import { Projection, ProjectionConfig, WGS84, XY_GRID } from "./projection";
 import {
+  createProjectionTransformer,
+  createInverseProjectionTransformer,
+} from "src/lib/geojson-utils/coordinate-transform";
+import {
   transformPoint,
   inverseTransformPoint,
   computeCentroid,
@@ -33,6 +37,20 @@ export const createProjectionMapper = (
         toSource: (p) => inverseTransformPoint(p, config.centroid),
         backdropUnits: "NONE",
       };
+    case "proj4": {
+      const forward = createProjectionTransformer(config.code);
+      const inverse = createInverseProjectionTransformer(config.code);
+      return {
+        projection: {
+          id: config.id,
+          name: config.name,
+          code: config.code,
+        },
+        toWgs84: (p) => forward(p as [number, number]),
+        toSource: (p) => inverse(p as [number, number]),
+        backdropUnits: "NONE",
+      };
+    }
   }
 };
 
@@ -46,7 +64,15 @@ export const buildProjectionConfig = (
     case "xy-grid":
       return { type: "xy-grid", centroid: computeCentroid(allPoints()) };
     default:
-      throw new Error(`Unsupported projection: ${projection.id}`);
+      if (!projection.code) {
+        throw new Error(`Unsupported projection: ${projection.id}`);
+      }
+      return {
+        type: "proj4",
+        id: projection.id,
+        name: projection.name,
+        code: projection.code,
+      };
   }
 };
 

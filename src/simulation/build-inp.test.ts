@@ -3,8 +3,31 @@ import { SimulationSettingsBuilder } from "src/__helpers__/simulation-settings-b
 import { buildInp } from "./build-inp";
 import { presets } from "src/lib/project-settings/quantities-spec";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
+import { ProjectionConfig } from "src/lib/projections";
 
 describe("build inp", () => {
+  it("writes proj4 projection headers and source coordinates", () => {
+    const projection: ProjectionConfig = {
+      type: "proj4",
+      id: "EPSG:3857",
+      name: "WGS 84 / Pseudo-Mercator",
+      code: "EPSG:3857",
+    };
+    const hydraulicModel = HydraulicModelBuilder.with().aNode(1, [1, 1]).build();
+
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+      geolocation: true,
+      madeBy: true,
+      projection,
+    });
+
+    expect(inp).toContain(";PROJECTION EPSG:3857");
+    expect(inp).toContain("[COORDINATES]");
+    expect(inp).toMatch(/1\t111319\.49079327357\t111325\.142866384\d+/);
+  });
+
   it("adds reservoirs", () => {
     const IDS = { R1: 1, R2: 2 };
     const hydraulicModel = HydraulicModelBuilder.with()

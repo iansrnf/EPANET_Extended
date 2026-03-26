@@ -1,4 +1,10 @@
-export type { Projection, ProjectionConfig } from "./projection";
+export type {
+  Projection,
+  ProjectionConfig,
+  CanonicalProjection,
+  XYGridProjection,
+  Proj4Projection,
+} from "./projection";
 export { WGS84, XY_GRID, projectionFromId } from "./projection";
 export type { ProjectionMapper } from "./projection-mapper";
 export {

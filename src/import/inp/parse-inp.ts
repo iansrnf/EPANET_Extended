@@ -196,7 +196,7 @@ const projectCoordinates = (
   }
 
   if (sourceProjection.id !== "xy-grid") {
-    return projectWithCode(inpData, sourceProjection.code!);
+    return projectWithCode(inpData, sourceProjection);
   }
 
   const getAllPoints = () => {
@@ -228,9 +228,9 @@ const projectCoordinates = (
 
 const projectWithCode = (
   inpData: InpData,
-  projectionCode: string,
+  sourceProjection: Projection,
 ): ProjectionConfig => {
-  const transform = createProjectionTransformer(projectionCode);
+  const transform = createProjectionTransformer(sourceProjection.code!);
 
   for (const [id, p] of inpData.coordinates.entries()) {
     inpData.coordinates.set(id, transform(p as [number, number]));
@@ -248,7 +248,12 @@ const projectWithCode = (
     }
   }
 
-  return { type: "wgs84" };
+  return {
+    type: "proj4",
+    id: sourceProjection.id,
+    name: sourceProjection.name,
+    code: sourceProjection.code!,
+  };
 };
 
 

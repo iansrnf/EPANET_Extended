@@ -773,5 +773,34 @@ describe("Parse inp with", () => {
       const result = parseInp(inp);
       expect(result.projectSettings.projection.type).toBe("wgs84");
     });
+
+    it("preserves proj4 metadata for projected imports", () => {
+      const inp = `
+      [JUNCTIONS]
+      J1  100
+
+      [COORDINATES]
+      J1  111319.49079327357  111325.1428663851
+      `;
+
+      const result = parseInp(inp, {
+        sourceProjection: {
+          id: "EPSG:3857",
+          name: "WGS 84 / Pseudo-Mercator",
+          code: "EPSG:3857",
+        },
+      });
+
+      expect(result.projectSettings.projection).toEqual({
+        type: "proj4",
+        id: "EPSG:3857",
+        name: "WGS 84 / Pseudo-Mercator",
+        code: "EPSG:3857",
+      });
+
+      const j1 = getByLabel(result.hydraulicModel.assets, "J1") as Junction;
+      expect(j1.coordinates[0]).toBeCloseTo(1, 5);
+      expect(j1.coordinates[1]).toBeCloseTo(1, 5);
+    });
   });
 });

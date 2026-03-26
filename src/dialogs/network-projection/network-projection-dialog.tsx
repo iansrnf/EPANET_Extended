@@ -22,6 +22,7 @@ import { approximateToNullIsland } from "./approximate-to-null-island";
 import type { Projection } from "src/lib/projections";
 import type { Bbox, ProjectionCandidate } from "./types";
 import { useUserTracking } from "src/infra/user-tracking";
+import { useTranslate } from "src/hooks/use-translate";
 
 const DEBOUNCE_MS = 200;
 
@@ -42,6 +43,7 @@ export const NetworkProjectionDialog = ({
   const { projectionsArray: projections } = useProjections();
   const { fitToNetwork, fitToBbox, setHandle } = useMapPreview();
   const userTracking = useUserTracking();
+  const t = useTranslate();
   const bounds = useMemo(() => computeBounds(previewGeoJson), [previewGeoJson]);
 
   const [selectedLocation, setSelectedLocation] = useState<LocationData | null>(
@@ -120,7 +122,7 @@ export const NetworkProjectionDialog = ({
             const fallback = approximateToNullIsland(previewGeoJson);
             setDisplayGeoJSON(fallback);
             setShowBasemap(false);
-            setProjectionError("Projection out of bounds");
+            setProjectionError(t("networkProjection.projectionOutOfBounds"));
             fitToNetwork(fallback);
           }
         } catch {
@@ -128,14 +130,14 @@ export const NetworkProjectionDialog = ({
           const fallback = approximateToNullIsland(previewGeoJson);
           setDisplayGeoJSON(fallback);
           setShowBasemap(false);
-          setProjectionError("Projection out of bounds");
+          setProjectionError(t("networkProjection.projectionOutOfBounds"));
           fitToNetwork(fallback);
         }
         setIsProjecting(false);
         options.onComplete?.({ outOfBounds });
       }, 0);
     },
-    [previewGeoJson, fitToNetwork],
+    [previewGeoJson, fitToNetwork, t],
   );
 
   const updateVisibleCandidates = useCallback(
@@ -282,18 +284,18 @@ export const NetworkProjectionDialog = ({
 
   return (
     <BaseDialog
-      title="Network projection"
+      title={t("networkProjection.title")}
       size="xxl"
       height="xxl"
       isOpen={true}
       onClose={handleClose}
       footer={
         <SimpleDialogActions
-          action="Apply basemap"
+          action={t("networkProjection.applyBasemap")}
           onAction={handleApplyBasemap}
           isDisabled={!selectedProjection || !!projectionError}
           secondary={{
-            action: "Load without basemap",
+            action: t("networkProjection.loadWithoutBasemap"),
             onClick: handleLoadWithoutBasemap,
           }}
         />
@@ -317,7 +319,7 @@ export const NetworkProjectionDialog = ({
                 isLoading={isBuilding}
                 emptyMessage={
                   selectedLocation
-                    ? "No matching projections found for this location"
+                    ? t("networkProjection.noMatchingProjections")
                     : undefined
                 }
               />
@@ -369,23 +371,20 @@ const computeBounds = (geoJson: FeatureCollection): string => {
   return `${minX},${minY},${maxX},${maxY}`;
 };
 
-const ProjectionEmptyState = () => (
-  <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4">
-    <div className="text-gray-400">
-      <MapPinnedIcon size={96} />
-    </div>
-    <p className="text-sm font-semibold py-4 text-gray-600 dark:text-gray-300">
-      Add a basemap
-    </p>
-    <div className="text-sm text-gray-600 dark:text-gray-400 max-w-48 space-y-2">
-      <p>
-        Search for your network's location or enter a projection code above to
-        find the right coordinate system.
+const ProjectionEmptyState = () => {
+  const t = useTranslate();
+  return (
+    <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4">
+      <div className="text-gray-400">
+        <MapPinnedIcon size={96} />
+      </div>
+      <p className="text-sm font-semibold py-4 text-gray-600 dark:text-gray-300">
+        {t("networkProjection.addBasemap")}
       </p>
-      <p>
-        If your network doesn't use a projection, you can load without a
-        basemap.
-      </p>
+      <div className="text-sm text-gray-600 dark:text-gray-400 max-w-48 space-y-2">
+        <p>{t("networkProjection.searchHint")}</p>
+        <p>{t("networkProjection.noProjectionHint")}</p>
+      </div>
     </div>
-  </div>
-);
+  );
+};

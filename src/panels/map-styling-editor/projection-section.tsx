@@ -9,13 +9,12 @@ import { Button } from "src/components/elements";
 import { Section } from "src/components/form/fields";
 import { PencilIcon } from "src/icons";
 import type { Projection } from "src/lib/projections/projection";
-import { inverseProjectGeoJson } from "src/lib/projections";
+import { createProjectionMapper, inverseProjectGeoJson } from "src/lib/projections";
 import { chooseUnitSystem } from "src/simulation/build-inp";
 import { usePersistence } from "src/lib/persistence";
 import { MapContext } from "src/map";
 import { captureError } from "src/infra/error-tracking";
 import { hasScenariosAtom } from "src/state/scenarios";
-import { useUnsavedChangesCheck } from "src/commands/check-unsaved-changes";
 
 export const ProjectionSection = () => {
   const projectSettings = useAtomValue(projectSettingsAtom);
@@ -25,8 +24,8 @@ export const ProjectionSection = () => {
   const map = useContext(MapContext);
   const rep = usePersistence();
   const transactReprojection = rep.useTransactReprojection();
-  const checkUnsavedChanges = useUnsavedChangesCheck();
   const hasScenarios = useAtomValue(hasScenariosAtom);
+  const currentProjection = createProjectionMapper(projection).projection;
   const isXYGrid = projection.type === "xy-grid";
 
   const handleOpenProjectionDialog = () => {
@@ -44,7 +43,7 @@ export const ProjectionSection = () => {
       onImportWithProjection: async (newProjection: Projection, extent) => {
         setDialogState({ type: "loading" });
         try {
-          await transactReprojection(newProjection, projection);
+          await transactReprojection(newProjection, currentProjection);
           if (extent) {
             map?.map.fitBounds(extent as LngLatBoundsLike, {
               padding: 100,
@@ -59,14 +58,14 @@ export const ProjectionSection = () => {
       },
       filename: "",
       flowUnits: chooseUnitSystem(projectSettings.units),
-      initialProjection: projection.type === "proj4" ? projection : undefined,
+      initialProjection:
+        currentProjection.type === "proj4" ? currentProjection : undefined,
     });
   };
 
-  const projectionName =
-    projection.type === "wgs84" ? "WGS 84" : projection.name;
+  const projectionName = currentProjection.name;
   const projectionCode =
-    projection.type === "wgs84" ? "EPSG:4326" : projection.id;
+    currentProjection.type === "wgs84" ? "EPSG:4326" : currentProjection.id;
 
   return (
     <Section title="Projection">
@@ -76,7 +75,7 @@ export const ProjectionSection = () => {
           size="sm"
           className="w-full justify-center"
           disabled={hasScenarios}
-          onClick={() => checkUnsavedChanges(handleOpenProjectionDialog)}
+          onClick={handleOpenProjectionDialog}
         >
           Project network
         </Button>
@@ -86,11 +85,11 @@ export const ProjectionSection = () => {
             <div className="truncate">{projectionName}</div>
             <div className="text-gray-500 truncate">{projectionCode}</div>
           </div>
-          {projection.type === "proj4" && (
+          {currentProjection.type === "proj4" && (
             <button
               className="opacity-30 hover:opacity-100 select-none flex-shrink-0"
               disabled={hasScenarios}
-              onClick={() => checkUnsavedChanges(handleOpenProjectionDialog)}
+              onClick={handleOpenProjectionDialog}
               aria-label="Change projection"
             >
               <PencilIcon />

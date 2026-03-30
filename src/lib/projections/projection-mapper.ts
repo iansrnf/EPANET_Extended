@@ -20,7 +20,7 @@ export type ProjectionMapper = {
 const identity = (p: Position): Position => p;
 
 export const createProjectionMapper = (
-  config: ProjectionConfig,
+  config: Projection | ProjectionConfig,
 ): ProjectionMapper => {
   switch (config.type) {
     case "wgs84":
@@ -42,6 +42,7 @@ export const createProjectionMapper = (
       const inverse = createInverseProjectionTransformer(config.code);
       return {
         projection: {
+          type: "proj4",
           id: config.id,
           name: config.name,
           code: config.code,
@@ -58,15 +59,12 @@ export const buildProjectionConfig = (
   projection: Projection,
   allPoints: () => Position[],
 ): ProjectionConfig => {
-  switch (projection.id) {
+  switch (projection.type) {
     case "wgs84":
       return { type: "wgs84" };
     case "xy-grid":
       return { type: "xy-grid", centroid: computeCentroid(allPoints()) };
-    default:
-      if (!projection.code) {
-        throw new Error(`Unsupported projection: ${projection.id}`);
-      }
+    case "proj4":
       return {
         type: "proj4",
         id: projection.id,
@@ -78,4 +76,4 @@ export const buildProjectionConfig = (
 
 export const getBackdropUnits = (
   config: ProjectionConfig,
-): "NONE" | "DEGREES" => (config.type === "xy-grid" ? "NONE" : "DEGREES");
+): "NONE" | "DEGREES" => (config.type === "wgs84" ? "DEGREES" : "NONE");

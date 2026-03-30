@@ -28,6 +28,7 @@ import { CustomerPointsLookup } from "src/hydraulic-model/customer-points-lookup
 import { Valve, AssetId } from "src/hydraulic-model/asset-types";
 import { checksum } from "src/infra/checksum";
 import {
+  Projection,
   ProjectionConfig,
   createProjectionMapper,
   getBackdropUnits,
@@ -360,7 +361,7 @@ type BuildOptions = {
   usedPatterns?: boolean;
   usedCurves?: boolean;
   reservoirElevations?: boolean;
-  projection?: ProjectionConfig;
+  projection?: Projection | ProjectionConfig;
 };
 
 export const buildInp = withDebugInstrumentation(

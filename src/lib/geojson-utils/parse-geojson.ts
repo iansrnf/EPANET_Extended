@@ -89,9 +89,16 @@ const parseGeoJsonFeatureCollection = (
         const projection = findProjectionByCode(code, projections);
         if (projection) {
           try {
+            if (!("code" in projection)) {
+              return {
+                features: [],
+                properties: new Set(),
+                error: { code: "unsupported-crs" },
+              };
+            }
             const convertedGeoJson = convertGeoJsonToWGS84(
               geoJson,
-              projection.code!,
+              projection.code,
             );
             if (isLikelyLatLng(convertedGeoJson)) {
               processedGeoJson = convertedGeoJson;

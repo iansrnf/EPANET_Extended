@@ -54,6 +54,7 @@ import {
   MousePointerClick,
   PanelLeft,
   PanelRight,
+  Pencil,
   Pause,
   PencilLine,
   Pin,
@@ -130,6 +131,7 @@ export const WarningIcon = icon(TriangleAlert);
 export const ErrorIcon = icon(CircleX);
 export const UserIcon = icon(User);
 export const RefreshIcon = icon(RefreshCw);
+export const PencilIcon = icon(Pencil);
 export const RedrawIcon = icon(PencilLine);
 export const ArrowRightIcon = icon(ArrowRight);
 export const ChevronUpIcon = icon(ChevronUp);

@@ -56,6 +56,9 @@ import type { SimulationSettings } from "src/simulation/simulation-settings";
 import { simulationSettingsAtom } from "src/state/simulation-settings";
 import { ModelFactories } from "src/hydraulic-model/factories";
 import { modelFactoriesAtom } from "src/state/model-factories";
+import type { Projection } from "src/lib/projections/projection";
+import { createProjectionMapper } from "src/lib/projections";
+import { transformCoordinates } from "src/hydraulic-model/mutations/transform-coordinates";
 
 const MAX_CHANGES_BEFORE_MAP_SYNC = 500;
 
@@ -222,6 +225,29 @@ export class Persistence implements IPersistenceWithSnapshots {
       this.store.set(mapSyncMomentAtom, newMapSyncMoment);
       this.syncSnapshotMomentLog(momentLog, newStateId);
       this.updateCacheAfterTransact();
+    };
+  }
+
+  useTransactReprojection() {
+    return async (newProjection: Projection, currentProjection: Projection) => {
+      const hydraulicModel = this.store.get(stagingModelAtom);
+      const projectSettings = this.store.get(projectSettingsAtom);
+
+      const toCurrent = createProjectionMapper(currentProjection).toSource;
+      const toNext = createProjectionMapper(newProjection).toWgs84;
+
+      transformCoordinates(hydraulicModel, (p) => toNext(toCurrent(p)));
+
+      this.store.set(projectSettingsAtom, {
+        ...projectSettings,
+        projection: newProjection,
+      });
+
+      this.useTransact()({
+        note: "Update projection",
+        putAssets: [...hydraulicModel.assets.values()],
+        patchAssetsAttributes: [],
+      });
     };
   }
 

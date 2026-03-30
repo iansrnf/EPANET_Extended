@@ -14,6 +14,8 @@ import { chooseUnitSystem } from "src/simulation/build-inp";
 import { usePersistence } from "src/lib/persistence";
 import { MapContext } from "src/map";
 import { captureError } from "src/infra/error-tracking";
+import { hasScenariosAtom } from "src/state/scenarios";
+import { useUnsavedChangesCheck } from "src/commands/check-unsaved-changes";
 
 const projectionTypeLabel = (projection: ProjectionConfig) => {
   switch (projection.type) {
@@ -35,6 +37,8 @@ export const ProjectionSection = () => {
   const map = useContext(MapContext);
   const rep = usePersistence();
   const transactReprojection = rep.useTransactReprojection();
+  const checkUnsavedChanges = useUnsavedChangesCheck();
+  const hasScenarios = useAtomValue(hasScenariosAtom);
   const isXYGrid = projection.type === "xy-grid";
 
   const handleOpenProjectionDialog = () => {
@@ -98,7 +102,8 @@ export const ProjectionSection = () => {
           variant="default"
           size="sm"
           className="w-full justify-center mt-2"
-          onClick={handleOpenProjectionDialog}
+          disabled={hasScenarios}
+          onClick={() => checkUnsavedChanges(handleOpenProjectionDialog)}
         >
           {isXYGrid ? "Project network" : "Change projection"}
         </Button>

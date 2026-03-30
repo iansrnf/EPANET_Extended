@@ -48,28 +48,29 @@ import { convertTo } from "src/quantity";
 import { offlineAtom } from "src/state/offline";
 import { elevationSourcesAtom } from "src/state/elevation-sources";
 import { mapOverlayFeaturesAtom } from "src/state/map-overlay";
-import {
-  buildCoverageFeature,
-  computeTileBoundaries,
-  extractGeoTiffMetadata,
-  getGeoTiffGridResolution,
-  UnsupportedProjectionError,
-} from "src/lib/elevations";
+
 import { notify } from "src/components/notifications";
-import type {
-  BoundaryResult,
-  ElevationSource,
-  GetProj4Def,
-  GeoTiffElevationSource,
-  GeoTiffTile,
-  TileServerElevationSource,
-} from "src/lib/elevations";
+
 import { MapContext } from "src/map";
 import { ActionButton } from "src/components/action-button";
 import { isUnprojectedAtom } from "src/state/map-projection";
 import { useAuth } from "src/auth";
 import { limits } from "src/user-plan";
 import { dialogAtom } from "src/state/dialog";
+import {
+  ElevationSource,
+  GeoTiffElevationSource,
+  TileServerElevationSource,
+} from "src/lib/elevations";
+import {
+  BoundaryResult,
+  computeTileBoundaries,
+  GeoTiffError,
+  GeoTiffTile,
+  parseGeoTIFF,
+  tileCoverage,
+  tileResolution,
+} from "src/lib/elevations/geotiff";
 
 export const ElevationsConfig = () => {
   const translate = useTranslate();
@@ -217,10 +218,11 @@ const GeoTiffElevationSourceRow = ({
   const { units } = useAtomValue(projectSettingsAtom);
   const elevationUnit = units.elevation;
   const resolutionDisplay = Math.round(
-    getGeoTiffGridResolution(source, elevationUnit),
+    convertTo(tileResolution(source.tiles[0]), elevationUnit),
   );
+
   const fileCount = source.tiles.length;
-  const description = `${translate("gridResolution", `${resolutionDisplay}${elevationUnit}`)} - ${translate("files", fileCount)}`;
+  const description = `${translate("gridResolution", `${resolutionDisplay}${elevationUnit}`)} – ${translate("files", fileCount)}`;
 
   const handlePopoverOpenChange = (open: boolean) => {
     if (open) {
@@ -515,47 +517,37 @@ const AddElevationDataButton = ({ actions }: { actions: Actions }) => {
   );
 };
 
-type OnSourceTilesUpdated = (
-  sourceId: string,
-  updatedTiles: GeoTiffTile[],
-) => void;
-
 function notifyProjectionErrors(
   results: PromiseSettledResult<GeoTiffTile>[],
   translate: ReturnType<typeof useTranslate>,
 ) {
   const projectionErrors = results
     .filter(
-      (result): result is PromiseRejectedResult =>
-        result.status === "rejected" &&
-        result.reason instanceof UnsupportedProjectionError,
+      (r): r is PromiseRejectedResult =>
+        r.status === "rejected" && r.reason instanceof GeoTiffError,
     )
-    .map((result) => result.reason as UnsupportedProjectionError);
+    .map((r) => r.reason as GeoTiffError);
 
   if (projectionErrors.length === 0) return;
 
-  const fileNames = projectionErrors.map((error) => error.fileName).join(", ");
-  const reasons = [
-    ...new Set(
-      projectionErrors.map((error) =>
-        error.projection.isUserDefined
-          ? translate("customProjection")
-          : `EPSG:${error.projection.epsgCode}`,
-      ),
-    ),
-  ].join(", ");
+  const fileNames = projectionErrors.map((e) => e.fileName).join(", ");
 
   notify({
     variant: "warning",
     title: translate("unsupportedProjection"),
-    description: translate("unsupportedProjectionExplain", fileNames, reasons),
-    id: "elevation-unsupported-projection",
+    description: fileNames,
+    id: "elevation-source-error",
   });
 }
 
+type OnSourceTilesUpdated = (
+  sourceId: string,
+  updatedTiles: GeoTiffTile[],
+) => void;
+
 const useElevationSourceActions = (
-  onSourceTilesUpdated?: OnSourceTilesUpdated,
-  getProj4Def?: GetProj4Def,
+  onSourceTilesUpdated: OnSourceTilesUpdated,
+  getProj4Def: (epsgCode: number) => Promise<string | null>,
 ) => {
   const sources = useAtomValue(elevationSourcesAtom);
   const setSources = useSetAtom(elevationSourcesAtom);
@@ -569,7 +561,7 @@ const useElevationSourceActions = (
     async (files: File[]) => {
       const results = await Promise.allSettled(
         files.map(async (file) => {
-          const metadata = await extractGeoTiffMetadata(file, getProj4Def);
+          const metadata = await parseGeoTIFF(file, getProj4Def);
           return { id: nanoid(), ...metadata } as GeoTiffTile;
         }),
       );
@@ -622,7 +614,7 @@ const useElevationSourceActions = (
     async (sourceId: string, files: File[]) => {
       const results = await Promise.allSettled(
         files.map(async (file) => {
-          const metadata = await extractGeoTiffMetadata(file, getProj4Def);
+          const metadata = await parseGeoTIFF(file, getProj4Def);
           return { id: nanoid(), ...metadata } as GeoTiffTile;
         }),
       );
@@ -788,7 +780,7 @@ const useElevationCoverageOverlay = () => {
       setCoverageFeatures(
         tiles.map((tile) => {
           const isHovered = tile.id === hoveredTileId;
-          return buildCoverageFeature(tile, {
+          return tileCoverage(tile, {
             isFilled: !isHovering,
             isDisabled: isHovering && !isHovered,
             showLabel: isHovered,
@@ -828,6 +820,7 @@ const useElevationCoverageOverlay = () => {
     [sources, rebuildOverlay],
   );
 
+  /** Pass this to useElevationSourceActions so the overlay updates when boundaries complete. */
   const onSourceTilesUpdated: OnSourceTilesUpdated = useCallback(
     (sourceId, updatedTiles) => {
       if (activeSourceIdRef.current === sourceId) {
@@ -848,14 +841,12 @@ const useElevationCoverageOverlay = () => {
 const useProj4Definitions = () => {
   const cacheRef = useRef<Map<string, string> | null>(null);
 
-  const getProj4Def: GetProj4Def = useCallback(
+  const getProj4Def = useCallback(
     async (epsgCode: number): Promise<string | null> => {
       if (!cacheRef.current) {
         const response = await fetch("/projections.json");
         const data: { id: string; code: string }[] = await response.json();
-        cacheRef.current = new Map(
-          data.map((projection) => [projection.id, projection.code]),
-        );
+        cacheRef.current = new Map(data.map((p) => [p.id, p.code]));
       }
       return cacheRef.current.get(`EPSG:${epsgCode}`) ?? null;
     },

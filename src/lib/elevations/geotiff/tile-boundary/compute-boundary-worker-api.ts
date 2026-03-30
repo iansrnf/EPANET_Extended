@@ -3,7 +3,7 @@ import proj4 from "proj4";
 import { fromBlob } from "geotiff";
 import simplify from "@turf/simplify";
 import { polygon } from "@turf/helpers";
-import { transformCoordinates } from "./geotiff-utils";
+import { buildPixelTransformers } from "../pixel-transformer";
 
 export const boundaryWorkerAPI = { computeDataBoundary };
 
@@ -56,8 +56,10 @@ async function computeDataBoundary(
       }
     }
 
-    leftEdge.push(transformCoordinates(firstValid, row, pixelToCrs));
-    rightEdge.push(transformCoordinates(lastValid, row, pixelToCrs));
+    const transformer = buildPixelTransformers({ pixelToCrs });
+
+    leftEdge.push(transformer.fromPixel(firstValid, row));
+    rightEdge.push(transformer.fromPixel(lastValid, row));
   }
 
   if (leftEdge.length < 3) return null;
@@ -65,9 +67,10 @@ async function computeDataBoundary(
   rightEdge.reverse();
   let coords = [...leftEdge, ...rightEdge, leftEdge[0]];
 
+  // Reproject from CRS to WGS84 if needed
   if (proj4Def) {
     coords = coords.map(
-      (coord) => proj4(proj4Def, "EPSG:4326", coord) as [number, number],
+      (c) => proj4(proj4Def, "EPSG:4326", c) as [number, number],
     );
   }
 
@@ -75,7 +78,7 @@ async function computeDataBoundary(
   try {
     result = simplify(result, { tolerance: 0.00005, highQuality: true });
   } catch {
-    // Keep the unsimplified polygon if simplification fails.
+    // keep unsimplified
   }
 
   return result.geometry;

@@ -29,10 +29,10 @@ import { InlineField, Section, SectionList } from "src/components/form/fields";
 import { ColorPopover } from "src/components/color-popover";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { LegendRamp } from "src/components/legends";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { selectionAtom } from "src/state/selection";
 import { USelection } from "src/selection/selection";
-import { ElevationsConfig } from "./elevations-config";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { ElevationsEditor } from "./elevations-editor";
 
 const colorPropertyLabelFor = (
   property: string,
@@ -62,7 +62,7 @@ export const MapStylingEditor = () => {
           properties={supportedLinkProperties}
         />
         <CustomerPointsSection />
-        {isDtmElevationsOn && <ElevationsConfig />}
+        {!isGridOn && isDtmElevationsOn && <ElevationsEditor />}
         {!isGridOn && (
           <Section title={translate("layers")} button={<AddLayer />}>
             <LayersEditor />
@@ -113,6 +113,7 @@ const SymbologyEditor = ({
   const isPersistMapPreferencesOn = useFeatureFlag(
     "FLAG_RESTORE_MAP_PREFERENCES",
   );
+
   const userTracking = useUserTracking();
 
   const handleColorByChange = (property: SelectOption) => {
@@ -193,6 +194,7 @@ const SymbologyEditor = ({
       : translate("linkSymbology");
 
   const isSmOrLarger = useBreakpoint("sm");
+
   const defaultColor = symbology.defaults.color;
   const updateDefaultColor =
     geometryType === "node" ? updateNodeDefaultColor : updateLinkDefaultColor;
@@ -203,6 +205,7 @@ const SymbologyEditor = ({
     });
     updateDefaultColor(color);
   };
+
   return (
     <Section title={title}>
       <InlineField
@@ -375,4 +378,3 @@ const RangeColorRuleEditorTrigger = ({
     </Popover.Root>
   );
 };
-

@@ -1118,8 +1118,10 @@
     "noProjectionHint": "If your network doesn't use a projection, you can load without a basemap.",
     "searchPlaceholder": "Search by location or code",
     "matchingProjections": "Matching projections",
-    "searchingProjections": "Searching projections...",
-    "fitToExtent": "Fit to extent"
+    "searchingProjections": "Searching projections…",
+    "fitToExtent": "Fit to extent",
+    "noResultsTitle": "No matching projections found here",
+    "noResultsDescription": "Try searching for a different location or zooming out on the map to expand your search area."
   },
   "dialog": {
     "save": "Save",

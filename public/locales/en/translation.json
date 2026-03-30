@@ -30,6 +30,20 @@
   "helpCenter": "Help center",
   "roadmap": "Roadmap",
   "utilities": "Utility apps",
+  "paywall": {
+    "explorePlans": "Explore plans",
+    "or": "or",
+    "nonCommercial": {
+      "title": "Non-commercial use",
+      "description": "For learning, exploring the app, or supporting the project.",
+      "cta": "Personal licence - $100/year"
+    },
+    "commercial": {
+      "title": "Commercial use",
+      "description": "For use by consultants and utilities in real projects.",
+      "cta": "Choose plan"
+    }
+  },
   "language": "Language",
   "experimentalLanguage": "This language is in beta. Please try it and contact support if you notice any inaccuracies.",
   "earlyAccess": "Early access",
@@ -62,6 +76,8 @@
       "title": "Upgrade to access custom elevations",
       "description1": "Custom elevations let you use your own GeoTIFF data for accurate terrain modelling.",
       "description2": "Upload high-resolution elevation data and overlay it on top of global terrain sources.",
+      "plans": "Custom elevations are available on paid plans.",
+      "trial": "Custom elevations are a paid feature. Activate your free trial to get full access for 14 days—no credit card required.",
       "description3": "Custom elevations are available on paid plans.",
       "explorePlans": "Explore plans",
       "or": "or",
@@ -1036,6 +1052,9 @@
       "description2": "Create alternative versions of your network and compare results against your baseline.",
       "description3": "Scenarios are available on paid plans.",
       "description3Demo": "Try scenarios for free with a demo network, or explore our paid plans.",
+      "trial": "Scenarios are a paid feature. Activate your free trial to get full access for 14 days—no credit card required.",
+      "plans": "Scenarios are available on paid plans.",
+      "demo": "Try scenarios for free with a demo network, or explore our paid plans.",
       "explorePlans": "Explore plans",
       "or": "or",
       "nonCommercial": {

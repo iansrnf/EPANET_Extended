@@ -12,3 +12,4 @@ export {
   buildProjectionConfig,
   getBackdropUnits,
 } from "./projection-mapper";
+export { inverseProjectGeoJson } from "./inverse-project-geojson";

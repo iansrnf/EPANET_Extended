@@ -3,6 +3,7 @@ import { useNewProject } from "src/commands/create-new-project";
 import { useOpenInpFromFs } from "src/commands/open-inp-from-fs";
 import { useOpenInpFromUrl } from "src/commands/open-inp-from-url";
 import { useOpenModelBuilder } from "src/commands/open-model-builder";
+import { useOpenModelBuilderApi } from "src/commands/open-model-builder-api";
 import { useOpenRecentFile } from "src/commands/open-recent-file";
 import { useTranslate } from "src/hooks/use-translate";
 import { useRecentFiles } from "src/hooks/use-recent-files";
@@ -44,6 +45,7 @@ export const WelcomeDialog = () => {
   const createNew = useNewProject();
   const openInpFromFs = useOpenInpFromFs();
   const openModelBuilder = useOpenModelBuilder();
+  const openModelBuilderApi = useOpenModelBuilderApi();
   const userTracking = useUserTracking();
   const isRecentFilesOn = useFeatureFlag("FLAG_RECENT_FILES");
 
@@ -92,17 +94,30 @@ export const WelcomeDialog = () => {
                 <FileSpreadsheetIcon />
                 {translate("openProject")}
               </Button>
-              <Button
-                variant="quiet"
-                onClick={() => {
-                  openModelBuilder({ source: "welcome" });
-                }}
-                style={{ width: "100%" }}
-              >
-                <GlobeIcon />
-                {translate("importFromGIS")}
-                <EarlyAccessIcon size="sm" />
-              </Button>
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="quiet"
+                  onClick={() => {
+                    openModelBuilder({ source: "welcome" });
+                  }}
+                  style={{ width: "100%" }}
+                >
+                  <GlobeIcon />
+                  {translate("importFromGIS")}
+                  <EarlyAccessIcon size="sm" />
+                </Button>
+                <Button
+                  variant="quiet"
+                  onClick={() => {
+                    openModelBuilderApi({ source: "welcome" });
+                  }}
+                  style={{ width: "100%" }}
+                >
+                  <GlobeIcon />
+                  {translate("importFromGISApi")}
+                  <EarlyAccessIcon size="sm" />
+                </Button>
+              </div>
 
               <div className="mt-4 flex items-start flex-col gap-2">
                 <a

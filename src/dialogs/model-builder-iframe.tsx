@@ -7,7 +7,7 @@ import { useImportInp } from "src/commands/import-inp";
 import { useUnsavedChangesCheck } from "src/commands/check-unsaved-changes";
 import { useUserTracking, UserEvent } from "src/infra/user-tracking";
 import { useToggleNetworkReview } from "src/commands/toggle-network-review";
-import { modelBuilderUrl } from "src/global-config";
+import { modelBuilderApiUrl, modelBuilderUrl } from "src/global-config";
 
 interface IframeMessage {
   type: string;
@@ -96,12 +96,15 @@ const handleOpenExternalLink = (message: OpenExternalLinkMessage) => {
   window.open(message.data.url, "_blank", "noopener,noreferrer");
 };
 
-export const ModelBuilderIframeDialog = ({
+const ModelBuilderIframeDialogInner = ({
   onClose: _onClose,
+  title,
+  url,
 }: {
   onClose: () => void;
+  title: string;
+  url: string;
 }) => {
-  const translate = useTranslate();
   const [isLoading, setIsLoading] = useState(true);
   const importInp = useImportInp();
   const checkUnsavedChanges = useUnsavedChangesCheck();
@@ -148,7 +151,7 @@ export const ModelBuilderIframeDialog = ({
 
   return (
     <BaseDialog
-      title={translate("importFromGIS")}
+      title={title}
       size="xxl"
       height="xxl"
       isOpen={true}
@@ -162,13 +165,43 @@ export const ModelBuilderIframeDialog = ({
           </div>
         )}
         <iframe
-          src={modelBuilderUrl}
+          src={url}
           className="w-full flex-1 border-0 rounded-bl-lg rounded-br-lg"
           onLoad={() => setIsLoading(false)}
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-downloads"
-          title={translate("importFromGIS")}
+          title={title}
         />
       </div>
     </BaseDialog>
+  );
+};
+
+export const ModelBuilderIframeDialog = ({
+  onClose,
+}: {
+  onClose: () => void;
+}) => {
+  const translate = useTranslate();
+  return (
+    <ModelBuilderIframeDialogInner
+      onClose={onClose}
+      title={translate("importFromGIS")}
+      url={modelBuilderUrl}
+    />
+  );
+};
+
+export const ModelBuilderApiIframeDialog = ({
+  onClose,
+}: {
+  onClose: () => void;
+}) => {
+  const translate = useTranslate();
+  return (
+    <ModelBuilderIframeDialogInner
+      onClose={onClose}
+      title={translate("importFromGISApi")}
+      url={modelBuilderApiUrl}
+    />
   );
 };

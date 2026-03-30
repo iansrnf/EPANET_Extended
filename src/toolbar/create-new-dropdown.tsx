@@ -17,6 +17,7 @@ import { useNewProject } from "src/commands/create-new-project";
 import { useOpenInpFromFs } from "src/commands/open-inp-from-fs";
 import { useShowWelcome } from "src/commands/show-welcome";
 import { useOpenModelBuilder } from "src/commands/open-model-builder";
+import { useOpenModelBuilderApi } from "src/commands/open-model-builder-api";
 import { useOpenRecentFile } from "src/commands/open-recent-file";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
@@ -38,6 +39,7 @@ export const CreateNewDropdown = () => {
   const openInpFromFs = useOpenInpFromFs();
   const showWelcome = useShowWelcome();
   const openModelBuilder = useOpenModelBuilder();
+  const openModelBuilderApi = useOpenModelBuilderApi();
   const userTracking = useUserTracking();
   const translate = useTranslate();
 
@@ -101,6 +103,16 @@ export const CreateNewDropdown = () => {
               >
                 <GlobeIcon />
                 {translate("importFromGIS")}
+                <EarlyAccessIcon size="sm" />
+              </StyledItem>
+
+              <StyledItem
+                onSelect={() => {
+                  openModelBuilderApi({ source: "toolbar" });
+                }}
+              >
+                <GlobeIcon />
+                {translate("importFromGISApi")}
                 <EarlyAccessIcon size="sm" />
               </StyledItem>
 

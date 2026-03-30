@@ -178,7 +178,7 @@ export function Selector<T extends string | number>({
 
   const handleOpenChange = (open: boolean) => {
     onDropdownInteraction?.();
-    const minOptions = stickyFirstGroup ? 1 : 2;
+    const minOptions = nullable || stickyFirstGroup ? 1 : 2;
     if (open && allOptions.length < minOptions) {
       return;
     }

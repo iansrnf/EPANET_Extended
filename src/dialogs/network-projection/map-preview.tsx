@@ -80,8 +80,13 @@ export const MapPreview = ({
   setHandle,
 }: MapPreviewProps) => {
   const t = useTranslate();
+  const canShowBasemap =
+    showBasemap &&
+    !!env.NEXT_PUBLIC_MAPBOX_TOKEN &&
+    env.NEXT_PUBLIC_MAPBOX_TOKEN !== "_";
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const styleReadyRef = useRef(false);
   const onBoundsChangeRef = useRef(onBoundsChange);
   onBoundsChangeRef.current = onBoundsChange;
@@ -128,8 +133,21 @@ export const MapPreview = ({
 
     map.on("load", () => {
       styleReadyRef.current = true;
+      map.resize();
       addNetworkSourceAndLayers(map, geoJSONRef.current);
       programmaticFit(map, geoJSONRef.current, null);
+
+      if (canShowBasemap) {
+        styleReadyRef.current = false;
+        map.setStyle(BASEMAP_STYLE);
+        map.once("style.load", () => {
+          styleReadyRef.current = true;
+          map.resize();
+          addNetworkSourceAndLayers(map, geoJSONRef.current);
+          programmaticFit(map, geoJSONRef.current, null);
+          pendingDataUpdateRef.current = false;
+        });
+      }
     });
 
     map.on("moveend", () => {
@@ -149,6 +167,21 @@ export const MapPreview = ({
 
     mapRef.current = map;
 
+    resizeObserverRef.current = new ResizeObserver(() => {
+      map.resize();
+    });
+    resizeObserverRef.current.observe(mapContainerRef.current);
+
+    requestAnimationFrame(() => {
+      map.resize();
+    });
+    window.setTimeout(() => {
+      map.resize();
+    }, 150);
+    window.setTimeout(() => {
+      map.resize();
+    }, 500);
+
     setHandle({
       fitToNetwork: (geoJSON: FeatureCollection) => {
         if (!styleReadyRef.current) return;
@@ -164,12 +197,14 @@ export const MapPreview = ({
 
     return () => {
       setHandle(null);
+      resizeObserverRef.current?.disconnect();
+      resizeObserverRef.current = null;
       map.remove();
       mapRef.current = null;
       styleReadyRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [canShowBasemap]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -178,31 +213,35 @@ export const MapPreview = ({
     const currentIsBasemap =
       typeof map.getStyle().name === "string" &&
       map.getStyle().name !== "Empty";
-    if (showBasemap && !currentIsBasemap) {
+    if (canShowBasemap && !currentIsBasemap) {
       styleReadyRef.current = false;
       map.setStyle(BASEMAP_STYLE);
       map.once("style.load", () => {
         styleReadyRef.current = true;
+        map.resize();
         addNetworkSourceAndLayers(map, geoJSONRef.current);
         programmaticFit(map, geoJSONRef.current, null);
         pendingDataUpdateRef.current = false;
       });
-    } else if (!showBasemap && currentIsBasemap) {
+    } else if (!canShowBasemap && currentIsBasemap) {
       styleReadyRef.current = false;
       map.setStyle(EMPTY_STYLE);
       map.once("style.load", () => {
         styleReadyRef.current = true;
+        map.resize();
         addNetworkSourceAndLayers(map, geoJSONRef.current);
         programmaticFit(map, geoJSONRef.current, null);
         pendingDataUpdateRef.current = false;
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showBasemap]);
+  }, [canShowBasemap]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+
+    map.resize();
 
     if (!styleReadyRef.current) {
       pendingDataUpdateRef.current = true;
@@ -218,8 +257,8 @@ export const MapPreview = ({
   }, [geoJSON]);
 
   return (
-    <div className="relative flex-1 flex flex-col min-h-0">
-      <div ref={mapContainerRef} className="flex-1 w-full" />
+    <div className="relative h-full min-h-[320px] w-full">
+      <div ref={mapContainerRef} className="h-full w-full" />
       {isLoading && (
         <div className="absolute inset-0 bg-white/50 dark:bg-black/30 flex items-center justify-center">
           <div className="h-6 w-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
@@ -253,11 +292,7 @@ function fitToGeoJSON(map: mapboxgl.Map, geoJSON: FeatureCollection) {
   const coords: [number, number][] = [];
   for (const feature of geoJSON.features) {
     if (!feature.geometry) continue;
-    if (feature.geometry.type === "Point") {
-      coords.push(feature.geometry.coordinates as [number, number]);
-    } else if (feature.geometry.type === "LineString") {
-      coords.push(...(feature.geometry.coordinates as [number, number][]));
-    }
+    coords.push(...extractCoordinates(feature.geometry));
   }
 
   if (coords.length === 0) return;
@@ -268,6 +303,25 @@ function fitToGeoJSON(map: mapboxgl.Map, geoJSON: FeatureCollection) {
   );
 
   map.fitBounds(bounds, { padding: 50, duration: 0 });
+}
+
+function extractCoordinates(
+  geometry: FeatureCollection["features"][number]["geometry"],
+): [number, number][] {
+  switch (geometry.type) {
+    case "Point":
+      return [geometry.coordinates as [number, number]];
+    case "MultiPoint":
+    case "LineString":
+      return geometry.coordinates as [number, number][];
+    case "MultiLineString":
+    case "Polygon":
+      return geometry.coordinates.flat() as [number, number][];
+    case "MultiPolygon":
+      return geometry.coordinates.flat(2) as [number, number][];
+    default:
+      return [];
+  }
 }
 
 function addNetworkSourceAndLayers(

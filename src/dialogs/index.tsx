@@ -296,6 +296,15 @@ const ScenariosPaywallConnector = dynamic<{
   },
 );
 
+const ModelBuilderApiIframeDialog = dynamic<{
+  onClose: () => void;
+}>(
+  () => import("src/dialogs/model-builder-api").then((r) => r.ModelBuilderApiDialog),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
 const ElevationsPaywallConnector = dynamic<{
   onClose: () => void;
 }>(
@@ -388,6 +397,9 @@ export const Dialogs = memo(function Dialogs() {
   }
   if (dialog.type === "modelBuilderIframe") {
     return <ModelBuilderIframeDialog onClose={onClose} />;
+  }
+  if (dialog.type === "modelBuilderApiIframe") {
+    return <ModelBuilderApiIframeDialog onClose={onClose} />;
   }
   if (dialog.type === "unexpectedError") {
     return <UnexpectedErrorDialog modal={dialog} onClose={onClose} />;

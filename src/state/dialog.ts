@@ -76,6 +76,10 @@ export type ModelBuilderIframeDialogState = {
   type: "modelBuilderIframe";
 };
 
+export type ModelBuilderApiIframeDialogState = {
+  type: "modelBuilderApiIframe";
+};
+
 export type EarlyAccessDialogState = {
   type: "earlyAccess";
   onContinue: () => void;
@@ -169,6 +173,7 @@ export type DialogState =
   | ImportCustomerPointsWarningDialogState
   | UnexpectedErrorDialogState
   | ModelBuilderIframeDialogState
+  | ModelBuilderApiIframeDialogState
   | EarlyAccessDialogState
   | SimulationProgressDialogState
   | { type: "simulationSettings" }

@@ -7,13 +7,13 @@ import {
   type SearchableSelectorOption,
 } from "src/components/form/searchable-selector";
 import type { LocationData } from "src/components/form/location-search";
-import type { Projection } from "src/lib/projections";
+import type { Proj4Projection } from "src/lib/projections";
 import { useTranslate } from "src/hooks/use-translate";
 import { matchesProjection } from "./match-projection";
 
 type SearchResultData =
   | { type: "location"; location: LocationData }
-  | { type: "projection"; projection: Projection };
+  | { type: "projection"; projection: Proj4Projection };
 
 type SearchResult = SearchableSelectorOption & {
   data: SearchResultData;
@@ -31,9 +31,9 @@ export const ProjectionSearch = ({
   onProjectionSelect,
   onSearched,
 }: {
-  projections: Projection[];
+  projections: Proj4Projection[];
   onLocationSelect: (location: LocationData) => void;
-  onProjectionSelect: (projection: Projection) => void;
+  onProjectionSelect: (projection: Proj4Projection) => void;
   onSearched: (metadata: SearchMetadata) => void;
 }) => {
   const t = useTranslate();

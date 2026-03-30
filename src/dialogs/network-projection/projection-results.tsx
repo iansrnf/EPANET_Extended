@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import clsx from "clsx";
-import type { Projection } from "src/lib/projections";
+import type { Proj4Projection } from "src/lib/projections";
 import { useTranslate } from "src/hooks/use-translate";
 import { MapPinXInsideIcon } from "src/icons";
 
@@ -11,9 +11,9 @@ export const ProjectionResults = ({
   showEmptyState,
   isLoading,
 }: {
-  projections: Projection[];
-  selectedProjection: Projection | null;
-  onSelect: (projection: Projection) => void;
+  projections: Proj4Projection[];
+  selectedProjection: Proj4Projection | null;
+  onSelect: (projection: Proj4Projection) => void;
   showEmptyState?: boolean;
   isLoading?: boolean;
 }) => {

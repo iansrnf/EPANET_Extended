@@ -19,7 +19,7 @@ import {
 } from "./filter-projection-candidates";
 import { projectGeoJson } from "./project-geojson";
 import { approximateToNullIsland } from "./approximate-to-null-island";
-import type { Projection } from "src/lib/projections";
+import type { Proj4Projection } from "src/lib/projections";
 import type { Bbox, ProjectionCandidate } from "./types";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
@@ -35,7 +35,7 @@ export const NetworkProjectionDialog = ({
 }: {
   previewGeoJson: FeatureCollection;
   onImportNonProjected: () => void;
-  onImportProjected: (projection: Projection) => void;
+  onImportProjected: (projection: Proj4Projection) => void;
   filename: string;
   flowUnits: string;
 }) => {
@@ -44,13 +44,21 @@ export const NetworkProjectionDialog = ({
   const { fitToNetwork, fitToBbox, setHandle } = useMapPreview();
   const userTracking = useUserTracking();
   const t = useTranslate();
+  const proj4Projections = useMemo(
+    () =>
+      projections.filter(
+        (projection): projection is Proj4Projection =>
+          projection.type === "proj4" && typeof projection.code === "string",
+      ),
+    [projections],
+  );
   const bounds = useMemo(() => computeBounds(previewGeoJson), [previewGeoJson]);
 
   const [selectedLocation, setSelectedLocation] = useState<LocationData | null>(
     null,
   );
   const [selectedProjection, setSelectedProjection] =
-    useState<Projection | null>(null);
+    useState<Proj4Projection | null>(null);
   const [visibleCandidates, setVisibleCandidates] = useState<
     ProjectionCandidate[]
   >([]);
@@ -79,7 +87,7 @@ export const NetworkProjectionDialog = ({
 
     setIsBuilding(true);
     void buildProjectionCandidates(
-      projections,
+      proj4Projections,
       previewGeoJson,
       controller.signal,
     ).then((candidates) => {
@@ -89,11 +97,11 @@ export const NetworkProjectionDialog = ({
     });
 
     return () => controller.abort();
-  }, [projections, previewGeoJson]);
+  }, [proj4Projections, previewGeoJson]);
 
   const applyProjection = useCallback(
     (
-      projection: Projection,
+      projection: Proj4Projection,
       options: {
         fitNetwork: boolean;
         basemap: boolean;
@@ -109,7 +117,7 @@ export const NetworkProjectionDialog = ({
       projectTimeoutRef.current = setTimeout(() => {
         let outOfBounds = false;
         try {
-          const projected = projectGeoJson(previewGeoJson, projection.code!);
+          const projected = projectGeoJson(previewGeoJson, projection.code);
           if (isLikelyLatLng(projected)) {
             setDisplayGeoJSON(projected);
             setShowBasemap(options.basemap);
@@ -195,7 +203,7 @@ export const NetworkProjectionDialog = ({
   );
 
   const handleProjectionSelectFromSearch = useCallback(
-    (projection: Projection) => {
+    (projection: Proj4Projection) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       setSelectedProjection(projection);
       setSelectedLocation(null);
@@ -207,7 +215,7 @@ export const NetworkProjectionDialog = ({
   );
 
   const handleProjectionSelectFromResults = useCallback(
-    (projection: Projection) => {
+    (projection: Proj4Projection) => {
       setSelectedProjection(projection);
       applyProjection(projection, {
         fitNetwork: false,
@@ -304,7 +312,7 @@ export const NetworkProjectionDialog = ({
       <div className="flex-1 flex min-h-0 overflow-hidden">
         <div className="flex-shrink-0 w-[300px] border-r border-gray-200 dark:border-gray-700 p-4 flex flex-col min-h-0">
           <ProjectionSearch
-            projections={projections}
+            projections={proj4Projections}
             onLocationSelect={handleLocationSelect}
             onProjectionSelect={handleProjectionSelectFromSearch}
             onSearched={handleSearched}

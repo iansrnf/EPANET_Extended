@@ -45,6 +45,8 @@ export const ProjectionSection = () => {
       },
       filename: "",
       flowUnits: chooseUnitSystem(projectSettings.units),
+      initialProjection:
+        displayProjection.type === "proj4" ? displayProjection : undefined,
     });
   };
 

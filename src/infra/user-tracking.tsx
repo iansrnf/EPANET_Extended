@@ -1010,7 +1010,7 @@ export type UserEvent =
   | { name: "planPaymentType.toggled" }
   | {
       name: "upgradeButton.clicked";
-      source: "menu" | "customLayers";
+      source: "menu" | "customLayers" | "customElevations";
     }
   | { name: "simulationSettings.opened"; source: string }
   | { name: "controls.opened"; source: string }

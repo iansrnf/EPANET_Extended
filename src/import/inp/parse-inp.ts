@@ -1,8 +1,13 @@
 import { ProjectSettings } from "src/lib/project-settings";
 import { IssuesAccumulator, ParserIssues } from "./issues";
 import { readInpData } from "./read-inp-data";
-import { buildModel } from "./build-model";
-import { HydraulicModel, AssetsMap } from "src/hydraulic-model";
+import { buildModel, isWgs84 } from "./build-model";
+import {
+  HydraulicModel,
+  AssetsMap,
+  type NodeAsset,
+  type LinkAsset,
+} from "src/hydraulic-model";
 import { ModelFactories } from "src/hydraulic-model/factories";
 import { nanoid } from "nanoid";
 import {
@@ -18,25 +23,24 @@ import { InpData, InpStats } from "./inp-data";
 import { Position } from "geojson";
 import {
   type Projection,
-  type ProjectionConfig,
   WGS84,
-  XY_GRID,
-  projectionFromId,
-  buildProjectionConfig,
   createProjectionMapper,
 } from "src/lib/projections";
 import { createProjectionTransformer } from "src/lib/geojson-utils/coordinate-transform";
+import { computeCentroid } from "src/lib/projections/xy-grid-transform";
+
+type SourceProjection = { id: string; name: string; code?: string };
+
+export const XY_GRID: SourceProjection = { id: "xy-grid", name: "XY Grid" };
 
 export type ParseInpOptions = {
   customerPoints?: boolean;
   inactiveAssets?: boolean;
-  sourceProjection?: Projection;
+  sourceProjection?: SourceProjection;
+  projectLater?: boolean;
 };
 
-export const parseInp = (
-  inp: string,
-  options?: ParseInpOptions,
-): {
+export type ParseInpResult = {
   isMadeByApp: boolean;
   hydraulicModel: HydraulicModel;
   factories: ModelFactories;
@@ -44,7 +48,13 @@ export const parseInp = (
   simulationSettings: SimulationSettings;
   issues: ParserIssues | null;
   stats: InpStats;
-} => {
+  projectionStatus?: "wgs84" | "unknown";
+};
+
+export const parseInp = (
+  inp: string,
+  options?: ParseInpOptions,
+): ParseInpResult => {
   const issues = new IssuesAccumulator();
   const header = parseHeader(inp);
 
@@ -56,10 +66,43 @@ export const parseInp = (
 
   const { inpData, stats } = readInpData(inp, issues, safeOptions);
 
-  const sourceProjection: Projection =
-    header.sourceProjection ?? options?.sourceProjection ?? WGS84;
+  const projectLater = options?.projectLater ?? false;
+  const headerProjection = header.sourceProjection;
+  const sourceProjection: SourceProjection =
+    headerProjection ?? options?.sourceProjection ?? WGS84;
 
-  const projection = projectCoordinates(inpData, sourceProjection);
+  const skipProjection = projectLater && !headerProjection;
+
+  let projection: Projection;
+  let projectionStatus: "wgs84" | "unknown" | undefined;
+
+  if (skipProjection) {
+    projection = WGS84;
+
+    const { hydraulicModel, factories, projectSettings } = buildModel(
+      inpData,
+      issues,
+      { ...safeOptions, skipWgs84Validation: true },
+    );
+
+    projectionStatus = detectProjectionStatus(hydraulicModel);
+
+    return {
+      isMadeByApp: header.isMadeByApp,
+      hydraulicModel,
+      factories,
+      projectSettings: {
+        ...projectSettings,
+        projection,
+      },
+      simulationSettings: buildSimulationSettings(inpData, hydraulicModel),
+      issues: issues.buildResult(),
+      stats,
+      projectionStatus,
+    };
+  }
+
+  projection = projectCoordinates(inpData, sourceProjection);
 
   const { hydraulicModel, factories, projectSettings } = buildModel(
     inpData,
@@ -74,113 +117,7 @@ export const parseInp = (
       ...projectSettings,
       projection,
     },
-    simulationSettings: {
-      version: nanoid(),
-      timing: { ...defaultTiming, ...inpData.times },
-      globalDemandMultiplier: inpData.options.demandMultiplier,
-      demandModel:
-        inpData.options.demandModel ?? defaultSimulationSettings.demandModel,
-      minimumPressure:
-        inpData.options.minimumPressure ??
-        defaultSimulationSettings.minimumPressure,
-      requiredPressure:
-        inpData.options.requiredPressure ??
-        defaultSimulationSettings.requiredPressure,
-      pressureExponent:
-        inpData.options.pressureExponent ??
-        defaultSimulationSettings.pressureExponent,
-      emitterExponent:
-        inpData.options.emitterExponent ??
-        defaultSimulationSettings.emitterExponent,
-      backflowAllowed:
-        inpData.options.backflowAllowed ??
-        defaultSimulationSettings.backflowAllowed,
-      ...(inpData.options.trials !== undefined && {
-        trials: inpData.options.trials,
-      }),
-      ...(inpData.options.accuracy !== undefined && {
-        accuracy: inpData.options.accuracy,
-      }),
-      ...(inpData.options.unbalancedMode !== undefined && {
-        unbalancedMode: inpData.options.unbalancedMode,
-      }),
-      ...(inpData.options.unbalancedExtraTrials !== undefined && {
-        unbalancedExtraTrials: inpData.options.unbalancedExtraTrials,
-      }),
-      ...(inpData.options.headError !== undefined && {
-        headError: inpData.options.headError,
-      }),
-      ...(inpData.options.flowChange !== undefined && {
-        flowChange: inpData.options.flowChange,
-      }),
-      ...(inpData.options.checkFreq !== undefined && {
-        checkFreq: inpData.options.checkFreq,
-      }),
-      ...(inpData.options.maxCheck !== undefined && {
-        maxCheck: inpData.options.maxCheck,
-      }),
-      ...(inpData.options.dampLimit !== undefined && {
-        dampLimit: inpData.options.dampLimit,
-      }),
-      ...(inpData.options.viscosity !== undefined && {
-        viscosity: inpData.options.viscosity,
-      }),
-      ...(inpData.options.specificGravity !== undefined && {
-        specificGravity: inpData.options.specificGravity,
-      }),
-      qualitySimulationType:
-        inpData.options.qualitySimulationType ??
-        defaultWaterQualityValues.qualitySimulationType,
-      qualityChemicalName:
-        inpData.options.qualityChemicalName ??
-        defaultWaterQualityValues.qualityChemicalName,
-      qualityMassUnit:
-        inpData.options.qualityMassUnit ??
-        defaultWaterQualityValues.qualityMassUnit,
-      qualityTraceNodeId: resolveTraceNodeId(
-        inpData.options.qualityTraceNode,
-        hydraulicModel.assets,
-      ),
-      tolerance:
-        inpData.options.tolerance ?? defaultWaterQualityValues.tolerance,
-      diffusivity:
-        inpData.options.diffusivity ?? defaultWaterQualityValues.diffusivity,
-      reactionBulkOrder:
-        inpData.reactions.bulkOrder ??
-        defaultWaterQualityValues.reactionBulkOrder,
-      reactionWallOrder:
-        inpData.reactions.wallOrder ??
-        defaultWaterQualityValues.reactionWallOrder,
-      reactionTankOrder:
-        inpData.reactions.tankOrder ??
-        defaultWaterQualityValues.reactionTankOrder,
-      reactionGlobalBulk:
-        inpData.reactions.globalBulk ??
-        defaultWaterQualityValues.reactionGlobalBulk,
-      reactionGlobalWall:
-        inpData.reactions.globalWall ??
-        defaultWaterQualityValues.reactionGlobalWall,
-      reactionLimitingPotential:
-        inpData.reactions.limitingPotential ??
-        defaultWaterQualityValues.reactionLimitingPotential,
-      reactionRoughnessCorrelation:
-        inpData.reactions.roughnessCorrelation ??
-        defaultWaterQualityValues.reactionRoughnessCorrelation,
-      reportEnergy: inpData.report.energy ?? defaultEnergyValues.reportEnergy,
-      energyGlobalEfficiency:
-        inpData.energy.globalEfficiency ??
-        defaultEnergyValues.energyGlobalEfficiency,
-      energyGlobalPrice:
-        inpData.energy.globalPrice ?? defaultEnergyValues.energyGlobalPrice,
-      energyGlobalPatternId: resolveEnergyPatternId(
-        inpData.energy.globalPattern,
-        hydraulicModel,
-      ),
-      energyDemandCharge:
-        inpData.energy.demandCharge ?? defaultEnergyValues.energyDemandCharge,
-      statusReport:
-        inpData.report.statusReport ?? defaultReportValues.statusReport,
-    },
+    simulationSettings: buildSimulationSettings(inpData, hydraulicModel),
     issues: issues.buildResult(),
     stats,
   };
@@ -188,75 +125,74 @@ export const parseInp = (
 
 const projectCoordinates = (
   inpData: InpData,
-  sourceProjection: Projection,
-): ProjectionConfig => {
-  if (sourceProjection.id === "wgs84") {
-    return { type: "wgs84" };
+  source: SourceProjection,
+): Projection => {
+  if (source.id === "wgs84") {
+    return WGS84;
   }
 
-  if (sourceProjection.id !== "xy-grid") {
-    return projectWithCode(inpData, sourceProjection);
+  if (source.id === "xy-grid") {
+    return projectXYGrid(inpData);
   }
 
-  const getAllPoints = () => {
-    const points: Position[] = [];
-    for (const [, p] of inpData.coordinates.entries()) points.push(p);
-    for (const [, verts] of inpData.vertices.entries()) points.push(...verts);
-    for (const cp of inpData.customerPoints) points.push(cp.coordinates);
-    return points;
+  return projectWithCode(inpData, source);
+};
+
+const projectXYGrid = (inpData: InpData): Projection => {
+  const allPoints: Position[] = [];
+  for (const [, p] of inpData.coordinates.entries()) allPoints.push(p);
+  for (const [, verts] of inpData.vertices.entries()) allPoints.push(...verts);
+  for (const cp of inpData.customerPoints) allPoints.push(cp.coordinates);
+
+  const centroid = computeCentroid(allPoints);
+  const projection: Projection = {
+    type: "xy-grid",
+    id: "xy-grid",
+    name: "XY Grid",
+    centroid,
   };
+  const mapper = createProjectionMapper(projection);
 
-  const config = buildProjectionConfig(XY_GRID, getAllPoints);
-  const mapper = createProjectionMapper(config);
+  transformInpData(inpData, mapper.toWgs84);
 
-  for (const [id, p] of inpData.coordinates.entries()) {
-    inpData.coordinates.set(id, mapper.toWgs84(p));
-  }
-  for (const [id, verts] of inpData.vertices.entries()) {
-    inpData.vertices.set(id, verts.map(mapper.toWgs84));
-  }
-  for (const cp of inpData.customerPoints) {
-    cp.coordinates = mapper.toWgs84(cp.coordinates) as [number, number];
-    if ("snapPoint" in cp && cp.snapPoint) {
-      cp.snapPoint = mapper.toWgs84(cp.snapPoint) as [number, number];
-    }
-  }
-
-  return config;
+  return projection;
 };
 
 const projectWithCode = (
   inpData: InpData,
-  sourceProjection: Projection,
-): ProjectionConfig => {
-  const transform = createProjectionTransformer(sourceProjection.code!);
+  source: SourceProjection,
+): Projection => {
+  const transform = createProjectionTransformer(source.code!);
 
-  for (const [id, p] of inpData.coordinates.entries()) {
-    inpData.coordinates.set(id, transform(p as [number, number]));
-  }
-  for (const [id, verts] of inpData.vertices.entries()) {
-    inpData.vertices.set(
-      id,
-      verts.map((v) => transform(v as [number, number])),
-    );
-  }
-  for (const cp of inpData.customerPoints) {
-    cp.coordinates = transform(cp.coordinates);
-    if ("snapPoint" in cp && cp.snapPoint) {
-      cp.snapPoint = transform(cp.snapPoint);
-    }
-  }
+  transformInpData(inpData, (p) => transform(p as [number, number]));
 
   return {
     type: "proj4",
-    id: sourceProjection.id,
-    name: sourceProjection.name,
-    code: sourceProjection.code!,
+    id: source.id,
+    name: source.name,
+    code: source.code!,
   };
 };
 
+const transformInpData = (
+  inpData: InpData,
+  transform: (p: Position) => Position,
+) => {
+  for (const [id, p] of inpData.coordinates.entries()) {
+    inpData.coordinates.set(id, transform(p));
+  }
+  for (const [id, verts] of inpData.vertices.entries()) {
+    inpData.vertices.set(id, verts.map(transform));
+  }
+  for (const cp of inpData.customerPoints) {
+    cp.coordinates = transform(cp.coordinates) as [number, number];
+    if ("snapPoint" in cp && cp.snapPoint) {
+      cp.snapPoint = transform(cp.snapPoint) as [number, number];
+    }
+  }
+};
 
-type Header = { isMadeByApp: boolean; sourceProjection?: Projection };
+type Header = { isMadeByApp: boolean; sourceProjection?: SourceProjection };
 
 const checksumRegexp = /\[([0-9A-Fa-f]{8})\]/;
 
@@ -281,7 +217,9 @@ const parseHeader = (inp: string): Header => {
   return { isMadeByApp: true, sourceProjection };
 };
 
-const parseProjectionMetadata = (content: string): Projection | undefined => {
+const parseProjectionMetadata = (
+  content: string,
+): SourceProjection | undefined => {
   let id: string | undefined;
   let name: string | undefined;
   let code: string | undefined;
@@ -304,10 +242,10 @@ const parseProjectionMetadata = (content: string): Projection | undefined => {
   if (id === "xy-grid") return XY_GRID;
 
   if (id && code) {
-    return { type: "proj4", id, name: name ?? id, code };
+    return { id, name: name ?? id, code };
   }
 
-  return id ? projectionFromId(id) : undefined;
+  return undefined;
 };
 
 const resolveTraceNodeId = (
@@ -328,3 +266,126 @@ const resolveEnergyPatternId = (
   if (!label) return null;
   return hydraulicModel.labelManager.getIdByLabel(label, "pattern") ?? null;
 };
+
+const detectProjectionStatus = (
+  hydraulicModel: HydraulicModel,
+): "wgs84" | "unknown" => {
+  for (const asset of hydraulicModel.assets.values()) {
+    if (asset.isNode) {
+      const node = asset as NodeAsset;
+      if (!isWgs84(node.coordinates)) return "unknown";
+    } else {
+      const link = asset as LinkAsset;
+      for (const coord of link.coordinates) {
+        if (!isWgs84(coord)) return "unknown";
+      }
+    }
+  }
+  return "wgs84";
+};
+
+const buildSimulationSettings = (
+  inpData: InpData,
+  hydraulicModel: HydraulicModel,
+): SimulationSettings => ({
+  version: nanoid(),
+  timing: { ...defaultTiming, ...inpData.times },
+  globalDemandMultiplier: inpData.options.demandMultiplier,
+  demandModel:
+    inpData.options.demandModel ?? defaultSimulationSettings.demandModel,
+  minimumPressure:
+    inpData.options.minimumPressure ??
+    defaultSimulationSettings.minimumPressure,
+  requiredPressure:
+    inpData.options.requiredPressure ??
+    defaultSimulationSettings.requiredPressure,
+  pressureExponent:
+    inpData.options.pressureExponent ??
+    defaultSimulationSettings.pressureExponent,
+  emitterExponent:
+    inpData.options.emitterExponent ??
+    defaultSimulationSettings.emitterExponent,
+  backflowAllowed:
+    inpData.options.backflowAllowed ??
+    defaultSimulationSettings.backflowAllowed,
+  ...(inpData.options.trials !== undefined && {
+    trials: inpData.options.trials,
+  }),
+  ...(inpData.options.accuracy !== undefined && {
+    accuracy: inpData.options.accuracy,
+  }),
+  ...(inpData.options.unbalancedMode !== undefined && {
+    unbalancedMode: inpData.options.unbalancedMode,
+  }),
+  ...(inpData.options.unbalancedExtraTrials !== undefined && {
+    unbalancedExtraTrials: inpData.options.unbalancedExtraTrials,
+  }),
+  ...(inpData.options.headError !== undefined && {
+    headError: inpData.options.headError,
+  }),
+  ...(inpData.options.flowChange !== undefined && {
+    flowChange: inpData.options.flowChange,
+  }),
+  ...(inpData.options.checkFreq !== undefined && {
+    checkFreq: inpData.options.checkFreq,
+  }),
+  ...(inpData.options.maxCheck !== undefined && {
+    maxCheck: inpData.options.maxCheck,
+  }),
+  ...(inpData.options.dampLimit !== undefined && {
+    dampLimit: inpData.options.dampLimit,
+  }),
+  ...(inpData.options.viscosity !== undefined && {
+    viscosity: inpData.options.viscosity,
+  }),
+  ...(inpData.options.specificGravity !== undefined && {
+    specificGravity: inpData.options.specificGravity,
+  }),
+  qualitySimulationType:
+    inpData.options.qualitySimulationType ??
+    defaultWaterQualityValues.qualitySimulationType,
+  qualityChemicalName:
+    inpData.options.qualityChemicalName ??
+    defaultWaterQualityValues.qualityChemicalName,
+  qualityMassUnit:
+    inpData.options.qualityMassUnit ??
+    defaultWaterQualityValues.qualityMassUnit,
+  qualityTraceNodeId: resolveTraceNodeId(
+    inpData.options.qualityTraceNode,
+    hydraulicModel.assets,
+  ),
+  tolerance: inpData.options.tolerance ?? defaultWaterQualityValues.tolerance,
+  diffusivity:
+    inpData.options.diffusivity ?? defaultWaterQualityValues.diffusivity,
+  reactionBulkOrder:
+    inpData.reactions.bulkOrder ?? defaultWaterQualityValues.reactionBulkOrder,
+  reactionWallOrder:
+    inpData.reactions.wallOrder ?? defaultWaterQualityValues.reactionWallOrder,
+  reactionTankOrder:
+    inpData.reactions.tankOrder ?? defaultWaterQualityValues.reactionTankOrder,
+  reactionGlobalBulk:
+    inpData.reactions.globalBulk ??
+    defaultWaterQualityValues.reactionGlobalBulk,
+  reactionGlobalWall:
+    inpData.reactions.globalWall ??
+    defaultWaterQualityValues.reactionGlobalWall,
+  reactionLimitingPotential:
+    inpData.reactions.limitingPotential ??
+    defaultWaterQualityValues.reactionLimitingPotential,
+  reactionRoughnessCorrelation:
+    inpData.reactions.roughnessCorrelation ??
+    defaultWaterQualityValues.reactionRoughnessCorrelation,
+  reportEnergy: inpData.report.energy ?? defaultEnergyValues.reportEnergy,
+  energyGlobalEfficiency:
+    inpData.energy.globalEfficiency ??
+    defaultEnergyValues.energyGlobalEfficiency,
+  energyGlobalPrice:
+    inpData.energy.globalPrice ?? defaultEnergyValues.energyGlobalPrice,
+  energyGlobalPatternId: resolveEnergyPatternId(
+    inpData.energy.globalPattern,
+    hydraulicModel,
+  ),
+  energyDemandCharge:
+    inpData.energy.demandCharge ?? defaultEnergyValues.energyDemandCharge,
+  statusReport: inpData.report.statusReport ?? defaultReportValues.statusReport,
+});

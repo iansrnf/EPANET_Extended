@@ -6,7 +6,7 @@ import { presets } from "src/lib/project-settings/quantities-spec";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import { getByLabel } from "src/__helpers__/asset-queries";
 import { Valve } from "src/hydraulic-model/asset-types";
-import { XY_GRID } from "src/lib/projections";
+import { XY_GRID } from "./parse-inp";
 
 describe("Parse inp with", () => {
   it("can read values separated by spaces", () => {
@@ -703,6 +703,132 @@ describe("Parse inp with", () => {
     });
   });
 
+  describe("projectLater", () => {
+    it("returns projectionStatus wgs84 when coordinates are valid", () => {
+      const IDS = { J1: 1, J2: 2, P1: 3 } as const;
+      const inp = `
+      [JUNCTIONS]
+      ${IDS.J1}  100
+      ${IDS.J2}  200
+
+      [PIPES]
+      ${IDS.P1}  ${IDS.J1}  ${IDS.J2}  1000  100  100  0  Open
+
+      [COORDINATES]
+      ${IDS.J1}  10  20
+      ${IDS.J2}  11  21
+      `;
+
+      const result = parseInp(inp, { projectLater: true });
+
+      expect(result.projectionStatus).toBe("wgs84");
+      expect(result.hydraulicModel.assets.size).toBe(3);
+    });
+
+    it("returns projectionStatus unknown when coordinates are out of bounds", () => {
+      const IDS = { J1: 1, J2: 2, P1: 3 } as const;
+      const inp = `
+      [JUNCTIONS]
+      ${IDS.J1}  100
+      ${IDS.J2}  200
+
+      [PIPES]
+      ${IDS.P1}  ${IDS.J1}  ${IDS.J2}  1000  100  100  0  Open
+
+      [COORDINATES]
+      ${IDS.J1}  500000  200000
+      ${IDS.J2}  501000  201000
+      `;
+
+      const result = parseInp(inp, { projectLater: true });
+
+      expect(result.projectionStatus).toBe("unknown");
+      expect(result.hydraulicModel.assets.size).toBe(3);
+    });
+
+    it("parses all assets including vertices when projectionStatus is unknown", () => {
+      const IDS = { J1: 1, J2: 2, P1: 3 } as const;
+      const inp = `
+      [JUNCTIONS]
+      ${IDS.J1}  100
+      ${IDS.J2}  200
+
+      [PIPES]
+      ${IDS.P1}  ${IDS.J1}  ${IDS.J2}  1000  100  100  0  Open
+
+      [COORDINATES]
+      ${IDS.J1}  500000  200000
+      ${IDS.J2}  501000  201000
+
+      [VERTICES]
+      ${IDS.P1}  500500  200500
+      `;
+
+      const result = parseInp(inp, { projectLater: true });
+
+      expect(result.projectionStatus).toBe("unknown");
+      const pipe = getByLabel(
+        result.hydraulicModel.assets,
+        String(IDS.P1),
+      ) as Pipe;
+      expect(pipe).toBeDefined();
+      expect(pipe.coordinates).toHaveLength(3);
+      expect(pipe.coordinates[1]).toEqual([500500, 200500]);
+    });
+
+    it("uses header projection when available and skips deferred path", () => {
+      const IDS = { J1: 1, J2: 2, P1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aJunction(IDS.J1, { coordinates: [10, 20] })
+        .aJunction(IDS.J2, { coordinates: [11, 21] })
+        .aPipe(IDS.P1, { startNodeId: IDS.J1, endNodeId: IDS.J2 })
+        .build();
+      const inp = buildInp(hydraulicModel, {
+        simulationSettings: defaultSimulationSettings,
+        units: presets.LPS.units,
+        madeBy: true,
+        projection: {
+          type: "xy-grid",
+          id: "xy-grid",
+          name: "XY Grid",
+          centroid: [500000, 200000],
+        },
+      });
+
+      const result = parseInp(inp, { projectLater: true });
+
+      expect(result.isMadeByApp).toBe(true);
+      expect(result.projectionStatus).toBeUndefined();
+      expect(result.projectSettings.projection.type).toBe("xy-grid");
+    });
+
+    it("does not report invalidCoordinates or invalidVertices issues", () => {
+      const IDS = { J1: 1, J2: 2, P1: 3 } as const;
+      const inp = `
+      [JUNCTIONS]
+      ${IDS.J1}  100
+      ${IDS.J2}  200
+
+      [PIPES]
+      ${IDS.P1}  ${IDS.J1}  ${IDS.J2}  1000  100  100  0  Open
+
+      [COORDINATES]
+      ${IDS.J1}  500000  200000
+      ${IDS.J2}  501000  201000
+
+      [VERTICES]
+      ${IDS.P1}  500500  200500
+      `;
+
+      const withoutFlag = parseInp(inp);
+      expect(withoutFlag.issues?.invalidCoordinates).toBeDefined();
+
+      const result = parseInp(inp, { projectLater: true });
+      expect(result.issues?.invalidCoordinates).toBeUndefined();
+      expect(result.issues?.invalidVertices).toBeUndefined();
+    });
+  });
+
   describe("non-projected import", () => {
     it("imports non-projected coordinates centered near origin", () => {
       const inp = `
@@ -772,35 +898,6 @@ describe("Parse inp with", () => {
 
       const result = parseInp(inp);
       expect(result.projectSettings.projection.type).toBe("wgs84");
-    });
-
-    it("preserves proj4 metadata for projected imports", () => {
-      const inp = `
-      [JUNCTIONS]
-      J1  100
-
-      [COORDINATES]
-      J1  111319.49079327357  111325.1428663851
-      `;
-
-      const result = parseInp(inp, {
-        sourceProjection: {
-          id: "EPSG:3857",
-          name: "WGS 84 / Pseudo-Mercator",
-          code: "EPSG:3857",
-        },
-      });
-
-      expect(result.projectSettings.projection).toEqual({
-        type: "proj4",
-        id: "EPSG:3857",
-        name: "WGS 84 / Pseudo-Mercator",
-        code: "EPSG:3857",
-      });
-
-      const j1 = getByLabel(result.hydraulicModel.assets, "J1") as Junction;
-      expect(j1.coordinates[0]).toBeCloseTo(1, 5);
-      expect(j1.coordinates[1]).toBeCloseTo(1, 5);
     });
   });
 });

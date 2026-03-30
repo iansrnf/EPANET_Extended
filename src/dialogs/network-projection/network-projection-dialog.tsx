@@ -19,7 +19,8 @@ import {
 } from "./filter-projection-candidates";
 import { projectGeoJson } from "./project-geojson";
 import { approximateToNullIsland } from "./approximate-to-null-island";
-import type { Proj4Projection } from "src/lib/projections";
+import type { Proj4Projection, Projection } from "src/lib/projections";
+import { computeCentroid } from "src/lib/projections/xy-grid-transform";
 import type { Bbox, ProjectionCandidate } from "./types";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
@@ -28,14 +29,12 @@ const DEBOUNCE_MS = 200;
 
 export const NetworkProjectionDialog = ({
   previewGeoJson,
-  onImportNonProjected,
-  onImportProjected,
+  onImportWithProjection,
   filename,
   flowUnits,
 }: {
   previewGeoJson: FeatureCollection;
-  onImportNonProjected: () => void;
-  onImportProjected: (projection: Proj4Projection) => void;
+  onImportWithProjection: (projection: Projection) => void;
   filename: string;
   flowUnits: string;
 }) => {
@@ -44,14 +43,7 @@ export const NetworkProjectionDialog = ({
   const { fitToNetwork, fitToBbox, setHandle } = useMapPreview();
   const userTracking = useUserTracking();
   const t = useTranslate();
-  const proj4Projections = useMemo(
-    () =>
-      projections.filter(
-        (projection): projection is Proj4Projection =>
-          projection.type === "proj4" && typeof projection.code === "string",
-      ),
-    [projections],
-  );
+
   const bounds = useMemo(() => computeBounds(previewGeoJson), [previewGeoJson]);
 
   const [selectedLocation, setSelectedLocation] = useState<LocationData | null>(
@@ -87,7 +79,7 @@ export const NetworkProjectionDialog = ({
 
     setIsBuilding(true);
     void buildProjectionCandidates(
-      proj4Projections,
+      projections,
       previewGeoJson,
       controller.signal,
     ).then((candidates) => {
@@ -97,7 +89,7 @@ export const NetworkProjectionDialog = ({
     });
 
     return () => controller.abort();
-  }, [proj4Projections, previewGeoJson]);
+  }, [projections, previewGeoJson]);
 
   const applyProjection = useCallback(
     (
@@ -246,11 +238,11 @@ export const NetworkProjectionDialog = ({
         query: lastSearchRef.current?.query ?? "",
         resultType: lastSearchRef.current?.resultType ?? "location",
       });
-      onImportProjected(selectedProjection);
+      onImportWithProjection(selectedProjection);
     }
   }, [
     selectedProjection,
-    onImportProjected,
+    onImportWithProjection,
     userTracking,
     projectionError,
     filename,
@@ -265,8 +257,23 @@ export const NetworkProjectionDialog = ({
       flowUnits,
       bounds,
     });
-    onImportNonProjected();
-  }, [onImportNonProjected, userTracking, filename, flowUnits, bounds]);
+    const allCoords = extractCoordinates(previewGeoJson);
+    const centroid = computeCentroid(allCoords);
+    const projection: Projection = {
+      type: "xy-grid",
+      id: "xy-grid",
+      name: "XY Grid",
+      centroid,
+    };
+    onImportWithProjection(projection);
+  }, [
+    onImportWithProjection,
+    userTracking,
+    filename,
+    flowUnits,
+    bounds,
+    previewGeoJson,
+  ]);
 
   const handleClose = useCallback(() => {
     userTracking.capture({ name: "networkProjection.closed" });
@@ -312,7 +319,7 @@ export const NetworkProjectionDialog = ({
       <div className="flex-1 flex min-h-0 overflow-hidden">
         <div className="flex-shrink-0 w-[300px] border-r border-gray-200 dark:border-gray-700 p-4 flex flex-col min-h-0">
           <ProjectionSearch
-            projections={proj4Projections}
+            projections={projections}
             onLocationSelect={handleLocationSelect}
             onProjectionSelect={handleProjectionSelectFromSearch}
             onSearched={handleSearched}
@@ -373,6 +380,19 @@ const computeBounds = (geoJson: FeatureCollection): string => {
 
   if (!isFinite(minX)) return "";
   return `${minX},${minY},${maxX},${maxY}`;
+};
+
+const extractCoordinates = (geoJson: FeatureCollection): Position[] => {
+  const coords: Position[] = [];
+  for (const feature of geoJson.features) {
+    const { geometry } = feature;
+    if (geometry.type === "Point") {
+      coords.push(geometry.coordinates);
+    } else if (geometry.type === "LineString") {
+      coords.push(...geometry.coordinates);
+    }
+  }
+  return coords;
 };
 
 const ProjectionEmptyState = () => {

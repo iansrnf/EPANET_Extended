@@ -29,12 +29,14 @@ import { useTranslate } from "src/hooks/use-translate";
 const DEBOUNCE_MS = 200;
 
 export const NetworkProjectionDialog = ({
+  source,
   previewGeoJson,
   onImportWithProjection,
   filename,
   flowUnits,
   initialProjection,
 }: {
+  source: "import" | "map-panel";
   previewGeoJson: FeatureCollection;
   onImportWithProjection: (projection: Projection, extent?: BBox) => void;
   filename: string;
@@ -238,6 +240,7 @@ export const NetworkProjectionDialog = ({
         onComplete: ({ outOfBounds }) => {
           userTracking.capture({
             name: "networkProjection.selected",
+            source,
             projectionId: projection.id,
             projectionName: projection.name,
             outOfBounds,
@@ -245,13 +248,14 @@ export const NetworkProjectionDialog = ({
         },
       });
     },
-    [applyProjection, userTracking],
+    [applyProjection, userTracking, source],
   );
 
   const handleApplyBasemap = useCallback(() => {
     if (selectedProjection) {
       userTracking.capture({
         name: "networkProjection.applied",
+        source,
         projectionId: selectedProjection.id,
         projectionName: selectedProjection.name,
         outOfBounds: !!projectionError,
@@ -275,11 +279,13 @@ export const NetworkProjectionDialog = ({
     flowUnits,
     bounds,
     displayGeoJSON,
+    source,
   ]);
 
   const handleLoadWithoutBasemap = useCallback(() => {
     userTracking.capture({
       name: "networkProjection.skipped",
+      source,
       filename,
       flowUnits,
       bounds,
@@ -300,25 +306,27 @@ export const NetworkProjectionDialog = ({
     flowUnits,
     bounds,
     previewGeoJson,
+    source,
   ]);
 
   const handleClose = useCallback(() => {
-    userTracking.capture({ name: "networkProjection.closed" });
+    userTracking.capture({ name: "networkProjection.closed", source });
     closeDialog();
-  }, [userTracking, closeDialog]);
+  }, [userTracking, closeDialog, source]);
 
   const handleSearched = useCallback(
     (metadata: SearchMetadata) => {
       lastSearchRef.current = metadata;
       userTracking.capture({
         name: "networkProjection.searched",
+        source,
         query: metadata.query,
         queryLength: metadata.query.length,
         resultType: metadata.resultType,
         resultsCount: metadata.resultsCount,
       });
     },
-    [userTracking],
+    [userTracking, source],
   );
 
   const isLoading = isBuilding || isProjecting;

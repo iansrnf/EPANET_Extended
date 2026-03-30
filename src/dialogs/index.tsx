@@ -47,6 +47,7 @@ const InpIssuesDialog = dynamic<{
 });
 
 const NetworkProjectionDialog = dynamic<{
+  source: "import" | "map-panel";
   previewGeoJson: import("geojson").FeatureCollection;
   onImportWithProjection: (projection: Projection) => void;
   filename: string;
@@ -358,7 +359,10 @@ export const Dialogs = memo(function Dialogs() {
         userTracking.capture({ name: "missingCoordinates.seen" });
       }
       if (dialog.type === "networkProjection") {
-        userTracking.capture({ name: "networkProjection.seen" });
+        userTracking.capture({
+          name: "networkProjection.seen",
+          source: dialog.source,
+        });
       }
       if (dialog.type === "inpIssues") {
         userTracking.capture({ name: "inpIssues.seen" });
@@ -465,6 +469,7 @@ export const Dialogs = memo(function Dialogs() {
   if (dialog.type === "networkProjection") {
     return (
       <NetworkProjectionDialog
+        source={dialog.source}
         previewGeoJson={dialog.previewGeoJson}
         onImportWithProjection={dialog.onImportWithProjection}
         filename={dialog.filename}

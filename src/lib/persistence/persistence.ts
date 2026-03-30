@@ -104,6 +104,13 @@ export class Persistence implements IPersistenceWithSnapshots {
           hydraulicModel.assetIndex.addNode(asset.id);
         }
       });
+      hydraulicModel.customerPoints.forEach((customerPoint) => {
+        hydraulicModel.labelManager.register(
+          customerPoint.label,
+          "customerPoint",
+          customerPoint.id,
+        );
+      });
 
       momentLog.setSnapshot(snapshotMoment, hydraulicModel.version);
       this.store.set(splitsAtom, defaultSplits);
@@ -441,7 +448,6 @@ export class Persistence implements IPersistenceWithSnapshots {
     const model = initializeHydraulicModel({
       defaults,
       idGenerator: currentHydraulicModel.assetBuilder.idGenerator,
-      fillLabelGaps: currentHydraulicModel.labelManager.fillGaps,
     });
 
     for (const delta of allDeltas) {

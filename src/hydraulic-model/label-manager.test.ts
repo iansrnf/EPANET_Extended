@@ -83,7 +83,7 @@ describe("label manager", () => {
     expect(labelManager.count("MyPipe")).toEqual(0);
   });
 
-  it("fills gaps when removing labels", () => {
+  it("does not fill gaps when removing labels", () => {
     const labelManager = new LabelManager();
     const secondId = anId();
 
@@ -93,11 +93,11 @@ describe("label manager", () => {
 
     labelManager.remove("P2", "pipe", secondId);
 
-    expect(labelManager.generateFor("pipe", anId())).toEqual("P2");
     expect(labelManager.generateFor("pipe", anId())).toEqual("P4");
+    expect(labelManager.generateFor("pipe", anId())).toEqual("P5");
   });
 
-  it("fills gaps after registering labels", () => {
+  it("does not fill gaps after registering labels", () => {
     const labelManager = new LabelManager();
 
     labelManager.register("P1", "pipe", anId());
@@ -106,6 +106,21 @@ describe("label manager", () => {
 
     expect(labelManager.generateFor("pipe", anId())).toEqual("P2");
     expect(labelManager.generateFor("pipe", anId())).toEqual("P4");
+  });
+
+  it("renaming does not advance counter", () => {
+    const labelManager = new LabelManager();
+    const secondId = anId();
+
+    expect(labelManager.generateFor("pipe", anId())).toEqual("P1");
+    expect(labelManager.generateFor("pipe", secondId)).toEqual("P2");
+    expect(labelManager.generateFor("pipe", anId())).toEqual("P3");
+
+    labelManager.remove("P2", "pipe", secondId);
+    labelManager.register("P10", "pipe", secondId);
+
+    expect(labelManager.generateFor("pipe", anId())).toEqual("P4");
+    expect(labelManager.generateFor("pipe", anId())).toEqual("P5");
   });
 
   describe("isLabelAvailable", () => {
@@ -123,8 +138,7 @@ describe("label manager", () => {
 
     it("returns false when label is used by different asset type in same category (nodes)", () => {
       const labelManager = new LabelManager();
-      const junctionId = anId();
-      labelManager.register("N1", "junction", junctionId);
+      labelManager.register("N1", "junction", anId());
 
       expect(labelManager.isLabelAvailable("N1", "tank")).toBe(false);
       expect(labelManager.isLabelAvailable("N1", "reservoir")).toBe(false);
@@ -208,7 +222,7 @@ describe("label manager", () => {
       expect(labelManager.generateFor("pattern", anId())).toEqual("PAT3");
     });
 
-    it("fills gaps for registered pattern labels", () => {
+    it("skips registered pattern labels without filling gaps", () => {
       const labelManager = new LabelManager();
       labelManager.register("PAT1", "pattern", anId());
       labelManager.register("PAT3", "pattern", anId());
@@ -239,51 +253,6 @@ describe("label manager", () => {
       labelManager.register("LABEL", "junction", anId());
 
       expect(labelManager.isLabelAvailable("LABEL", "pattern")).toBe(true);
-    });
-  });
-
-  describe("with fillGaps disabled", () => {
-    it("defaults to the type count and prefixes", () => {
-      const labelManager = new LabelManager(false);
-      expect(labelManager.generateFor("pipe", anId())).toEqual("P1");
-      expect(labelManager.generateFor("pipe", anId())).toEqual("P2");
-      expect(labelManager.generateFor("pipe", anId())).toEqual("P3");
-      expect(labelManager.generateFor("junction", anId())).toEqual("J1");
-    });
-
-    it("skips taken labels without filling gaps", () => {
-      const labelManager = new LabelManager(false);
-
-      labelManager.register("P1", "pipe", anId());
-      labelManager.register("P3", "pipe", anId());
-      labelManager.register("P4", "junction", anId());
-
-      expect(labelManager.generateFor("pipe", anId())).toEqual("P2");
-      expect(labelManager.generateFor("pipe", anId())).toEqual("P4");
-      expect(labelManager.generateFor("junction", anId())).toEqual("J1");
-    });
-
-    it("does not fill gaps when removing labels", () => {
-      const labelManager = new LabelManager(false);
-      const secondId = anId();
-
-      expect(labelManager.generateFor("pipe", anId())).toEqual("P1");
-      expect(labelManager.generateFor("pipe", secondId)).toEqual("P2");
-      expect(labelManager.generateFor("pipe", anId())).toEqual("P3");
-
-      labelManager.remove("P2", "pipe", secondId);
-
-      expect(labelManager.generateFor("pipe", anId())).toEqual("P4");
-      expect(labelManager.generateFor("pipe", anId())).toEqual("P5");
-    });
-
-    it("skips registered pattern labels without filling gaps", () => {
-      const labelManager = new LabelManager(false);
-      labelManager.register("PAT1", "pattern", anId());
-      labelManager.register("PAT3", "pattern", anId());
-
-      expect(labelManager.generateFor("pattern", anId())).toEqual("PAT2");
-      expect(labelManager.generateFor("pattern", anId())).toEqual("PAT4");
     });
   });
 

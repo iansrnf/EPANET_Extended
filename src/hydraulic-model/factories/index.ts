@@ -11,16 +11,16 @@ export type ModelFactories = {
   pressureLoggerFactory: PressureLoggerFactory;
 };
 
-export const initializeModelFactories = (options?: {
+export const initializeModelFactories = (options: {
   customerPointIdGenerator?: IdGenerator;
   pressureLoggerIdGenerator?: IdGenerator;
-  labelManager?: LabelManager;
+  labelManager: LabelManager;
 }): ModelFactories => ({
   customerPointFactory: new CustomerPointFactory(
-    options?.customerPointIdGenerator ?? new ConsecutiveIdsGenerator(),
-    options?.labelManager,
+    options.customerPointIdGenerator ?? new ConsecutiveIdsGenerator(),
+    options.labelManager,
   ),
   pressureLoggerFactory: new PressureLoggerFactory(
-    options?.pressureLoggerIdGenerator ?? new ConsecutiveIdsGenerator(),
+    options.pressureLoggerIdGenerator ?? new ConsecutiveIdsGenerator(),
   ),
 });

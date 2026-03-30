@@ -46,7 +46,6 @@ import { useUserTracking } from "src/infra/user-tracking";
 import { MapContext } from "src/map/map-context";
 import { MapEngine } from "src/map/map-engine";
 import { useContext, useRef, useCallback } from "react";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 
 import NetworkUnprojectedIllustration from "./network-projection/network-unprojected";
 import NetworkProjectedIllustration from "./network-projection/network-projected";
@@ -78,7 +77,6 @@ export const CreateNew = () => {
   const setGridHidden = useSetAtom(gridHiddenAtom);
   const isCurrentProjectUnprojected = useAtomValue(isUnprojectedAtom);
   const { closeDialog } = useDialogState();
-  const isNewLabelsOn = useFeatureFlag("FLAG_NEW_LABELS");
 
   const originalMapStateRef = useRef<mapboxgl.LngLatBounds | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -123,11 +121,9 @@ export const CreateNew = () => {
       const hydraulicModel = initializeHydraulicModel({
         defaults: spec.defaults,
       });
-      const factories = initializeModelFactories(
-        isNewLabelsOn
-          ? { labelManager: hydraulicModel.labelManager }
-          : undefined,
-      );
+      const factories = initializeModelFactories({
+        labelManager: hydraulicModel.labelManager,
+      });
       setGridPreview(false);
       setGridHidden(false);
       transactImport(
@@ -159,7 +155,6 @@ export const CreateNew = () => {
       setGridPreview,
       setGridHidden,
       closeDialog,
-      isNewLabelsOn,
     ],
   );
 

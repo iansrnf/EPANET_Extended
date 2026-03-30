@@ -39,15 +39,13 @@ export const initializeHydraulicModel = ({
   demands = createEmptyDemands(),
   controls = createEmptyControls(),
   idGenerator,
-  fillLabelGaps = true,
 }: {
   defaults: DefaultsSpec;
   demands?: Demands;
   controls?: Controls;
   idGenerator?: IdGenerator;
-  fillLabelGaps?: boolean;
 }): HydraulicModel => {
-  const labelManager = new LabelManager(fillLabelGaps);
+  const labelManager = new LabelManager();
   const assetIdGenerator = idGenerator ?? new ConsecutiveIdsGenerator();
   const assets = new Map();
   return {

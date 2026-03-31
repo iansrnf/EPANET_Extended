@@ -40,7 +40,10 @@ export type ApiNetworkMapping = {
 export type PipePreviewRow = {
   id: string;
   label: string;
+  coordinates: Position[];
+  startJunctionId: string;
   startJunctionLabel: string;
+  endJunctionId: string;
   endJunctionLabel: string;
   diameter: number;
   roughness: number;
@@ -113,7 +116,10 @@ export function buildApiNetworkPreview(
     pipes.push({
       id: String(feature.id ?? `pipe-${index + 1}`),
       label: pipeLabel,
+      coordinates,
+      startJunctionId: startJunction.id,
       startJunctionLabel: startJunction.label,
+      endJunctionId: endJunction.id,
       endJunctionLabel: endJunction.label,
       diameter: getNumericValue(
         feature.properties,

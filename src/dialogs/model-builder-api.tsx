@@ -2,6 +2,7 @@ import bbox from "@turf/bbox";
 import type { FeatureCollection } from "geojson";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useEffect, useMemo, useState } from "react";
+import { useAtomValue, useSetAtom } from "jotai";
 import { Button } from "src/components/elements";
 import { EarlyAccessBadge } from "src/components/early-access-badge";
 import { Input } from "src/components/elements";
@@ -15,13 +16,25 @@ import {
   type Step,
 } from "src/components/wizard";
 import { useTranslate } from "src/hooks/use-translate";
-import { Presets } from "src/lib/project-settings/quantities-spec";
+import { presets, Presets } from "src/lib/project-settings/quantities-spec";
 import { HeadlossFormula } from "src/hydraulic-model";
 import { headlossFormulasFullNames } from "src/hydraulic-model/asset-types/pipe";
 import { DisconnectIcon, UploadIcon, CloseIcon } from "src/icons";
 import { MapPreview } from "./network-projection/map-preview";
 import { useMapPreview } from "./network-projection/use-map-preview";
-import { collectPropertyNames } from "./model-builder-api-transform";
+import {
+  buildApiNetworkPreview,
+  collectPropertyNames,
+} from "./model-builder-api-transform";
+import { projectSettingsAtom } from "src/state/project-settings";
+import { usePersistence } from "src/lib/persistence";
+import { initializeHydraulicModel } from "src/hydraulic-model";
+import { initializeModelFactories } from "src/hydraulic-model/factories";
+import { ConsecutiveIdsGenerator } from "src/lib/id-generator";
+import { defaultSimulationSettings } from "src/simulation/simulation-settings";
+import { fileInfoAtom } from "src/state/file-system";
+import { convertTo } from "src/quantity";
+import { useToggleNetworkReview } from "src/commands/toggle-network-review";
 
 type ImportedApiSource = {
   name: string;
@@ -181,7 +194,13 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
     null,
   );
   const [pipeStatusField, setPipeStatusField] = useState<string | null>(null);
+  const [isBuilding, setIsBuilding] = useState(false);
   const { fitToBbox, fitToNetwork, setHandle } = useMapPreview();
+  const currentProjectSettings = useAtomValue(projectSettingsAtom);
+  const setFileInfo = useSetAtom(fileInfoAtom);
+  const rep = usePersistence();
+  const transactImport = rep.useTransactImport();
+  const toggleNetworkReview = useToggleNetworkReview();
   const assignedElementCount = apiSource && apiAssignment ? 1 : 0;
 
   const propertyOptions = useMemo(
@@ -246,6 +265,44 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
     ],
   );
 
+  const networkDraft = useMemo(
+    () =>
+      apiSource && apiAssignment === "pipes"
+        ? buildApiNetworkPreview(apiSource.previewGeoJson, {
+            pipe: {
+              labelField: pipeLabelField,
+              diameterField: pipeDiameterField,
+              defaultDiameter: Number(PIPE_DEFAULTS.diameter),
+              roughnessField: pipeRoughnessField,
+              defaultRoughness: Number(PIPE_DEFAULTS.roughness),
+              minorLossField: pipeMinorLossField,
+              defaultMinorLoss: Number(PIPE_DEFAULTS.minorLoss),
+              statusField: pipeStatusField,
+              defaultStatus: "open",
+              lengthMode: "geometry",
+              lengthField: null,
+              defaultLength: 0,
+            },
+            junction: {
+              labelField: null,
+              elevationField: null,
+              defaultElevation: 0,
+              emitterCoefficientField: null,
+              defaultEmitterCoefficient: 0,
+            },
+          })
+        : null,
+    [
+      apiAssignment,
+      apiSource,
+      pipeDiameterField,
+      pipeLabelField,
+      pipeMinorLossField,
+      pipeRoughnessField,
+      pipeStatusField,
+    ],
+  );
+
   const steps: Step[] = [
     {
       number: 1,
@@ -298,6 +355,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
         currentStep > 1
           ? {
               onClick: () => setCurrentStep((step) => Math.max(1, step - 1)),
+              disabled: isBuilding,
             }
           : undefined
       }
@@ -310,6 +368,18 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                 (currentStep === 2 && (!apiSource || !apiAssignment)) ||
                 (currentStep === 3 &&
                   (!pipeFeatures || pipeFeatures.length === 0)),
+            }
+          : undefined
+      }
+      finishAction={
+        currentStep === STEP_COUNT
+          ? {
+              onClick: () => {
+                void handleBuildModel();
+              },
+              disabled: !networkDraft || networkDraft.pipes.length === 0,
+              loading: isBuilding,
+              label: "Build Model",
             }
           : undefined
       }
@@ -359,6 +429,90 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
       );
     } finally {
       setApiLoading(false);
+    }
+  };
+
+  const handleBuildModel = () => {
+    if (!networkDraft || !apiSource) return;
+
+    try {
+      setIsBuilding(true);
+
+      const spec = presets[flowUnit];
+      const idGenerator = new ConsecutiveIdsGenerator();
+      const hydraulicModel = initializeHydraulicModel({
+        defaults: spec.defaults,
+        idGenerator,
+      });
+      const factories = initializeModelFactories({
+        idGenerator,
+        labelManager: hydraulicModel.labelManager,
+      });
+
+      const junctionIdByDraftId = new Map<string, number>();
+
+      for (const junctionDraft of networkDraft.junctions) {
+        const junction = hydraulicModel.assetBuilder.buildJunction({
+          label: junctionDraft.label,
+          coordinates: junctionDraft.coordinates,
+          elevation: junctionDraft.elevation,
+          emitterCoefficient: junctionDraft.emitterCoefficient,
+        });
+
+        hydraulicModel.assets.set(junction.id, junction);
+        junctionIdByDraftId.set(junctionDraft.id, junction.id);
+      }
+
+      for (const pipeDraft of networkDraft.pipes) {
+        const startNodeId = junctionIdByDraftId.get(pipeDraft.startJunctionId);
+        const endNodeId = junctionIdByDraftId.get(pipeDraft.endJunctionId);
+
+        if (startNodeId == null || endNodeId == null) continue;
+
+        const pipe = hydraulicModel.assetBuilder.buildPipe({
+          label: pipeDraft.label,
+          coordinates: pipeDraft.coordinates,
+          connections: [startNodeId, endNodeId],
+          diameter: pipeDraft.diameter,
+          roughness: pipeDraft.roughness,
+          minorLoss: pipeDraft.minorLoss,
+          initialStatus: pipeDraft.initialStatus,
+          length: convertTo(
+            { value: pipeDraft.length, unit: "m" },
+            spec.units.length,
+          ),
+        });
+
+        hydraulicModel.assets.set(pipe.id, pipe);
+        hydraulicModel.topology.addLink(pipe.id, startNodeId, endNodeId);
+      }
+
+      transactImport(
+        hydraulicModel,
+        factories,
+        idGenerator,
+        {
+          ...currentProjectSettings,
+          units: spec.units,
+          defaults: spec.defaults,
+          headlossFormula,
+          formatting: {
+            decimals: spec.decimals,
+            defaultDecimals: 3,
+          },
+        },
+        apiSource.name,
+        defaultSimulationSettings,
+        {
+          autoElevations: currentProjectSettings.projection.type !== "xy-grid",
+        },
+      );
+
+      setFileInfo(null);
+      toggleNetworkReview({ source: "auto", state: true });
+      onClose();
+    } finally {
+      setIsBuilding(false);
     }
   };
 
@@ -753,6 +907,51 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
               )}
             </section>
           </div>
+        ) : currentStep === 4 ? (
+          <div className="flex-1 pb-4">
+            <section className="rounded-3xl border border-gray-200 bg-white p-7 md:p-8">
+              <h2 className="text-2xl font-semibold text-gray-900">
+                Build Model
+              </h2>
+              {!networkDraft ? (
+                <div className="mt-8 rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-500">
+                  Complete the data assignment and attribute mapping first.
+                </div>
+              ) : (
+                <div className="mt-8 space-y-6">
+                  <p className="text-lg leading-8 text-slate-600">
+                    We&apos;ll build a new EPANET model from your GIS pipes and
+                    derive junctions from the line endpoints. Missing mapped
+                    values will fall back to defaults automatically.
+                  </p>
+
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <BuildSummaryCard
+                      label="Source"
+                      value={apiSource?.name ?? "GIS API"}
+                    />
+                    <BuildSummaryCard
+                      label="Pipes"
+                      value={String(networkDraft.pipes.length)}
+                    />
+                    <BuildSummaryCard
+                      label="Junctions"
+                      value={String(networkDraft.junctions.length)}
+                    />
+                    <BuildSummaryCard label="Flow Units" value={flowUnit} />
+                    <BuildSummaryCard
+                      label="Headloss Formula"
+                      value={headlossFormula}
+                    />
+                    <BuildSummaryCard
+                      label="Network Review"
+                      value="Opens after build"
+                    />
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
         ) : (
           <PlaceholderStep
             title={translate("importFromGISApiWizard.steps.modelBuild")}
@@ -760,6 +959,21 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
         )}
       </WizardContent>
     </WizardContainer>
+  );
+};
+
+const BuildSummaryCard = ({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) => {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+      <div className="text-sm font-medium text-slate-500">{label}</div>
+      <div className="mt-2 text-xl font-semibold text-slate-900">{value}</div>
+    </div>
   );
 };
 

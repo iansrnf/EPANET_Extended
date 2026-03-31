@@ -7,7 +7,7 @@ import { stagingModelAtom } from "src/state/hydraulic-model";
 import { dialogAtom } from "src/state/dialog";
 import { Button } from "src/components/elements";
 import { Section } from "src/components/form/fields";
-import { PencilIcon } from "src/icons";
+import { MapPinnedIcon } from "src/icons";
 import type { Projection } from "src/lib/projections/projection";
 import { createProjectionMapper, inverseProjectGeoJson } from "src/lib/projections";
 import { chooseUnitSystem } from "src/simulation/build-inp";
@@ -81,6 +81,7 @@ export const ProjectionSection = () => {
           disabled={hasScenarios}
           onClick={handleOpenProjectionDialog}
         >
+          <MapPinnedIcon />
           {t("networkProjection.setMapProjection")}
         </Button>
       ) : (
@@ -95,7 +96,7 @@ export const ProjectionSection = () => {
               onClick={handleOpenProjectionDialog}
               aria-label="Change projection"
             >
-              <PencilIcon />
+              <MapPinnedIcon />
             </button>
           )}
         </div>

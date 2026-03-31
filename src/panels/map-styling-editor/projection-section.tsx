@@ -45,9 +45,11 @@ export const ProjectionSection = () => {
         try {
           await transactReprojection(newProjection, currentProjection);
           if (extent) {
-            map?.map.fitBounds(extent as LngLatBoundsLike, {
-              padding: 100,
-              duration: 0,
+            map?.map.once("idle", () => {
+              map.map.fitBounds(extent as LngLatBoundsLike, {
+                padding: 100,
+                duration: 0,
+              });
             });
           }
           setDialogState(null);

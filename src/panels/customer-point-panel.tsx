@@ -20,6 +20,7 @@ import {
 import { DemandCategoriesEditor } from "src/panels/asset-panel/demands-editor";
 import { EditableTextField } from "src/components/form/editable-text-field";
 import { useTranslate } from "src/hooks/use-translate";
+import { useUserTracking } from "src/infra/user-tracking";
 import { usePersistence } from "src/lib/persistence";
 import {
   getCustomerPointDemands,
@@ -39,6 +40,7 @@ export function CustomerPointPanel() {
   const selection = useAtomValue(selectionAtom);
   const hydraulicModel = useAtomValue(stagingModelAtom);
   const translate = useTranslate();
+  const userTracking = useUserTracking();
   const rep = usePersistence();
   const transact = rep.useTransact();
   const zoomTo = useZoomTo();
@@ -136,6 +138,10 @@ export function CustomerPointPanel() {
       );
       if (!isAvailable) {
         setLabelError(translate("labelDuplicate"));
+        userTracking.capture({
+          name: "customerPointActions.labelDuplicate",
+          newLabel,
+        });
         return true;
       }
 
@@ -144,10 +150,15 @@ export function CustomerPointPanel() {
         newLabel,
       });
       transact(moment);
+      userTracking.capture({
+        name: "customerPointActions.labelChanged",
+        oldLabel,
+        newLabel,
+      });
       setLabelError(null);
       return false;
     },
-    [customerPoint, hydraulicModel, transact, translate],
+    [customerPoint, hydraulicModel, transact, translate, userTracking],
   );
 
   const clearLabelError = useCallback(() => {

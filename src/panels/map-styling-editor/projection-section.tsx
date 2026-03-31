@@ -15,6 +15,7 @@ import { usePersistence } from "src/lib/persistence";
 import { MapContext } from "src/map";
 import { captureError } from "src/infra/error-tracking";
 import { hasScenariosAtom } from "src/state/scenarios";
+import { useTranslate } from "src/hooks/use-translate";
 
 export const ProjectionSection = () => {
   const projectSettings = useAtomValue(projectSettingsAtom);
@@ -27,6 +28,7 @@ export const ProjectionSection = () => {
   const hasScenarios = useAtomValue(hasScenariosAtom);
   const currentProjection = createProjectionMapper(projection).projection;
   const isXYGrid = projection.type === "xy-grid";
+  const t = useTranslate();
 
   const handleOpenProjectionDialog = () => {
     const geoJson: FeatureCollection = {
@@ -79,7 +81,7 @@ export const ProjectionSection = () => {
           disabled={hasScenarios}
           onClick={handleOpenProjectionDialog}
         >
-          Project network
+          {t("networkProjection.setMapProjection")}
         </Button>
       ) : (
         <div className="flex items-start gap-2">

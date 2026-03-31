@@ -318,6 +318,20 @@ const ElevationsPaywallConnector = dynamic<{
   },
 );
 
+const ElevationTileErrorsDialog = dynamic<{
+  totalCount: number;
+  errors: { fileName: string; error: string }[];
+  onClose: () => void;
+}>(
+  () =>
+    import("src/dialogs/elevation-tile-errors").then(
+      (r) => r.ElevationTileErrorsDialog,
+    ),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
 const ActivatingTrialDialog = dynamic(
   () =>
     import("src/dialogs/activating-trial").then((r) => r.ActivatingTrialDialog),
@@ -454,6 +468,16 @@ export const Dialogs = memo(function Dialogs() {
       return <ScenariosPaywallConnector onClose={onClose} />;
     }
     return <ElevationsPaywallConnector onClose={onClose} />;
+  }
+
+  if (dialog.type === "elevationTileErrors") {
+    return (
+      <ElevationTileErrorsDialog
+        totalCount={dialog.totalCount}
+        errors={dialog.errors}
+        onClose={onClose}
+      />
+    );
   }
 
   if (dialog.type === "activatingTrial") {

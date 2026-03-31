@@ -137,6 +137,12 @@ export type FeaturePaywallDialogState = {
   feature: PaywallFeature;
 };
 
+export type ElevationTileErrorsDialogState = {
+  type: "elevationTileErrors";
+  totalCount: number;
+  errors: { fileName: string; error: string }[];
+};
+
 export type FirstScenarioDialogState = {
   type: "firstScenario";
   onConfirm: () => void;
@@ -185,6 +191,7 @@ export type DialogState =
   | DeleteScenarioConfirmationDialogState
   | RenameScenarioDialogState
   | FeaturePaywallDialogState
+  | ElevationTileErrorsDialogState
   | FirstScenarioDialogState
   | AlertScenariosNotSavedState
   | AlertNetworkRequiredState

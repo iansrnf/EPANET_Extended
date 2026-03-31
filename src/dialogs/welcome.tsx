@@ -41,7 +41,6 @@ import { DRUMCHAPEL, WATERDOWN } from "src/demo/demo-networks";
 import optimaticsLogoUrl from "src/assets/images/logos/optimatics-logo-black.webp";
 import iteratingLogoUrl from "src/assets/images/logos/iterating-logo-muted-padded.svg";
 import type { RecentFileEntry } from "src/lib/recent-files/recent-files";
-import clsx from "clsx";
 import Image from "next/image";
 
 export const WelcomeDialog = () => {
@@ -52,7 +51,6 @@ export const WelcomeDialog = () => {
   const openModelBuilder = useOpenModelBuilder();
   const openModelBuilderApi = useOpenModelBuilderApi();
   const userTracking = useUserTracking();
-  const isRecentFilesOn = useFeatureFlag("FLAG_RECENT_FILES");
 
   const currentLocale = useLocale();
   const currentLanguage = languageConfig.find(
@@ -212,7 +210,7 @@ export const WelcomeDialog = () => {
               </div>
             )}
 
-            {isRecentFilesOn ? <RecentNetworks /> : <DemoNetworks />}
+            <RecentNetworks />
 
             <FoundingPartners />
           </div>
@@ -301,7 +299,6 @@ const SmallDeviceWarning = () => {
 };
 
 const DemoNetworks = () => {
-  const isRecentFilesOn = useFeatureFlag("FLAG_RECENT_FILES");
   const translate = useTranslate();
 
   const demoModels = [
@@ -325,12 +322,7 @@ const DemoNetworks = () => {
         {translate("demoNetworksTitle")}
       </h2>
 
-      <div
-        className={clsx(
-          "grid grid-cols-2 gap-6",
-          isRecentFilesOn && "h-[270px]",
-        )}
-      >
+      <div className="grid grid-cols-2 gap-6 h-[270px]">
         {demoModels.map((demoModel, i) => (
           <DemoNetworkCard key={i} demoNetwork={demoModel} />
         ))}

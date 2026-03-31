@@ -21,6 +21,7 @@ import { headlossFormulasFullNames } from "src/hydraulic-model/asset-types/pipe"
 import { DisconnectIcon, UploadIcon, CloseIcon } from "src/icons";
 import { MapPreview } from "./network-projection/map-preview";
 import { useMapPreview } from "./network-projection/use-map-preview";
+import { collectPropertyNames } from "./model-builder-api-transform";
 
 type ImportedApiSource = {
   name: string;
@@ -30,7 +31,7 @@ type ImportedApiSource = {
   bbox: [number, number, number, number] | null;
   crsName: string | null;
   firstFeatureId: string | null;
-  sampleProperties: string[];
+  propertyNames: string[];
   previewGeoJson: FeatureCollection;
 };
 
@@ -97,7 +98,11 @@ const parseGeoJsonResponse = async (
     };
   };
 
-  if (!data || data.type !== "FeatureCollection" || !Array.isArray(data.features)) {
+  if (
+    !data ||
+    data.type !== "FeatureCollection" ||
+    !Array.isArray(data.features)
+  ) {
     throw new Error("API did not return a valid GeoJSON FeatureCollection.");
   }
 
@@ -107,10 +112,12 @@ const parseGeoJsonResponse = async (
     firstFeature && "id" in firstFeature ? String(firstFeature.id ?? "") : null;
   const geometryType = firstFeature?.geometry?.type ?? "Unknown geometry";
   const extent =
-    data.features.length > 0 ? (bbox(data) as [number, number, number, number]) : null;
+    data.features.length > 0
+      ? (bbox(data) as [number, number, number, number])
+      : null;
   const crsName = data.crs?.properties?.name ?? null;
   const sampleProperties = firstFeature?.properties
-    ? Object.keys(firstFeature.properties).slice(0, 5)
+    ? collectPropertyNames(data)
     : [];
 
   return {
@@ -122,7 +129,7 @@ const parseGeoJsonResponse = async (
     bbox: extent,
     crsName,
     firstFeatureId,
-    sampleProperties,
+    propertyNames: sampleProperties,
     previewGeoJson: data,
   };
 };
@@ -142,11 +149,14 @@ const PlaceholderStep = ({ title }: { title: string }) => {
   );
 };
 
-export const ModelBuilderApiDialog = ({
-  onClose,
-}: {
-  onClose: () => void;
-}) => {
+const PIPE_DEFAULTS = {
+  diameter: "100",
+  roughness: "100",
+  minorLoss: "0",
+  status: "Open",
+} as const;
+
+export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
   const translate = useTranslate();
   const [currentStep, setCurrentStep] = useState(1);
   const [unitSystem, setUnitSystem] = useState<UnitSystem>("us");
@@ -160,8 +170,81 @@ export const ModelBuilderApiDialog = ({
   );
   const [apiLoading, setApiLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [pipeLabelField, setPipeLabelField] = useState<string | null>(null);
+  const [pipeDiameterField, setPipeDiameterField] = useState<string | null>(
+    null,
+  );
+  const [pipeRoughnessField, setPipeRoughnessField] = useState<string | null>(
+    null,
+  );
+  const [pipeMinorLossField, setPipeMinorLossField] = useState<string | null>(
+    null,
+  );
+  const [pipeStatusField, setPipeStatusField] = useState<string | null>(null);
   const { fitToBbox, fitToNetwork, setHandle } = useMapPreview();
   const assignedElementCount = apiSource && apiAssignment ? 1 : 0;
+
+  const propertyOptions = useMemo(
+    () =>
+      (apiSource?.propertyNames ?? []).map((property) => ({
+        value: property,
+        label: property,
+      })),
+    [apiSource],
+  );
+
+  const pipeFeatures = useMemo(
+    () =>
+      apiSource && apiAssignment === "pipes"
+        ? apiSource.previewGeoJson.features.filter(isPipeGeometryFeature)
+        : null,
+    [apiAssignment, apiSource],
+  );
+
+  const pipePreviewRows = useMemo(
+    () =>
+      (pipeFeatures ?? []).slice(0, 100).map((feature, index) => {
+        const idValue = getMappedTextValue(feature.properties, pipeLabelField);
+        const diameterValue = getMappedTextValue(
+          feature.properties,
+          pipeDiameterField,
+        );
+        const roughnessValue = getMappedTextValue(
+          feature.properties,
+          pipeRoughnessField,
+        );
+        const minorLossValue = getMappedTextValue(
+          feature.properties,
+          pipeMinorLossField,
+        );
+        const statusValue = getMappedTextValue(
+          feature.properties,
+          pipeStatusField,
+        );
+
+        return {
+          rowNumber: index + 1,
+          id: idValue ?? String(feature.id ?? index + 1),
+          idDefault: !idValue,
+          diameter: diameterValue ?? PIPE_DEFAULTS.diameter,
+          diameterDefault: !diameterValue,
+          roughness: roughnessValue ?? PIPE_DEFAULTS.roughness,
+          roughnessDefault: !roughnessValue,
+          minorLoss: minorLossValue ?? PIPE_DEFAULTS.minorLoss,
+          minorLossDefault: !minorLossValue,
+          status: statusValue ?? PIPE_DEFAULTS.status,
+          statusDefault: !statusValue,
+        };
+      }),
+    [
+      pipeDiameterField,
+      pipeFeatures,
+      pipeLabelField,
+      pipeMinorLossField,
+      pipeRoughnessField,
+      pipeStatusField,
+    ],
+  );
 
   const steps: Step[] = [
     {
@@ -223,7 +306,10 @@ export const ModelBuilderApiDialog = ({
           ? {
               onClick: () =>
                 setCurrentStep((step) => Math.min(STEP_COUNT, step + 1)),
-              disabled: currentStep === 2 && (!apiSource || !apiAssignment),
+              disabled:
+                (currentStep === 2 && (!apiSource || !apiAssignment)) ||
+                (currentStep === 3 &&
+                  (!pipeFeatures || pipeFeatures.length === 0)),
             }
           : undefined
       }
@@ -258,6 +344,11 @@ export const ModelBuilderApiDialog = ({
       const parsedSource = await parseGeoJsonResponse(response, apiUrl);
       setApiSource(parsedSource);
       setApiAssignment(null);
+      setPipeLabelField(null);
+      setPipeDiameterField(null);
+      setPipeRoughnessField(null);
+      setPipeMinorLossField(null);
+      setPipeStatusField(null);
     } catch (error) {
       setApiSource(null);
       setApiAssignment(null);
@@ -367,7 +458,9 @@ export const ModelBuilderApiDialog = ({
                     {translate("importFromGISApiWizard.tutorial.stepTitle")}
                   </p>
                   <p className="mt-2 text-sm text-gray-600">
-                    {translate("importFromGISApiWizard.tutorial.stepDescription")}
+                    {translate(
+                      "importFromGISApiWizard.tutorial.stepDescription",
+                    )}
                   </p>
                 </div>
               </div>
@@ -380,7 +473,9 @@ export const ModelBuilderApiDialog = ({
                 variant="quiet"
                 size="sm"
                 className="mt-4 px-0 text-purple-600 hover:text-purple-700"
-                onClick={() => window.open("https://help.epanetjs.com", "_blank")}
+                onClick={() =>
+                  window.open("https://help.epanetjs.com", "_blank")
+                }
               >
                 {translate("importFromGISApiWizard.tutorial.link")}
               </Button>
@@ -395,7 +490,9 @@ export const ModelBuilderApiDialog = ({
 
               <div className="mt-8">
                 <VerticalField
-                  name={translate("importFromGISApiWizard.dataAssignment.apiUrl")}
+                  name={translate(
+                    "importFromGISApiWizard.dataAssignment.apiUrl",
+                  )}
                 >
                   <div className="flex flex-col gap-3">
                     <Input
@@ -452,7 +549,9 @@ export const ModelBuilderApiDialog = ({
                         </div>
                         <p className="mt-3 break-words text-base text-slate-600">
                           {apiSource.geometryType} • {apiSource.featureCount}{" "}
-                          {translate("importFromGISApiWizard.dataAssignment.features")}
+                          {translate(
+                            "importFromGISApiWizard.dataAssignment.features",
+                          )}
                         </p>
                         <div className="mt-4 max-w-[300px]">
                           <Selector
@@ -493,7 +592,9 @@ export const ModelBuilderApiDialog = ({
                   </div>
                 ) : (
                   <div className="mt-4 rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-500">
-                    {translate("importFromGISApiWizard.dataAssignment.noApiAssigned")}
+                    {translate(
+                      "importFromGISApiWizard.dataAssignment.noApiAssigned",
+                    )}
                   </div>
                 )}
               </div>
@@ -502,7 +603,9 @@ export const ModelBuilderApiDialog = ({
             <section className="rounded-2xl border border-gray-200 bg-white p-7">
               <div className="flex items-start justify-between gap-4">
                 <h2 className="text-2xl font-semibold text-gray-900">
-                  {translate("importFromGISApiWizard.dataAssignment.previewTitle")}
+                  {translate(
+                    "importFromGISApiWizard.dataAssignment.previewTitle",
+                  )}
                 </h2>
                 <div className="text-base text-slate-600">
                   {translate(
@@ -528,7 +631,8 @@ export const ModelBuilderApiDialog = ({
                       <div className="flex items-center gap-3 text-lg text-slate-700">
                         <span className="h-3 w-3 rounded-full bg-blue-500" />
                         <span>
-                          {apiSource.name} ({apiSource.featureCount.toLocaleString()})
+                          {apiSource.name} (
+                          {apiSource.featureCount.toLocaleString()})
                         </span>
                       </div>
                     </div>
@@ -556,9 +660,99 @@ export const ModelBuilderApiDialog = ({
             </section>
           </div>
         ) : currentStep === 3 ? (
-          <PlaceholderStep
-            title={translate("importFromGISApiWizard.steps.attributeMapping")}
-          />
+          <div className="flex-1 pb-4">
+            <section className="rounded-3xl border border-gray-200 bg-white p-7 md:p-8">
+              <h2 className="text-2xl font-semibold text-gray-900">
+                Map Attributes
+              </h2>
+
+              {!apiSource || apiAssignment !== "pipes" ? (
+                <div className="mt-8 rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-500">
+                  Load a GIS API source in Step 2 and assign it to pipes before
+                  mapping attributes.
+                </div>
+              ) : (
+                <div className="mt-8">
+                  <p className="text-lg leading-8 text-slate-600">
+                    Map the properties from your GIS data to EPANET attributes.
+                    Elevations and connectivity will be calculated
+                    automatically.
+                  </p>
+
+                  <div className="mt-8 rounded-2xl bg-slate-100 p-3">
+                    <div className="inline-flex rounded-xl bg-white px-8 py-3 text-lg font-semibold text-slate-800 shadow-sm">
+                      Pipes ({pipeFeatures?.length ?? 0})
+                    </div>
+                  </div>
+
+                  <div className="mt-8">
+                    <h3 className="text-2xl font-semibold text-slate-900">
+                      Pipes Attribute Mapping
+                    </h3>
+
+                    <div className="mt-8 grid gap-5 md:grid-cols-2 md:gap-x-8">
+                      <div className="space-y-4">
+                        <div className="text-lg font-medium text-slate-700">
+                          Recommended Attributes
+                        </div>
+                        <MappingSelector
+                          label="Id"
+                          value={pipeLabelField}
+                          options={propertyOptions}
+                          placeholder="Select property..."
+                          onChange={setPipeLabelField}
+                        />
+                        <MappingSelector
+                          label="Diameter"
+                          value={pipeDiameterField}
+                          options={propertyOptions}
+                          placeholder="Select property..."
+                          onChange={setPipeDiameterField}
+                        />
+                        <MappingSelector
+                          label="Roughness"
+                          value={pipeRoughnessField}
+                          options={propertyOptions}
+                          placeholder="Select property..."
+                          onChange={setPipeRoughnessField}
+                        />
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="text-lg font-medium text-slate-700">
+                          Optional Attributes
+                        </div>
+                        <MappingSelector
+                          label="MinorLoss"
+                          value={pipeMinorLossField}
+                          options={propertyOptions}
+                          placeholder="Select property..."
+                          onChange={setPipeMinorLossField}
+                        />
+                        <MappingSelector
+                          label="Status"
+                          value={pipeStatusField}
+                          options={propertyOptions}
+                          placeholder="Select property..."
+                          onChange={setPipeStatusField}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-10">
+                    <h3 className="text-2xl font-semibold text-slate-900">
+                      Data Preview
+                    </h3>
+                    <PipeDataPreviewTable
+                      rows={pipePreviewRows}
+                      totalCount={pipeFeatures?.length ?? 0}
+                    />
+                  </div>
+                </div>
+              )}
+            </section>
+          </div>
         ) : (
           <PlaceholderStep
             title={translate("importFromGISApiWizard.steps.modelBuild")}
@@ -568,3 +762,162 @@ export const ModelBuilderApiDialog = ({
     </WizardContainer>
   );
 };
+
+const MappingSelector = ({
+  label,
+  value,
+  options,
+  placeholder,
+  onChange,
+  disabled = false,
+}: {
+  label: string;
+  value: string | null;
+  options: { value: string; label: string }[];
+  placeholder: string;
+  onChange: (value: string | null) => void;
+  disabled?: boolean;
+}) => {
+  return (
+    <VerticalField name={label}>
+      <Selector
+        selected={value}
+        onChange={(selected) => onChange(selected)}
+        nullable
+        placeholder={placeholder}
+        options={options}
+        ariaLabel={label}
+        disabled={disabled}
+        styleOptions={{ textSize: "text-sm", paddingY: 3 }}
+      />
+    </VerticalField>
+  );
+};
+
+const PipeDataPreviewTable = ({
+  rows,
+  totalCount,
+}: {
+  rows: {
+    rowNumber: number;
+    id: string;
+    idDefault: boolean;
+    diameter: string;
+    diameterDefault: boolean;
+    roughness: string;
+    roughnessDefault: boolean;
+    minorLoss: string;
+    minorLossDefault: boolean;
+    status: string;
+    statusDefault: boolean;
+  }[];
+  totalCount: number;
+}) => {
+  return (
+    <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+      <div className="max-h-[480px] overflow-auto">
+        <table className="min-w-full text-sm text-slate-700">
+          <thead className="sticky top-0 bg-slate-50 text-slate-500">
+            <tr>
+              <th className="w-16 px-5 py-4 text-left font-semibold">#</th>
+              <th className="px-5 py-4 text-left font-semibold uppercase tracking-wide">
+                ID <span className="text-red-400">*</span>
+              </th>
+              <th className="px-5 py-4 text-left font-semibold uppercase tracking-wide">
+                Diameter (in) <span className="text-red-400">*</span>
+              </th>
+              <th className="px-5 py-4 text-left font-semibold uppercase tracking-wide">
+                Roughness <span className="text-red-400">*</span>
+              </th>
+              <th className="px-5 py-4 text-left font-semibold uppercase tracking-wide">
+                MinorLoss
+              </th>
+              <th className="px-5 py-4 text-left font-semibold uppercase tracking-wide">
+                Status
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.rowNumber} className="border-t border-slate-200">
+                <td className="px-5 py-4">{row.rowNumber}</td>
+                <PreviewValueCell value={row.id} isDefault={row.idDefault} />
+                <PreviewValueCell
+                  value={row.diameter}
+                  isDefault={row.diameterDefault}
+                />
+                <PreviewValueCell
+                  value={row.roughness}
+                  isDefault={row.roughnessDefault}
+                />
+                <PreviewValueCell
+                  value={row.minorLoss}
+                  isDefault={row.minorLossDefault}
+                />
+                <PreviewValueCell
+                  value={row.status}
+                  isDefault={row.statusDefault}
+                />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="border-t border-slate-200 bg-slate-50 px-5 py-4 text-sm text-slate-500">
+        <p>
+          Showing first {rows.length} of {totalCount} features
+        </p>
+        <p className="mt-1">
+          Legend: Normal text = mapped data,{" "}
+          <span className="italic">italic text = default values</span>
+        </p>
+      </div>
+    </div>
+  );
+};
+
+const PreviewValueCell = ({
+  value,
+  isDefault,
+}: {
+  value: string;
+  isDefault: boolean;
+}) => {
+  return (
+    <td
+      className={
+        isDefault
+          ? "px-5 py-4 italic text-slate-400"
+          : "px-5 py-4 text-slate-700"
+      }
+    >
+      {value}
+    </td>
+  );
+};
+
+function isPipeGeometryFeature(feature: FeatureCollection["features"][number]) {
+  return (
+    feature.geometry?.type === "LineString" ||
+    feature.geometry?.type === "MultiLineString"
+  );
+}
+
+function getMappedTextValue(
+  properties: FeatureCollection["features"][number]["properties"],
+  field: string | null,
+): string | null {
+  if (!field) return null;
+
+  const rawValue = properties?.[field];
+  if (typeof rawValue === "string" && rawValue.trim().length > 0) {
+    return rawValue.trim();
+  }
+
+  if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
+    return String(rawValue);
+  }
+
+  return null;
+}

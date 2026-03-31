@@ -4,6 +4,7 @@ import { atom, useAtom, useAtomValue, useSetAtom } from "jotai";
 import { dialogAtom } from "src/state/dialog";
 import { layerConfigAtom } from "src/state/map";
 import * as E from "src/components/elements";
+import { Button } from "src/components/elements";
 import * as P from "@radix-ui/react-popover";
 import { basemaps } from "src/map/basemaps";
 import { DefaultLayerItem } from "./default-layer-item";
@@ -453,6 +454,7 @@ function XYZLayer({
 }
 
 export function AddLayer() {
+  const newUI = useFeatureFlag("FLAG_LAYERS_UI");
   const translate = useTranslate();
   const [isOpen, setOpen] = useState<boolean>(false);
   const [mode, setMode] = useAtom(layerModeAtom);
@@ -492,12 +494,13 @@ export function AddLayer() {
       <P.Trigger asChild>
         <E.Button
           aria-label={translate("addCustom")}
-          size="xs"
+          size={newUI ? "sm" : "xs"}
+          className={newUI ? "w-full justify-center mt-2" : undefined}
           onClick={() => {
             userTracking.capture({ name: "addCustomLayer.clicked" });
           }}
         >
-          <AddIcon />
+          <AddIcon size={newUI ? "sm" : undefined} />
           {translate("addCustom")}
         </E.Button>
       </P.Trigger>
@@ -698,9 +701,40 @@ const OpacitySetting = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
 };
 
 const VisibilityToggle = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
+  const newUI = useFeatureFlag("FLAG_LAYERS_UI");
   const translate = useTranslate();
   const { applyChanges } = useLayerConfigState();
   const userTracking = useUserTracking();
+
+  const handleClick = () => {
+    const isVisible = !layerConfig.visibility;
+    userTracking.capture({
+      name: "layerVisibility.changed",
+      visible: isVisible,
+      type: layerConfig.type,
+    });
+    applyChanges({
+      putLayerConfigs: [
+        {
+          ...layerConfig,
+          visibility: !layerConfig.visibility,
+        },
+      ],
+    });
+  };
+
+  if (newUI) {
+    return (
+      <Button
+        variant="quiet/mode"
+        className="h-8"
+        aria-label={translate("toggleVisibility")}
+        onClick={handleClick}
+      >
+        <E.VisibilityToggleIcon visibility={layerConfig.visibility} />
+      </Button>
+    );
+  }
 
   return (
     <div
@@ -708,22 +742,7 @@ const VisibilityToggle = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
       title={translate("toggleVisibility")}
       aria-checked={layerConfig.visibility}
       className={"opacity-30 hover:opacity-100 select-none cursor-pointer"}
-      onClick={() => {
-        const isVisible = !layerConfig.visibility;
-        userTracking.capture({
-          name: "layerVisibility.changed",
-          visible: isVisible,
-          type: layerConfig.type,
-        });
-        applyChanges({
-          putLayerConfigs: [
-            {
-              ...layerConfig,
-              visibility: !layerConfig.visibility,
-            },
-          ],
-        });
-      }}
+      onClick={handleClick}
     >
       <E.VisibilityToggleIcon visibility={layerConfig.visibility} />
     </div>
@@ -731,9 +750,41 @@ const VisibilityToggle = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
 };
 
 const LabelsToggle = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
+  const newUI = useFeatureFlag("FLAG_LAYERS_UI");
   const translate = useTranslate();
   const { applyChanges } = useLayerConfigState();
   const userTracking = useUserTracking();
+
+  const handleClick = () => {
+    const isVisible = !layerConfig.labelVisibility;
+    userTracking.capture({
+      name: "layerLabelVisibility.changed",
+      visible: isVisible,
+      type: layerConfig.type,
+    });
+
+    applyChanges({
+      putLayerConfigs: [
+        {
+          ...layerConfig,
+          labelVisibility: isVisible,
+        },
+      ],
+    });
+  };
+
+  if (newUI) {
+    return (
+      <Button
+        variant="quiet/mode"
+        className="h-8"
+        aria-label={translate("toggleLabelsVisibility")}
+        onClick={handleClick}
+      >
+        <E.LabelToggleIcon visibility={layerConfig.labelVisibility} />
+      </Button>
+    );
+  }
 
   return (
     <div
@@ -741,23 +792,7 @@ const LabelsToggle = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
       title={translate("toggleLabelsVisibility")}
       aria-checked={layerConfig.labelVisibility}
       className={"opacity-30 hover:opacity-100 select-none cursor-pointer"}
-      onClick={() => {
-        const isVisible = !layerConfig.labelVisibility;
-        userTracking.capture({
-          name: "layerLabelVisibility.changed",
-          visible: isVisible,
-          type: layerConfig.type,
-        });
-
-        applyChanges({
-          putLayerConfigs: [
-            {
-              ...layerConfig,
-              labelVisibility: isVisible,
-            },
-          ],
-        });
-      }}
+      onClick={handleClick}
     >
       <E.LabelToggleIcon visibility={layerConfig.labelVisibility} />
     </div>
@@ -838,18 +873,25 @@ const BaseMapItem = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
 };
 
 const MapboxItem = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
+  const newUI = useFeatureFlag("FLAG_LAYERS_UI");
   const [isEditing, setEditing] = useState<boolean>(false);
   const isRaster = layerConfig.name.includes("Satellite");
 
   const editPopover = (
     <P.Root open={isEditing} onOpenChange={(val) => setEditing(val)}>
       <P.Trigger asChild>
-        <button
-          className={"opacity-30 hover:opacity-100 select-none"}
-          title="Edit"
-        >
-          <SettingsIcon />
-        </button>
+        {newUI ? (
+          <Button variant="quiet/mode" className="h-8" aria-label="Edit">
+            <SettingsIcon />
+          </Button>
+        ) : (
+          <button
+            className={"opacity-30 hover:opacity-100 select-none"}
+            title="Edit"
+          >
+            <SettingsIcon />
+          </button>
+        )}
       </P.Trigger>
       <E.StyledPopoverContent>
         <E.StyledPopoverArrow />
@@ -859,9 +901,19 @@ const MapboxItem = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
   );
 
   return (
-    <div className="flex-auto">
-      <div className="flex gap-x-2 items-center">
-        <span className="block select-none truncate flex-auto text-sm">
+    <div className={newUI ? "flex-auto min-w-0" : "flex-auto"}>
+      <div
+        className={
+          newUI ? "flex items-center min-w-0" : "flex gap-x-2 items-center"
+        }
+      >
+        <span
+          className={
+            newUI
+              ? "block select-none truncate flex-auto min-w-0 text-sm"
+              : "block select-none truncate flex-auto text-sm"
+          }
+        >
           {layerConfig.name}
         </span>
         {editPopover}
@@ -870,31 +922,52 @@ const MapboxItem = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
         <LabelsToggle layerConfig={layerConfig} />
         <DeleteLayerButton layerConfig={layerConfig} />
       </div>
-      <div
-        className="opacity-50 font-semibold"
-        style={{
-          fontSize: 10,
-        }}
-      >
-        MAPBOX
-      </div>
+      {newUI ? (
+        <div className="font-semibold text-xs text-gray-500">MAPBOX</div>
+      ) : (
+        <div
+          className="opacity-50 font-semibold"
+          style={{
+            fontSize: 10,
+          }}
+        >
+          MAPBOX
+        </div>
+      )}
     </div>
   );
 };
 
 const DeleteLayerButton = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
+  const newUI = useFeatureFlag("FLAG_LAYERS_UI");
+  const translate = useTranslate();
   const { applyChanges } = useLayerConfigState();
   const userTracking = useUserTracking();
+
+  const handleClick = () => {
+    userTracking.capture({ name: "layer.removed", type: layerConfig.type });
+    applyChanges({
+      deleteLayerConfigs: [layerConfig.id],
+    });
+  };
+
+  if (newUI) {
+    return (
+      <Button
+        variant="quiet/mode"
+        className="h-8 text-red-500"
+        aria-label={translate("delete")}
+        onClick={handleClick}
+      >
+        <DeleteIcon />
+      </Button>
+    );
+  }
 
   return (
     <button
       className={"opacity-30 hover:opacity-100 select-none"}
-      onClick={() => {
-        userTracking.capture({ name: "layer.removed", type: layerConfig.type });
-        applyChanges({
-          deleteLayerConfigs: [layerConfig.id],
-        });
-      }}
+      onClick={handleClick}
     >
       <DeleteIcon />
     </button>
@@ -902,17 +975,24 @@ const DeleteLayerButton = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
 };
 
 const XYZItem = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
+  const newUI = useFeatureFlag("FLAG_LAYERS_UI");
   const [isEditing, setEditing] = useState<boolean>(false);
 
   const editPopover = (
     <P.Root open={isEditing} onOpenChange={(val) => setEditing(val)}>
       <P.Trigger asChild>
-        <button
-          className={"opacity-30 hover:opacity-100 select-none"}
-          title="Edit"
-        >
-          <SettingsIcon />
-        </button>
+        {newUI ? (
+          <Button variant="quiet/mode" className="h-8" aria-label="Edit">
+            <SettingsIcon />
+          </Button>
+        ) : (
+          <button
+            className={"opacity-30 hover:opacity-100 select-none"}
+            title="Edit"
+          >
+            <SettingsIcon />
+          </button>
+        )}
       </P.Trigger>
       <E.StyledPopoverContent>
         <E.StyledPopoverArrow />
@@ -936,6 +1016,7 @@ const XYZItem = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
 };
 
 const TileJSONItem = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
+  const newUI = useFeatureFlag("FLAG_LAYERS_UI");
   const [isEditing, setEditing] = useState<boolean>(false);
   const { isError } = useQuery({
     queryKey: [layerConfig.url],
@@ -947,12 +1028,18 @@ const TileJSONItem = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
   const editPopover = (
     <P.Root open={isEditing} onOpenChange={(val) => setEditing(val)}>
       <P.Trigger asChild>
-        <button
-          className={"opacity-30 hover:opacity-100 select-none"}
-          title="Edit"
-        >
-          <SettingsIcon />
-        </button>
+        {newUI ? (
+          <Button variant="quiet/mode" className="h-8" aria-label="Edit">
+            <SettingsIcon />
+          </Button>
+        ) : (
+          <button
+            className={"opacity-30 hover:opacity-100 select-none"}
+            title="Edit"
+          >
+            <SettingsIcon />
+          </button>
+        )}
       </P.Trigger>
       <E.StyledPopoverContent>
         <E.StyledPopoverArrow />
@@ -989,22 +1076,34 @@ const LayerConfigItem = ({
   typeLabel: string;
   children: React.ReactNode;
 }) => {
+  const newUI = useFeatureFlag("FLAG_LAYERS_UI");
   return (
-    <div className="flex-auto">
-      <div className="flex gap-x-2 items-center">{children}</div>
+    <div className={newUI ? "flex-auto min-w-0" : "flex-auto"}>
       <div
-        className="opacity-50 font-semibold"
-        style={{
-          fontSize: 10,
-        }}
+        className={
+          newUI ? "flex items-center min-w-0" : "flex gap-x-2 items-center"
+        }
       >
-        {typeLabel}
+        {children}
       </div>
+      {newUI ? (
+        <div className="font-semibold text-xs text-gray-500">{typeLabel}</div>
+      ) : (
+        <div
+          className="opacity-50 font-semibold"
+          style={{
+            fontSize: 10,
+          }}
+        >
+          {typeLabel}
+        </div>
+      )}
     </div>
   );
 };
 
 function SortableLayerConfig({ layerConfig }: { layerConfig: ILayerConfig }) {
+  const newUI = useFeatureFlag("FLAG_LAYERS_UI");
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id: layerConfig.id });
 
@@ -1017,11 +1116,19 @@ function SortableLayerConfig({ layerConfig }: { layerConfig: ILayerConfig }) {
     <div
       ref={setNodeRef}
       style={style}
-      className="py-2 group flex gap-x-2 items-start"
+      className={
+        newUI
+          ? "group flex gap-x-2 items-start"
+          : "py-2 group flex gap-x-2 items-start"
+      }
       key={layerConfig.id}
     >
       <div
-        className="pt-0.5 opacity-20 hover:opacity-100 cursor-ns-resize"
+        className={
+          newUI
+            ? "opacity-20 hover:opacity-100 cursor-ns-resize flex items-center h-8"
+            : "pt-0.5 opacity-20 hover:opacity-100 cursor-ns-resize"
+        }
         {...attributes}
         {...listeners}
       >
@@ -1047,6 +1154,7 @@ export function LayersEditor() {
   const layerConfigs = useAtomValue(layerConfigAtom);
   const { applyChanges } = useLayerConfigState();
   const items = [...layerConfigs.values()];
+  const newUI = useFeatureFlag("FLAG_LAYERS_UI");
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -1097,7 +1205,11 @@ export function LayersEditor() {
         modifiers={[restrictToVerticalAxis, restrictToFirstScrollableAncestor]}
       >
         <SortableContext items={items} strategy={verticalListSortingStrategy}>
-          <div className="divide-y divide-gray-200">
+          <div
+            className={
+              newUI ? "flex flex-col gap-y-1" : "divide-y divide-gray-200"
+            }
+          >
             {items.map((layerConfig) => {
               return (
                 <SortableLayerConfig

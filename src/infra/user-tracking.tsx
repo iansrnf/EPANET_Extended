@@ -989,6 +989,11 @@ export type UserEvent =
       oldValue: number;
       newValue: number;
     }
+  | {
+      name: "elevationSource.toggled";
+      sourceType: string;
+      enabled: boolean;
+    }
   | { name: "elevationSource.tileDeleted" }
   | {
       name: "elevationSource.elevationUnitChanged";

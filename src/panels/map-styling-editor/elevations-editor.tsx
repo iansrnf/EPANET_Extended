@@ -379,7 +379,6 @@ const TileServerElevationSourceRow = ({
             align="start"
           >
             <StyledPopoverArrow />
-            <TileServerPopover source={source} actions={actions} />
             <IndentationContext.Provider value={0}>
               <TileServerPopover source={source} actions={actions} />
             </IndentationContext.Provider>
@@ -441,7 +440,7 @@ const ElevationOffsetField = ({
   const label = `${translate("elevations.elevationOffset")} (${elevationUnit})`;
 
   return (
-    <InlineField name={label} layout="label-flex-none">
+    <InlineField name={label} layout="fluid-label" labelSize="lg">
       <NumericField
         label={label}
         displayValue={localizeDecimal(displayValue)}
@@ -472,7 +471,7 @@ const ElevationUnitField = ({
     <InlineField
       name={translate("elevations.verticalUnit")}
       layout="fluid-label"
-      labelSize="md"
+      labelSize="lg"
     >
       <Selector
         options={elevationUnitOptions}
@@ -721,13 +720,20 @@ const useElevationSourceActions = (
 
   const toggleEnabled = useCallback(
     (sourceId: string) => {
+      const source = sources.find((s) => s.id === sourceId);
+      const newEnabled = !source?.enabled;
       setSources((prev) =>
         prev.map((s) =>
           s.id === sourceId ? { ...s, enabled: !s.enabled } : s,
         ),
       );
+      userTracking.capture({
+        name: "elevationSource.toggled",
+        sourceType: source?.type ?? "unknown",
+        enabled: newEnabled,
+      });
     },
-    [setSources],
+    [sources, setSources, userTracking],
   );
 
   const updateOffset = useCallback(

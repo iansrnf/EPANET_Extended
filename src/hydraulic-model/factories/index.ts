@@ -12,12 +12,12 @@ export type ModelFactories = {
 };
 
 export const initializeModelFactories = (options: {
-  customerPointIdGenerator?: IdGenerator;
+  idGenerator?: IdGenerator;
   pressureLoggerIdGenerator?: IdGenerator;
   labelManager: LabelManager;
 }): ModelFactories => ({
   customerPointFactory: new CustomerPointFactory(
-    options.customerPointIdGenerator ?? new ConsecutiveIdsGenerator(),
+    options.idGenerator ?? new ConsecutiveIdsGenerator(),
     options.labelManager,
   ),
   pressureLoggerFactory: new PressureLoggerFactory(

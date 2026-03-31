@@ -175,6 +175,8 @@ export class Persistence implements IPersistenceWithSnapshots {
     };
 
     const labelCounters: Worktree["labelCounters"] = new Map();
+    const importedModel = this.store.get(stagingModelAtom);
+    const idGenerator = importedModel.assetBuilder.idGenerator;
 
     const worktree: Worktree = {
       activeSnapshotId: "main",
@@ -184,12 +186,12 @@ export class Persistence implements IPersistenceWithSnapshots {
       scenarios: [],
       highestScenarioNumber: 0,
       labelCounters,
+      idGenerator,
     };
 
     this.store.set(worktreeAtom, worktree);
 
     this.modelCache.clear();
-    const importedModel = this.store.get(stagingModelAtom);
     importedModel.labelManager.adoptCounters(labelCounters);
     this.modelCache.set("main", importedModel);
   }
@@ -381,7 +383,10 @@ export class Persistence implements IPersistenceWithSnapshots {
     this.store.set(baseModelAtom, baseModel);
     this.store.set(
       modelFactoriesAtom,
-      initializeModelFactories({ labelManager: stagingModel.labelManager }),
+      initializeModelFactories({
+        idGenerator: worktree.idGenerator,
+        labelManager: stagingModel.labelManager,
+      }),
     );
     this.switchMomentLog(snapshot.momentLog);
     this.setModelVersion(snapshot.version);
@@ -481,10 +486,9 @@ export class Persistence implements IPersistenceWithSnapshots {
     allDeltas.push(...momentLogDeltas);
 
     const { defaults } = this.store.get(projectSettingsAtom);
-    const currentHydraulicModel = this.store.get(stagingModelAtom);
     const model = initializeHydraulicModel({
       defaults,
-      idGenerator: currentHydraulicModel.assetBuilder.idGenerator,
+      idGenerator: worktree.idGenerator,
       labelCounters: worktree.labelCounters,
     });
 

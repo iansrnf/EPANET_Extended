@@ -89,10 +89,9 @@ export const ProjectionSection = () => {
             <div className="truncate">{projectionName}</div>
             <div className="text-gray-500 truncate">{projectionCode}</div>
           </div>
-          {currentProjection.type === "proj4" && (
+          {currentProjection.type === "proj4" && !hasScenarios && (
             <button
               className="opacity-30 hover:opacity-100 select-none flex-shrink-0"
-              disabled={hasScenarios}
               onClick={handleOpenProjectionDialog}
               aria-label="Change projection"
             >

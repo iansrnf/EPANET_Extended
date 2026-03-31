@@ -79,6 +79,7 @@ export function EpanetApp() {
   const { enableAllTracking } = usePrivacySettings();
   const hasIdentifiedRef = useRef(false);
   const isCursorFamilyEnabled = useFeatureFlag("FLAG_CURSOR_FAMILY");
+  const isIteratingLogoOn = useFeatureFlag("FLAG_ITERATING_LOGO");
   const isPersistLayerConfigOn = useFeatureFlag("FLAG_RESTORE_MAP_PREFERENCES");
   const [, setPersistLayerConfig] = useAtom(persistLayerConfigAtom);
   const isSnapshotLocked = useIsSnapshotLocked();
@@ -140,7 +141,9 @@ export function EpanetApp() {
       dialogAtom,
       dialogFromUrl()
         ? dialogFromUrl()
-        : settingsFromStorage().showWelcomeOnStart || !isMdOrLarger
+        : isIteratingLogoOn ||
+            settingsFromStorage().showWelcomeOnStart ||
+            !isMdOrLarger
           ? { type: "welcome" }
           : null,
     ],

@@ -87,7 +87,7 @@ export const InlineFieldLegacy = ({
 }: {
   name: string;
   layout?: "fixed-label" | "fluid-label" | "half-split" | "label-flex-none";
-  labelSize?: "sm" | "md";
+  labelSize?: "sm" | "md" | "lg";
   align?: "start" | "center";
   hasChanged?: boolean;
   baseDisplayValue?: React.ReactNode;
@@ -513,7 +513,9 @@ const InlineFieldWithNesting = ({
   const indentation = useContext(IndentationContext) ?? 0;
   const nestingDepth = useContext(NestedBlockContext);
   const baseLabelWidth =
-    (labelSize === "sm" ? 90 : 140) - indentation * 4 - nestingDepth * 2;
+    (labelSize === "sm" ? 90 : labelSize === "md" ? 140 : 180) -
+    indentation * 4 -
+    nestingDepth * 2;
   const labelStyle =
     layout === "fixed-label" || layout === "fluid-label"
       ? { flexBasis: baseLabelWidth }
@@ -542,7 +544,7 @@ const InlineFieldWithNesting = ({
     "w-1/2": layout === "half-split",
     "w-3/4": layout === "label-flex-none",
   });
-  const spacingClass = labelSize === "md" ? "gap-1" : "space-x-4";
+  const spacingClass = labelSize === "sm" ? "space-x-4" : "gap-1";
 
   return (
     <BlockComparisonFieldWithNesting

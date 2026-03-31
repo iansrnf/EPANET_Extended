@@ -30,20 +30,6 @@
   "helpCenter": "Help center",
   "roadmap": "Roadmap",
   "utilities": "Utility apps",
-  "paywall": {
-    "explorePlans": "Explore plans",
-    "or": "or",
-    "nonCommercial": {
-      "title": "Non-commercial use",
-      "description": "For learning, exploring the app, or supporting the project.",
-      "cta": "Personal licence - $100/year"
-    },
-    "commercial": {
-      "title": "Commercial use",
-      "description": "For use by consultants and utilities in real projects.",
-      "cta": "Choose plan"
-    }
-  },
   "language": "Language",
   "experimentalLanguage": "This language is in beta. Please try it and contact support if you notice any inaccuracies.",
   "earlyAccess": "Early access",
@@ -102,6 +88,7 @@
     "addNewData": "Add new elevation data",
     "userElevationData": "User elevation data",
     "elevationOffset": "Elevation offset",
+    "verticalUnit": "Elevation unit",
     "sourceDetails": "Elevation source details",
     "disableSource": "Disable elevation source",
     "enableSource": "Enable elevation source",

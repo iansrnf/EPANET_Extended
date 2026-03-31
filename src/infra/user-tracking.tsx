@@ -978,6 +978,11 @@ export type UserEvent =
     }
   | { name: "elevationSource.tileDeleted" }
   | {
+      name: "elevationSource.elevationUnitChanged";
+      oldValue: string;
+      newValue: string;
+    }
+  | {
       name: "map.elevationOffset.changed";
       sourceType: string;
       oldValue: number;

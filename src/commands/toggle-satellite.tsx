@@ -6,7 +6,7 @@ import { useLayerConfigState } from "src/map/layer-config";
 import { layerConfigAtom } from "src/state/map";
 import { useAuth } from "src/auth";
 import { ILayerConfig } from "src/types";
-import { maybeDeleteOldMapboxLayer } from "src/panels/map-styling-editor/layers-editor/popover";
+import { maybeDeleteOldMapboxLayer } from "src/map/layer-config";
 
 export const satelliteLimitedZoom = 16;
 

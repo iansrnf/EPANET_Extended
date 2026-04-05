@@ -33,7 +33,7 @@ import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 import debounce from "lodash/debounce";
 import { Legends } from "./legends";
 import { TimestepSelector } from "./timestep-selector";
-import { Toolbar } from "src/toolbar";
+import { Toolbar } from "src/toolbar/";
 import { Footer } from "./footer";
 import { useHydrateAtoms } from "jotai/utils";
 import { settingsFromStorage } from "src/state/user-settings";
@@ -51,11 +51,9 @@ import { AppLoader } from "./app-loader";
 import { PrivacyBanner } from "./privacy-banner";
 import { usePrivacySettings } from "src/hooks/use-privacy-settings";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { persistLayerConfigAtom } from "src/state/store";
 import { initStorage } from "src/infra/storage";
 import { useIsSnapshotLocked } from "src/hooks/use-is-snapshot-locked";
 import { useIsCustomerAllocationDisabled } from "src/hooks/use-is-customer-allocation-disabled";
-import { useLoggerTelemetry } from "src/hooks/use-logger-telemetry";
 
 type ResolvedLayout = "HORIZONTAL" | "VERTICAL" | "FLOATING";
 
@@ -71,23 +69,15 @@ const persistentTransformAtom = atom<Transform>({
 
 export function EpanetApp() {
   const { isReady, progress } = useAppReady();
-  useLoggerTelemetry();
   const [map, setMap] = useState<MapEngine | null>(null);
   useWindowResizeSplits();
   const userTracking = useUserTracking();
   const { user, isSignedIn } = useAuth();
   const { enableAllTracking } = usePrivacySettings();
   const hasIdentifiedRef = useRef(false);
-  const isCursorFamilyEnabled = useFeatureFlag("FLAG_CURSOR_FAMILY");
   const isIteratingLogoOn = useFeatureFlag("FLAG_ITERATING_LOGO");
-  const isPersistLayerConfigOn = useFeatureFlag("FLAG_RESTORE_MAP_PREFERENCES");
-  const [, setPersistLayerConfig] = useAtom(persistLayerConfigAtom);
   const isSnapshotLocked = useIsSnapshotLocked();
   const isCustomerAllocationDisabled = useIsCustomerAllocationDisabled();
-
-  useEffect(() => {
-    setPersistLayerConfig(isPersistLayerConfigOn);
-  }, [isPersistLayerConfigOn, setPersistLayerConfig]);
 
   useEffect(() => {
     void initStorage();
@@ -163,9 +153,7 @@ export function EpanetApp() {
   return (
     <main
       className={
-        isCursorFamilyEnabled
-          ? "ff-cursor-family h-dvh flex flex-col bg-white dark:bg-gray-800"
-          : "h-dvh flex flex-col bg-white dark:bg-gray-800"
+        "custom-cursor-family h-dvh flex flex-col bg-white dark:bg-gray-800"
       }
     >
       <MapContext.Provider value={map}>

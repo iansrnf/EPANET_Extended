@@ -272,6 +272,51 @@ describe("build inp", () => {
     expect(inp).not.toContain("\n1\t10\t20");
   });
 
+  it("keeps directly connected network nodes in simulation when a logger has no hidden backing node", () => {
+    const IDS = {
+      NETWORK_NODE: 2,
+      NETWORK_NODE_2: 3,
+      NETWORK_PIPE: 4,
+      LOGGER: 100,
+    };
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.NETWORK_NODE, {
+        coordinates: [30, 40],
+        elevation: 130,
+      })
+      .aJunction(IDS.NETWORK_NODE_2, {
+        coordinates: [50, 60],
+        elevation: 135,
+      })
+      .aPipe(IDS.NETWORK_PIPE, {
+        startNodeId: IDS.NETWORK_NODE,
+        endNodeId: IDS.NETWORK_NODE_2,
+        length: 10,
+        diameter: 100,
+        roughness: 1,
+      })
+      .build();
+
+    hydraulicModel.pressureLoggers.set(
+      IDS.LOGGER,
+      new PressureLogger(IDS.LOGGER, [10, 20], {
+        label: "L1",
+        connection: { junctionId: IDS.NETWORK_NODE },
+      }),
+    );
+
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+      geolocation: true,
+    });
+
+    expect(inp).toContain("\n2\t130");
+    expect(inp).toContain("\n3\t135");
+    expect(inp).toContain("\n4\t2\t3\t10\t100\t1\t0\tOpen");
+    expect(inp).toContain("\n2\t30\t40");
+  });
+
   it("adds valves", () => {
     const IDS = { NODE1: 1, NODE2: 2, NODE3: 3, VALVE1: 4, VALVE2: 5 };
     const hydraulicModel = HydraulicModelBuilder.with()

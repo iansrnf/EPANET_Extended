@@ -399,9 +399,16 @@ export function useDrawLinkHandlers({
       elevation,
     });
 
-  const createHiddenJunction = (coordinates: Position, elevation: number) => {
+  const createHiddenJunction = (
+    coordinates: Position,
+    elevation: number,
+    pressureLoggerId?: number,
+  ) => {
     const junction = createJunction(coordinates, elevation);
     junction.setProperty("visibility", false);
+    if (pressureLoggerId !== undefined) {
+      junction.setProperty("pressureLoggerId", pressureLoggerId);
+    }
     return junction;
   };
 
@@ -480,7 +487,11 @@ export function useDrawLinkHandlers({
     );
 
     return {
-      node: createHiddenJunction(pressureLogger.coordinates, elevation),
+      node: createHiddenJunction(
+        pressureLogger.coordinates,
+        elevation,
+        pressureLogger.id,
+      ),
       created: true,
     };
   };

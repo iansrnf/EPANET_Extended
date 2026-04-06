@@ -369,6 +369,10 @@ type SimulationExclusions = {
   linkIds: Set<AssetId>;
 };
 
+const isPressureLoggerBackingNode = (node: NodeAsset): boolean =>
+  node.getProperty("pressureLoggerId") !== undefined ||
+  node.getProperty("visibility") === false;
+
 const getSimulationExclusions = (
   hydraulicModel: HydraulicModel,
 ): SimulationExclusions => {
@@ -381,6 +385,7 @@ const getSimulationExclusions = (
 
     const junction = hydraulicModel.assets.get(junctionId);
     if (!junction?.isNode) continue;
+    if (!isPressureLoggerBackingNode(junction as NodeAsset)) continue;
 
     nodeIds.add(junctionId);
 

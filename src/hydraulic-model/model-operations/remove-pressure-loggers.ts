@@ -18,9 +18,21 @@ export const removePressureLoggers: ModelOperation<InputData> = (
 
   const backingJunctionIds = pressureLoggerIds.flatMap((id) => {
     const pressureLogger = model.pressureLoggers.get(id);
-    return pressureLogger?.connection?.junctionId !== undefined
-      ? [pressureLogger.connection.junctionId]
-      : [];
+    const junctionId = pressureLogger?.connection?.junctionId;
+    if (junctionId === undefined) {
+      return [];
+    }
+
+    const junction = model.assets.get(junctionId);
+    if (
+      !junction?.isNode ||
+      (junction.getProperty("pressureLoggerId") === undefined &&
+        junction.getProperty("visibility") !== false)
+    ) {
+      return [];
+    }
+
+    return [junctionId];
   });
 
   return {

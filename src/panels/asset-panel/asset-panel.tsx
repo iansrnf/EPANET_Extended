@@ -386,6 +386,7 @@ const JunctionEditor = ({
   const simPressure = junctionSimulation?.pressure ?? null;
   const simHead = junctionSimulation?.head ?? null;
   const simDemand = junctionSimulation?.demand ?? null;
+  const simWaterAge = junctionSimulation?.waterAge ?? null;
 
   const customerPoints = useMemo(() => {
     return getActiveCustomerPoints(
@@ -565,6 +566,14 @@ const JunctionEditor = ({
           unit={units.actualDemand}
           readOnly={true}
         />
+        {simWaterAge != null && (
+          <QuantityRow
+            name="waterAge"
+            value={simWaterAge}
+            unit={units.waterAge}
+            readOnly={true}
+          />
+        )}
       </SectionWrapper>
     </AssetEditorContent>
   );
@@ -853,6 +862,7 @@ const ReservoirEditor = ({
   const simPressure = reservoirSimulation?.pressure ?? null;
   const simHead = reservoirSimulation?.head ?? null;
   const simNetFlow = reservoirSimulation?.netFlow ?? null;
+  const simWaterAge = reservoirSimulation?.waterAge ?? null;
 
   const activeTopologyComparison = getComparison(
     "isActive",
@@ -948,6 +958,14 @@ const ReservoirEditor = ({
           unit={units.netFlow}
           readOnly={true}
         />
+        {simWaterAge != null && (
+          <QuantityRow
+            name="waterAge"
+            value={simWaterAge}
+            unit={units.waterAge}
+            readOnly={true}
+          />
+        )}
       </SectionWrapper>
     </AssetEditorContent>
   );
@@ -982,6 +1000,7 @@ const TankEditor = ({
   const simNetFlow = tankSimulation?.netFlow ?? null;
   const simLevel = tankSimulation?.level ?? null;
   const simVolume = tankSimulation?.volume ?? null;
+  const simWaterAge = tankSimulation?.waterAge ?? null;
 
   const activeTopologyComparison = getComparison("isActive", tank.isActive);
   const hasModelAttributesChanges =
@@ -1108,6 +1127,14 @@ const TankEditor = ({
           unit={units.netFlow}
           readOnly={true}
         />
+        {simWaterAge != null && (
+          <QuantityRow
+            name="waterAge"
+            value={simWaterAge}
+            unit={units.waterAge}
+            readOnly={true}
+          />
+        )}
       </SectionWrapper>
     </AssetEditorContent>
   );

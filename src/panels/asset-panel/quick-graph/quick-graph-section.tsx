@@ -109,6 +109,35 @@ const getValveSettingQuantityKey = (valve: Valve): QuantityProperty | null => {
   return null;
 };
 
+const getPropertyDefinitions = (
+  assetType: QuickGraphAssetType,
+  simulation: { status: string; metadata?: ArrayBuffer },
+) => {
+  const hasCompletedSimulation =
+    simulation.status === "success" || simulation.status === "warning";
+  const hasWaterAge =
+    hasCompletedSimulation &&
+    getSimulationMetadata(simulation.metadata).qualityType === "age";
+
+  const baseOptions = QUICK_GRAPH_PROPERTIES[assetType];
+  if (
+    hasWaterAge &&
+    (assetType === "junction" ||
+      assetType === "tank" ||
+      assetType === "reservoir")
+  ) {
+    return [
+      ...baseOptions,
+      {
+        value: "waterAge" as const,
+        labelKey: "waterAge",
+        quantityKey: "waterAge" as QuantityProperty,
+      },
+    ];
+  }
+  return baseOptions;
+};
+
 const QuickGraphSection = ({
   assetType,
   assetId,
@@ -132,7 +161,11 @@ const QuickGraphSection = ({
   const mainLabel = isInScenario ? translate("scenarios.main") : null;
 
   const selectedProperty = propertyByType[assetType];
-  const selectedOption = QUICK_GRAPH_PROPERTIES[assetType].find(
+  const propertyDefinitions = useMemo(
+    () => getPropertyDefinitions(assetType, simulation),
+    [assetType, simulation],
+  );
+  const selectedOption = propertyDefinitions.find(
     (opt) => opt.value === selectedProperty,
   );
   const decimals = useMemo(() => {
@@ -165,8 +198,7 @@ const QuickGraphSection = ({
       : 0;
 
   const propertyOptions = useMemo(() => {
-    const options = QUICK_GRAPH_PROPERTIES[assetType];
-    return options.map((opt) => {
+    return propertyDefinitions.map((opt) => {
       const label = translate(opt.labelKey);
       let quantityKey = opt.quantityKey;
       if (assetType === "valve" && opt.value === "setting") {
@@ -181,7 +213,7 @@ const QuickGraphSection = ({
         label: unit ? `${label} (${unit})` : label,
       };
     });
-  }, [assetType, assetId, hydraulicModel, translate, units]);
+  }, [propertyDefinitions, assetType, assetId, hydraulicModel, translate, units]);
 
   const handlePropertyChange = useCallback(
     (value: QuickGraphPropertyByAssetType[typeof assetType]) => {

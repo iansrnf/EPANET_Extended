@@ -237,7 +237,12 @@ export type SimulationData = {
   >;
   junctions?: Record<
     number,
-    Partial<{ pressure: number; head: number; demand: number }>
+    Partial<{
+      pressure: number;
+      head: number;
+      demand: number;
+      waterAge: number | null;
+    }>
   >;
   pumps?: Record<
     number,
@@ -266,11 +271,17 @@ export type SimulationData = {
       netFlow: number;
       level: number;
       volume: number;
+      waterAge: number | null;
     }>
   >;
   reservoirs?: Record<
     number,
-    Partial<{ pressure: number; head: number; netFlow: number }>
+    Partial<{
+      pressure: number;
+      head: number;
+      netFlow: number;
+      waterAge: number | null;
+    }>
   >;
 };
 
@@ -297,6 +308,7 @@ export const createMockResultsReader = (
       pressure: sim.pressure ?? 0,
       head: sim.head ?? 0,
       demand: sim.demand ?? 0,
+      waterAge: sim.waterAge ?? null,
     };
   },
   getPump: (id) => {
@@ -332,6 +344,7 @@ export const createMockResultsReader = (
       netFlow: sim.netFlow ?? 0,
       level: sim.level ?? 0,
       volume: sim.volume ?? 0,
+      waterAge: sim.waterAge ?? null,
     };
   },
   getReservoir: (id) => {
@@ -342,6 +355,7 @@ export const createMockResultsReader = (
       pressure: sim.pressure ?? 0,
       head: sim.head ?? 0,
       netFlow: sim.netFlow ?? 0,
+      waterAge: sim.waterAge ?? null,
     };
   },
   getAllPressures: () =>
@@ -354,5 +368,6 @@ export const createMockResultsReader = (
   getAllVelocities: () =>
     Object.values(data.pipes ?? {}).map((p) => p.velocity ?? 0),
   getAllUnitHeadlosses: () => [],
+  getAllWaterAges: () => [],
   getPumpEnergy: () => null,
 });

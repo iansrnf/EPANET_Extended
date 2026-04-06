@@ -312,6 +312,10 @@ const appendJunctionStats = (
       id,
     );
   }
+  const waterAge = junctionSim?.waterAge ?? null;
+  if (waterAge !== null) {
+    updateQuantityStats(statsMap, "waterAge", waterAge, units, formatting, id);
+  }
 };
 
 const calculateCustomerPointsDemand = (
@@ -349,6 +353,7 @@ const buildJunctionSections = (
       "pressure",
       "head",
       "actualDemand",
+      "waterAge",
     ]),
   };
 };
@@ -822,6 +827,10 @@ const appendReservoirStats = (
   if (netFlow !== null) {
     updateQuantityStats(statsMap, "netFlow", netFlow, units, formatting, id);
   }
+  const waterAge = reservoirSim?.waterAge ?? null;
+  if (waterAge !== null) {
+    updateQuantityStats(statsMap, "waterAge", waterAge, units, formatting, id);
+  }
 };
 
 const buildReservoirSections = (
@@ -842,6 +851,7 @@ const buildReservoirSections = (
       "pressure",
       "actualHead",
       "netFlow",
+      "waterAge",
     ]),
   };
 };
@@ -990,6 +1000,10 @@ const appendTankStats = (
   if (volume !== null) {
     updateQuantityStats(statsMap, "volume", volume, units, formatting, id);
   }
+  const waterAge = tankSim?.waterAge ?? null;
+  if (waterAge !== null) {
+    updateQuantityStats(statsMap, "waterAge", waterAge, units, formatting, id);
+  }
 };
 
 const buildTankSections = (
@@ -1027,6 +1041,7 @@ const buildTankSections = (
       "netFlow",
       "level",
       "volume",
+      "waterAge",
     ]),
   };
 };

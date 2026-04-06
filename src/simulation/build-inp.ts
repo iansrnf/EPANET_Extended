@@ -362,6 +362,7 @@ type BuildOptions = {
   usedPatterns?: boolean;
   usedCurves?: boolean;
   reservoirElevations?: boolean;
+  includeQuality?: boolean;
   projection?: Projection | ProjectionConfig;
 };
 
@@ -411,6 +412,7 @@ export const buildInp = withDebugInstrumentation(
       usedPatterns: false,
       usedCurves: false,
       reservoirElevations: false,
+      includeQuality: false,
       ...options,
     };
     const idMap = new EpanetIds({ strategy: opts.labelIds ? "label" : "id" });
@@ -565,14 +567,15 @@ export const buildInp = withDebugInstrumentation(
           excludedAssets,
           transformCoord,
         );
-        appendInitialQuality(
-          sections,
-          idMap,
-          asset as Reservoir,
-          opts.simulationSettings,
-          opts.inactiveAssets,
-          excludedAssets,
-        );
+        if (opts.includeQuality) {
+          appendInitialQuality(
+            sections,
+            idMap,
+            asset as Reservoir,
+            opts.inactiveAssets,
+            excludedAssets,
+          );
+        }
       }
 
       if (asset.type === "tank") {
@@ -586,14 +589,15 @@ export const buildInp = withDebugInstrumentation(
           excludedAssets,
           transformCoord,
         );
-        appendInitialQuality(
-          sections,
-          idMap,
-          asset as Tank,
-          opts.simulationSettings,
-          opts.inactiveAssets,
-          excludedAssets,
-        );
+        if (opts.includeQuality) {
+          appendInitialQuality(
+            sections,
+            idMap,
+            asset as Tank,
+            opts.inactiveAssets,
+            excludedAssets,
+          );
+        }
       }
 
       if (asset.type === "junction") {
@@ -611,14 +615,15 @@ export const buildInp = withDebugInstrumentation(
           excludedAssets,
           transformCoord,
         );
-        appendInitialQuality(
-          sections,
-          idMap,
-          asset as Junction,
-          opts.simulationSettings,
-          opts.inactiveAssets,
-          excludedAssets,
-        );
+        if (opts.includeQuality) {
+          appendInitialQuality(
+            sections,
+            idMap,
+            asset as Junction,
+            opts.inactiveAssets,
+            excludedAssets,
+          );
+        }
       }
 
       if (asset.type === "pipe") {
@@ -765,11 +770,9 @@ const appendInitialQuality = (
   sections: InpSections,
   idMap: EpanetIds,
   node: Junction | Tank | Reservoir,
-  simulationSettings: SimulationSettings,
   inactiveAssets: boolean,
   excludedAssets: SimulationExclusions,
 ) => {
-  if (simulationSettings.qualitySimulationType !== "AGE") return;
   if (excludedAssets.nodeIds.has(node.id)) return;
   if (!node.isActive && !inactiveAssets) return;
 

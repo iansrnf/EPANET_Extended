@@ -9,7 +9,7 @@ import {
   RedirectToSignIn as ClerkRedirectToSignIn,
   useAuth as useClerkAuth,
   useUser as useClerkUser,
-  useClerk,
+  useClerk as useClerkUnsafe,
   useOrganization as useClerkOrganization,
   useOrganizationList as useClerkOrganizationList,
 } from "@clerk/nextjs";
@@ -167,7 +167,7 @@ export const SignedOut = ({ children }: { children: React.ReactNode }) => {
 };
 const UserButtonWithManageTeam = () => {
   const { membership } = useClerkOrganization();
-  const { openOrganizationProfile } = useClerk();
+  const { openOrganizationProfile } = useClerkUnsafe();
   const isOrgsOn = useFeatureFlag("FLAG_ORGS");
   const isOrgAdmin = isOrgsOn && membership?.role === "org:admin";
 
@@ -197,6 +197,12 @@ export const useOrganization = isAuthEnabled
 export const useOrganizationList = isAuthEnabled
   ? useClerkOrganizationList
   : () => ({ userMemberships: undefined });
+
+export const useClerk = isAuthEnabled
+  ? useClerkUnsafe
+  : () => ({
+      openOrganizationProfile: () => {},
+    });
 
 export const RedirectToSignIn = isAuthEnabled
   ? ClerkRedirectToSignIn

@@ -18,8 +18,7 @@ import {
   sourceCodeUrl,
   utilitiesUrl,
 } from "src/global-config";
-import { SignedIn, SignedOut, UserButton, useAuth } from "src/auth";
-import { useClerk } from "@clerk/nextjs";
+import { SignedIn, SignedOut, UserButton, useAuth, useClerk } from "src/auth";
 import { SignInButton, SignUpButton } from "./auth-buttons";
 import { useShowWelcome } from "src/commands/show-welcome";
 import { useUserTracking } from "src/infra/user-tracking";

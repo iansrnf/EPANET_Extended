@@ -452,7 +452,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
       const junctionIdByDraftId = new Map<string, number>();
 
       for (const junctionDraft of networkDraft.junctions) {
-        const junction = factories.assetFactory.buildJunction({
+        const junction = factories.assetFactory.createJunction({
           label: junctionDraft.label,
           coordinates: junctionDraft.coordinates,
           elevation: junctionDraft.elevation,
@@ -469,7 +469,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
 
         if (startNodeId == null || endNodeId == null) continue;
 
-        const pipe = factories.assetFactory.buildPipe({
+        const pipe = factories.assetFactory.createPipe({
           label: pipeDraft.label,
           coordinates: pipeDraft.coordinates,
           connections: [startNodeId, endNodeId],

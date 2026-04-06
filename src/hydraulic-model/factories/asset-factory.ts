@@ -121,7 +121,7 @@ export class AssetFactory {
     this.labelGenerator = labelGenerator;
   }
 
-  buildPipe({
+  createPipe({
     id,
     label,
     coordinates = [
@@ -153,7 +153,7 @@ export class AssetFactory {
     });
   }
 
-  buildValve({
+  createValve({
     id,
     label,
     coordinates = [
@@ -188,7 +188,7 @@ export class AssetFactory {
     });
   }
 
-  buildPump({
+  createPump({
     id,
     label,
     coordinates = [
@@ -235,7 +235,7 @@ export class AssetFactory {
     });
   }
 
-  buildJunction({
+  createJunction({
     id,
     label,
     coordinates = [0, 0],
@@ -258,7 +258,7 @@ export class AssetFactory {
     });
   }
 
-  buildReservoir({
+  createReservoir({
     id,
     label,
     coordinates = [0, 0],
@@ -296,7 +296,7 @@ export class AssetFactory {
     });
   }
 
-  buildTank({
+  createTank({
     id,
     label,
     coordinates = [0, 0],
@@ -329,6 +329,30 @@ export class AssetFactory {
       initialWaterAge,
       isActive,
     });
+  }
+
+  buildPipe(data: PipeBuildData = {}) {
+    return this.createPipe(data);
+  }
+
+  buildValve(data: ValveBuildData = {}) {
+    return this.createValve(data);
+  }
+
+  buildPump(data: PumpBuildData = {}) {
+    return this.createPump(data);
+  }
+
+  buildJunction(data: JunctionBuildData = {}) {
+    return this.createJunction(data);
+  }
+
+  buildReservoir(data: ReservoirBuildData = {}) {
+    return this.createReservoir(data);
+  }
+
+  buildTank(data: TankBuildData = {}) {
+    return this.createTank(data);
   }
 
   private getPipeValue(name: PipeQuantity, candidate?: number) {

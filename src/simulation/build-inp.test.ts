@@ -4,6 +4,7 @@ import { buildInp } from "./build-inp";
 import { presets } from "src/lib/project-settings/quantities-spec";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import { ProjectionConfig } from "src/lib/projections";
+import { PressureLogger } from "src/hydraulic-model/pressure-loggers";
 
 describe("build inp", () => {
   it("writes proj4 projection headers and source coordinates", () => {
@@ -222,6 +223,53 @@ describe("build inp", () => {
 
     expect(inp).toContain("[PIPES]");
     expect(inp).toContain("3\t1\t2\t15\t150\t1.5\t0\tCV");
+  });
+
+  it("excludes pressure logger backing nodes and connected pipes from simulation", () => {
+    const IDS = {
+      LOGGER_NODE: 1,
+      NETWORK_NODE: 2,
+      LOGGER_PIPE: 3,
+      LOGGER: 100,
+    };
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.LOGGER_NODE, {
+        coordinates: [10, 20],
+        elevation: 125,
+      })
+      .aJunction(IDS.NETWORK_NODE, {
+        coordinates: [30, 40],
+        elevation: 130,
+      })
+      .aPipe(IDS.LOGGER_PIPE, {
+        startNodeId: IDS.LOGGER_NODE,
+        endNodeId: IDS.NETWORK_NODE,
+        length: 10,
+        diameter: 100,
+        roughness: 1,
+      })
+      .build();
+
+    hydraulicModel.assets.get(IDS.LOGGER_NODE)?.setProperty("visibility", false);
+    hydraulicModel.pressureLoggers.set(
+      IDS.LOGGER,
+      new PressureLogger(IDS.LOGGER, [10, 20], {
+        label: "L1",
+        connection: { junctionId: IDS.LOGGER_NODE },
+      }),
+    );
+
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings: defaultSimulationSettings,
+      geolocation: true,
+    });
+
+    expect(inp).not.toContain("[PIPES]\n;Id\tStart\tEnd\tLength\tDiameter\tRoughness\tMinorLoss\tStatus\n3\t");
+    expect(inp).not.toContain("\n1\t125");
+    expect(inp).toContain("\n2\t130");
+    expect(inp).not.toContain("\n3\t1\t2\t10\t100\t1\t0\tOpen");
+    expect(inp).not.toContain("\n1\t10\t20");
   });
 
   it("adds valves", () => {

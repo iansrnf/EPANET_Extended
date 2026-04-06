@@ -364,6 +364,34 @@ type BuildOptions = {
   projection?: Projection | ProjectionConfig;
 };
 
+type SimulationExclusions = {
+  nodeIds: Set<AssetId>;
+  linkIds: Set<AssetId>;
+};
+
+const getSimulationExclusions = (
+  hydraulicModel: HydraulicModel,
+): SimulationExclusions => {
+  const nodeIds = new Set<AssetId>();
+  const linkIds = new Set<AssetId>();
+
+  for (const pressureLogger of hydraulicModel.pressureLoggers.values()) {
+    const junctionId = pressureLogger.connection?.junctionId;
+    if (junctionId === undefined) continue;
+
+    const junction = hydraulicModel.assets.get(junctionId);
+    if (!junction?.isNode) continue;
+
+    nodeIds.add(junctionId);
+
+    for (const linkId of hydraulicModel.topology.getLinks(junctionId)) {
+      linkIds.add(linkId);
+    }
+  }
+
+  return { nodeIds, linkIds };
+};
+
 export const buildInp = withDebugInstrumentation(
   (hydraulicModel: HydraulicModel, options: BuildOptions): string => {
     const opts = {
@@ -511,6 +539,7 @@ export const buildInp = withDebugInstrumentation(
 
     const usedCurveIds = new Set<number>();
     const usedPatternIds = new Set<number>();
+    const excludedAssets = getSimulationExclusions(hydraulicModel);
 
     if (opts.simulationSettings.energyGlobalPatternId !== null) {
       usedPatternIds.add(opts.simulationSettings.energyGlobalPatternId);
@@ -526,6 +555,7 @@ export const buildInp = withDebugInstrumentation(
           opts.reservoirElevations,
           asset as Reservoir,
           usedPatternIds,
+          excludedAssets,
           transformCoord,
         );
       }
@@ -538,6 +568,7 @@ export const buildInp = withDebugInstrumentation(
           opts.inactiveAssets,
           usedCurveIds,
           asset as Tank,
+          excludedAssets,
           transformCoord,
         );
       }
@@ -554,6 +585,7 @@ export const buildInp = withDebugInstrumentation(
           hydraulicModel.assets,
           hydraulicModel.demands,
           usedPatternIds,
+          excludedAssets,
           transformCoord,
         );
       }
@@ -566,6 +598,7 @@ export const buildInp = withDebugInstrumentation(
           opts.geolocation,
           opts.inactiveAssets,
           asset as Pipe,
+          excludedAssets,
           transformCoord,
         );
       }
@@ -580,6 +613,7 @@ export const buildInp = withDebugInstrumentation(
           usedCurveIds,
           usedPatternIds,
           asset as Pump,
+          excludedAssets,
           transformCoord,
         );
       }
@@ -593,6 +627,7 @@ export const buildInp = withDebugInstrumentation(
           opts.inactiveAssets,
           usedCurveIds,
           asset as Valve,
+          excludedAssets,
           transformCoord,
         );
       }
@@ -630,7 +665,13 @@ export const buildInp = withDebugInstrumentation(
       opts.usedCurves,
     );
 
-    appendControls(sections, hydraulicModel.controls, idMap, hydraulicModel);
+    appendControls(
+      sections,
+      hydraulicModel.controls,
+      idMap,
+      hydraulicModel,
+      excludedAssets,
+    );
 
     const hasControls = sections.controls.length > 1;
     const hasRules = sections.rules.length > 1;
@@ -695,8 +736,13 @@ const appendReservoir = (
   elevations: boolean,
   reservoir: Reservoir,
   usedPatternIds: Set<number>,
+  excludedAssets: SimulationExclusions,
   transformCoord: (p: Position) => Position,
 ) => {
+  if (excludedAssets.nodeIds.has(reservoir.id)) {
+    return;
+  }
+
   if (!reservoir.isActive && !inactiveAssets) {
     return;
   }
@@ -734,8 +780,13 @@ const appendTank = (
   inactiveAssets: boolean,
   usedCurveIds: Set<number>,
   tank: Tank,
+  excludedAssets: SimulationExclusions,
   transformCoord: (p: Position) => Position,
 ) => {
+  if (excludedAssets.nodeIds.has(tank.id)) {
+    return;
+  }
+
   if (!tank.isActive && !inactiveAssets) {
     return;
   }
@@ -774,8 +825,13 @@ const appendJunction = (
   assets: HydraulicModel["assets"],
   demands: Demands,
   usedPatternIds: Set<number>,
+  excludedAssets: SimulationExclusions,
   transformCoord: (p: Position) => Position,
 ) => {
+  if (excludedAssets.nodeIds.has(junction.id)) {
+    return;
+  }
+
   if (!junction.isActive && !inactiveAssets) {
     return;
   }
@@ -859,8 +915,13 @@ const appendPipe = (
   geolocation: boolean,
   inactiveAssets: boolean,
   pipe: Pipe,
+  excludedAssets: SimulationExclusions,
   transformCoord: (p: Position) => Position,
 ) => {
+  if (excludedAssets.linkIds.has(pipe.id)) {
+    return;
+  }
+
   if (!pipe.isActive && !inactiveAssets) {
     return;
   }
@@ -896,8 +957,13 @@ const appendPump = (
   usedCurveIds: Set<number>,
   usedPatternIds: Set<number>,
   pump: Pump,
+  excludedAssets: SimulationExclusions,
   transformCoord: (p: Position) => Position,
 ) => {
+  if (excludedAssets.linkIds.has(pump.id)) {
+    return;
+  }
+
   if (!pump.isActive && !inactiveAssets) {
     return;
   }
@@ -995,8 +1061,13 @@ const appendValve = (
   inactiveAssets: boolean,
   usedCurveIds: Set<number>,
   valve: Valve,
+  excludedAssets: SimulationExclusions,
   transformCoord: (p: Position) => Position,
 ) => {
+  if (excludedAssets.linkIds.has(valve.id)) {
+    return;
+  }
+
   if (!valve.isActive && !inactiveAssets) {
     return;
   }
@@ -1114,6 +1185,7 @@ const appendControls = (
   controls: HydraulicModel["controls"],
   idMap: EpanetIds,
   hydraulicModel: HydraulicModel,
+  excludedAssets: SimulationExclusions,
 ) => {
   const idResolver: IdResolver = (assetId: AssetId) => {
     const asset = hydraulicModel.assets.get(assetId);
@@ -1128,10 +1200,28 @@ const appendControls = (
   };
 
   for (const control of controls.simple) {
+    if (
+      control.assetReferences.some(
+        (ref) =>
+          excludedAssets.nodeIds.has(ref.assetId) ||
+          excludedAssets.linkIds.has(ref.assetId),
+      )
+    ) {
+      continue;
+    }
     sections.controls.push(formatSimpleControl(control, idResolver));
   }
 
   for (const rule of controls.rules) {
+    if (
+      rule.assetReferences.some(
+        (ref) =>
+          excludedAssets.nodeIds.has(ref.assetId) ||
+          excludedAssets.linkIds.has(ref.assetId),
+      )
+    ) {
+      continue;
+    }
     sections.rules.push(formatRuleBasedControl(rule, idResolver));
   }
 };

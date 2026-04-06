@@ -774,7 +774,7 @@ const appendInitialQuality = (
   if (!node.isActive && !inactiveAssets) return;
 
   const age = node.initialWaterAge;
-  if (age === undefined || age === 0) return;
+  if (age === 0) return;
 
   const commentPrefix = !node.isActive ? ";" : "";
   sections.quality.push(commentPrefix + `${idMap.nodeId(node)}\t${age}`);

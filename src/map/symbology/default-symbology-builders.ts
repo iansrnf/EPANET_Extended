@@ -66,6 +66,7 @@ type DefaultSymbologyBuilders = {
   actualDemand: SymbologyBuilderFn<NodeSymbology>;
   elevation: SymbologyBuilderFn<NodeSymbology>;
   head: SymbologyBuilderFn<NodeSymbology>;
+  waterAge: SymbologyBuilderFn<NodeSymbology>;
   none: () => () => NodeSymbology;
 };
 
@@ -308,6 +309,32 @@ export const defaultSymbologyBuilders: DefaultSymbologyBuilders = {
         numIntervals: preference?.numIntervals,
         reverseRamp: preference?.reversedRamp,
         fallbackEndpoints: [0, 100],
+        sortedData,
+      });
+      return {
+        colorRule: applyCustomColors(colorRule, preference),
+        labelRule: nullLabelRule,
+        defaults: nullSymbologySpec.node.defaults,
+      };
+    },
+
+  waterAge:
+    (
+      _hydraulicModel: HydraulicModel,
+      units: UnitsSpec,
+      resultsReader: ResultsReader,
+      preference?: RangeColorPreference,
+    ) =>
+    (): NodeSymbology => {
+      const sortedData = getSortedSimulationValues(resultsReader, "waterAge");
+      const colorRule = initializeColorRule({
+        property: "waterAge",
+        unit: units.waterAge,
+        rampName: preference?.rampName ?? "Temps",
+        mode: preference?.mode ?? "prettyBreaks",
+        numIntervals: preference?.numIntervals,
+        reverseRamp: preference?.reversedRamp,
+        fallbackEndpoints: [0, 48],
         sortedData,
       });
       return {

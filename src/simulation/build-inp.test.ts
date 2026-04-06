@@ -317,6 +317,93 @@ describe("build inp", () => {
     expect(inp).toContain("\n2\t30\t40");
   });
 
+  it("writes a quality section with initial water age values", () => {
+    const IDS = { J1: 1, T1: 2, R1: 3 };
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, {
+        elevation: 10,
+        initialWaterAge: 2.5,
+      })
+      .aTank(IDS.T1, {
+        elevation: 20,
+        initialLevel: 5,
+        minLevel: 0,
+        maxLevel: 10,
+        diameter: 15,
+        minVolume: 0,
+        initialWaterAge: 4,
+      })
+      .aReservoir(IDS.R1, {
+        head: 100,
+        initialWaterAge: 1,
+      })
+      .build();
+
+    const simulationSettings = SimulationSettingsBuilder.with()
+      .qualitySimulationType("AGE")
+      .build();
+
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings,
+    });
+
+    expect(inp).toContain("[QUALITY]");
+    expect(inp).toContain("1\t2.5");
+    expect(inp).toContain("2\t4");
+    expect(inp).toContain("3\t1");
+  });
+
+  it("does not write quality rows for hidden pressure logger backing nodes", () => {
+    const IDS = {
+      LOGGER_NODE: 1,
+      NETWORK_NODE: 2,
+      LOGGER_PIPE: 3,
+      LOGGER: 100,
+    };
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.LOGGER_NODE, {
+        coordinates: [10, 20],
+        elevation: 125,
+        initialWaterAge: 7,
+      })
+      .aJunction(IDS.NETWORK_NODE, {
+        coordinates: [30, 40],
+        elevation: 130,
+        initialWaterAge: 3,
+      })
+      .aPipe(IDS.LOGGER_PIPE, {
+        startNodeId: IDS.LOGGER_NODE,
+        endNodeId: IDS.NETWORK_NODE,
+        length: 10,
+        diameter: 100,
+        roughness: 1,
+      })
+      .build();
+
+    hydraulicModel.assets.get(IDS.LOGGER_NODE)?.setProperty("visibility", false);
+    hydraulicModel.pressureLoggers.set(
+      IDS.LOGGER,
+      new PressureLogger(IDS.LOGGER, [10, 20], {
+        label: "L1",
+        connection: { junctionId: IDS.LOGGER_NODE },
+      }),
+    );
+
+    const simulationSettings = SimulationSettingsBuilder.with()
+      .qualitySimulationType("AGE")
+      .build();
+
+    const inp = buildInp(hydraulicModel, {
+      units: presets.LPS.units,
+      simulationSettings,
+    });
+
+    expect(inp).toContain("[QUALITY]");
+    expect(inp).not.toContain("\n1\t7");
+    expect(inp).toContain("\n2\t3");
+  });
+
   it("adds valves", () => {
     const IDS = { NODE1: 1, NODE2: 2, NODE3: 3, VALVE1: 4, VALVE2: 5 };
     const hydraulicModel = HydraulicModelBuilder.with()
@@ -1454,6 +1541,36 @@ describe("build inp", () => {
 
       expect(inp).toContain(";3\t1\t2\tHEAD P1\tSPEED 1");
       expect(inp).toContain(";3\tOpen");
+    });
+
+    it("comments out quality rows for inactive nodes when requested", () => {
+      const IDS = { J1: 1, J2: 2 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aJunction(IDS.J1, {
+          elevation: 10,
+          isActive: true,
+          initialWaterAge: 2,
+        })
+        .aJunction(IDS.J2, {
+          elevation: 20,
+          isActive: false,
+          initialWaterAge: 5,
+        })
+        .build();
+
+      const simulationSettings = SimulationSettingsBuilder.with()
+        .qualitySimulationType("AGE")
+        .build();
+
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings,
+        inactiveAssets: true,
+      });
+
+      expect(inp).toContain("[QUALITY]");
+      expect(inp).toContain("\n1\t2");
+      expect(inp).toContain("\n;2\t5");
     });
   });
 

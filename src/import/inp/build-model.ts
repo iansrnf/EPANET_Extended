@@ -22,6 +22,7 @@ import {
   CurveData,
 } from "./inp-data";
 import { IssuesAccumulator } from "./issues";
+import type { TankMixingModel } from "src/hydraulic-model/asset-types/tank";
 import { ProjectSettings } from "src/lib/project-settings";
 import {
   presets,
@@ -548,6 +549,8 @@ const addTank = (
     inpData.options.qualitySimulationType === "AGE"
       ? inpData.quality.get(tankData.id)
       : undefined;
+  const mixingData = inpData.mixing.get(tankData.id);
+  const mixingModel = mixingData?.model as TankMixingModel | undefined;
 
   const tank = assetFactory.createTank({
     label: tankData.id,
@@ -559,6 +562,8 @@ const addTank = (
     diameter: tankData.diameter,
     minVolume: tankData.minVolume,
     overflow: tankData.overflow ?? false,
+    mixingModel,
+    mixingFraction: mixingData?.fraction,
     volumeCurveId,
     initialWaterAge,
     isActive: tankData.isActive,

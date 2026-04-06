@@ -1,4 +1,3 @@
-import { useAtom } from "jotai";
 import { useNewProject } from "src/commands/create-new-project";
 import { useOpenInpFromFs } from "src/commands/open-inp-from-fs";
 import { useOpenInpFromUrl } from "src/commands/open-inp-from-url";
@@ -7,9 +6,7 @@ import { useOpenModelBuilderApi } from "src/commands/open-model-builder-api";
 import { useOpenRecentFile } from "src/commands/open-recent-file";
 import { useTranslate } from "src/hooks/use-translate";
 import { useRecentFiles } from "src/hooks/use-recent-files";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useUserTracking } from "src/infra/user-tracking";
-import { userSettingsAtom } from "src/state/user-settings";
 import { languageConfig } from "src/infra/i18n/locale";
 import { useLocale, LocaleProvider } from "src/hooks/use-locale";
 import {
@@ -24,7 +21,6 @@ import {
   Button,
   Loading,
   LogoIconAndWordmarkIcon,
-  LogoIconAndWordmarkIconUpdated,
 } from "../components/elements";
 import {
   ArrowRightIcon,
@@ -45,7 +41,6 @@ import Image from "next/image";
 
 export const WelcomeDialog = () => {
   const translate = useTranslate();
-  const [userSettings, setUserSettings] = useAtom(userSettingsAtom);
   const createNew = useNewProject();
   const openInpFromFs = useOpenInpFromFs();
   const openModelBuilder = useOpenModelBuilder();
@@ -57,7 +52,6 @@ export const WelcomeDialog = () => {
     (lang) => lang.code === currentLocale.locale,
   );
   const isExperimental = currentLanguage?.experimental ?? false;
-  const isIteratingLogoOn = useFeatureFlag("FLAG_ITERATING_LOGO");
 
   const { closeDialog } = useDialogState();
 
@@ -70,11 +64,7 @@ export const WelcomeDialog = () => {
           </div>
           <div className="bg-gray-50 sm:border-r border-b sm:border-b-0 border-gray-200 rounded-t-lg sm:rounded-t-none sm:rounded-tl-lg sm:rounded-bl-lg col-span-1 md:w-max flex flex-col p-6 gap-6">
             <div className="pl-1">
-              {isIteratingLogoOn ? (
-                <LogoIconAndWordmarkIconUpdated size={147} />
-              ) : (
-                <LogoIconAndWordmarkIcon size={147} />
-              )}
+              <LogoIconAndWordmarkIcon size={147} />
             </div>
             <div className="sm:hidden">
               <SmallDeviceWarning />
@@ -162,25 +152,6 @@ export const WelcomeDialog = () => {
               </div>
 
               <div className="flex flex-col gap-2 mt-auto text-xs">
-                {!isIteratingLogoOn && (
-                  <div className="mb-4 text-xs hidden sm:flex items-center gap-x-2">
-                    <Checkbox
-                      checked={userSettings.showWelcomeOnStart}
-                      onChange={() => {
-                        userSettings.showWelcomeOnStart
-                          ? userTracking.capture({ name: "welcome.hidden" })
-                          : userTracking.capture({
-                              name: "welcome.enabled",
-                            });
-                        setUserSettings((prev) => ({
-                          ...prev,
-                          showWelcomeOnStart: !prev.showWelcomeOnStart,
-                        }));
-                      }}
-                    />
-                    {translate("alwaysShowAtStart")}
-                  </div>
-                )}
                 <a href={termsAndConditionsUrl} target="_blank">
                   {translate("termsAndConditions")}
                 </a>
@@ -188,14 +159,12 @@ export const WelcomeDialog = () => {
                   {translate("privacyPolicy")}
                 </a>
               </div>
-              {isIteratingLogoOn && (
-                <div className="flex items-center mt-2 text-xs text-gray-500">
-                  By
-                  <a href="https://iterating.ca" target="_blank">
-                    <img src={iteratingLogoUrl.src} className="h-8" />
-                  </a>
-                </div>
-              )}
+              <div className="flex items-center mt-2 text-xs text-gray-500">
+                By
+                <a href="https://iterating.ca" target="_blank">
+                  <img src={iteratingLogoUrl.src} className="h-8" />
+                </a>
+              </div>
             </div>
           </div>
           <div className="p-6 min-w-0 flex flex-col overflow-hidden">
@@ -501,7 +470,6 @@ const DemoAsRecentCard = ({ demoNetwork }: { demoNetwork: DemoModel }) => {
     </div>
   );
 };
-
 
 const DemoNetworkCard = ({ demoNetwork }: { demoNetwork: DemoModel }) => {
   const userTracking = useUserTracking();

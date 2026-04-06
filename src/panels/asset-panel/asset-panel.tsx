@@ -31,6 +31,7 @@ import {
 import { UnitsSpec } from "src/lib/project-settings/quantities-spec";
 import { getMinorLossUnit } from "src/lib/project-settings";
 import { useTranslate } from "src/hooks/use-translate";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { usePersistence } from "src/lib/persistence";
 import { useUserTracking } from "src/infra/user-tracking";
 import { stagingModelAtom } from "src/state/hydraulic-model";
@@ -370,6 +371,7 @@ const JunctionEditor = ({
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
+  const isWaterAgeOn = useFeatureFlag("FLAG_WATER_AGE");
   const { footer } = useQuickGraph(junction.id, "junction");
   const {
     getComparison,
@@ -417,9 +419,12 @@ const JunctionEditor = ({
   );
 
   const activeTopologyComparison = getComparison("isActive", junction.isActive);
-  const hasModelAttributesChanges = ["elevation", "emitterCoefficient"].some(
-    (property) =>
-      getComparison(property, junction.getProperty(property)).hasChanged,
+  const hasModelAttributesChanges = [
+    "elevation",
+    "emitterCoefficient",
+    "initialWaterAge",
+  ].some((property) =>
+    getComparison(property, junction.getProperty(property)).hasChanged,
   );
   const hasDemandChanges =
     getDirectDemandComparison(
@@ -479,6 +484,20 @@ const JunctionEditor = ({
           positiveOnly={true}
           readOnly={readonly}
         />
+        {isWaterAgeOn && (
+          <QuantityRow
+            name="initialWaterAge"
+            value={junction.initialWaterAge}
+            unit={units.initialWaterAge}
+            comparison={getComparison(
+              "initialWaterAge",
+              junction.initialWaterAge,
+            )}
+            onChange={onPropertyChange}
+            positiveOnly={true}
+            readOnly={readonly}
+          />
+        )}
       </SectionWrapper>
       <SectionWrapper
         title={translate("demands")}
@@ -824,6 +843,7 @@ const ReservoirEditor = ({
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
+  const isWaterAgeOn = useFeatureFlag("FLAG_WATER_AGE");
   const { footer } = useQuickGraph(reservoir.id, "reservoir");
   const { getComparison, getPatternComparison, isNew } =
     useAssetComparison(reservoir);
@@ -841,6 +861,7 @@ const ReservoirEditor = ({
   const hasModelAttributesChanges =
     getComparison("elevation", reservoir.elevation).hasChanged ||
     getComparison("head", reservoir.head).hasChanged ||
+    getComparison("initialWaterAge", reservoir.initialWaterAge).hasChanged ||
     getPatternComparison(
       "headPatternId",
       reservoir.headPatternId,
@@ -890,6 +911,20 @@ const ReservoirEditor = ({
           units={units}
           readOnly={readonly}
         />
+        {isWaterAgeOn && (
+          <QuantityRow
+            name="initialWaterAge"
+            value={reservoir.initialWaterAge}
+            unit={units.initialWaterAge}
+            comparison={getComparison(
+              "initialWaterAge",
+              reservoir.initialWaterAge,
+            )}
+            onChange={onPropertyChange}
+            positiveOnly={true}
+            readOnly={readonly}
+          />
+        )}
       </SectionWrapper>
       <SectionWrapper
         title={translate("simulationResults")}
@@ -936,6 +971,7 @@ const TankEditor = ({
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
+  const isWaterAgeOn = useFeatureFlag("FLAG_WATER_AGE");
   const { footer } = useQuickGraph(tank.id, "tank");
   const { getComparison, getCurveComparison, isNew } = useAssetComparison(tank);
   const simulation = useSimulation();
@@ -957,6 +993,7 @@ const TankEditor = ({
       "diameter",
       "minVolume",
       "overflow",
+      "initialWaterAge",
     ].some((p) => getComparison(p, tank.getProperty(p)).hasChanged) ||
     getCurveComparison(
       "volumeCurveId",
@@ -1025,6 +1062,17 @@ const TankEditor = ({
           onChange={onPropertyChange}
           readOnly={readonly}
         />
+        {isWaterAgeOn && (
+          <QuantityRow
+            name="initialWaterAge"
+            value={tank.initialWaterAge}
+            unit={units.initialWaterAge}
+            comparison={getComparison("initialWaterAge", tank.initialWaterAge)}
+            onChange={onPropertyChange}
+            positiveOnly={true}
+            readOnly={readonly}
+          />
+        )}
       </SectionWrapper>
       <SectionWrapper
         title={translate("simulationResults")}

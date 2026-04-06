@@ -51,6 +51,7 @@ export function MultiAssetPanel({
   const userTracking = useUserTracking();
   const showPumpLibrary = useShowPumpLibrary();
   const showPatternsLibrary = useShowPatternsLibrary();
+  const isWaterAgeOn = useFeatureFlag("FLAG_WATER_AGE");
   const { data: multiAssetData, counts: assetCounts } = useMemo(() => {
     const assets = selectedFeatures as Asset[];
     return computeMultiAssetData(
@@ -59,8 +60,16 @@ export function MultiAssetPanel({
       formatting,
       hydraulicModel,
       simulationResults,
+      { waterAge: isWaterAgeOn },
     );
-  }, [selectedFeatures, units, formatting, hydraulicModel, simulationResults]);
+  }, [
+    selectedFeatures,
+    units,
+    formatting,
+    hydraulicModel,
+    simulationResults,
+    isWaterAgeOn,
+  ]);
 
   const assetIdsByType = useMemo(() => {
     const map: Record<Asset["type"], Asset["id"][]> = {

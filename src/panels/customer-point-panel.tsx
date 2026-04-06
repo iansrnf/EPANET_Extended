@@ -9,12 +9,12 @@ import { useCustomerPointComparison } from "src/hooks/use-customer-point-compari
 import { useCustomerPointActions } from "src/components/context-actions/customer-point-actions";
 import { ActionButton } from "src/components/action-button";
 import { SectionList } from "src/components/form/fields";
-import { SectionWrapper } from "src/panels/asset-panel/ui-components";
+import { SectionWrapper } from "./asset-panel/ui-components";
 import { useZoomTo } from "src/hooks/use-zoom-to";
 import { ZoomToIcon } from "src/icons";
 import { BBox } from "src/types";
-import { TextRow, QuantityRow } from "src/panels/asset-panel/ui-components";
-import { DemandCategoriesEditor } from "src/panels/asset-panel/demands-editor";
+import { TextRow, QuantityRow } from "./asset-panel/ui-components";
+import { DemandCategoriesEditor } from "./asset-panel/demands-editor";
 import { EditableTextField } from "src/components/form/editable-text-field";
 import { useTranslate } from "src/hooks/use-translate";
 import { useUserTracking } from "src/infra/user-tracking";
@@ -30,10 +30,8 @@ import {
 } from "src/hydraulic-model/model-operations";
 import { MAX_CUSTOMER_POINT_LABEL_LENGTH } from "src/hydraulic-model/customer-points";
 import { convertTo } from "src/quantity";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 
 export function CustomerPointPanel() {
-  const useAutoIndentation = useFeatureFlag("FLAG_UI_COLLAPSIBLE");
   const selection = useAtomValue(selectionAtom);
   const hydraulicModel = useAtomValue(stagingModelAtom);
   const translate = useTranslate();
@@ -55,7 +53,6 @@ export function CustomerPointPanel() {
   }, [customerPointId, userTracking]);
 
   const actions = useCustomerPointActions(customerPoint, "root");
-  const isCustomerLabelsOn = useFeatureFlag("FLAG_CUSTOMER_LABELS");
 
   const flowUnit = units.customerDemand;
   const perDayUnit = units.customerDemandPerDay;
@@ -200,30 +197,24 @@ export function CustomerPointPanel() {
           <div className="absolute left-0 top-0 bottom-0 w-1 bg-purple-500 rounded-full" />
         )}
         <div className="flex items-center justify-between gap-2">
-          {isCustomerLabelsOn ? (
-            <div className="min-w-0 flex-1">
-              <EditableTextField
-                label={customerPoint.label}
-                value={customerPoint.label}
-                onChangeValue={handleLabelChange}
-                onReset={clearLabelError}
-                onDirty={clearLabelError}
-                hasError={!!labelError}
-                allowedChars={/(?![\s;])[\x00-\xFF]/}
-                maxByteLength={MAX_CUSTOMER_POINT_LABEL_LENGTH}
-                styleOptions={{
-                  padding: "sm",
-                  ghostBorder: true,
-                  fontWeight: "semibold",
-                  textSize: "sm",
-                }}
-              />
-            </div>
-          ) : (
-            <span className="text-sm font-semibold p-1 truncate">
-              {customerPoint.label}
-            </span>
-          )}
+          <div className="min-w-0 flex-1">
+            <EditableTextField
+              label={customerPoint.label}
+              value={customerPoint.label}
+              onChangeValue={handleLabelChange}
+              onReset={clearLabelError}
+              onDirty={clearLabelError}
+              hasError={!!labelError}
+              allowedChars={/(?![\s;])[\x00-\xFF]/}
+              maxByteLength={MAX_CUSTOMER_POINT_LABEL_LENGTH}
+              styleOptions={{
+                padding: "sm",
+                ghostBorder: true,
+                fontWeight: "semibold",
+                textSize: "sm",
+              }}
+            />
+          </div>
           <div className="flex gap-1 h-8 shrink-0">
             <ActionButton
               action={{
@@ -255,10 +246,7 @@ export function CustomerPointPanel() {
           {translate("customer")}
         </span>
       </div>
-      <SectionList
-        gap={useAutoIndentation ? 1 : 3}
-        padding={useAutoIndentation ? 3 : 4}
-      >
+      <SectionList padding={3}>
         {connection && (
           <SectionWrapper
             title={translate("connections")}

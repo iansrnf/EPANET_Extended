@@ -84,7 +84,6 @@ export const MapStylingEditor = () => {
   const translate = useTranslate();
   const isGridOn = useAtomValue(showGridAtom);
   const isDtmElevationsOn = useFeatureFlag("FLAG_DTM_ELEVATIONS");
-  const isProjectLaterOn = useFeatureFlag("FLAG_PROJECT_LATER");
 
   return (
     <div className="flex-auto overflow-y-auto placemark-scrollbar border-gray-200 dark:border-gray-900">
@@ -108,7 +107,7 @@ export const MapStylingEditor = () => {
             <AddLayer />
           </MapStylingSectionWrapper>
         )}
-        {isProjectLaterOn && <ProjectionSection />}
+        <ProjectionSection />
       </SectionList>
     </div>
   );

@@ -6,7 +6,7 @@ import {
   AssetsMap,
   getNode,
   Topology,
-  AssetBuilder,
+  AssetFactory,
   JunctionBuildData,
   PipeBuildData,
   ReservoirBuildData,
@@ -17,9 +17,9 @@ import {
   createEmptyDemands,
   Demand,
   Demands,
-  initializePressureLoggers,
   Patterns,
   PatternType,
+  initializePressureLoggers,
 } from "src/hydraulic-model";
 import { SimpleControl, RuleBasedControl } from "src/hydraulic-model/controls";
 import { AssetIndex } from "src/hydraulic-model/asset-index";
@@ -28,7 +28,7 @@ import {
   PumpBuildData,
   TankBuildData,
   ValveBuildData,
-} from "src/hydraulic-model/asset-builder";
+} from "src/hydraulic-model/factories/asset-factory";
 import { ConsecutiveIdsGenerator, IdGenerator } from "src/lib/id-generator";
 import { LabelManager } from "src/hydraulic-model/label-manager";
 import {
@@ -52,7 +52,7 @@ export const buildPipe = (
     ...presets.LPS,
     units: { ...presets.LPS.units, ...unitsOverride },
   };
-  return new AssetBuilder(
+  return new AssetFactory(
     quantitiesSpec.defaults,
     new ConsecutiveIdsGenerator(),
     new LabelManager(),
@@ -66,7 +66,7 @@ export const buildPump = (
     ...presets.LPS,
     units: { ...presets.LPS.units, ...unitsOverride },
   };
-  return new AssetBuilder(
+  return new AssetFactory(
     quantitiesSpec.defaults,
     new ConsecutiveIdsGenerator(),
     new LabelManager(),
@@ -74,14 +74,14 @@ export const buildPump = (
 };
 
 export const buildJunction = (data: JunctionBuildData = {}) => {
-  return new AssetBuilder(
+  return new AssetFactory(
     presets.LPS.defaults,
     new ConsecutiveIdsGenerator(),
     new LabelManager(),
   ).buildJunction(data);
 };
 export const buildReservoir = (data: ReservoirBuildData = {}) => {
-  return new AssetBuilder(
+  return new AssetFactory(
     presets.LPS.defaults,
     new ConsecutiveIdsGenerator(),
     new LabelManager(),
@@ -125,7 +125,7 @@ class WritableIdGenerator implements IdGenerator {
 export class HydraulicModelBuilder {
   private topology: Topology;
   private assets: AssetsMap;
-  private assetBuilder: AssetBuilder;
+  private assetFactory: AssetFactory;
   private labelManager: LabelManager;
   private demands: Demands;
   private customerPointsMap: CustomerPoints;
@@ -149,7 +149,7 @@ export class HydraulicModelBuilder {
     this.labelManager = new LabelManager();
     this.idGenerator = new WritableIdGenerator();
     this.customerPointIdGenerator = new WritableIdGenerator();
-    this.assetBuilder = new AssetBuilder(
+    this.assetFactory = new AssetFactory(
       quantitiesSpec.defaults,
       this.idGenerator,
       this.labelManager,
@@ -162,7 +162,7 @@ export class HydraulicModelBuilder {
   }
 
   aNode(id: number, coordinates: Position = [0, 0]) {
-    const node = this.assetBuilder.buildJunction({
+    const node = this.assetFactory.buildJunction({
       coordinates,
       id,
     });
@@ -172,7 +172,7 @@ export class HydraulicModelBuilder {
   }
 
   aJunction(id: number, data: Partial<JunctionBuildData> = {}) {
-    const junction = this.assetBuilder.buildJunction({
+    const junction = this.assetFactory.buildJunction({
       id,
       ...data,
     });
@@ -187,7 +187,7 @@ export class HydraulicModelBuilder {
   }
 
   aReservoir(id: number, properties: Partial<ReservoirBuildData> = {}) {
-    const reservoir = this.assetBuilder.buildReservoir({
+    const reservoir = this.assetFactory.buildReservoir({
       id,
       ...properties,
     });
@@ -197,7 +197,7 @@ export class HydraulicModelBuilder {
   }
 
   aTank(id: number, data: Partial<TankBuildData> = {}) {
-    const tank = this.assetBuilder.buildTank({
+    const tank = this.assetFactory.buildTank({
       id,
       ...data,
     });
@@ -219,7 +219,7 @@ export class HydraulicModelBuilder {
     const startNode = this.getNodeOrCreate(startNodeId);
     const endNode = this.getNodeOrCreate(endNodeId);
 
-    const pipe = this.assetBuilder.buildPipe({
+    const pipe = this.assetFactory.buildPipe({
       coordinates: coordinates || [startNode.coordinates, endNode.coordinates],
       connections: [startNode.id, endNode.id],
       id,
@@ -246,7 +246,7 @@ export class HydraulicModelBuilder {
     const definitionType = properties.definitionType || "curve";
     const curve = properties.curve || [{ x: 1, y: 1 }];
 
-    const pump = this.assetBuilder.buildPump({
+    const pump = this.assetFactory.buildPump({
       coordinates: [startNode.coordinates, endNode.coordinates],
       connections: [startNode.id, endNode.id],
       id,
@@ -273,7 +273,7 @@ export class HydraulicModelBuilder {
     const startNode = this.getNodeOrCreate(startNodeId);
     const endNode = this.getNodeOrCreate(endNodeId);
 
-    const valve = this.assetBuilder.buildValve({
+    const valve = this.assetFactory.buildValve({
       coordinates: [startNode.coordinates, endNode.coordinates],
       connections: [startNode.id, endNode.id],
       id,
@@ -446,7 +446,6 @@ export class HydraulicModelBuilder {
       customerPoints: this.customerPointsMap,
       customerPointsLookup: lookup,
       pressureLoggers: initializePressureLoggers(),
-      assetBuilder: this.assetBuilder,
       labelManager: this.labelManager,
       topology: this.topology,
       assetIndex,
@@ -458,13 +457,11 @@ export class HydraulicModelBuilder {
   }
 
   private getNodeOrCreate(nodeId: AssetId | undefined): NodeAsset {
-    let node: NodeAsset | null;
     if (!nodeId) {
-      node = this.assetBuilder.buildJunction();
-    } else {
-      node = getNode(this.assets, nodeId);
-      if (!node) throw new Error(`Node provided missing in assets (${nodeId})`);
+      return this.assetFactory.buildJunction();
     }
+    const node = getNode(this.assets, nodeId);
+    if (!node) throw new Error(`Node provided missing in assets (${nodeId})`);
     return node;
   }
 }

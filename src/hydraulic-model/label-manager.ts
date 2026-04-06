@@ -1,6 +1,11 @@
 import { Asset } from "./asset-types";
 
-export type LabelType = Asset["type"] | "pattern" | "curve" | "customerPoint";
+export type LabelType =
+  | Asset["type"]
+  | "pattern"
+  | "curve"
+  | "customerPoint"
+  | "pressureLogger";
 
 type LabelEntry = {
   id: number;
@@ -17,9 +22,16 @@ const labelPrefixes: Record<LabelType, string> = {
   pattern: "PAT",
   curve: "C",
   customerPoint: "CP",
+  pressureLogger: "L",
 };
 
-type LabelGroup = "pattern" | "curve" | "node" | "link" | "customerPoint";
+type LabelGroup =
+  | "pattern"
+  | "curve"
+  | "node"
+  | "link"
+  | "customerPoint"
+  | "pressureLogger";
 
 export interface LabelGenerator {
   generateFor: (type: Asset["type"], id: Asset["id"]) => string;
@@ -178,6 +190,9 @@ const isNodeType = (t: LabelType) =>
 const getLabelUniqueGroup = (type: LabelType): LabelGroup => {
   if (type === "pattern" || type === "curve" || type === "customerPoint") {
     return type;
+  }
+  if (type === "pressureLogger") {
+    return "pressureLogger";
   }
   return isNodeType(type) ? "node" : "link";
 };

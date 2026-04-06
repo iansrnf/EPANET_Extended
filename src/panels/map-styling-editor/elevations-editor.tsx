@@ -455,7 +455,7 @@ const ElevationOffsetField = ({
   const label = `${translate("elevations.elevationOffset")} (${elevationUnit})`;
 
   return (
-    <InlineField name={label} layout="fluid-label" labelSize="lg">
+    <InlineField name={label} layout="fluid-label" labelSize="md">
       <NumericField
         label={label}
         displayValue={localizeDecimal(displayValue)}
@@ -486,7 +486,7 @@ const ElevationUnitField = ({
     <InlineField
       name={translate("elevations.verticalUnit")}
       layout="fluid-label"
-      labelSize="lg"
+      labelSize="md"
     >
       <Selector
         options={elevationUnitOptions}

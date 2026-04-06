@@ -1,7 +1,5 @@
 import { Topology } from "./topology";
 import { AssetsMap } from "./assets-map";
-import { AssetBuilder } from "./asset-builder";
-import { DefaultsSpec } from "src/lib/project-settings/quantities-spec";
 import { nanoid } from "nanoid";
 
 import { ConsecutiveIdsGenerator, IdGenerator } from "src/lib/id-generator";
@@ -9,12 +7,12 @@ import { LabelManager, LabelType } from "./label-manager";
 import { Demands, createEmptyDemands } from "./demands";
 import { CustomerPoints, initializeCustomerPoints } from "./customer-points";
 import { CustomerPointsLookup } from "./customer-points-lookup";
-import { PressureLoggers, initializePressureLoggers } from "./pressure-loggers";
 import { AssetIndex } from "./asset-index";
 import { Asset } from "./asset-types";
 import { Curves } from "./curves";
 import { Controls, createEmptyControls } from "./controls";
 import { Patterns } from "./patterns";
+import { PressureLoggers, initializePressureLoggers } from "./pressure-loggers";
 
 export type HydraulicModel = {
   version: string;
@@ -22,7 +20,6 @@ export type HydraulicModel = {
   customerPoints: CustomerPoints;
   customerPointsLookup: CustomerPointsLookup;
   pressureLoggers: PressureLoggers;
-  assetBuilder: AssetBuilder;
   topology: Topology;
   assetIndex: AssetIndex;
   demands: Demands;
@@ -35,13 +32,11 @@ export type HydraulicModel = {
 export { AssetsMap };
 
 export const initializeHydraulicModel = ({
-  defaults,
   demands = createEmptyDemands(),
   controls = createEmptyControls(),
   idGenerator,
   labelCounters,
 }: {
-  defaults: DefaultsSpec;
   demands?: Demands;
   controls?: Controls;
   idGenerator?: IdGenerator;
@@ -56,7 +51,6 @@ export const initializeHydraulicModel = ({
     customerPoints: initializeCustomerPoints(),
     customerPointsLookup: new CustomerPointsLookup(),
     pressureLoggers: initializePressureLoggers(),
-    assetBuilder: new AssetBuilder(defaults, assetIdGenerator, labelManager),
     topology: new Topology(),
     assetIndex: new AssetIndex(assetIdGenerator, assets),
     demands,

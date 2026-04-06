@@ -15,6 +15,10 @@ const RECONNECT_DELAY_MS = 5000;
 
 type LoggerPayload = {
   deviceId?: unknown;
+  device_id?: unknown;
+  loggerId?: unknown;
+  logger_id?: unknown;
+  logger?: unknown;
   timestamp?: unknown;
   type?: unknown;
   status?: unknown;
@@ -105,10 +109,19 @@ export const parseLoggerTelemetryMessage = (
   const messageType =
     typeof maybePayload.type === "string" ? maybePayload.type.trim() : "";
 
+  const rawDeviceIdCandidate =
+    maybePayload.deviceId ??
+    maybePayload.device_id ??
+    maybePayload.loggerId ??
+    maybePayload.logger_id ??
+    maybePayload.logger;
+
   const deviceId =
-    typeof maybePayload.deviceId === "string"
-      ? maybePayload.deviceId.trim()
-      : "";
+    typeof rawDeviceIdCandidate === "string"
+      ? rawDeviceIdCandidate.trim()
+      : typeof rawDeviceIdCandidate === "number"
+        ? String(rawDeviceIdCandidate)
+        : "";
 
   if (!deviceId) return null;
 

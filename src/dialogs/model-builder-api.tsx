@@ -441,18 +441,18 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
       const spec = presets[flowUnit];
       const idGenerator = new ConsecutiveIdsGenerator();
       const hydraulicModel = initializeHydraulicModel({
-        defaults: spec.defaults,
         idGenerator,
       });
       const factories = initializeModelFactories({
         idGenerator,
         labelManager: hydraulicModel.labelManager,
+        defaults: spec.defaults,
       });
 
       const junctionIdByDraftId = new Map<string, number>();
 
       for (const junctionDraft of networkDraft.junctions) {
-        const junction = hydraulicModel.assetBuilder.buildJunction({
+        const junction = factories.assetFactory.buildJunction({
           label: junctionDraft.label,
           coordinates: junctionDraft.coordinates,
           elevation: junctionDraft.elevation,
@@ -469,7 +469,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
 
         if (startNodeId == null || endNodeId == null) continue;
 
-        const pipe = hydraulicModel.assetBuilder.buildPipe({
+        const pipe = factories.assetFactory.buildPipe({
           label: pipeDraft.label,
           coordinates: pipeDraft.coordinates,
           connections: [startNodeId, endNodeId],

@@ -1,7 +1,7 @@
 import type { HandlerContext } from "src/types";
 import { cursorStyleAtom } from "src/state/map";
 import { Mode } from "src/state/mode";
-import { useSetAtom } from "jotai";
+import { useSetAtom, useAtomValue } from "jotai";
 import { modeAtom } from "src/state/mode";
 import { getMapCoord } from "src/map/map-event";
 import { useSelection } from "src/selection";
@@ -25,6 +25,7 @@ import { PressureLogger } from "src/hydraulic-model/pressure-loggers";
 import { useSnapping } from "../hooks/use-snapping";
 import throttle from "lodash/throttle";
 import { useClickedAsset } from "../utils";
+import { modelFactoriesAtom } from "src/state/model-factories";
 
 const stateUpdateTime = 16;
 
@@ -51,6 +52,7 @@ export function useNoneHandlers({
   readonly = false,
 }: HandlerContext): Handlers {
   const { getClickedAsset } = useClickedAsset(map, hydraulicModel.assets);
+  const { assetFactory } = useAtomValue(modelFactoriesAtom);
 
   const setMode = useSetAtom(modeAtom);
   const {
@@ -110,11 +112,11 @@ export function useNoneHandlers({
       });
 
       for (const pickInfo of pickedObjects) {
-        if (
-          (pickInfo.layer?.id === "customer-points-layer" ||
-            pickInfo.layer?.id === "pressure-loggers-layer") &&
-          pickInfo.object
-        ) {
+        if (pickInfo.layer?.id === "customer-points-layer" && pickInfo.object) {
+          hasClickableElement = true;
+          break;
+        }
+        if (pickInfo.layer?.id === "pressure-loggers-layer" && pickInfo.object) {
           hasClickableElement = true;
           break;
         }
@@ -298,6 +300,7 @@ export function useNoneHandlers({
           newCoordinates,
           newElevation: noElevation,
           lengthUnit: units.length,
+          assetFactory,
         });
 
         if (putAssets) {
@@ -407,6 +410,7 @@ export function useNoneHandlers({
               shouldUpdateCustomerPoints: true,
               pipeIdToSplit,
               lengthUnit: units.length,
+              assetFactory,
             });
             transact(moment);
             resetMove();
@@ -421,25 +425,24 @@ export function useNoneHandlers({
       }
     },
     click: (e) => {
+      const clickedAsset = getClickedAsset(e);
       e.preventDefault();
 
-      const clickedCustomerPoint = getClickedCustomerPoint(e);
-
-      if (clickedCustomerPoint) {
-        selectCustomerPoint(clickedCustomerPoint.id);
-        return;
-      }
-
-      const clickedPressureLogger = getClickedPressureLogger(e);
-
-      if (clickedPressureLogger) {
-        selectPressureLogger(clickedPressureLogger.id);
-        return;
-      }
-
-      const clickedAsset = getClickedAsset(e);
-
       if (!clickedAsset) {
+        const clickedCustomerPoint = getClickedCustomerPoint(e);
+
+        if (clickedCustomerPoint) {
+          selectCustomerPoint(clickedCustomerPoint.id);
+          return;
+        }
+
+        const clickedPressureLogger = getClickedPressureLogger(e);
+
+        if (clickedPressureLogger) {
+          selectPressureLogger(clickedPressureLogger.id);
+          return;
+        }
+
         if (isShiftHeld()) return;
 
         clearSelection();

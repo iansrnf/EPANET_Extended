@@ -112,11 +112,15 @@ export class Persistence implements IPersistenceWithSnapshots {
           hydraulicModel.assetIndex.addNode(asset.id);
         }
       });
-      hydraulicModel.customerPoints.forEach((customerPoint) => {
+
+      hydraulicModel.customerPoints.forEach((cp) => {
+        hydraulicModel.labelManager.register(cp.label, "customerPoint", cp.id);
+      });
+      hydraulicModel.pressureLoggers.forEach((pressureLogger) => {
         hydraulicModel.labelManager.register(
-          customerPoint.label,
-          "customerPoint",
-          customerPoint.id,
+          pressureLogger.label,
+          "pressureLogger",
+          pressureLogger.id,
         );
       });
 
@@ -154,6 +158,71 @@ export class Persistence implements IPersistenceWithSnapshots {
         momentLog,
         simulationSettings,
         idGenerator,
+      );
+    };
+  }
+
+  useTransactReprojection() {
+    return async (newProjection: Projection, currentProjection: Projection) => {
+      const hydraulicModel = this.store.get(stagingModelAtom);
+      const simulationSettings = this.store.get(simulationSettingsAtom);
+
+      const currentMapper = createProjectionMapper(currentProjection);
+      const newMapper = createProjectionMapper(newProjection);
+      transformCoordinates(hydraulicModel, (p) => {
+        const source = currentMapper.toSource(p);
+        return newMapper.toWgs84(source);
+      });
+
+      const assets = [...hydraulicModel.assets.values()];
+      const snapshotMoment: Moment = {
+        note: "Reprojection",
+        putAssets: assets,
+        deleteAssets: [],
+        patchAssetsAttributes: [],
+        putDemands: {
+          assignments: toDemandAssignments(hydraulicModel.demands),
+        },
+        putControls: hydraulicModel.controls,
+        putCustomerPoints: [...hydraulicModel.customerPoints.values()],
+        putPressureLoggers: [...hydraulicModel.pressureLoggers.values()],
+        putCurves: hydraulicModel.curves,
+        putPatterns: hydraulicModel.patterns,
+      };
+
+      const momentLog = new MomentLog();
+      momentLog.setSnapshot(snapshotMoment, hydraulicModel.version);
+
+      const updatedProjectSettings = {
+        ...this.store.get(projectSettingsAtom),
+        projection: newProjection,
+      };
+
+      const [{ OPFSStorage }, { getAppId }] = await Promise.all([
+        import("src/infra/storage"),
+        import("src/infra/app-instance"),
+      ]);
+      const storage = new OPFSStorage(getAppId());
+      await storage.clear();
+
+      this.store.set(stagingModelAtom, { ...hydraulicModel });
+      this.store.set(baseModelAtom, { ...hydraulicModel });
+      this.store.set(projectSettingsAtom, updatedProjectSettings);
+      this.store.set(momentLogAtom, momentLog);
+      this.store.set(mapSyncMomentAtom, { pointer: -1, version: 0 });
+      this.store.set(simulationAtom, initialSimulationState);
+      this.store.set(simulationResultsAtom, null);
+      this.store.set(modeAtom, { mode: Mode.NONE });
+      this.store.set(ephemeralStateAtom, { type: "none" });
+      this.store.set(selectionAtom, { type: "none" });
+      this.store.set(autoElevationsAtom, newProjection.type !== "xy-grid");
+
+      this.resetWorktree(
+        snapshotMoment,
+        hydraulicModel.version,
+        momentLog,
+        simulationSettings,
+        this.store.get(worktreeAtom).idGenerator,
       );
     };
   }
@@ -237,29 +306,6 @@ export class Persistence implements IPersistenceWithSnapshots {
       this.store.set(mapSyncMomentAtom, newMapSyncMoment);
       this.syncSnapshotMomentLog(momentLog, newStateId);
       this.updateCacheAfterTransact();
-    };
-  }
-
-  useTransactReprojection() {
-    return async (newProjection: Projection, currentProjection: Projection) => {
-      const hydraulicModel = this.store.get(stagingModelAtom);
-      const projectSettings = this.store.get(projectSettingsAtom);
-
-      const toCurrent = createProjectionMapper(currentProjection).toSource;
-      const toNext = createProjectionMapper(newProjection).toWgs84;
-
-      transformCoordinates(hydraulicModel, (p) => toNext(toCurrent(p)));
-
-      this.store.set(projectSettingsAtom, {
-        ...projectSettings,
-        projection: newProjection,
-      });
-
-      this.useTransact()({
-        note: "Update projection",
-        putAssets: [...hydraulicModel.assets.values()],
-        patchAssetsAttributes: [],
-      });
     };
   }
 
@@ -389,6 +435,7 @@ export class Persistence implements IPersistenceWithSnapshots {
       initializeModelFactories({
         idGenerator: worktree.idGenerator,
         labelManager: stagingModel.labelManager,
+        defaults: this.store.get(projectSettingsAtom).defaults,
       }),
     );
     this.switchMomentLog(snapshot.momentLog);
@@ -402,7 +449,6 @@ export class Persistence implements IPersistenceWithSnapshots {
       selection,
       stagingModel.assets,
       stagingModel.customerPoints,
-      stagingModel.pressureLoggers,
     );
     this.store.set(selectionAtom, { ...validatedSelection });
   }
@@ -488,9 +534,7 @@ export class Persistence implements IPersistenceWithSnapshots {
     const momentLogDeltas = snapshot.momentLog.getDeltas();
     allDeltas.push(...momentLogDeltas);
 
-    const { defaults } = this.store.get(projectSettingsAtom);
     const model = initializeHydraulicModel({
-      defaults,
       idGenerator: worktree.idGenerator,
       labelCounters: worktree.labelCounters,
     });
@@ -525,7 +569,6 @@ export class Persistence implements IPersistenceWithSnapshots {
       (forwardMoment.deleteCustomerPoints || []).length > 0
         ? new Map(hydraulicModel.customerPoints)
         : hydraulicModel.customerPoints;
-
     const updatedPressureLoggers =
       (forwardMoment.putPressureLoggers || []).length > 0 ||
       (forwardMoment.deletePressureLoggers || []).length > 0

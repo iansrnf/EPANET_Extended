@@ -10,7 +10,7 @@ import { CollapsibleSection } from "src/components/form/fields";
 import { mapStylingPanelSectionsExpandedAtom } from "src/state/layout";
 import { MapPinnedIcon } from "src/icons";
 import type { Projection } from "src/lib/projections/projection";
-import { inverseProjectGeoJson } from "src/lib/projections";
+import { createProjectionMapper, inverseProjectGeoJson } from "src/lib/projections";
 import { chooseUnitSystem } from "src/simulation/build-inp";
 import { usePersistence } from "src/lib/persistence";
 import { MapContext } from "src/map";
@@ -29,6 +29,7 @@ export const ProjectionSection = () => {
   const hasScenarios = useAtomValue(hasScenariosAtom);
   const isXYGrid = projection.type === "xy-grid";
   const t = useTranslate();
+  const currentProjection = createProjectionMapper(projection).projection;
 
   const handleOpenProjectionDialog = () => {
     const geoJson: FeatureCollection = {
@@ -42,10 +43,13 @@ export const ProjectionSection = () => {
       type: "networkProjection",
       source: "map-panel",
       previewGeoJson,
-      onImportWithProjection: async (newProjection: Projection, extent) => {
+      onImportWithProjection: async (newProjection, extent) => {
         setDialogState({ type: "loading" });
         try {
-          await transactReprojection(newProjection, projection);
+          await transactReprojection(
+            createProjectionMapper(newProjection).projection,
+            currentProjection,
+          );
           if (extent) {
             map?.map.once("idle", () => {
               map.map.fitBounds(extent as LngLatBoundsLike, {
@@ -66,10 +70,11 @@ export const ProjectionSection = () => {
     });
   };
 
-  const projectionName =
-    projection.type === "wgs84" ? "WGS 84" : projection.name;
+  const projectionName = currentProjection.name;
   const projectionCode =
-    projection.type === "wgs84" ? "EPSG:4326" : projection.id;
+    currentProjection.type === "wgs84"
+      ? "EPSG:4326"
+      : currentProjection.id;
   const [sections, setSections] = useAtom(mapStylingPanelSectionsExpandedAtom);
 
   return (

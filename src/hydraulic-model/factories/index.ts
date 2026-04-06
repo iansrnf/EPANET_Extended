@@ -1,13 +1,17 @@
 import { ConsecutiveIdsGenerator, IdGenerator } from "src/lib/id-generator";
 import { CustomerPointFactory } from "./customer-point-factory";
-import { PressureLoggerFactory } from "./pressure-logger-factory";
 import { LabelManager } from "src/hydraulic-model/label-manager";
+import { AssetFactory } from "./asset-factory";
+import { DefaultsSpec } from "src/lib/project-settings/quantities-spec";
+import { PressureLoggerFactory } from "./pressure-logger-factory";
 
 export { CustomerPointFactory } from "./customer-point-factory";
+export { AssetFactory } from "./asset-factory";
 export { PressureLoggerFactory } from "./pressure-logger-factory";
 
 export type ModelFactories = {
   customerPointFactory: CustomerPointFactory;
+  assetFactory: AssetFactory;
   pressureLoggerFactory: PressureLoggerFactory;
 };
 
@@ -15,12 +19,21 @@ export const initializeModelFactories = (options: {
   idGenerator?: IdGenerator;
   pressureLoggerIdGenerator?: IdGenerator;
   labelManager: LabelManager;
-}): ModelFactories => ({
-  customerPointFactory: new CustomerPointFactory(
-    options.idGenerator ?? new ConsecutiveIdsGenerator(),
-    options.labelManager,
-  ),
-  pressureLoggerFactory: new PressureLoggerFactory(
-    options.pressureLoggerIdGenerator ?? new ConsecutiveIdsGenerator(),
-  ),
-});
+  defaults: DefaultsSpec;
+}): ModelFactories => {
+  const idGenerator = options.idGenerator ?? new ConsecutiveIdsGenerator();
+  return {
+    customerPointFactory: new CustomerPointFactory(
+      idGenerator,
+      options.labelManager,
+    ),
+    assetFactory: new AssetFactory(
+      options.defaults,
+      idGenerator,
+      options.labelManager,
+    ),
+    pressureLoggerFactory: new PressureLoggerFactory(
+      options.pressureLoggerIdGenerator ?? new ConsecutiveIdsGenerator(),
+    ),
+  };
+};

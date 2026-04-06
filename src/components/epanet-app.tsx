@@ -54,6 +54,7 @@ import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { initStorage } from "src/infra/storage";
 import { useIsSnapshotLocked } from "src/hooks/use-is-snapshot-locked";
 import { useIsCustomerAllocationDisabled } from "src/hooks/use-is-customer-allocation-disabled";
+import { useLoggerTelemetry } from "src/hooks/use-logger-telemetry";
 
 type ResolvedLayout = "HORIZONTAL" | "VERTICAL" | "FLOATING";
 
@@ -78,6 +79,7 @@ export function EpanetApp() {
   const isIteratingLogoOn = useFeatureFlag("FLAG_ITERATING_LOGO");
   const isSnapshotLocked = useIsSnapshotLocked();
   const isCustomerAllocationDisabled = useIsCustomerAllocationDisabled();
+  useLoggerTelemetry();
 
   useEffect(() => {
     void initStorage();

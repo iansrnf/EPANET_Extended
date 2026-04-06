@@ -72,6 +72,26 @@ describe("parseLoggerTelemetryMessage", () => {
     expect(reading?.psi).toBeCloseTo(14.22, 2);
   });
 
+  it("accepts alternate logger id fields", () => {
+    expect(
+      parseLoggerTelemetryMessage({
+        loggerId: "L5",
+        pressure_psi: 11.2,
+      }),
+    ).toEqual({
+      deviceId: "L5",
+      psi: 11.2,
+      timestamp: expect.any(String),
+      messageType: undefined,
+      status: undefined,
+      tempOrStatus: undefined,
+      batteryVoltage: undefined,
+      externalVoltage: undefined,
+      gsmPercent: undefined,
+      raw: undefined,
+    });
+  });
+
   it("ignores payloads without a device id or telemetry fields", () => {
     expect(parseLoggerTelemetryMessage({ psi: 10 })).toBeNull();
     expect(

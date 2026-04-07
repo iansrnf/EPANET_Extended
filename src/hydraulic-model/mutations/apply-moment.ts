@@ -9,6 +9,7 @@ import { Curves } from "../curves";
 import { Patterns } from "../patterns";
 import { isDebugOn } from "src/infra/debug-mode";
 import { CustomerAssignedDemands, JunctionAssignedDemands } from "../demands";
+import { LabelManager } from "../label-manager";
 
 type PutAssetResult = {
   oldAsset: Asset | undefined;
@@ -18,6 +19,7 @@ type PutAssetResult = {
 export const applyMomentToModel = (
   hydraulicModel: HydraulicModel,
   moment: ModelMoment,
+  labelManager: LabelManager,
 ): ReverseMoment => {
   if (isDebugOn) {
     assertNoPutPatchOverlap(moment);
@@ -52,14 +54,14 @@ export const applyMomentToModel = (
   }
 
   for (const id of moment.deleteAssets || []) {
-    const deleted = deleteAsset(hydraulicModel, id);
+    const deleted = deleteAsset(hydraulicModel, id, labelManager);
     if (deleted) {
       reverseMoment.putAssets.push(deleted);
     }
   }
 
   for (const asset of moment.putAssets || []) {
-    const result = putAsset(hydraulicModel, asset);
+    const result = putAsset(hydraulicModel, asset, labelManager);
     if (result.oldAsset) {
       reverseMoment.putAssets.push(result.oldAsset);
     } else {
@@ -68,14 +70,18 @@ export const applyMomentToModel = (
   }
 
   for (const patch of moment.patchAssetsAttributes || []) {
-    const reversePatch = patchAssetAttributes(hydraulicModel, patch);
+    const reversePatch = patchAssetAttributes(
+      hydraulicModel,
+      patch,
+      labelManager,
+    );
     if (reversePatch) {
       reverseMoment.patchAssetsAttributes.push(reversePatch);
     }
   }
 
   for (const cp of moment.putCustomerPoints || []) {
-    const oldCp = putCustomerPoint(hydraulicModel, cp);
+    const oldCp = putCustomerPoint(hydraulicModel, cp, labelManager);
     if (oldCp) {
       reverseMoment.putCustomerPoints.push(oldCp);
     } else {
@@ -87,7 +93,7 @@ export const applyMomentToModel = (
   }
 
   for (const cpId of moment.deleteCustomerPoints || []) {
-    const deletedCp = deleteCustomerPoint(hydraulicModel, cpId);
+    const deletedCp = deleteCustomerPoint(hydraulicModel, cpId, labelManager);
     if (deletedCp) {
       reverseMoment.putCustomerPoints.push(deletedCp);
     }
@@ -120,11 +126,11 @@ export const applyMomentToModel = (
   }
 
   if (moment.putCurves) {
-    putCurves(hydraulicModel, moment.putCurves);
+    putCurves(hydraulicModel, moment.putCurves, labelManager);
   }
 
   if (moment.putPatterns) {
-    putPatterns(hydraulicModel, moment.putPatterns);
+    putPatterns(hydraulicModel, moment.putPatterns, labelManager);
   }
 
   return reverseMoment;
@@ -133,6 +139,7 @@ export const applyMomentToModel = (
 const deleteAsset = (
   hydraulicModel: HydraulicModel,
   id: AssetId,
+  labelManager: LabelManager,
 ): Asset | undefined => {
   const asset = hydraulicModel.assets.get(id);
   if (!asset) return undefined;
@@ -146,7 +153,7 @@ const deleteAsset = (
   hydraulicModel.assets.delete(id);
   hydraulicModel.topology.removeNode(id);
   hydraulicModel.topology.removeLink(id);
-  hydraulicModel.labelManager.remove(asset.label, asset.type, asset.id);
+  labelManager.remove(asset.label, asset.type, asset.id);
 
   return asset;
 };
@@ -154,6 +161,7 @@ const deleteAsset = (
 const putAsset = (
   hydraulicModel: HydraulicModel,
   asset: Asset,
+  labelManager: LabelManager,
 ): PutAssetResult => {
   const oldVersion = hydraulicModel.assets.get(asset.id);
 
@@ -168,11 +176,7 @@ const putAsset = (
   if (oldVersion && hydraulicModel.topology.hasLink(oldVersion.id)) {
     const oldLink = oldVersion as LinkAsset;
     oldLink.connections && hydraulicModel.topology.removeLink(oldVersion.id);
-    hydraulicModel.labelManager.remove(
-      oldVersion.label,
-      oldVersion.type,
-      oldVersion.id,
-    );
+    labelManager.remove(oldVersion.label, oldVersion.type, oldVersion.id);
   }
 
   if (asset.isLink) {
@@ -183,7 +187,7 @@ const putAsset = (
     }
   }
 
-  hydraulicModel.labelManager.register(asset.label, asset.type, asset.id);
+  labelManager.register(asset.label, asset.type, asset.id);
 
   return {
     oldAsset: oldVersion,
@@ -194,23 +198,16 @@ const putAsset = (
 const putCustomerPoint = (
   hydraulicModel: HydraulicModel,
   customerPoint: CustomerPoint,
+  labelManager: LabelManager,
 ): CustomerPoint | undefined => {
   const oldVersion = hydraulicModel.customerPoints.get(customerPoint.id);
   if (oldVersion) {
     hydraulicModel.customerPointsLookup.removeConnection(oldVersion);
-    hydraulicModel.labelManager.remove(
-      oldVersion.label,
-      "customerPoint",
-      oldVersion.id,
-    );
+    labelManager.remove(oldVersion.label, "customerPoint", oldVersion.id);
   }
   hydraulicModel.customerPointsLookup.addConnection(customerPoint);
   hydraulicModel.customerPoints.set(customerPoint.id, customerPoint);
-  hydraulicModel.labelManager.register(
-    customerPoint.label,
-    "customerPoint",
-    customerPoint.id,
-  );
+  labelManager.register(customerPoint.label, "customerPoint", customerPoint.id);
 
   return oldVersion;
 };
@@ -218,13 +215,14 @@ const putCustomerPoint = (
 const deleteCustomerPoint = (
   hydraulicModel: HydraulicModel,
   id: CustomerPointId,
+  labelManager: LabelManager,
 ): CustomerPoint | undefined => {
   const cp = hydraulicModel.customerPoints.get(id);
   if (!cp) return undefined;
 
   hydraulicModel.customerPointsLookup.removeConnection(cp);
   hydraulicModel.customerPoints.delete(id);
-  hydraulicModel.labelManager.remove(cp.label, "customerPoint", cp.id);
+  labelManager.remove(cp.label, "customerPoint", cp.id);
 
   return cp;
 };
@@ -249,19 +247,24 @@ const deletePressureLogger = (
   return pressureLogger;
 };
 
-const putCurves = (hydraulicModel: HydraulicModel, curves: Curves): void => {
+const putCurves = (
+  hydraulicModel: HydraulicModel,
+  curves: Curves,
+  labelManager: LabelManager,
+): void => {
   for (const curve of hydraulicModel.curves.values()) {
-    hydraulicModel.labelManager.remove(curve.label, "curve", curve.id);
+    labelManager.remove(curve.label, "curve", curve.id);
   }
   hydraulicModel.curves = curves;
   for (const curve of curves.values()) {
-    hydraulicModel.labelManager.register(curve.label, "curve", curve.id);
+    labelManager.register(curve.label, "curve", curve.id);
   }
 };
 
 const patchAssetAttributes = (
   hydraulicModel: HydraulicModel,
   patch: AssetPatch,
+  labelManager: LabelManager,
 ): AssetPatch | undefined => {
   const asset = hydraulicModel.assets.get(patch.id);
   if (!asset) return undefined;
@@ -278,12 +281,12 @@ const patchAssetAttributes = (
   hydraulicModel.assets.set(patch.id, updatedAsset);
 
   if ("label" in patch.properties) {
-    hydraulicModel.labelManager.remove(
+    labelManager.remove(
       reverseProperties.label as string,
       asset.type,
       asset.id,
     );
-    hydraulicModel.labelManager.register(
+    labelManager.register(
       updatedAsset.label,
       updatedAsset.type,
       updatedAsset.id,
@@ -300,13 +303,14 @@ const patchAssetAttributes = (
 const putPatterns = (
   hydraulicModel: HydraulicModel,
   patterns: Patterns,
+  labelManager: LabelManager,
 ): void => {
   for (const pattern of hydraulicModel.patterns.values()) {
-    hydraulicModel.labelManager.remove(pattern.label, "pattern", pattern.id);
+    labelManager.remove(pattern.label, "pattern", pattern.id);
   }
   hydraulicModel.patterns = patterns;
   for (const pattern of patterns.values()) {
-    hydraulicModel.labelManager.register(pattern.label, "pattern", pattern.id);
+    labelManager.register(pattern.label, "pattern", pattern.id);
   }
 };
 

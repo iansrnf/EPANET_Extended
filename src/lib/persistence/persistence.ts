@@ -540,7 +540,7 @@ export class Persistence implements IPersistenceWithSnapshots {
     });
 
     for (const delta of allDeltas) {
-      applyMomentToModel(model, delta as ModelMoment);
+      applyMomentToModel(model, delta as ModelMoment, model.labelManager);
     }
 
     return model;
@@ -560,7 +560,12 @@ export class Persistence implements IPersistenceWithSnapshots {
       ),
     };
 
-    const reverseMoment = applyMomentToModel(hydraulicModel, processedMoment);
+    const factories = this.store.get(modelFactoriesAtom);
+    const reverseMoment = applyMomentToModel(
+      hydraulicModel,
+      processedMoment,
+      factories.assetFactory.labelManager,
+    );
 
     const updatedHydraulicModel = updateHydraulicModelAssets(hydraulicModel);
 

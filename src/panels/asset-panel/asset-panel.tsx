@@ -626,6 +626,7 @@ const PipeEditor = ({
   const simVelocity = pipeSimulation?.velocity ?? null;
   const simUnitHeadloss = pipeSimulation?.unitHeadloss ?? null;
   const simHeadloss = pipeSimulation?.headloss ?? null;
+  const simWaterAge = pipeSimulation?.waterAge ?? null;
   const simulationStatusText = translate(
     pipeStatusLabel(pipeSimulation ?? null),
   );
@@ -834,6 +835,14 @@ const PipeEditor = ({
           readOnly={true}
         />
         <TextRow name="actualStatus" value={simulationStatusText} />
+        {simWaterAge != null && (
+          <QuantityRow
+            name="waterAge"
+            value={simWaterAge}
+            unit={units.waterAge}
+            readOnly={true}
+          />
+        )}
       </SectionWrapper>
     </AssetEditorContent>
   );
@@ -1638,6 +1647,7 @@ const ValveEditor = ({
   const simFlow = valveSimulation?.flow ?? null;
   const simVelocity = valveSimulation?.velocity ?? null;
   const simHeadloss = valveSimulation?.headloss ?? null;
+  const simWaterAge = valveSimulation?.waterAge ?? null;
   const statusText = translate(valveStatusLabel(valveSimulation ?? null));
 
   const statusOptions = useMemo(() => {
@@ -1827,6 +1837,14 @@ const ValveEditor = ({
           readOnly={true}
         />
         <TextRow name="status" value={statusText} />
+        {simWaterAge != null && (
+          <QuantityRow
+            name="waterAge"
+            value={simWaterAge}
+            unit={units.waterAge}
+            readOnly={true}
+          />
+        )}
       </SectionWrapper>
     </AssetEditorContent>
   );
@@ -1877,6 +1895,7 @@ const PumpEditor = ({
 
   const simFlow = pumpSimulation?.flow ?? null;
   const simHead = pumpSimulation ? -pumpSimulation.headloss : null;
+  const simWaterAge = pumpSimulation?.waterAge ?? null;
   const statusText = translate(pumpStatusLabel(pumpSimulation ?? null));
 
   const statusOptions = useMemo(() => {
@@ -2046,6 +2065,14 @@ const PumpEditor = ({
           readOnly={true}
         />
         <TextRow name="status" value={statusText} />
+        {simWaterAge != null && (
+          <QuantityRow
+            name="waterAge"
+            value={simWaterAge}
+            unit={units.waterAge}
+            readOnly={true}
+          />
+        )}
       </SectionWrapper>
       <SectionWrapper
         title={translate("energyResults")}

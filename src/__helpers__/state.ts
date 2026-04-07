@@ -233,6 +233,7 @@ export type SimulationData = {
       headloss: number;
       unitHeadloss: number;
       status: "open" | "closed";
+      waterAge: number | null;
     }>
   >;
   junctions?: Record<
@@ -251,6 +252,7 @@ export type SimulationData = {
       headloss: number;
       status: "on" | "off";
       statusWarning: "cannot-deliver-flow" | "cannot-deliver-head" | null;
+      waterAge: number | null;
     }>
   >;
   valves?: Record<
@@ -261,6 +263,7 @@ export type SimulationData = {
       headloss: number;
       status: "active" | "open" | "closed";
       statusWarning: "cannot-deliver-flow" | "cannot-deliver-pressure" | null;
+      waterAge: number | null;
     }>
   >;
   tanks?: Record<
@@ -298,6 +301,7 @@ export const createMockResultsReader = (
       headloss: sim.headloss ?? 0,
       unitHeadloss: sim.unitHeadloss ?? 0,
       status: sim.status ?? "open",
+      waterAge: sim.waterAge ?? null,
     };
   },
   getJunction: (id) => {
@@ -320,6 +324,7 @@ export const createMockResultsReader = (
       headloss: sim.headloss ?? 0,
       status: sim.status ?? "on",
       statusWarning: sim.statusWarning ?? null,
+      waterAge: sim.waterAge ?? null,
     };
   },
   getValve: (id) => {
@@ -332,6 +337,7 @@ export const createMockResultsReader = (
       headloss: sim.headloss ?? 0,
       status: sim.status ?? "active",
       statusWarning: sim.statusWarning ?? null,
+      waterAge: sim.waterAge ?? null,
     };
   },
   getTank: (id) => {

@@ -33,11 +33,7 @@ type LabelGroup =
   | "customerPoint"
   | "pressureLogger";
 
-export interface LabelGenerator {
-  generateFor: (type: Asset["type"], id: Asset["id"]) => string;
-}
-
-export class LabelManager implements LabelGenerator {
+export class LabelManager {
   private indexPerType: Map<LabelType, number>;
   private labelToEntries: Map<string, LabelEntry[]>;
 

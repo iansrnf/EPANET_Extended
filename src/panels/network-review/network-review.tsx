@@ -15,7 +15,6 @@ import { ProximityAnomalies } from "./proximity-anomalies";
 import { CrossingPipes } from "./crossing-pipes";
 import { ConnectivityTrace } from "./connectivity-trace";
 import { EarlyAccessBadge } from "src/components/early-access-badge";
-import { useEarlyAccess } from "src/hooks/use-early-access";
 
 export function NetworkReview() {
   const [checkType, setCheckType] = useState<CheckType | null>(null);
@@ -158,19 +157,16 @@ const ReviewCheck = ({
 }) => {
   const translate = useTranslate();
   const userTracking = useUserTracking();
-  const onlyEarlyAccess = useEarlyAccess();
 
   const label = translate(labelKeyByCheckType[checkType]);
 
   const selectCheck = useCallback(() => {
     if (!isEnabled) return;
-    onlyEarlyAccess(() => {
-      userTracking.capture({
-        name: `networkReview.${checkType}.opened`,
-      });
-      onClick(checkType);
+    userTracking.capture({
+      name: `networkReview.${checkType}.opened`,
     });
-  }, [onClick, checkType, userTracking, isEnabled, onlyEarlyAccess]);
+    onClick(checkType);
+  }, [onClick, checkType, userTracking, isEnabled]);
 
   return (
     <Button

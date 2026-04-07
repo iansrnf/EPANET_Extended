@@ -1,6 +1,7 @@
 import bbox from "@turf/bbox";
 import type { FeatureCollection } from "geojson";
 import "mapbox-gl/dist/mapbox-gl.css";
+import { LngLat } from "mapbox-gl";
 import { useEffect, useMemo, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { Button } from "src/components/elements";
@@ -36,6 +37,7 @@ import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import { fileInfoAtom } from "src/state/file-system";
 import { convertTo } from "src/quantity";
 import { useToggleNetworkReview } from "src/commands/toggle-network-review";
+import { useElevations } from "src/map/elevations/use-elevations";
 
 type ImportedApiSource = {
   name: string;
@@ -170,6 +172,10 @@ const PIPE_DEFAULTS = {
   status: "Open",
 } as const;
 
+const JUNCTION_DEFAULTS = {
+  elevation: "0",
+} as const;
+
 export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
   const translate = useTranslate();
   const [currentStep, setCurrentStep] = useState(1);
@@ -195,6 +201,9 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
     null,
   );
   const [pipeStatusField, setPipeStatusField] = useState<string | null>(null);
+  const [junctionElevationField, setJunctionElevationField] = useState<
+    string | null
+  >(null);
   const [isBuilding, setIsBuilding] = useState(false);
   const { fitToBbox, fitToNetwork, setHandle } = useMapPreview();
   const currentProjectSettings = useAtomValue(projectSettingsAtom);
@@ -203,6 +212,8 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
   const transactImport = rep.useTransactImport();
   const toggleNetworkReview = useToggleNetworkReview();
   const assignedElementCount = apiSource && apiAssignment ? 1 : 0;
+  const selectedSpec = useMemo(() => presets[flowUnit], [flowUnit]);
+  const { fetchElevation } = useElevations(selectedSpec.units.elevation);
 
   const propertyOptions = useMemo(
     () =>
@@ -286,8 +297,8 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
             },
             junction: {
               labelField: null,
-              elevationField: null,
-              defaultElevation: 0,
+              elevationField: junctionElevationField,
+              defaultElevation: Number(JUNCTION_DEFAULTS.elevation),
               emitterCoefficientField: null,
               defaultEmitterCoefficient: 0,
             },
@@ -296,12 +307,24 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
     [
       apiAssignment,
       apiSource,
+      junctionElevationField,
       pipeDiameterField,
       pipeLabelField,
       pipeMinorLossField,
       pipeRoughnessField,
       pipeStatusField,
     ],
+  );
+
+  const junctionPreviewRows = useMemo(
+    () =>
+      (networkDraft?.junctions ?? []).slice(0, 100).map((junction, index) => ({
+        rowNumber: index + 1,
+        id: junction.label,
+        elevation: String(junction.elevation),
+        elevationDefault: !junctionElevationField,
+      })),
+    [junctionElevationField, networkDraft],
   );
 
   const steps: Step[] = [
@@ -420,6 +443,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
       setPipeRoughnessField(null);
       setPipeMinorLossField(null);
       setPipeStatusField(null);
+      setJunctionElevationField(null);
     } catch (error) {
       setApiSource(null);
       setApiAssignment(null);
@@ -433,13 +457,13 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
     }
   };
 
-  const handleBuildModel = () => {
+  const handleBuildModel = async () => {
     if (!networkDraft || !apiSource) return;
 
     try {
       setIsBuilding(true);
 
-      const spec = presets[flowUnit];
+      const spec = selectedSpec;
       const idGenerator = new ConsecutiveIdsGenerator();
       const labelManager = new LabelManager();
       const hydraulicModel = initializeHydraulicModel({
@@ -453,8 +477,21 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
       });
 
       const junctionIdByDraftId = new Map<string, number>();
+      const junctionDrafts = junctionElevationField
+        ? networkDraft.junctions
+        : await Promise.all(
+            networkDraft.junctions.map(async (junctionDraft) => ({
+              ...junctionDraft,
+              elevation: await fetchElevation(
+                new LngLat(
+                  junctionDraft.coordinates[0],
+                  junctionDraft.coordinates[1],
+                ),
+              ),
+            })),
+          );
 
-      for (const junctionDraft of networkDraft.junctions) {
+      for (const junctionDraft of junctionDrafts) {
         const junction = factories.assetFactory.createJunction({
           label: junctionDraft.label,
           coordinates: junctionDraft.coordinates,
@@ -740,6 +777,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                           setApiSource(null);
                           setApiAssignment(null);
                           setApiError(null);
+                          setJunctionElevationField(null);
                         }}
                         aria-label={translate("delete")}
                       >
@@ -832,8 +870,9 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                 <div className="mt-8">
                   <p className="text-lg leading-8 text-slate-600">
                     Map the properties from your GIS data to EPANET attributes.
-                    Elevations and connectivity will be calculated
-                    automatically.
+                    Connectivity will be derived automatically, and junction
+                    elevations can either be mapped from your GIS API data or
+                    generated automatically from the configured terrain data.
                   </p>
 
                   <div className="mt-8 rounded-2xl bg-slate-100 p-3">
@@ -899,11 +938,55 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
 
                   <div className="mt-10">
                     <h3 className="text-2xl font-semibold text-slate-900">
-                      Data Preview
+                      Junctions Attribute Mapping
+                    </h3>
+
+                    <div className="mt-8 grid gap-5 md:grid-cols-2 md:gap-x-8">
+                      <div className="space-y-4">
+                        <div className="text-lg font-medium text-slate-700">
+                          Recommended Attributes
+                        </div>
+                        <MappingSelector
+                          label="Elevation"
+                          value={junctionElevationField}
+                          options={propertyOptions}
+                          placeholder="Select property..."
+                          onChange={setJunctionElevationField}
+                        />
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="text-lg font-medium text-slate-700">
+                          Defaults
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4 text-sm text-slate-600">
+                          Junction elevations default to{" "}
+                          <span className="font-semibold text-slate-900">
+                            {JUNCTION_DEFAULTS.elevation}
+                          </span>{" "}
+                          when no GIS field is selected or a value is missing.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-10">
+                    <h3 className="text-2xl font-semibold text-slate-900">
+                      Pipe Data Preview
                     </h3>
                     <PipeDataPreviewTable
                       rows={pipePreviewRows}
                       totalCount={pipeFeatures?.length ?? 0}
+                    />
+                  </div>
+
+                  <div className="mt-10">
+                    <h3 className="text-2xl font-semibold text-slate-900">
+                      Junction Data Preview
+                    </h3>
+                    <JunctionDataPreviewTable
+                      rows={junctionPreviewRows}
+                      totalCount={networkDraft?.junctions.length ?? 0}
                     />
                   </div>
                 </div>
@@ -940,6 +1023,14 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                     <BuildSummaryCard
                       label="Junctions"
                       value={String(networkDraft.junctions.length)}
+                    />
+                    <BuildSummaryCard
+                      label="Elevation"
+                      value={
+                        junctionElevationField
+                          ? `Mapped from ${junctionElevationField}`
+                          : "Auto-generated from terrain"
+                      }
                     />
                     <BuildSummaryCard label="Flow Units" value={flowUnit} />
                     <BuildSummaryCard
@@ -1084,6 +1175,61 @@ const PipeDataPreviewTable = ({
       <div className="border-t border-slate-200 bg-slate-50 px-5 py-4 text-sm text-slate-500">
         <p>
           Showing first {rows.length} of {totalCount} features
+        </p>
+        <p className="mt-1">
+          Legend: Normal text = mapped data,{" "}
+          <span className="italic">italic text = default values</span>
+        </p>
+      </div>
+    </div>
+  );
+};
+
+const JunctionDataPreviewTable = ({
+  rows,
+  totalCount,
+}: {
+  rows: {
+    rowNumber: number;
+    id: string;
+    elevation: string;
+    elevationDefault: boolean;
+  }[];
+  totalCount: number;
+}) => {
+  return (
+    <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+      <div className="max-h-[420px] overflow-auto">
+        <table className="min-w-full text-sm text-slate-700">
+          <thead className="sticky top-0 bg-slate-50 text-slate-500">
+            <tr>
+              <th className="w-16 px-5 py-4 text-left font-semibold">#</th>
+              <th className="px-5 py-4 text-left font-semibold uppercase tracking-wide">
+                Junction
+              </th>
+              <th className="px-5 py-4 text-left font-semibold uppercase tracking-wide">
+                Elevation
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.rowNumber} className="border-t border-slate-200">
+                <td className="px-5 py-4">{row.rowNumber}</td>
+                <PreviewValueCell value={row.id} isDefault={false} />
+                <PreviewValueCell
+                  value={row.elevation}
+                  isDefault={row.elevationDefault}
+                />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="border-t border-slate-200 bg-slate-50 px-5 py-4 text-sm text-slate-500">
+        <p>
+          Showing first {rows.length} of {totalCount} junctions
         </p>
         <p className="mt-1">
           Legend: Normal text = mapped data,{" "}

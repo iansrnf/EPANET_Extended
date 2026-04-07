@@ -30,6 +30,7 @@ import { projectSettingsAtom } from "src/state/project-settings";
 import { usePersistence } from "src/lib/persistence";
 import { initializeHydraulicModel } from "src/hydraulic-model";
 import { initializeModelFactories } from "src/hydraulic-model/factories";
+import { LabelManager } from "src/hydraulic-model/label-manager";
 import { ConsecutiveIdsGenerator } from "src/lib/id-generator";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import { fileInfoAtom } from "src/state/file-system";
@@ -440,12 +441,14 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
 
       const spec = presets[flowUnit];
       const idGenerator = new ConsecutiveIdsGenerator();
+      const labelManager = new LabelManager();
       const hydraulicModel = initializeHydraulicModel({
         idGenerator,
+        labelManager,
       });
       const factories = initializeModelFactories({
         idGenerator,
-        labelManager: hydraulicModel.labelManager,
+        labelManager,
         defaults: spec.defaults,
       });
 

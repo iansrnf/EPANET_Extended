@@ -2,6 +2,7 @@ import type { Worktree, Snapshot } from "./types";
 import type { SimulationSettings } from "src/simulation/simulation-settings";
 import { MomentLog } from "src/lib/persistence/moment-log";
 import { EMPTY_MOMENT } from "src/lib/persistence/moment";
+import { LabelManager } from "src/hydraulic-model/label-manager";
 import { nanoid } from "nanoid";
 
 export const createScenario = (
@@ -25,10 +26,11 @@ export const createScenario = (
     deltas: mainSnapshot.momentLog.getDeltas(),
     version: mainSnapshot.version,
     momentLog: newMomentLog,
-    simulation: null,
-    simulationSourceId: worktree.mainId,
+    simulation: mainSnapshot.simulation,
+    simulationSourceId: mainSnapshot.simulationSourceId,
     simulationSettings,
     status: "open",
+    labelManager: new LabelManager(worktree.labelCounters),
   };
 
   const updatedSnapshots = new Map(worktree.snapshots);

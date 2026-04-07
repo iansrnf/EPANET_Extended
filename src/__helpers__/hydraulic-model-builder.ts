@@ -135,18 +135,37 @@ export class HydraulicModelBuilder {
   private patterns: Patterns;
   private controlsValue: Controls;
 
-  static with(quantitiesSpec: AssetQuantitiesSpec = presets.LPS) {
-    return new HydraulicModelBuilder(quantitiesSpec);
+  static with(
+    options:
+      | AssetQuantitiesSpec
+      | {
+      quantitiesSpec?: AssetQuantitiesSpec;
+      labelManager?: LabelManager;
+    } = {},
+  ) {
+    return new HydraulicModelBuilder(options);
   }
 
   static empty(): HydraulicModel {
     return HydraulicModelBuilder.with().build();
   }
 
-  constructor(quantitiesSpec: AssetQuantitiesSpec = presets.LPS) {
+  constructor(
+    options:
+      | AssetQuantitiesSpec
+      | {
+      quantitiesSpec?: AssetQuantitiesSpec;
+      labelManager?: LabelManager;
+    } = {},
+  ) {
+    const resolvedOptions =
+      "units" in options
+        ? { quantitiesSpec: options }
+        : options;
+    const quantitiesSpec = resolvedOptions.quantitiesSpec ?? presets.LPS;
     this.assets = new Map();
     this.customerPointsMap = initializeCustomerPoints();
-    this.labelManager = new LabelManager();
+    this.labelManager = resolvedOptions.labelManager ?? new LabelManager();
     this.idGenerator = new WritableIdGenerator();
     this.customerPointIdGenerator = new WritableIdGenerator();
     this.assetFactory = new AssetFactory(

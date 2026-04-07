@@ -3,7 +3,7 @@ import { AssetsMap } from "./assets-map";
 import { nanoid } from "nanoid";
 
 import { ConsecutiveIdsGenerator, IdGenerator } from "src/lib/id-generator";
-import { LabelManager, LabelType } from "./label-manager";
+import { LabelManager } from "./label-manager";
 import { Demands, createEmptyDemands } from "./demands";
 import { CustomerPoints, initializeCustomerPoints } from "./customer-points";
 import { CustomerPointsLookup } from "./customer-points-lookup";
@@ -35,14 +35,13 @@ export const initializeHydraulicModel = ({
   demands = createEmptyDemands(),
   controls = createEmptyControls(),
   idGenerator,
-  labelCounters,
+  labelManager = new LabelManager(),
 }: {
   demands?: Demands;
   controls?: Controls;
   idGenerator?: IdGenerator;
-  labelCounters?: Map<LabelType, number>;
-}): HydraulicModel => {
-  const labelManager = new LabelManager(labelCounters);
+  labelManager?: LabelManager;
+} = {}): HydraulicModel => {
   const assetIdGenerator = idGenerator ?? new ConsecutiveIdsGenerator();
   const assets = new Map();
   return {

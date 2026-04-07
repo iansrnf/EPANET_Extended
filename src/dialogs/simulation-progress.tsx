@@ -1,6 +1,7 @@
 import * as Progress from "@radix-ui/react-progress";
 import { SimulationProgressDialogState } from "src/state/dialog";
 import { useTranslate } from "src/hooks/use-translate";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { BaseDialog } from "../components/dialog";
 
 const formatTime = (seconds: number): string => {
@@ -15,17 +16,21 @@ export const SimulationProgressDialog = ({
   modal: SimulationProgressDialogState;
 }) => {
   const translate = useTranslate();
-  const { currentTime, totalDuration } = modal;
+  const isWaterAgeOn = useFeatureFlag("FLAG_WATER_AGE");
+  const { currentTime, totalDuration, phase } = modal;
   const progressPercent =
     totalDuration > 0 ? (currentTime / totalDuration) * 100 : 0;
+  const label = !isWaterAgeOn
+    ? translate("runningSimulation")
+    : phase === "quality"
+      ? translate("runningQualityAnalysis")
+      : translate("runningHydraulicAnalysis");
 
   return (
     <BaseDialog size="xs" isOpen={true} onClose={() => {}} preventClose={true}>
       <div className="p-6">
         <div className="flex flex-row items-baseline gap-1 mb-2">
-          <p className="text-sm text-gray-500">
-            {translate("runningSimulation")}
-          </p>
+          <p className="text-sm text-gray-500">{label}</p>
           <p className="text-sm font-bold text-gray-900 tabular-nums">
             {formatTime(currentTime)}
           </p>

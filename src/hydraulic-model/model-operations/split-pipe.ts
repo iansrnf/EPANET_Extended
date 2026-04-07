@@ -23,11 +23,18 @@ type SplitPipeInput = {
   splits: NodeAsset[];
   lengthUnit: Unit;
   assetFactory: AssetFactory;
+  labelManager?: LabelManager;
 };
 
 export const splitPipe: ModelOperation<SplitPipeInput> = (
   hydraulicModel,
-  { pipe, splits, lengthUnit, assetFactory },
+  {
+    pipe,
+    splits,
+    lengthUnit,
+    assetFactory,
+    labelManager = hydraulicModel.labelManager,
+  },
 ) => {
   if (splits.length === 0) {
     throw new Error("At least one split is required");
@@ -39,6 +46,7 @@ export const splitPipe: ModelOperation<SplitPipeInput> = (
     splits,
     lengthUnit,
     assetFactory,
+    labelManager,
   );
 
   const reconnectedCustomerPoints = updateCustomerPoints(
@@ -124,6 +132,7 @@ const splitPipeIteratively = (
   splits: NodeAsset[],
   lengthUnit: Unit,
   assetFactory: AssetFactory,
+  labelManager: LabelManager,
 ): Pipe[] => {
   if (splits.length === 0) {
     return [originalPipe];
@@ -155,7 +164,7 @@ const splitPipeIteratively = (
     remainingSplits = remainingSplits.slice(1);
   }
 
-  relabelPipes(assetFactory.labelManager, currentPipes, baseLabel);
+  relabelPipes(labelManager, currentPipes, baseLabel);
 
   return currentPipes;
 };

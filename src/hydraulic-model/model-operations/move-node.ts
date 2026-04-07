@@ -12,6 +12,7 @@ import { HydraulicModel } from "../hydraulic-model";
 import { AssetFactory } from "../factories/asset-factory";
 import { computeLinkLength } from "../asset-types/link";
 import { Unit } from "src/quantity";
+import { LabelManager } from "../label-manager";
 
 type InputData = {
   nodeId: AssetId;
@@ -21,6 +22,7 @@ type InputData = {
   pipeIdToSplit?: AssetId;
   lengthUnit: Unit;
   assetFactory: AssetFactory;
+  labelManager?: LabelManager;
 };
 
 export const moveNode: ModelOperation<InputData> = (
@@ -33,6 +35,7 @@ export const moveNode: ModelOperation<InputData> = (
     pipeIdToSplit,
     lengthUnit,
     assetFactory,
+    labelManager = hydraulicModel.labelManager,
   },
 ) => {
   if (pipeIdToSplit) {
@@ -45,6 +48,7 @@ export const moveNode: ModelOperation<InputData> = (
       pipeIdToSplit,
       lengthUnit,
       assetFactory,
+      labelManager,
     );
   }
 
@@ -55,6 +59,7 @@ export const moveNode: ModelOperation<InputData> = (
     shouldUpdateCustomerPoints,
     lengthUnit,
     assetFactory,
+    labelManager,
   });
 };
 
@@ -141,6 +146,7 @@ const moveNodeWithPipeSplitting = (
   pipeIdToSplit: AssetId,
   lengthUnit: Unit,
   assetFactory: AssetFactory,
+  labelManager: LabelManager,
 ) => {
   const { assets } = hydraulicModel;
 
@@ -169,6 +175,7 @@ const moveNodeWithPipeSplitting = (
     splits: [updatedNode],
     lengthUnit,
     assetFactory,
+    labelManager,
   });
 
   const allPutAssets = [

@@ -102,7 +102,7 @@ export const buildCustomerPoint = (
   });
 };
 
-class WritableIdGenerator implements IdGenerator {
+export class WritableIdGenerator implements IdGenerator {
   private last: number;
   constructor() {
     this.last = 0;
@@ -141,6 +141,8 @@ export class HydraulicModelBuilder {
       | {
       quantitiesSpec?: AssetQuantitiesSpec;
       labelManager?: LabelManager;
+      assetFactory?: AssetFactory;
+      idGenerator?: WritableIdGenerator;
     } = {},
   ) {
     return new HydraulicModelBuilder(options);
@@ -156,6 +158,8 @@ export class HydraulicModelBuilder {
       | {
       quantitiesSpec?: AssetQuantitiesSpec;
       labelManager?: LabelManager;
+      assetFactory?: AssetFactory;
+      idGenerator?: WritableIdGenerator;
     } = {},
   ) {
     const resolvedOptions =
@@ -166,13 +170,15 @@ export class HydraulicModelBuilder {
     this.assets = new Map();
     this.customerPointsMap = initializeCustomerPoints();
     this.labelManager = resolvedOptions.labelManager ?? new LabelManager();
-    this.idGenerator = new WritableIdGenerator();
+    this.idGenerator = resolvedOptions.idGenerator ?? new WritableIdGenerator();
     this.customerPointIdGenerator = new WritableIdGenerator();
-    this.assetFactory = new AssetFactory(
-      quantitiesSpec.defaults,
-      this.idGenerator,
-      this.labelManager,
-    );
+    this.assetFactory =
+      resolvedOptions.assetFactory ??
+      new AssetFactory(
+        quantitiesSpec.defaults,
+        this.idGenerator,
+        this.labelManager,
+      );
     this.topology = new Topology();
     this.demands = createEmptyDemands();
     this.curves = new Map();

@@ -5,6 +5,7 @@ import {
   buildCustomerPoint,
 } from "src/__helpers__/hydraulic-model-builder";
 import { applyMomentToModel } from "../mutations/apply-moment";
+import { buildTestFactories } from "src/__helpers__/test-factories";
 
 describe("removeCustomerPoints", () => {
   it("removes a single connected customer point", () => {
@@ -173,7 +174,8 @@ describe("removeCustomerPoints", () => {
 
   it("produces correct reverse moment for undo", () => {
     const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4 } as const;
-    const hydraulicModel = HydraulicModelBuilder.with()
+    const { labelManager } = buildTestFactories();
+    const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
       .aJunction(IDS.J1, { coordinates: [0, 0] })
       .aJunction(IDS.J2, { coordinates: [10, 0] })
       .aPipe(IDS.P1, {
@@ -199,20 +201,16 @@ describe("removeCustomerPoints", () => {
     const reverseMoment = applyMomentToModel(
       hydraulicModel,
       moment,
-      hydraulicModel.labelManager,
+      labelManager,
     );
 
-    // CP should be removed from model
     expect(hydraulicModel.customerPoints.has(IDS.CP1)).toBe(false);
-
-    // Reverse moment should restore the CP
     expect(reverseMoment.putCustomerPoints).toHaveLength(1);
     expect(reverseMoment.putCustomerPoints[0].id).toBe(originalCP.id);
     expect(reverseMoment.putCustomerPoints[0].coordinates).toEqual(
       originalCP.coordinates,
     );
 
-    // Reverse moment should restore demands
     expect(reverseMoment.putDemands).toBeDefined();
     expect(reverseMoment.putDemands!.assignments).toEqual(
       expect.arrayContaining([
@@ -223,12 +221,7 @@ describe("removeCustomerPoints", () => {
       ]),
     );
 
-    // Applying reverse should restore the CP
-    applyMomentToModel(
-      hydraulicModel,
-      reverseMoment,
-      hydraulicModel.labelManager,
-    );
+    applyMomentToModel(hydraulicModel, reverseMoment, labelManager);
     expect(hydraulicModel.customerPoints.has(IDS.CP1)).toBe(true);
     expect(hydraulicModel.customerPoints.get(IDS.CP1)!.id).toBe(IDS.CP1);
   });

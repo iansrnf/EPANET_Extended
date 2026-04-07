@@ -4,19 +4,13 @@ import {
   HydraulicModelBuilder,
   buildPipe,
 } from "src/__helpers__/hydraulic-model-builder";
+import { buildTestFactories } from "src/__helpers__/test-factories";
 import { Pipe, NodeAsset, Valve } from "../asset-types";
 import { CustomerPoint } from "../customer-points";
-import { AssetFactory } from "../factories/asset-factory";
-import { ConsecutiveIdsGenerator } from "src/lib/id-generator";
-import { presets } from "src/lib/project-settings/quantities-spec";
 import type { HydraulicModel } from "../hydraulic-model";
 
 const createAssetFactory = (hydraulicModel: HydraulicModel) =>
-  new AssetFactory(
-    presets.LPS.defaults,
-    new ConsecutiveIdsGenerator(),
-    hydraulicModel.labelManager,
-  );
+  buildTestFactories({ labelManager: hydraulicModel.labelManager }).assetFactory;
 
 describe("replaceLink", () => {
   describe("basic functionality", () => {

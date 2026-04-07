@@ -3,18 +3,12 @@ import {
   HydraulicModelBuilder,
   buildCustomerPoint,
 } from "src/__helpers__/hydraulic-model-builder";
+import { buildTestFactories } from "src/__helpers__/test-factories";
 import { Pipe } from "../asset-types/pipe";
-import { AssetFactory } from "../factories/asset-factory";
-import { ConsecutiveIdsGenerator } from "src/lib/id-generator";
-import { presets } from "src/lib/project-settings/quantities-spec";
 import { HydraulicModel } from "../hydraulic-model";
 
 const createAssetFactory = (hydraulicModel: HydraulicModel) =>
-  new AssetFactory(
-    presets.LPS.defaults,
-    new ConsecutiveIdsGenerator(),
-    hydraulicModel.labelManager,
-  );
+  buildTestFactories({ labelManager: hydraulicModel.labelManager }).assetFactory;
 
 describe("splitPipe", () => {
   it("splits a pipe at specified coordinates", () => {

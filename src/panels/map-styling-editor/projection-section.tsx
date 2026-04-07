@@ -10,7 +10,7 @@ import { CollapsibleSection } from "src/components/form/fields";
 import { mapStylingPanelSectionsExpandedAtom } from "src/state/layout";
 import { MapPinnedIcon } from "src/icons";
 import type { Projection } from "src/lib/projections/projection";
-import { createProjectionMapper, inverseProjectGeoJson } from "src/lib/projections";
+import { inverseProjectGeoJson } from "src/lib/projections";
 import { chooseUnitSystem } from "src/simulation/build-inp";
 import { usePersistence } from "src/lib/persistence";
 import { MapContext } from "src/map";
@@ -29,7 +29,6 @@ export const ProjectionSection = () => {
   const hasScenarios = useAtomValue(hasScenariosAtom);
   const isXYGrid = projection.type === "xy-grid";
   const t = useTranslate();
-  const currentProjection = createProjectionMapper(projection).projection;
 
   const handleOpenProjectionDialog = () => {
     const geoJson: FeatureCollection = {
@@ -43,13 +42,10 @@ export const ProjectionSection = () => {
       type: "networkProjection",
       source: "map-panel",
       previewGeoJson,
-      onImportWithProjection: async (newProjection, extent) => {
+      onImportWithProjection: async (newProjection: Projection, extent) => {
         setDialogState({ type: "loading" });
         try {
-          await transactReprojection(
-            createProjectionMapper(newProjection).projection,
-            currentProjection,
-          );
+          await transactReprojection(newProjection, projection);
           if (extent) {
             map?.map.once("idle", () => {
               map.map.fitBounds(extent as LngLatBoundsLike, {
@@ -66,15 +62,24 @@ export const ProjectionSection = () => {
       },
       filename: "",
       flowUnits: chooseUnitSystem(projectSettings.units),
-      initialProjection: projection.type === "proj4" ? projection : undefined,
+      initialProjection:
+        projection.type === "proj4"
+          ? projection
+          : projection.type === "wgs84"
+            ? {
+                type: "proj4",
+                id: "EPSG:4326",
+                name: "WGS 84",
+                code: "EPSG:4326",
+              }
+            : undefined,
     });
   };
 
-  const projectionName = currentProjection.name;
+  const projectionName =
+    projection.type === "wgs84" ? "WGS 84" : projection.name;
   const projectionCode =
-    currentProjection.type === "wgs84"
-      ? "EPSG:4326"
-      : currentProjection.id;
+    projection.type === "wgs84" ? "EPSG:4326" : projection.id;
   const [sections, setSections] = useAtom(mapStylingPanelSectionsExpandedAtom);
 
   return (
@@ -104,16 +109,17 @@ export const ProjectionSection = () => {
             <div className="truncate">{projectionName}</div>
             <div className="text-gray-500 truncate">{projectionCode}</div>
           </div>
-          {projection.type === "proj4" && !hasScenarios && (
-            <Button
-              variant="quiet/mode"
-              className="h-8 flex-shrink-0"
-              onClick={handleOpenProjectionDialog}
-              aria-label="Change projection"
-            >
-              <MapPinnedIcon />
-            </Button>
-          )}
+          {(projection.type === "proj4" || projection.type === "wgs84") &&
+            !hasScenarios && (
+              <Button
+                variant="quiet/mode"
+                className="h-8 flex-shrink-0"
+                onClick={handleOpenProjectionDialog}
+                aria-label="Change projection"
+              >
+                <MapPinnedIcon />
+              </Button>
+            )}
         </div>
       )}
     </CollapsibleSection>

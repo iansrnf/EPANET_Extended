@@ -1,5 +1,6 @@
 import { useCallback } from "react";
-import { useAuth, isAuthEnabled } from "src/auth";
+import { isAuthEnabled } from "src/global-config";
+import { useAuth } from "src/hooks/use-auth";
 import { useSetAtom } from "jotai";
 import { dialogAtom } from "src/state/dialog";
 
@@ -23,7 +24,7 @@ export const useEarlyAccess = () => {
         return;
       }
 
-      if (!isAuthEnabled || isSignedIn) {
+      if (isSignedIn) {
         callback();
       } else if (isAuthEnabled) {
         setDialogState({

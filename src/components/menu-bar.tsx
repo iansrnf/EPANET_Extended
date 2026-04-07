@@ -18,7 +18,9 @@ import {
   sourceCodeUrl,
   utilitiesUrl,
 } from "src/global-config";
-import { SignedIn, SignedOut, UserButton, useAuth, useClerk } from "src/auth";
+import { SignedIn, SignedOut, UserButton } from "src/components/auth";
+import { useAuth } from "src/hooks/use-auth";
+import { useClerk } from "src/hooks/use-clerk";
 import { SignInButton, SignUpButton } from "./auth-buttons";
 import { useShowWelcome } from "src/commands/show-welcome";
 import { useUserTracking } from "src/infra/user-tracking";

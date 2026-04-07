@@ -2,11 +2,13 @@ import { useAtomValue } from "jotai";
 import { useCallback } from "react";
 import { basemaps } from "src/map/basemaps";
 import { newFeatureId } from "src/lib/id";
-import { useLayerConfigState } from "src/map/layer-config";
+import {
+  maybeDeleteOldMapboxLayer,
+  useLayerConfigState,
+} from "src/map/layer-config";
 import { layerConfigAtom } from "src/state/map";
-import { useAuth } from "src/auth";
+import { useAuth } from "src/hooks/use-auth";
 import { ILayerConfig } from "src/types";
-import { maybeDeleteOldMapboxLayer } from "src/map/layer-config";
 
 export const satelliteLimitedZoom = 16;
 

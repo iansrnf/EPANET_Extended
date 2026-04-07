@@ -1,7 +1,8 @@
 import { useMemo } from "react";
-import { useAuth, useOrganization } from "src/auth";
+import { useAuth } from "src/hooks/use-auth";
 import { useEffectivePlan } from "src/hooks/use-effective-plan";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { useOrganization } from "src/hooks/use-organization";
 import { Plan, isTrialActive } from "src/lib/account-plans";
 
 export type Permissions = {

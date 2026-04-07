@@ -18,8 +18,8 @@ export const WizardContainer: React.FC<WizardContainerProps> = ({
 
   return (
     <BaseDialog
-      size="lg"
-      height="xl"
+      size="xxl"
+      height="xxl"
       isOpen={true}
       onClose={closeDialog}
       preventClose={true}

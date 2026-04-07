@@ -1,5 +1,9 @@
 import { useTranslate } from "src/hooks/use-translate";
-import { BaseDialog, AckDialogAction, useDialogState } from "../components/dialog";
+import {
+  BaseDialog,
+  AckDialogAction,
+  useDialogState,
+} from "../components/dialog";
 import { processReportWithSlots, ReportRow } from "src/simulation/report";
 import { useMemo, useCallback } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -123,8 +127,10 @@ export const SimulationReportDialog = () => {
         <AckDialogAction label={translate("understood")} onAck={closeDialog} />
       }
     >
-      <div className="flex-1 p-4 text-sm bg-gray-100 text-gray-700 font-mono leading-loose">
-        {processedReport.map(renderRowWithSlots)}
+      <div className="flex-1 min-h-0 overflow-auto bg-gray-100">
+        <div className="min-w-max p-4 text-sm text-gray-700 font-mono leading-loose">
+          {processedReport.map(renderRowWithSlots)}
+        </div>
       </div>
     </BaseDialog>
   );

@@ -566,10 +566,10 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
         badge={<EarlyAccessBadge />}
       />
 
-      <WizardContent minHeight="540px">
+      <WizardContent minHeight="680px">
         {currentStep === 1 ? (
-          <div className="flex-1 grid gap-6 xl:grid-cols-[1fr_0.95fr] pb-4">
-            <section className="rounded-2xl border border-gray-200 bg-white p-7">
+          <div className="flex-1 grid gap-8 lg:grid-cols-[1fr_1fr] pb-6">
+            <section className="rounded-3xl border border-gray-200 bg-white p-8 md:p-10">
               <h2 className="text-2xl font-semibold text-gray-900">
                 {translate("importFromGISApiWizard.modelSettings.title")}
               </h2>
@@ -638,20 +638,20 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-gray-200 bg-white p-7">
+            <section className="rounded-3xl border border-gray-200 bg-white p-8 md:p-10">
               <h2 className="text-2xl font-semibold text-gray-900">
                 {translate("importFromGISApiWizard.tutorial.title")}
               </h2>
 
-              <div className="mt-8 rounded-2xl border border-gray-200 bg-gray-50 p-8 min-h-[320px] flex items-center justify-center text-center">
+              <div className="mt-8 rounded-3xl border border-gray-200 bg-gray-50 p-8 min-h-[420px] flex items-center justify-center text-center">
                 <div>
-                  <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-purple-100 text-purple-700 text-xl font-semibold">
+                  <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-purple-100 text-purple-700 text-3xl font-semibold">
                     1
                   </div>
-                  <p className="mt-4 text-base font-medium text-gray-900">
+                  <p className="mt-6 text-3xl font-semibold text-gray-900 leading-tight">
                     {translate("importFromGISApiWizard.tutorial.stepTitle")}
                   </p>
-                  <p className="mt-2 text-sm text-gray-600">
+                  <p className="mt-4 text-xl text-gray-600 max-w-md leading-9">
                     {translate(
                       "importFromGISApiWizard.tutorial.stepDescription",
                     )}
@@ -659,14 +659,14 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                 </div>
               </div>
 
-              <p className="mt-6 text-lg leading-8 text-gray-700">
+              <p className="mt-8 text-xl leading-9 text-gray-700">
                 {translate("importFromGISApiWizard.tutorial.description")}
               </p>
 
               <Button
                 variant="quiet"
                 size="sm"
-                className="mt-4 px-0 text-purple-600 hover:text-purple-700"
+                className="mt-5 px-0 text-xl text-purple-600 hover:text-purple-700"
                 onClick={() =>
                   window.open("https://help.epanetjs.com", "_blank")
                 }

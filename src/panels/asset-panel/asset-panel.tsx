@@ -21,6 +21,7 @@ import {
 import {
   tankDiameterFor,
   tankDiameterFromArea,
+  tankMixingModels,
   tankVolumeCurveRange,
   tankVolumeFor,
 } from "src/hydraulic-model/asset-types/tank";
@@ -1007,6 +1008,15 @@ const TankEditor = ({
   const simulation = useSimulation();
   const tankSimulation = simulation?.getTank(tank.id);
 
+  const mixingModelOptions = useMemo(
+    () =>
+      tankMixingModels.map((mixingModel) => ({
+        label: translate(`tank.${mixingModel}`),
+        value: mixingModel,
+      })),
+    [translate],
+  );
+
   const simPressure = tankSimulation?.pressure ?? null;
   const simHead = tankSimulation?.head ?? null;
   const simNetFlow = tankSimulation?.netFlow ?? null;
@@ -1094,15 +1104,38 @@ const TankEditor = ({
           readOnly={readonly}
         />
         {isWaterAgeOn && (
-          <QuantityRow
-            name="initialWaterAge"
-            value={tank.initialWaterAge}
-            unit={units.initialWaterAge}
-            comparison={getComparison("initialWaterAge", tank.initialWaterAge)}
-            onChange={onPropertyChange}
-            positiveOnly={true}
-            readOnly={readonly}
-          />
+          <>
+            <QuantityRow
+              name="initialWaterAge"
+              value={tank.initialWaterAge}
+              unit={units.initialWaterAge}
+              comparison={getComparison("initialWaterAge", tank.initialWaterAge)}
+              onChange={onPropertyChange}
+              positiveOnly={true}
+              readOnly={readonly}
+            />
+            <SelectRow
+              name="mixingModel"
+              selected={tank.mixingModel}
+              options={mixingModelOptions}
+              comparison={getComparison("mixingModel", tank.mixingModel)}
+              onChange={onPropertyChange}
+              readOnly={readonly}
+            />
+            {tank.mixingModel === "2comp" && (
+              <NestedSection>
+                <QuantityRow
+                  name="mixingFraction"
+                  value={tank.mixingFraction}
+                  unit={units.mixingFraction}
+                  comparison={getComparison("mixingFraction", tank.mixingFraction)}
+                  onChange={onPropertyChange}
+                  positiveOnly={true}
+                  readOnly={readonly}
+                />
+              </NestedSection>
+            )}
+          </>
         )}
       </SectionWrapper>
       <SectionWrapper

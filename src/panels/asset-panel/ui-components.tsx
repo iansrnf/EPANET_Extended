@@ -19,6 +19,7 @@ import { Checkbox } from "src/components/form/Checkbox";
 import { PipeStatus } from "src/hydraulic-model/asset-types/pipe";
 import { PumpStatus } from "src/hydraulic-model/asset-types/pump";
 import type { PumpDefinitionMode } from "./pump-definition-details";
+import type { TankMixingModel } from "src/hydraulic-model/asset-types/tank";
 import { ValveKind, ValveStatus } from "src/hydraulic-model/asset-types/valve";
 import { PanelActions } from "./actions";
 import {
@@ -307,6 +308,7 @@ type SelectRowValue =
   | PumpDefinitionMode
   | PumpStatus
   | TankDefinitionMode
+  | TankMixingModel
   | number;
 
 type SelectRowPropsBase<P extends string, T extends SelectRowValue> = {

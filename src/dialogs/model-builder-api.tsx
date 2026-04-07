@@ -2,7 +2,7 @@ import bbox from "@turf/bbox";
 import type { FeatureCollection } from "geojson";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { LngLat } from "mapbox-gl";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { Button } from "src/components/elements";
 import { EarlyAccessBadge } from "src/components/early-access-badge";
@@ -51,8 +51,35 @@ type ImportedApiSource = {
   previewGeoJson: FeatureCollection;
 };
 
+type ImportedApiEntry = {
+  id: string;
+  source: ImportedApiSource;
+  assignment: ElementAssignment | null;
+};
+
 type UnitSystem = "us" | "metric";
-type ElementAssignment = "pipes";
+type ElementAssignment = "pipes" | "pumps";
+
+type PumpPreviewRow = {
+  rowNumber: number;
+  id: string;
+  idDefault: boolean;
+  power: string;
+  powerDefault: boolean;
+  status: string;
+  statusDefault: boolean;
+  elevation: string;
+  elevationDefault: boolean;
+};
+
+type PumpDraft = {
+  id: string;
+  label: string;
+  coordinates: [number, number];
+  power: number;
+  initialStatus: "on" | "off";
+  elevation: number;
+};
 
 const US_FLOW_UNITS: { value: keyof Presets; label: string }[] = [
   { value: "CFS", label: "CFS (cu foot/sec)" },
@@ -184,10 +211,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
   const [headlossFormula, setHeadlossFormula] =
     useState<HeadlossFormula>("H-W");
   const [apiUrl, setApiUrl] = useState("");
-  const [apiSource, setApiSource] = useState<ImportedApiSource | null>(null);
-  const [apiAssignment, setApiAssignment] = useState<ElementAssignment | null>(
-    null,
-  );
+  const [apiEntries, setApiEntries] = useState<ImportedApiEntry[]>([]);
   const [apiLoading, setApiLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [pipeLabelField, setPipeLabelField] = useState<string | null>(null);
@@ -201,6 +225,9 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
     null,
   );
   const [pipeStatusField, setPipeStatusField] = useState<string | null>(null);
+  const [pumpLabelField, setPumpLabelField] = useState<string | null>(null);
+  const [pumpPowerField, setPumpPowerField] = useState<string | null>(null);
+  const [pumpStatusField, setPumpStatusField] = useState<string | null>(null);
   const [junctionElevationField, setJunctionElevationField] = useState<
     string | null
   >(null);
@@ -211,25 +238,62 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
   const rep = usePersistence();
   const transactImport = rep.useTransactImport();
   const toggleNetworkReview = useToggleNetworkReview();
-  const assignedElementCount = apiSource && apiAssignment ? 1 : 0;
+  const assignedSources = useMemo(
+    () => apiEntries.filter((entry) => entry.assignment !== null),
+    [apiEntries],
+  );
+  const assignedPipeSources = useMemo(
+    () => apiEntries.filter((entry) => entry.assignment === "pipes"),
+    [apiEntries],
+  );
+  const unassignedSources = useMemo(
+    () => apiEntries.filter((entry) => entry.assignment === null),
+    [apiEntries],
+  );
+  const assignedElementCount = assignedSources.length;
   const selectedSpec = useMemo(() => presets[flowUnit], [flowUnit]);
   const { fetchElevation } = useElevations(selectedSpec.units.elevation);
 
-  const propertyOptions = useMemo(
-    () =>
-      (apiSource?.propertyNames ?? []).map((property) => ({
+  const propertyOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const entry of assignedSources) {
+      for (const property of entry.source.propertyNames) {
+        names.add(property);
+      }
+    }
+
+    return Array.from(names)
+      .sort((a, b) => a.localeCompare(b))
+      .map((property) => ({
         value: property,
         label: property,
-      })),
-    [apiSource],
-  );
+      }));
+  }, [assignedSources]);
+
+  const assignedPreviewGeoJson = useMemo<FeatureCollection | null>(() => {
+    if (assignedSources.length === 0) return null;
+
+    return {
+      type: "FeatureCollection",
+      features: assignedSources.flatMap(
+        (entry) => entry.source.previewGeoJson.features,
+      ),
+    };
+  }, [assignedSources]);
 
   const pipeFeatures = useMemo(
     () =>
-      apiSource && apiAssignment === "pipes"
-        ? apiSource.previewGeoJson.features.filter(isPipeGeometryFeature)
+      assignedPreviewGeoJson
+        ? assignedPreviewGeoJson.features.filter(isPipeGeometryFeature)
         : null,
-    [apiAssignment, apiSource],
+    [assignedPreviewGeoJson],
+  );
+  const pumpFeatures = useMemo(
+    () =>
+      assignedPreviewGeoJson
+        ? assignedPreviewGeoJson.features.filter(isPumpGeometryFeature)
+        : null,
+    [assignedPreviewGeoJson],
   );
 
   const pipePreviewRows = useMemo(
@@ -277,36 +341,84 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
     ],
   );
 
+  const pumpPreviewRows = useMemo<PumpPreviewRow[]>(
+    () =>
+      (pumpFeatures ?? []).slice(0, 100).map((feature, index) => {
+        const idValue = getMappedTextValue(feature.properties, pumpLabelField);
+        const powerValue = getMappedNumericValue(
+          feature.properties,
+          pumpPowerField,
+        );
+        const statusValue = getMappedTextValue(
+          feature.properties,
+          pumpStatusField,
+        );
+        const elevationValue = getMappedNumericValue(
+          feature.properties,
+          junctionElevationField,
+        );
+
+        return {
+          rowNumber: index + 1,
+          id: idValue ?? String(feature.id ?? index + 1),
+          idDefault: !idValue,
+          power: String(powerValue ?? selectedSpec.defaults.pump.power ?? 20),
+          powerDefault: powerValue == null,
+          status: normalizePumpStatus(statusValue) === "off" ? "Off" : "On",
+          statusDefault: !statusValue,
+          elevation: String(
+            elevationValue ?? Number(JUNCTION_DEFAULTS.elevation),
+          ),
+          elevationDefault: elevationValue == null,
+        };
+      }),
+    [
+      junctionElevationField,
+      pumpFeatures,
+      pumpLabelField,
+      pumpPowerField,
+      pumpStatusField,
+      selectedSpec.defaults.pump.power,
+    ],
+  );
+
   const networkDraft = useMemo(
     () =>
-      apiSource && apiAssignment === "pipes"
-        ? buildApiNetworkPreview(apiSource.previewGeoJson, {
-            pipe: {
-              labelField: pipeLabelField,
-              diameterField: pipeDiameterField,
-              defaultDiameter: Number(PIPE_DEFAULTS.diameter),
-              roughnessField: pipeRoughnessField,
-              defaultRoughness: Number(PIPE_DEFAULTS.roughness),
-              minorLossField: pipeMinorLossField,
-              defaultMinorLoss: Number(PIPE_DEFAULTS.minorLoss),
-              statusField: pipeStatusField,
-              defaultStatus: "open",
-              lengthMode: "geometry",
-              lengthField: null,
-              defaultLength: 0,
+      assignedPipeSources.length > 0
+        ? buildApiNetworkPreview(
+            {
+              type: "FeatureCollection",
+              features: assignedPipeSources.flatMap(
+                (entry) => entry.source.previewGeoJson.features,
+              ),
             },
-            junction: {
-              labelField: null,
-              elevationField: junctionElevationField,
-              defaultElevation: Number(JUNCTION_DEFAULTS.elevation),
-              emitterCoefficientField: null,
-              defaultEmitterCoefficient: 0,
+            {
+              pipe: {
+                labelField: pipeLabelField,
+                diameterField: pipeDiameterField,
+                defaultDiameter: Number(PIPE_DEFAULTS.diameter),
+                roughnessField: pipeRoughnessField,
+                defaultRoughness: Number(PIPE_DEFAULTS.roughness),
+                minorLossField: pipeMinorLossField,
+                defaultMinorLoss: Number(PIPE_DEFAULTS.minorLoss),
+                statusField: pipeStatusField,
+                defaultStatus: "open",
+                lengthMode: "geometry",
+                lengthField: null,
+                defaultLength: 0,
+              },
+              junction: {
+                labelField: null,
+                elevationField: junctionElevationField,
+                defaultElevation: Number(JUNCTION_DEFAULTS.elevation),
+                emitterCoefficientField: null,
+                defaultEmitterCoefficient: 0,
+              },
             },
-          })
+          )
         : null,
     [
-      apiAssignment,
-      apiSource,
+      assignedPipeSources,
       junctionElevationField,
       pipeDiameterField,
       pipeLabelField,
@@ -325,6 +437,50 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
         elevationDefault: !junctionElevationField,
       })),
     [junctionElevationField, networkDraft],
+  );
+
+  const pumpDrafts = useMemo<PumpDraft[]>(
+    () =>
+      (pumpFeatures ?? [])
+        .map((feature, index) => {
+          const coordinates = getPointCoordinates(feature);
+          if (!coordinates) return null;
+
+          const labelValue = getMappedTextValue(
+            feature.properties,
+            pumpLabelField,
+          );
+          const powerValue = getMappedNumericValue(
+            feature.properties,
+            pumpPowerField,
+          );
+          const statusValue = getMappedTextValue(
+            feature.properties,
+            pumpStatusField,
+          );
+          const elevationValue = getMappedNumericValue(
+            feature.properties,
+            junctionElevationField,
+          );
+
+          return {
+            id: String(feature.id ?? `pump-${index + 1}`),
+            label: labelValue ?? String(feature.id ?? `pump-${index + 1}`),
+            coordinates,
+            power: powerValue ?? selectedSpec.defaults.pump.power ?? 20,
+            initialStatus: normalizePumpStatus(statusValue),
+            elevation: elevationValue ?? Number(JUNCTION_DEFAULTS.elevation),
+          };
+        })
+        .filter((draft): draft is PumpDraft => draft !== null),
+    [
+      junctionElevationField,
+      pumpFeatures,
+      pumpLabelField,
+      pumpPowerField,
+      pumpStatusField,
+      selectedSpec.defaults.pump.power,
+    ],
   );
 
   const steps: Step[] = [
@@ -361,17 +517,19 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
   };
 
   useEffect(() => {
-    if (!apiSource || !apiAssignment) return;
+    if (!assignedPreviewGeoJson) return;
 
-    if (apiSource.bbox) {
-      fitToBbox(apiSource.bbox);
+    const latestAssignedBbox =
+      assignedSources[assignedSources.length - 1]?.source.bbox;
+    if (latestAssignedBbox) {
+      fitToBbox(latestAssignedBbox);
       return;
     }
 
-    if (apiSource.previewGeoJson.features.length > 0) {
-      fitToNetwork(apiSource.previewGeoJson);
+    if (assignedPreviewGeoJson.features.length > 0) {
+      fitToNetwork(assignedPreviewGeoJson);
     }
-  }, [apiAssignment, apiSource, fitToBbox, fitToNetwork]);
+  }, [assignedPreviewGeoJson, assignedSources, fitToBbox, fitToNetwork]);
 
   const footer = (
     <WizardActions
@@ -389,9 +547,10 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
               onClick: () =>
                 setCurrentStep((step) => Math.min(STEP_COUNT, step + 1)),
               disabled:
-                (currentStep === 2 && (!apiSource || !apiAssignment)) ||
+                (currentStep === 2 && assignedSources.length === 0) ||
                 (currentStep === 3 &&
-                  (!pipeFeatures || pipeFeatures.length === 0)),
+                  networkDraft == null &&
+                  pumpDrafts.length === 0),
             }
           : undefined
       }
@@ -401,7 +560,8 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
               onClick: () => {
                 void handleBuildModel();
               },
-              disabled: !networkDraft || networkDraft.pipes.length === 0,
+              disabled:
+                (networkDraft?.pipes.length ?? 0) + pumpDrafts.length === 0,
               loading: isBuilding,
               label: "Build Model",
             }
@@ -436,17 +596,25 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
       }
 
       const parsedSource = await parseGeoJsonResponse(response, apiUrl);
-      setApiSource(parsedSource);
-      setApiAssignment(null);
+      setApiEntries((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}-${prev.length}`,
+          source: parsedSource,
+          assignment: null,
+        },
+      ]);
+      setApiUrl("");
       setPipeLabelField(null);
       setPipeDiameterField(null);
       setPipeRoughnessField(null);
       setPipeMinorLossField(null);
       setPipeStatusField(null);
+      setPumpLabelField(null);
+      setPumpPowerField(null);
+      setPumpStatusField(null);
       setJunctionElevationField(null);
     } catch (error) {
-      setApiSource(null);
-      setApiAssignment(null);
       setApiError(
         error instanceof Error
           ? error.message
@@ -457,8 +625,24 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
     }
   };
 
+  const handleAssignmentChange = useCallback(
+    (entryId: string, assignment: ElementAssignment | null) => {
+      setApiEntries((prev) =>
+        prev.map((entry) =>
+          entry.id === entryId ? { ...entry, assignment } : entry,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handleDeleteEntry = useCallback((entryId: string) => {
+    setApiEntries((prev) => prev.filter((entry) => entry.id !== entryId));
+  }, []);
+
   const handleBuildModel = async () => {
-    if (!networkDraft || !apiSource) return;
+    if (!networkDraft && pumpDrafts.length === 0) return;
+    if (assignedSources.length === 0) return;
 
     try {
       setIsBuilding(true);
@@ -477,21 +661,24 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
       });
 
       const junctionIdByDraftId = new Map<string, number>();
-      const junctionDrafts = junctionElevationField
-        ? networkDraft.junctions
-        : await Promise.all(
-            networkDraft.junctions.map(async (junctionDraft) => ({
-              ...junctionDraft,
-              elevation: await fetchElevation(
-                new LngLat(
-                  junctionDraft.coordinates[0],
-                  junctionDraft.coordinates[1],
-                ),
-              ),
-            })),
-          );
+      const resolvedPipeJunctionDrafts =
+        networkDraft == null
+          ? []
+          : junctionElevationField
+            ? networkDraft.junctions
+            : await Promise.all(
+                networkDraft.junctions.map(async (junctionDraft) => ({
+                  ...junctionDraft,
+                  elevation: await fetchElevation(
+                    new LngLat(
+                      junctionDraft.coordinates[0],
+                      junctionDraft.coordinates[1],
+                    ),
+                  ),
+                })),
+              );
 
-      for (const junctionDraft of junctionDrafts) {
+      for (const junctionDraft of resolvedPipeJunctionDrafts) {
         const junction = factories.assetFactory.createJunction({
           label: junctionDraft.label,
           coordinates: junctionDraft.coordinates,
@@ -503,28 +690,73 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
         junctionIdByDraftId.set(junctionDraft.id, junction.id);
       }
 
-      for (const pipeDraft of networkDraft.pipes) {
-        const startNodeId = junctionIdByDraftId.get(pipeDraft.startJunctionId);
-        const endNodeId = junctionIdByDraftId.get(pipeDraft.endJunctionId);
+      if (networkDraft) {
+        for (const pipeDraft of networkDraft.pipes) {
+          const startNodeId = junctionIdByDraftId.get(
+            pipeDraft.startJunctionId,
+          );
+          const endNodeId = junctionIdByDraftId.get(pipeDraft.endJunctionId);
 
-        if (startNodeId == null || endNodeId == null) continue;
+          if (startNodeId == null || endNodeId == null) continue;
 
-        const pipe = factories.assetFactory.createPipe({
-          label: pipeDraft.label,
-          coordinates: pipeDraft.coordinates,
-          connections: [startNodeId, endNodeId],
-          diameter: pipeDraft.diameter,
-          roughness: pipeDraft.roughness,
-          minorLoss: pipeDraft.minorLoss,
-          initialStatus: pipeDraft.initialStatus,
-          length: convertTo(
-            { value: pipeDraft.length, unit: "m" },
-            spec.units.length,
-          ),
+          const pipe = factories.assetFactory.createPipe({
+            label: pipeDraft.label,
+            coordinates: pipeDraft.coordinates,
+            connections: [startNodeId, endNodeId],
+            diameter: pipeDraft.diameter,
+            roughness: pipeDraft.roughness,
+            minorLoss: pipeDraft.minorLoss,
+            initialStatus: pipeDraft.initialStatus,
+            length: convertTo(
+              { value: pipeDraft.length, unit: "m" },
+              spec.units.length,
+            ),
+          });
+
+          hydraulicModel.assets.set(pipe.id, pipe);
+          hydraulicModel.topology.addLink(pipe.id, startNodeId, endNodeId);
+        }
+      }
+
+      const resolvedPumpDrafts = junctionElevationField
+        ? pumpDrafts
+        : await Promise.all(
+            pumpDrafts.map(async (pumpDraft) => ({
+              ...pumpDraft,
+              elevation: await fetchElevation(
+                new LngLat(pumpDraft.coordinates[0], pumpDraft.coordinates[1]),
+              ),
+            })),
+          );
+
+      for (const pumpDraft of resolvedPumpDrafts) {
+        const suctionJunction = factories.assetFactory.createJunction({
+          label: `${pumpDraft.label}-SUCTION`,
+          coordinates: pumpDraft.coordinates,
+          elevation: pumpDraft.elevation,
+        });
+        const dischargeJunction = factories.assetFactory.createJunction({
+          label: `${pumpDraft.label}-DISCHARGE`,
+          coordinates: pumpDraft.coordinates,
+          elevation: pumpDraft.elevation,
+        });
+        const pump = factories.assetFactory.createPump({
+          label: pumpDraft.label,
+          coordinates: [pumpDraft.coordinates, pumpDraft.coordinates],
+          connections: [suctionJunction.id, dischargeJunction.id],
+          definitionType: "power",
+          power: pumpDraft.power,
+          initialStatus: pumpDraft.initialStatus,
         });
 
-        hydraulicModel.assets.set(pipe.id, pipe);
-        hydraulicModel.topology.addLink(pipe.id, startNodeId, endNodeId);
+        hydraulicModel.assets.set(suctionJunction.id, suctionJunction);
+        hydraulicModel.assets.set(dischargeJunction.id, dischargeJunction);
+        hydraulicModel.assets.set(pump.id, pump);
+        hydraulicModel.topology.addLink(
+          pump.id,
+          suctionJunction.id,
+          dischargeJunction.id,
+        );
       }
 
       transactImport(
@@ -541,7 +773,9 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
             defaultDecimals: 3,
           },
         },
-        apiSource.name,
+        assignedSources.length === 1
+          ? assignedSources[0].source.name
+          : `GIS API import (${assignedSources.length} sources)`,
         defaultSimulationSettings,
         {
           autoElevations: currentProjectSettings.projection.type !== "xy-grid",
@@ -721,77 +955,166 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                 </div>
               ) : null}
 
-              <div className="mt-6">
-                <div className="text-xl text-gray-900">
-                  {translate(
-                    apiAssignment
-                      ? "importFromGISApiWizard.dataAssignment.assignedApis"
-                      : "importFromGISApiWizard.dataAssignment.unassignedApis",
-                    apiSource ? 1 : 0,
+              <div className="mt-6 space-y-6">
+                <div>
+                  <div className="text-xl text-gray-900">
+                    {translate(
+                      "importFromGISApiWizard.dataAssignment.unassignedApis",
+                      unassignedSources.length,
+                    )}
+                  </div>
+
+                  {unassignedSources.length > 0 ? (
+                    <div className="mt-4 space-y-4">
+                      {unassignedSources.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="rounded-2xl border border-gray-200 bg-white p-5"
+                        >
+                          <div className="flex items-start justify-between gap-4 min-w-0">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-3">
+                                <span className="h-4 w-4 rounded-full bg-blue-500 shrink-0" />
+                                <h3 className="truncate text-2xl font-semibold text-gray-900">
+                                  {entry.source.name}
+                                </h3>
+                              </div>
+                              <p className="mt-3 break-words text-base text-slate-600">
+                                {entry.source.geometryType} •{" "}
+                                {entry.source.featureCount}{" "}
+                                {translate(
+                                  "importFromGISApiWizard.dataAssignment.features",
+                                )}
+                              </p>
+                              <div className="mt-4 max-w-[300px]">
+                                <Selector
+                                  selected={entry.assignment}
+                                  onChange={(value) =>
+                                    handleAssignmentChange(entry.id, value)
+                                  }
+                                  nullable
+                                  placeholder={translate(
+                                    "importFromGISApiWizard.dataAssignment.assignPlaceholder",
+                                  )}
+                                  options={[
+                                    {
+                                      value: "pipes",
+                                      label: translate(
+                                        "importFromGISApiWizard.dataAssignment.assignmentPipes",
+                                      ),
+                                    },
+                                    {
+                                      value: "pumps",
+                                      label: "Pumps",
+                                    },
+                                  ]}
+                                  ariaLabel={translate(
+                                    "importFromGISApiWizard.dataAssignment.assignLabel",
+                                  )}
+                                  styleOptions={{
+                                    textSize: "text-sm",
+                                    paddingY: 3,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="text-slate-500 hover:text-slate-700"
+                              onClick={() => handleDeleteEntry(entry.id)}
+                              aria-label={translate("delete")}
+                            >
+                              <CloseIcon />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-500">
+                      {translate(
+                        "importFromGISApiWizard.dataAssignment.noApiAssigned",
+                      )}
+                    </div>
                   )}
                 </div>
 
-                {apiSource ? (
-                  <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-                    <div className="flex items-start justify-between gap-4 min-w-0">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-3">
-                          <span className="h-4 w-4 rounded-full bg-blue-500 shrink-0" />
-                          <h3 className="truncate text-2xl font-semibold text-gray-900">
-                            {apiSource.name}
-                          </h3>
-                        </div>
-                        <p className="mt-3 break-words text-base text-slate-600">
-                          {apiSource.geometryType} • {apiSource.featureCount}{" "}
-                          {translate(
-                            "importFromGISApiWizard.dataAssignment.features",
-                          )}
-                        </p>
-                        <div className="mt-4 max-w-[300px]">
-                          <Selector
-                            selected={apiAssignment}
-                            onChange={(value) => setApiAssignment(value)}
-                            nullable
-                            placeholder={translate(
-                              "importFromGISApiWizard.dataAssignment.assignPlaceholder",
-                            )}
-                            options={[
-                              {
-                                value: "pipes",
-                                label: translate(
-                                  "importFromGISApiWizard.dataAssignment.assignmentPipes",
-                                ),
-                              },
-                            ]}
-                            ariaLabel={translate(
-                              "importFromGISApiWizard.dataAssignment.assignLabel",
-                            )}
-                            styleOptions={{ textSize: "text-sm", paddingY: 3 }}
-                          />
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="text-slate-500 hover:text-slate-700"
-                        onClick={() => {
-                          setApiSource(null);
-                          setApiAssignment(null);
-                          setApiError(null);
-                          setJunctionElevationField(null);
-                        }}
-                        aria-label={translate("delete")}
-                      >
-                        <CloseIcon />
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-4 rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-500">
+                <div>
+                  <div className="text-xl text-gray-900">
                     {translate(
-                      "importFromGISApiWizard.dataAssignment.noApiAssigned",
+                      "importFromGISApiWizard.dataAssignment.assignedApis",
+                      assignedSources.length,
                     )}
                   </div>
-                )}
+
+                  {assignedSources.length > 0 ? (
+                    <div className="mt-4 space-y-4">
+                      {assignedSources.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"
+                        >
+                          <div className="flex items-start justify-between gap-4 min-w-0">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-3">
+                                <span className="h-4 w-4 rounded-full bg-blue-500 shrink-0" />
+                                <h3 className="truncate text-2xl font-semibold text-gray-900">
+                                  {entry.source.name}
+                                </h3>
+                              </div>
+                              <p className="mt-3 break-words text-base text-slate-600">
+                                {entry.source.geometryType} •{" "}
+                                {entry.source.featureCount}{" "}
+                                {translate(
+                                  "importFromGISApiWizard.dataAssignment.features",
+                                )}
+                              </p>
+                              <div className="mt-4 max-w-[300px]">
+                                <Selector
+                                  selected={entry.assignment}
+                                  onChange={(value) =>
+                                    handleAssignmentChange(entry.id, value)
+                                  }
+                                  nullable
+                                  placeholder={translate(
+                                    "importFromGISApiWizard.dataAssignment.assignPlaceholder",
+                                  )}
+                                  options={[
+                                    {
+                                      value: "pipes",
+                                      label: translate(
+                                        "importFromGISApiWizard.dataAssignment.assignmentPipes",
+                                      ),
+                                    },
+                                    {
+                                      value: "pumps",
+                                      label: "Pumps",
+                                    },
+                                  ]}
+                                  ariaLabel={translate(
+                                    "importFromGISApiWizard.dataAssignment.assignLabel",
+                                  )}
+                                  styleOptions={{
+                                    textSize: "text-sm",
+                                    paddingY: 3,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="text-slate-500 hover:text-slate-700"
+                              onClick={() => handleDeleteEntry(entry.id)}
+                              aria-label={translate("delete")}
+                            >
+                              <CloseIcon />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </section>
 
@@ -811,11 +1134,11 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
               </div>
 
               <div className="mt-8 rounded-2xl border border-gray-200 bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] min-h-[380px] overflow-hidden">
-                {apiSource && apiAssignment ? (
+                {assignedPreviewGeoJson ? (
                   <div className="flex h-full flex-col p-8">
                     <div className="h-[420px] overflow-hidden rounded-2xl border border-white/70 bg-white shadow-sm">
                       <MapPreview
-                        geoJSON={apiSource.previewGeoJson}
+                        geoJSON={assignedPreviewGeoJson}
                         showBasemap
                         isLoading={apiLoading}
                         setHandle={setHandle}
@@ -826,8 +1149,18 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                       <div className="flex items-center gap-3 text-lg text-slate-700">
                         <span className="h-3 w-3 rounded-full bg-blue-500" />
                         <span>
-                          {apiSource.name} (
-                          {apiSource.featureCount.toLocaleString()})
+                          {assignedSources.length === 1
+                            ? assignedSources[0].source.name
+                            : `${assignedSources.length} assigned API sources`}{" "}
+                          (
+                          {assignedSources
+                            .reduce(
+                              (total, entry) =>
+                                total + entry.source.featureCount,
+                              0,
+                            )
+                            .toLocaleString()}
+                          )
                         </span>
                       </div>
                     </div>
@@ -861,10 +1194,10 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                 Map Attributes
               </h2>
 
-              {!apiSource || apiAssignment !== "pipes" ? (
+              {assignedSources.length === 0 ? (
                 <div className="mt-8 rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-500">
-                  Load a GIS API source in Step 2 and assign it to pipes before
-                  mapping attributes.
+                  Load one or more GIS API sources in Step 2 and assign them to
+                  pipes or pumps before mapping attributes.
                 </div>
               ) : (
                 <div className="mt-8">
@@ -875,66 +1208,118 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                     generated automatically from the configured terrain data.
                   </p>
 
-                  <div className="mt-8 rounded-2xl bg-slate-100 p-3">
-                    <div className="inline-flex rounded-xl bg-white px-8 py-3 text-lg font-semibold text-slate-800 shadow-sm">
-                      Pipes ({pipeFeatures?.length ?? 0})
-                    </div>
+                  <div className="mt-8 flex flex-wrap gap-3 rounded-2xl bg-slate-100 p-3">
+                    {pipeFeatures && pipeFeatures.length > 0 ? (
+                      <div className="inline-flex rounded-xl bg-white px-8 py-3 text-lg font-semibold text-slate-800 shadow-sm">
+                        Pipes ({pipeFeatures.length})
+                      </div>
+                    ) : null}
+                    {pumpFeatures && pumpFeatures.length > 0 ? (
+                      <div className="inline-flex rounded-xl bg-white px-8 py-3 text-lg font-semibold text-slate-800 shadow-sm">
+                        Pumps ({pumpFeatures.length})
+                      </div>
+                    ) : null}
                   </div>
 
-                  <div className="mt-8">
-                    <h3 className="text-2xl font-semibold text-slate-900">
-                      Pipes Attribute Mapping
-                    </h3>
+                  {pipeFeatures && pipeFeatures.length > 0 ? (
+                    <div className="mt-8">
+                      <h3 className="text-2xl font-semibold text-slate-900">
+                        Pipes Attribute Mapping
+                      </h3>
 
-                    <div className="mt-8 grid gap-5 md:grid-cols-2 md:gap-x-8">
-                      <div className="space-y-4">
-                        <div className="text-lg font-medium text-slate-700">
-                          Recommended Attributes
+                      <div className="mt-8 grid gap-5 md:grid-cols-2 md:gap-x-8">
+                        <div className="space-y-4">
+                          <div className="text-lg font-medium text-slate-700">
+                            Recommended Attributes
+                          </div>
+                          <MappingSelector
+                            label="Id"
+                            value={pipeLabelField}
+                            options={propertyOptions}
+                            placeholder="Select property..."
+                            onChange={setPipeLabelField}
+                          />
+                          <MappingSelector
+                            label="Diameter"
+                            value={pipeDiameterField}
+                            options={propertyOptions}
+                            placeholder="Select property..."
+                            onChange={setPipeDiameterField}
+                          />
+                          <MappingSelector
+                            label="Roughness"
+                            value={pipeRoughnessField}
+                            options={propertyOptions}
+                            placeholder="Select property..."
+                            onChange={setPipeRoughnessField}
+                          />
                         </div>
-                        <MappingSelector
-                          label="Id"
-                          value={pipeLabelField}
-                          options={propertyOptions}
-                          placeholder="Select property..."
-                          onChange={setPipeLabelField}
-                        />
-                        <MappingSelector
-                          label="Diameter"
-                          value={pipeDiameterField}
-                          options={propertyOptions}
-                          placeholder="Select property..."
-                          onChange={setPipeDiameterField}
-                        />
-                        <MappingSelector
-                          label="Roughness"
-                          value={pipeRoughnessField}
-                          options={propertyOptions}
-                          placeholder="Select property..."
-                          onChange={setPipeRoughnessField}
-                        />
-                      </div>
 
-                      <div className="space-y-4">
-                        <div className="text-lg font-medium text-slate-700">
-                          Optional Attributes
+                        <div className="space-y-4">
+                          <div className="text-lg font-medium text-slate-700">
+                            Optional Attributes
+                          </div>
+                          <MappingSelector
+                            label="MinorLoss"
+                            value={pipeMinorLossField}
+                            options={propertyOptions}
+                            placeholder="Select property..."
+                            onChange={setPipeMinorLossField}
+                          />
+                          <MappingSelector
+                            label="Status"
+                            value={pipeStatusField}
+                            options={propertyOptions}
+                            placeholder="Select property..."
+                            onChange={setPipeStatusField}
+                          />
                         </div>
-                        <MappingSelector
-                          label="MinorLoss"
-                          value={pipeMinorLossField}
-                          options={propertyOptions}
-                          placeholder="Select property..."
-                          onChange={setPipeMinorLossField}
-                        />
-                        <MappingSelector
-                          label="Status"
-                          value={pipeStatusField}
-                          options={propertyOptions}
-                          placeholder="Select property..."
-                          onChange={setPipeStatusField}
-                        />
                       </div>
                     </div>
-                  </div>
+                  ) : null}
+
+                  {pumpFeatures && pumpFeatures.length > 0 ? (
+                    <div className="mt-10">
+                      <h3 className="text-2xl font-semibold text-slate-900">
+                        Pumps Attribute Mapping
+                      </h3>
+
+                      <div className="mt-8 grid gap-5 md:grid-cols-2 md:gap-x-8">
+                        <div className="space-y-4">
+                          <div className="text-lg font-medium text-slate-700">
+                            Recommended Attributes
+                          </div>
+                          <MappingSelector
+                            label="Id"
+                            value={pumpLabelField}
+                            options={propertyOptions}
+                            placeholder="Select property..."
+                            onChange={setPumpLabelField}
+                          />
+                          <MappingSelector
+                            label="Power"
+                            value={pumpPowerField}
+                            options={propertyOptions}
+                            placeholder="Select property..."
+                            onChange={setPumpPowerField}
+                          />
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="text-lg font-medium text-slate-700">
+                            Optional Attributes
+                          </div>
+                          <MappingSelector
+                            label="Status"
+                            value={pumpStatusField}
+                            options={propertyOptions}
+                            placeholder="Select property..."
+                            onChange={setPumpStatusField}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div className="mt-10">
                     <h3 className="text-2xl font-semibold text-slate-900">
@@ -970,15 +1355,29 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                     </div>
                   </div>
 
-                  <div className="mt-10">
-                    <h3 className="text-2xl font-semibold text-slate-900">
-                      Pipe Data Preview
-                    </h3>
-                    <PipeDataPreviewTable
-                      rows={pipePreviewRows}
-                      totalCount={pipeFeatures?.length ?? 0}
-                    />
-                  </div>
+                  {pipeFeatures && pipeFeatures.length > 0 ? (
+                    <div className="mt-10">
+                      <h3 className="text-2xl font-semibold text-slate-900">
+                        Pipe Data Preview
+                      </h3>
+                      <PipeDataPreviewTable
+                        rows={pipePreviewRows}
+                        totalCount={pipeFeatures.length}
+                      />
+                    </div>
+                  ) : null}
+
+                  {pumpFeatures && pumpFeatures.length > 0 ? (
+                    <div className="mt-10">
+                      <h3 className="text-2xl font-semibold text-slate-900">
+                        Pump Data Preview
+                      </h3>
+                      <PumpDataPreviewTable
+                        rows={pumpPreviewRows}
+                        totalCount={pumpFeatures.length}
+                      />
+                    </div>
+                  ) : null}
 
                   <div className="mt-10">
                     <h3 className="text-2xl font-semibold text-slate-900">
@@ -999,30 +1398,45 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
               <h2 className="text-2xl font-semibold text-gray-900">
                 Build Model
               </h2>
-              {!networkDraft ? (
+              {assignedSources.length === 0 ||
+              ((networkDraft?.pipes.length ?? 0) === 0 &&
+                pumpDrafts.length === 0) ? (
                 <div className="mt-8 rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-500">
                   Complete the data assignment and attribute mapping first.
                 </div>
               ) : (
                 <div className="mt-8 space-y-6">
                   <p className="text-lg leading-8 text-slate-600">
-                    We&apos;ll build a new EPANET model from your GIS pipes and
-                    derive junctions from the line endpoints. Missing mapped
-                    values will fall back to defaults automatically.
+                    We&apos;ll build a new EPANET model from your assigned GIS
+                    APIs. Line layers become pipes with derived junctions, and
+                    point layers assigned as pumps become pump assets with
+                    supporting junctions. Missing mapped values will fall back
+                    to defaults automatically.
                   </p>
 
                   <div className="grid gap-4 md:grid-cols-3">
                     <BuildSummaryCard
                       label="Source"
-                      value={apiSource?.name ?? "GIS API"}
+                      value={
+                        assignedSources.length === 1
+                          ? assignedSources[0].source.name
+                          : `${assignedSources.length} GIS API sources`
+                      }
                     />
                     <BuildSummaryCard
                       label="Pipes"
-                      value={String(networkDraft.pipes.length)}
+                      value={String(networkDraft?.pipes.length ?? 0)}
+                    />
+                    <BuildSummaryCard
+                      label="Pumps"
+                      value={String(pumpDrafts.length)}
                     />
                     <BuildSummaryCard
                       label="Junctions"
-                      value={String(networkDraft.junctions.length)}
+                      value={String(
+                        (networkDraft?.junctions.length ?? 0) +
+                          pumpDrafts.length * 2,
+                      )}
                     />
                     <BuildSummaryCard
                       label="Elevation"
@@ -1240,6 +1654,70 @@ const JunctionDataPreviewTable = ({
   );
 };
 
+const PumpDataPreviewTable = ({
+  rows,
+  totalCount,
+}: {
+  rows: PumpPreviewRow[];
+  totalCount: number;
+}) => {
+  return (
+    <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+      <div className="max-h-[420px] overflow-auto">
+        <table className="min-w-full text-sm text-slate-700">
+          <thead className="sticky top-0 bg-slate-50 text-slate-500">
+            <tr>
+              <th className="w-16 px-5 py-4 text-left font-semibold">#</th>
+              <th className="px-5 py-4 text-left font-semibold uppercase tracking-wide">
+                ID <span className="text-red-400">*</span>
+              </th>
+              <th className="px-5 py-4 text-left font-semibold uppercase tracking-wide">
+                Power
+              </th>
+              <th className="px-5 py-4 text-left font-semibold uppercase tracking-wide">
+                Status
+              </th>
+              <th className="px-5 py-4 text-left font-semibold uppercase tracking-wide">
+                Elevation
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.rowNumber} className="border-t border-slate-200">
+                <td className="px-5 py-4">{row.rowNumber}</td>
+                <PreviewValueCell value={row.id} isDefault={row.idDefault} />
+                <PreviewValueCell
+                  value={row.power}
+                  isDefault={row.powerDefault}
+                />
+                <PreviewValueCell
+                  value={row.status}
+                  isDefault={row.statusDefault}
+                />
+                <PreviewValueCell
+                  value={row.elevation}
+                  isDefault={row.elevationDefault}
+                />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="border-t border-slate-200 bg-slate-50 px-5 py-4 text-sm text-slate-500">
+        <p>
+          Showing first {rows.length} of {totalCount} pump features
+        </p>
+        <p className="mt-1">
+          Legend: Normal text = mapped data,{" "}
+          <span className="italic">italic text = default values</span>
+        </p>
+      </div>
+    </div>
+  );
+};
+
 const PreviewValueCell = ({
   value,
   isDefault,
@@ -1267,6 +1745,21 @@ function isPipeGeometryFeature(feature: FeatureCollection["features"][number]) {
   );
 }
 
+function isPumpGeometryFeature(feature: FeatureCollection["features"][number]) {
+  return feature.geometry?.type === "Point";
+}
+
+function getPointCoordinates(
+  feature: FeatureCollection["features"][number],
+): [number, number] | null {
+  if (feature.geometry?.type !== "Point") return null;
+
+  const [lng, lat] = feature.geometry.coordinates;
+  if (typeof lng !== "number" || typeof lat !== "number") return null;
+
+  return [lng, lat];
+}
+
 function getMappedTextValue(
   properties: FeatureCollection["features"][number]["properties"],
   field: string | null,
@@ -1283,4 +1776,34 @@ function getMappedTextValue(
   }
 
   return null;
+}
+
+function getMappedNumericValue(
+  properties: FeatureCollection["features"][number]["properties"],
+  field: string | null,
+): number | null {
+  if (!field) return null;
+
+  const rawValue = properties?.[field];
+  if (typeof rawValue === "number" && Number.isFinite(rawValue)) {
+    return rawValue;
+  }
+
+  if (typeof rawValue === "string" && rawValue.trim().length > 0) {
+    const parsed = Number(rawValue);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  return null;
+}
+
+function normalizePumpStatus(value: string | null): "on" | "off" {
+  if (!value) return "on";
+
+  const normalized = value.trim().toLowerCase();
+  if (["off", "closed", "0", "false", "inactive"].includes(normalized)) {
+    return "off";
+  }
+
+  return "on";
 }

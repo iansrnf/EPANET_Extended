@@ -11,6 +11,7 @@ import { MomentLog } from "src/lib/persistence/moment-log";
 import { initializeWorktree } from "src/lib/worktree";
 import { stagingModelAtom, baseModelAtom } from "src/state/hydraulic-model";
 import { modelFactoriesAtom } from "src/state/model-factories";
+import { modelCacheAtom } from "src/state/model-cache";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { momentLogAtom } from "src/state/model-changes";
 import { simulationSettingsAtom } from "src/state/simulation-settings";
@@ -53,10 +54,7 @@ const resetAppState = (
   autoElevations?: boolean,
 ) => {
   set(splitsAtom, defaultSplits);
-  set(dataAtom, {
-    ...nullData,
-    folderMap: new Map(),
-  });
+  set(dataAtom, nullData);
   set(mapSyncMomentAtom, { pointer: -1, version: 0 });
   set(simulationAtom, initialSimulationState);
   set(simulationResultsAtom, null);
@@ -113,6 +111,7 @@ const loadModel = (
   set(modelFactoriesAtom, factories);
   set(projectSettingsAtom, projectSettings);
   set(momentLogAtom, momentLog);
+  set(simulationSettingsAtom, simulationSettings);
   if (autoElevations !== undefined) {
     set(autoElevationsAtom, autoElevations);
   }
@@ -124,6 +123,13 @@ const loadModel = (
       version: hydraulicModel.version,
       simulationSettings,
     }),
+  );
+
+  set(
+    modelCacheAtom,
+    new Map([
+      ["main", { model: hydraulicModel, labelManager: factories.labelManager }],
+    ]),
   );
 };
 

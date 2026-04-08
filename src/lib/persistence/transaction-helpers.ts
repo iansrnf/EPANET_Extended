@@ -170,4 +170,8 @@ export function updateModelCache(get: Getter, set: Setter): void {
     labelManager: factories.labelManager,
   });
   set(modelCacheAtom, cache);
+
+  if (worktree.activeSnapshotId === worktree.mainId) {
+    set(baseModelAtom, updatedModel);
+  }
 }

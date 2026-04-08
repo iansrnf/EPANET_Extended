@@ -124,20 +124,18 @@ export const CreateNew = () => {
         projection: buildNewProjection(projection),
       };
       const idGenerator = new ConsecutiveIdsGenerator();
-      const labelManager = new LabelManager();
       const hydraulicModel = initializeHydraulicModel({
         idGenerator,
-        labelManager,
       });
       const factories = initializeModelFactories({
         idGenerator,
-        labelManager,
+        labelManager: new LabelManager(),
         defaults,
       });
       setGridPreview(false);
       setGridHidden(false);
       if (isStateRefactorOn) {
-        initializeProject({
+        void initializeProject({
           hydraulicModel,
           factories,
           projectSettings,

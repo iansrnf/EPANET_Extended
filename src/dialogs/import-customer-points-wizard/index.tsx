@@ -127,7 +127,7 @@ export const ImportCustomerPointsWizard: React.FC<
       const importedCount = updatedHydraulicModel.customerPoints.size;
 
       if (isStateRefactorOn) {
-        initializeProject({
+        void initializeProject({
           hydraulicModel: updatedHydraulicModel,
           factories,
           projectSettings,

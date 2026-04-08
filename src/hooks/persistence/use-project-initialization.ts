@@ -39,6 +39,7 @@ import {
   autoElevationsAtom,
 } from "src/state/drawing";
 import { selectionAtom } from "src/state/selection";
+import { branchStateAtom } from "src/state/branch-state";
 
 type InitializeProjectInput = {
   hydraulicModel: HydraulicModel;
@@ -129,6 +130,24 @@ const loadModel = (
     modelCacheAtom,
     new Map([
       ["main", { model: hydraulicModel, labelManager: factories.labelManager }],
+    ]),
+  );
+
+  set(
+    branchStateAtom,
+    new Map([
+      [
+        "main",
+        {
+          version: hydraulicModel.version,
+          hydraulicModel,
+          labelManager: factories.labelManager,
+          momentLog,
+          simulation: null,
+          simulationSourceId: "main",
+          simulationSettings,
+        },
+      ],
     ]),
   );
 };

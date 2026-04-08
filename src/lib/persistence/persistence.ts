@@ -247,6 +247,7 @@ export class Persistence implements IPersistenceWithSnapshots {
       activeSnapshotId: "main",
       lastActiveSnapshotId: "main",
       snapshots: new Map([["main", mainSnapshot]]),
+      branches: new Map(),
       mainId: "main",
       scenarios: [],
       highestScenarioNumber: 0,

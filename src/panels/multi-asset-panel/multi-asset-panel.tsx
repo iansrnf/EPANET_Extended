@@ -29,6 +29,7 @@ import { useShowPumpLibrary } from "src/commands/show-pump-library";
 import { useShowPatternsLibrary } from "src/commands/show-patterns-library";
 import type { CurveType } from "src/hydraulic-model/curves";
 import type { PatternType } from "src/hydraulic-model/patterns";
+import { useModelTransaction } from "src/hooks/use-model-transaction";
 
 export function MultiAssetPanel({
   selectedFeatures,
@@ -49,7 +50,10 @@ export function MultiAssetPanel({
     multiAssetPanelCollapseAtom,
   );
   const rep = usePersistence();
-  const transact = rep.useTransact();
+  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
+  const transactDeprecated = rep.useTransactDeprecated();
+  const { transact: transactNew } = useModelTransaction();
+  const transact = isStateRefactorOn ? transactNew : transactDeprecated;
   const userTracking = useUserTracking();
   const showPumpLibrary = useShowPumpLibrary();
   const showPatternsLibrary = useShowPatternsLibrary();

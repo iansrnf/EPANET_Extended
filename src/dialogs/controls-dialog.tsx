@@ -20,6 +20,8 @@ import {
 import { usePersistence } from "src/lib/persistence";
 import { changeControls } from "src/hydraulic-model/model-operations";
 import { useUserTracking } from "src/infra/user-tracking";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { useModelTransaction } from "src/hooks/use-model-transaction";
 
 type Tab = "simple" | "ruleBased";
 
@@ -36,7 +38,10 @@ export const ControlsDialog = () => {
   const isSnapshotLocked = useIsSnapshotLocked();
 
   const rep = usePersistence();
-  const transact = rep.useTransact();
+  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
+  const transactDeprecated = rep.useTransactDeprecated();
+  const { transact: transactNew } = useModelTransaction();
+  const transact = isStateRefactorOn ? transactNew : transactDeprecated;
   const userTracking = useUserTracking();
 
   const { controls, assets } = hydraulicModel;

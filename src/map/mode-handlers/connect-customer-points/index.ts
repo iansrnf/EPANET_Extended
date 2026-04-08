@@ -11,6 +11,8 @@ import { useUserTracking } from "src/infra/user-tracking";
 import { captureError } from "src/infra/error-tracking";
 import { useKeyboardState } from "src/keyboard/use-keyboard-state";
 import throttle from "lodash/throttle";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { useModelTransaction } from "src/hooks/use-model-transaction";
 
 export function useConnectCustomerPointsHandlers({
   hydraulicModel,
@@ -19,7 +21,10 @@ export function useConnectCustomerPointsHandlers({
   const mode = useAtomValue(modeAtom);
   const setMode = useSetAtom(modeAtom);
   const rep = usePersistence();
-  const transact = rep.useTransact();
+  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
+  const transactDeprecated = rep.useTransactDeprecated();
+  const { transact: transactNew } = useModelTransaction();
+  const transact = isStateRefactorOn ? transactNew : transactDeprecated;
   const userTracking = useUserTracking();
   const { isShiftHeld } = useKeyboardState();
   const {

@@ -46,7 +46,7 @@ export type MetaPair = [
 export interface IPersistence {
   useHistoryControl(): (direction: "undo" | "redo") => void;
 
-  useTransact(): (moment: ModelMoment) => void;
+  useTransactDeprecated(): (moment: ModelMoment) => void;
   useTransactImportDeprecated(): (
     hydraulicModel: HydraulicModel,
     factories: ModelFactories,

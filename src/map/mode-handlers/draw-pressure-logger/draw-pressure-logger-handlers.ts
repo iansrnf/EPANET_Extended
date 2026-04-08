@@ -8,6 +8,8 @@ import { addPressureLogger } from "src/hydraulic-model/model-operations";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import { selectionAtom } from "src/state/selection";
 import { useSelection } from "src/selection";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { useModelTransaction } from "src/hooks/use-model-transaction";
 
 export function useDrawPressureLoggerHandlers({
   hydraulicModel,
@@ -18,7 +20,10 @@ export function useDrawPressureLoggerHandlers({
   const setEphemeralState = useSetAtom(ephemeralStateAtom);
   const selection = useAtomValue(selectionAtom);
   const { pressureLoggerFactory } = useAtomValue(modelFactoriesAtom);
-  const transact = rep.useTransact();
+  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
+  const transactDeprecated = rep.useTransactDeprecated();
+  const { transact: transactNew } = useModelTransaction();
+  const transact = isStateRefactorOn ? transactNew : transactDeprecated;
   const { selectPressureLogger } = useSelection(selection);
 
   return {

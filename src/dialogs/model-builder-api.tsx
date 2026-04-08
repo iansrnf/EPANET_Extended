@@ -1,8 +1,8 @@
 import bbox from "@turf/bbox";
 import type { FeatureCollection } from "geojson";
 import "mapbox-gl/dist/mapbox-gl.css";
-import { LngLat } from "mapbox-gl";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { LngLat, type LngLatBoundsLike } from "mapbox-gl";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { Button } from "src/components/elements";
 import { EarlyAccessBadge } from "src/components/early-access-badge";
@@ -38,6 +38,8 @@ import { fileInfoAtom } from "src/state/file-system";
 import { convertTo } from "src/quantity";
 import { useToggleNetworkReview } from "src/commands/toggle-network-review";
 import { useElevations } from "src/map/elevations/use-elevations";
+import { MapContext } from "src/map";
+import { getExtent, isBBoxEmpty } from "src/lib/geometry";
 
 type ImportedApiSource = {
   name: string;
@@ -233,6 +235,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
   >(null);
   const [isBuilding, setIsBuilding] = useState(false);
   const { fitToBbox, fitToNetwork, setHandle } = useMapPreview();
+  const map = useContext(MapContext);
   const currentProjectSettings = useAtomValue(projectSettingsAtom);
   const setFileInfo = useSetAtom(fileInfoAtom);
   const rep = usePersistence();
@@ -780,6 +783,19 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
           autoElevations: currentProjectSettings.projection.type !== "xy-grid",
         },
       );
+
+      const importedFeatures: FeatureCollection = {
+        type: "FeatureCollection",
+        features: [...hydraulicModel.assets.values()].map((asset) => asset.feature),
+      };
+      const nextExtent = getExtent(importedFeatures).extract();
+      if (nextExtent) {
+        map?.map.fitBounds(nextExtent as LngLatBoundsLike, {
+          padding: 100,
+          duration: 0,
+          maxZoom: isBBoxEmpty(nextExtent) ? 18 : Infinity,
+        });
+      }
 
       setFileInfo(null);
       toggleNetworkReview({ source: "auto", state: true });

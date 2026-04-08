@@ -197,4 +197,8 @@ export function syncBranchState(
     version,
   });
   set(branchStateAtom, updatedStates);
+
+  if (worktree.activeSnapshotId === worktree.mainId) {
+    set(baseModelAtom, updatedModel);
+  }
 }

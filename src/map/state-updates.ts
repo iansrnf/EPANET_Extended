@@ -3,7 +3,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { type MutableRefObject, useCallback, useRef } from "react";
 import { LayersList } from "@deck.gl/core";
 import { Unit } from "src/quantity";
-import { Moment } from "src/lib/persistence/moment";
+import type { ModelMoment } from "src/hydraulic-model/model-operation";
 import { projectSettingsAtom } from "src/state/project-settings";
 import type { EphemeralEditingState } from "src/state/drawing";
 import { assetsAtom, stagingModelAtom } from "src/state/hydraulic-model";
@@ -81,7 +81,7 @@ const PIPE_FLOW_PULSE_LAYERS: LayerId[] = [
   "selected-pipe-flow-pulse",
 ];
 
-const getAssetIdsInMoments = (moments: Moment[]): Set<AssetId> => {
+const getAssetIdsInMoments = (moments: ModelMoment[]): Set<AssetId> => {
   const assetIds = new Set<AssetId>();
   moments.forEach((moment) => {
     moment.deleteAssets.forEach((assetId) => {

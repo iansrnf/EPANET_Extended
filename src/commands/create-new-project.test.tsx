@@ -7,13 +7,12 @@ import { projectSettingsAtom } from "src/state/project-settings";
 import { momentLogAtom } from "src/state/model-changes";
 import { Store } from "src/state";
 import { MomentLog } from "src/lib/persistence/moment-log";
-import { fMoment } from "../lib/persistence/moment";
 import { useNewProject } from "./create-new-project";
 import { aFileInfo, setInitialState } from "src/__helpers__/state";
 import { CommandContainer } from "./__helpers__/command-container";
 
 const aMoment = (name: string) => {
-  return fMoment(name);
+  return { note: name };
 };
 
 describe("create new project", () => {

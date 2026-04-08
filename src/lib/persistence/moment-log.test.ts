@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { MomentLog, generateStateId, initId } from "./moment-log";
-import { fMoment } from "./moment";
 
 describe("MomentLog", () => {
   it("registers to the history of moments", () => {
@@ -138,7 +137,7 @@ describe("MomentLog", () => {
   };
 
   const aMoment = (name: string) => {
-    return fMoment(name);
+    return { note: name };
   };
 
   describe("getDeltasFrom", () => {

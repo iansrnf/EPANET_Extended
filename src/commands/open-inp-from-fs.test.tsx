@@ -11,7 +11,6 @@ import { Store } from "src/state";
 import { MomentLog } from "src/lib/persistence/moment-log";
 import userEvent from "@testing-library/user-event";
 import { aTestFile } from "src/__helpers__/file";
-import { fMoment } from "src/lib/persistence/moment";
 import { aFileInfo, setInitialState } from "src/__helpers__/state";
 import { CommandContainer } from "./__helpers__/command-container";
 import {
@@ -28,7 +27,7 @@ import { useOpenInpFromFs } from "./open-inp-from-fs";
 import { stubUserTracking } from "src/__helpers__/user-tracking";
 
 const aMoment = (name: string) => {
-  return fMoment(name);
+  return { note: name };
 };
 
 describe("openInpFromFs", () => {

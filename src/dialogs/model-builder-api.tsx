@@ -236,7 +236,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
   const currentProjectSettings = useAtomValue(projectSettingsAtom);
   const setFileInfo = useSetAtom(fileInfoAtom);
   const rep = usePersistence();
-  const transactImport = rep.useTransactImport();
+  const transactImportDeprecated = rep.useTransactImportDeprecated();
   const toggleNetworkReview = useToggleNetworkReview();
   const assignedSources = useMemo(
     () => apiEntries.filter((entry) => entry.assignment !== null),
@@ -759,7 +759,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
         );
       }
 
-      transactImport(
+      transactImportDeprecated(
         hydraulicModel,
         factories,
         {

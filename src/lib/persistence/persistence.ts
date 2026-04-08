@@ -58,7 +58,6 @@ import {
   initializeModelFactories,
 } from "src/hydraulic-model/factories";
 import { modelFactoriesAtom } from "src/state/model-factories";
-import type { IdGenerator } from "src/lib/id-generator";
 import { LabelManager } from "src/hydraulic-model/label-manager";
 import type { Projection } from "src/lib/projections/projection";
 import { createProjectionMapper } from "src/lib/projections";
@@ -80,7 +79,6 @@ export class Persistence implements IPersistenceWithSnapshots {
     return (
       hydraulicModel: HydraulicModel,
       factories: ModelFactories,
-      idGenerator: IdGenerator,
       projectSettings: ProjectSettings,
       name: string,
       simulationSettings: SimulationSettings,
@@ -160,7 +158,6 @@ export class Persistence implements IPersistenceWithSnapshots {
         hydraulicModel.version,
         momentLog,
         simulationSettings,
-        idGenerator,
         factories.labelManager,
       );
     };
@@ -226,7 +223,6 @@ export class Persistence implements IPersistenceWithSnapshots {
         hydraulicModel.version,
         momentLog,
         simulationSettings,
-        this.store.get(worktreeAtom).idGenerator,
         this.store.get(modelFactoriesAtom).labelManager,
       );
     };
@@ -237,12 +233,8 @@ export class Persistence implements IPersistenceWithSnapshots {
     version: string,
     momentLog: MomentLog,
     simulationSettings: SimulationSettings,
-    idGenerator: IdGenerator,
     labelManager: LabelManager,
   ): void {
-    const labelCounters: Worktree["labelCounters"] = new Map();
-    labelManager.adoptCounters(labelCounters);
-
     const mainSnapshot: Snapshot = {
       id: "main",
       name: "Main",
@@ -263,8 +255,6 @@ export class Persistence implements IPersistenceWithSnapshots {
       mainId: "main",
       scenarios: [],
       highestScenarioNumber: 0,
-      labelCounters,
-      idGenerator,
     };
 
     this.store.set(worktreeAtom, worktree);
@@ -442,14 +432,16 @@ export class Persistence implements IPersistenceWithSnapshots {
         ? { ...simulation, currentTimestepIndex: actualTimestepIndex }
         : simulation;
 
+    const currentFactories = this.store.get(modelFactoriesAtom);
     this.store.set(stagingModelAtom, stagingModel);
     this.store.set(baseModelAtom, baseModel);
     this.store.set(
       modelFactoriesAtom,
       initializeModelFactories({
-        idGenerator: worktree.idGenerator,
+        idGenerator: currentFactories.idGenerator,
         labelManager: snapshotLabelManager,
         defaults: this.store.get(projectSettingsAtom).defaults,
+        labelCounters: currentFactories.labelCounters,
       }),
     );
     this.switchMomentLog(snapshot.momentLog);
@@ -548,10 +540,10 @@ export class Persistence implements IPersistenceWithSnapshots {
     const momentLogDeltas = snapshot.momentLog.getDeltas();
     allDeltas.push(...momentLogDeltas);
 
-    const labelManager = new LabelManager(worktree.labelCounters);
+    const factories = this.store.get(modelFactoriesAtom);
+    const labelManager = new LabelManager(factories.labelCounters);
     const model = initializeHydraulicModel({
-      idGenerator: worktree.idGenerator,
-      labelManager,
+      idGenerator: factories.idGenerator,
     });
 
     for (const delta of allDeltas) {

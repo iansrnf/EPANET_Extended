@@ -3,7 +3,6 @@ import { MomentLog } from "src/lib/persistence/moment-log";
 import { initialSimulationState } from "src/state/simulation";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import type { Worktree, Snapshot } from "src/lib/worktree/types";
-import { ConsecutiveIdsGenerator } from "src/lib/id-generator";
 
 const emptyMainSnapshot: Snapshot = {
   id: "main",
@@ -25,8 +24,6 @@ export const initialWorktree: Worktree = {
   mainId: "main",
   scenarios: [],
   highestScenarioNumber: 0,
-  labelCounters: new Map(),
-  idGenerator: new ConsecutiveIdsGenerator(),
 };
 
 export const worktreeAtom = atom<Worktree>(initialWorktree);

@@ -3,7 +3,6 @@ import { useAtomCallback } from "jotai/utils";
 import type { Getter, Setter } from "jotai";
 import type { HydraulicModel } from "src/hydraulic-model";
 import type { ModelFactories } from "src/hydraulic-model/factories";
-import type { IdGenerator } from "src/lib/id-generator";
 import type { ProjectSettings } from "src/lib/project-settings";
 import type { SimulationSettings } from "src/simulation/simulation-settings";
 import type { ModelMoment } from "src/hydraulic-model/model-operation";
@@ -43,7 +42,6 @@ import { selectionAtom } from "src/state/selection";
 type InitializeProjectInput = {
   hydraulicModel: HydraulicModel;
   factories: ModelFactories;
-  idGenerator: IdGenerator;
   projectSettings: ProjectSettings;
   name: string;
   simulationSettings: SimulationSettings;
@@ -80,7 +78,6 @@ const loadModel = (
   {
     hydraulicModel,
     factories,
-    idGenerator,
     projectSettings,
     name,
     simulationSettings,
@@ -120,8 +117,6 @@ const loadModel = (
   set(projectSettingsAtom, projectSettings);
   set(momentLogAtom, momentLog);
 
-  const labelCounters = new Map();
-  factories.labelManager.adoptCounters(labelCounters);
   set(
     worktreeAtom,
     initializeWorktree({
@@ -129,8 +124,6 @@ const loadModel = (
       momentLog,
       version: hydraulicModel.version,
       simulationSettings,
-      labelCounters,
-      idGenerator,
     }),
   );
 };

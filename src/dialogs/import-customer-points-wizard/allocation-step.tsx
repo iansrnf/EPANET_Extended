@@ -6,7 +6,6 @@ import { AllocationRulesTable } from "./allocation-rules-table";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { stagingModelAtom } from "src/state/hydraulic-model";
 import { modelFactoriesAtom } from "src/state/model-factories";
-import { worktreeAtom } from "src/state/scenarios";
 import { allocateCustomerPoints } from "src/hydraulic-model/model-operations/allocate-customer-points";
 import { initializeCustomerPoints } from "src/hydraulic-model/customer-points";
 import { addCustomerPoints } from "src/hydraulic-model/mutations/add-customer-points";
@@ -37,7 +36,6 @@ export const AllocationStep: React.FC<{
   const projectSettings = useAtomValue(projectSettingsAtom);
   const hydraulicModel = useAtomValue(stagingModelAtom);
   const factories = useAtomValue(modelFactoriesAtom);
-  const { idGenerator } = useAtomValue(worktreeAtom);
   const simulationSettings = useAtomValue(simulationSettingsAtom);
   const translate = useTranslate();
   const userTracking = useUserTracking();
@@ -96,7 +94,6 @@ export const AllocationStep: React.FC<{
         initializeProject({
           hydraulicModel: updatedHydraulicModel,
           factories,
-          idGenerator,
           projectSettings,
           name: "customerpoints",
           simulationSettings,
@@ -105,7 +102,6 @@ export const AllocationStep: React.FC<{
         transactImport(
           updatedHydraulicModel,
           factories,
-          idGenerator,
           projectSettings,
           "customerpoints",
           simulationSettings,
@@ -137,7 +133,6 @@ export const AllocationStep: React.FC<{
     projectSettings,
     hydraulicModel,
     factories,
-    idGenerator,
     simulationSettings,
     parsedDataSummary?.customerPointDemands,
     keepDemands,

@@ -19,7 +19,7 @@ import { worktreeAtom } from "src/state/scenarios";
 import {
   simulationAtom,
   initialSimulationState,
-  simulationStepAtom,
+  simulationResultsAtom,
 } from "src/state/simulation";
 import { splitsAtom, defaultSplits } from "src/state/layout";
 import { dataAtom, nullData } from "src/state/data";
@@ -57,7 +57,7 @@ const resetAppState = (
   set(dataAtom, nullData);
   set(mapSyncMomentAtom, { pointer: -1, version: 0 });
   set(simulationAtom, initialSimulationState);
-  set(simulationStepAtom, null);
+  set(simulationResultsAtom, null);
   set(nodeSymbologyAtom, nullSymbologySpec.node);
   set(linkSymbologyAtom, nullSymbologySpec.link);
   set(savedSymbologiesAtom, new Map());

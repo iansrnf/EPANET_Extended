@@ -28,7 +28,7 @@ import { changePatterns } from "src/hydraulic-model/model-operations";
 import { VerticalResizer } from "../vertical-resizer";
 import { DialogActions, DialogActionsHandle } from "../dialog-actions-row";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { useModelTransaction } from "src/hooks/use-model-transaction";
+import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
 
 type PatternUpdate = Partial<Pick<Pattern, "label" | "multipliers" | "type">>;
 

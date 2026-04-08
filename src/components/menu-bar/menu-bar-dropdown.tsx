@@ -11,7 +11,7 @@ import {
 } from "src/components/elements";
 import React, { useMemo } from "react";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { useUndoableTransactions } from "src/hooks/use-undoable-transactions";
+import { useUndoableTransactions } from "src/hooks/persistence/use-undoable-transactions";
 import { usePersistence } from "src/lib/persistence";
 import { ArrowRightIcon, ChevronRightIcon } from "src/icons";
 

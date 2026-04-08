@@ -29,7 +29,7 @@ import { useShowPumpLibrary } from "src/commands/show-pump-library";
 import { useShowPatternsLibrary } from "src/commands/show-patterns-library";
 import type { CurveType } from "src/hydraulic-model/curves";
 import type { PatternType } from "src/hydraulic-model/patterns";
-import { useModelTransaction } from "src/hooks/use-model-transaction";
+import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
 
 export function MultiAssetPanel({
   selectedFeatures,

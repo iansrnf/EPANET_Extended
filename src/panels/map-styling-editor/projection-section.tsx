@@ -13,7 +13,7 @@ import type { Projection } from "src/lib/projections/projection";
 import { inverseProjectGeoJson } from "src/lib/projections";
 import { chooseUnitSystem } from "src/simulation/build-inp";
 import { usePersistence } from "src/lib/persistence";
-import { useReprojectionReset } from "src/hooks/use-reprojection-reset";
+import { useReprojectionReset } from "src/hooks/persistence/use-reprojection-reset";
 import { MapContext } from "src/map";
 import { captureError } from "src/infra/error-tracking";
 import { hasScenariosAtom } from "src/state/scenarios";

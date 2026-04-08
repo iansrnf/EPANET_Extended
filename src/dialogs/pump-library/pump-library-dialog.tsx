@@ -25,7 +25,7 @@ import { changeCurves } from "src/hydraulic-model/model-operations/change-curves
 import { notify } from "src/components/notifications";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { useModelTransaction } from "src/hooks/use-model-transaction";
+import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
 import { LabelManager } from "src/hydraulic-model/label-manager";
 import { getCurveTypeConfig } from "../curves/curve-type-config";
 import { DialogActions, DialogActionsHandle } from "../dialog-actions-row";

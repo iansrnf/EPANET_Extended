@@ -28,7 +28,7 @@ import { addLink } from "src/hydraulic-model/model-operations";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import { PressureLogger } from "src/hydraulic-model/pressure-loggers";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { useModelTransaction } from "src/hooks/use-model-transaction";
+import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
 
 const PRESSURE_LOGGER_PICK_RADIUS = 24;
 const PRESSURE_LOGGER_FALLBACK_PIXEL_RADIUS = 44;

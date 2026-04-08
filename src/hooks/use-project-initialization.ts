@@ -8,7 +8,6 @@ import type { ProjectSettings } from "src/lib/project-settings";
 import type { SimulationSettings } from "src/simulation/simulation-settings";
 import type { Moment } from "src/lib/persistence/moment";
 import { MomentLog } from "src/lib/persistence/moment-log";
-import { trackMoment } from "src/lib/persistence/shared";
 import { initializeWorktree } from "src/lib/worktree";
 import { toDemandAssignments } from "src/hydraulic-model/model-operation";
 import { stagingModelAtom, baseModelAtom } from "src/state/hydraulic-model";
@@ -104,7 +103,6 @@ const loadModel = (
     putPatterns: hydraulicModel.patterns,
   };
 
-  trackMoment({ note: snapshotMoment.note!, putAssets: assets });
   hydraulicModel.pressureLoggers.forEach((pressureLogger) => {
     factories.labelManager.register(
       pressureLogger.label,

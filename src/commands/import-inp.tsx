@@ -23,8 +23,6 @@ import { HydraulicModel } from "src/hydraulic-model";
 import { chooseUnitSystem } from "src/simulation/build-inp";
 import { notify } from "src/components/notifications";
 import { WarningIcon } from "src/icons";
-import { OPFSStorage } from "src/infra/storage";
-import { getAppId } from "src/infra/app-instance";
 import { isDemoNetwork } from "src/demo/demo-networks";
 import { useRecentFiles } from "src/hooks/use-recent-files";
 import { type Projection, createProjectionMapper } from "src/lib/projections";
@@ -63,11 +61,8 @@ export const useImportInp = () => {
         isMadeByApp,
       } = result;
 
-      const storage = new OPFSStorage(getAppId());
-      await storage.clear();
-
       if (isStateRefactorOn) {
-        initializeProject({
+        await initializeProject({
           hydraulicModel,
           factories,
           projectSettings,

@@ -233,7 +233,7 @@ export const symbologyBuilders: SymbologyBuilders = {
     const colorRule = initializeColorRule({
       property: "waterAge",
       unit: units.waterAge,
-      rampName: preference?.rampName ?? "Temps",
+      rampName: preference?.rampName ?? "Sunset",
       mode: preference?.mode ?? "prettyBreaks",
       numIntervals: preference?.numIntervals,
       reverseRamp: preference?.reversedRamp,

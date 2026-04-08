@@ -83,6 +83,22 @@ type PumpDraft = {
   elevation: number;
 };
 
+const buildPropertyOptions = (entries: ImportedApiEntry[]) => {
+  const names = new Set<string>();
+  for (const entry of entries) {
+    for (const property of entry.source.propertyNames) {
+      names.add(property);
+    }
+  }
+
+  return Array.from(names)
+    .sort((a, b) => a.localeCompare(b))
+    .map((property) => ({
+      value: property,
+      label: property,
+    }));
+};
+
 const US_FLOW_UNITS: { value: keyof Presets; label: string }[] = [
   { value: "CFS", label: "CFS (cu foot/sec)" },
   { value: "GPM", label: "GPM (gal/min)" },
@@ -249,6 +265,10 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
     () => apiEntries.filter((entry) => entry.assignment === "pipes"),
     [apiEntries],
   );
+  const assignedPumpSources = useMemo(
+    () => apiEntries.filter((entry) => entry.assignment === "pumps"),
+    [apiEntries],
+  );
   const unassignedSources = useMemo(
     () => apiEntries.filter((entry) => entry.assignment === null),
     [apiEntries],
@@ -257,21 +277,18 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
   const selectedSpec = useMemo(() => presets[flowUnit], [flowUnit]);
   const { fetchElevation } = useElevations(selectedSpec.units.elevation);
 
-  const propertyOptions = useMemo(() => {
-    const names = new Set<string>();
-    for (const entry of assignedSources) {
-      for (const property of entry.source.propertyNames) {
-        names.add(property);
-      }
-    }
-
-    return Array.from(names)
-      .sort((a, b) => a.localeCompare(b))
-      .map((property) => ({
-        value: property,
-        label: property,
-      }));
-  }, [assignedSources]);
+  const pipePropertyOptions = useMemo(
+    () => buildPropertyOptions(assignedPipeSources),
+    [assignedPipeSources],
+  );
+  const pumpPropertyOptions = useMemo(
+    () => buildPropertyOptions(assignedPumpSources),
+    [assignedPumpSources],
+  );
+  const junctionPropertyOptions = useMemo(
+    () => buildPropertyOptions(assignedSources),
+    [assignedSources],
+  );
 
   const assignedPreviewGeoJson = useMemo<FeatureCollection | null>(() => {
     if (assignedSources.length === 0) return null;
@@ -1250,21 +1267,21 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                           <MappingSelector
                             label="Id"
                             value={pipeLabelField}
-                            options={propertyOptions}
+                            options={pipePropertyOptions}
                             placeholder="Select property..."
                             onChange={setPipeLabelField}
                           />
                           <MappingSelector
                             label="Diameter"
                             value={pipeDiameterField}
-                            options={propertyOptions}
+                            options={pipePropertyOptions}
                             placeholder="Select property..."
                             onChange={setPipeDiameterField}
                           />
                           <MappingSelector
                             label="Roughness"
                             value={pipeRoughnessField}
-                            options={propertyOptions}
+                            options={pipePropertyOptions}
                             placeholder="Select property..."
                             onChange={setPipeRoughnessField}
                           />
@@ -1277,14 +1294,14 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                           <MappingSelector
                             label="MinorLoss"
                             value={pipeMinorLossField}
-                            options={propertyOptions}
+                            options={pipePropertyOptions}
                             placeholder="Select property..."
                             onChange={setPipeMinorLossField}
                           />
                           <MappingSelector
                             label="Status"
                             value={pipeStatusField}
-                            options={propertyOptions}
+                            options={pipePropertyOptions}
                             placeholder="Select property..."
                             onChange={setPipeStatusField}
                           />
@@ -1307,14 +1324,14 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                           <MappingSelector
                             label="Id"
                             value={pumpLabelField}
-                            options={propertyOptions}
+                            options={pumpPropertyOptions}
                             placeholder="Select property..."
                             onChange={setPumpLabelField}
                           />
                           <MappingSelector
                             label="Power"
                             value={pumpPowerField}
-                            options={propertyOptions}
+                            options={pumpPropertyOptions}
                             placeholder="Select property..."
                             onChange={setPumpPowerField}
                           />
@@ -1327,7 +1344,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                           <MappingSelector
                             label="Status"
                             value={pumpStatusField}
-                            options={propertyOptions}
+                            options={pumpPropertyOptions}
                             placeholder="Select property..."
                             onChange={setPumpStatusField}
                           />
@@ -1349,7 +1366,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
                         <MappingSelector
                           label="Elevation"
                           value={junctionElevationField}
-                          options={propertyOptions}
+                          options={junctionPropertyOptions}
                           placeholder="Select property..."
                           onChange={setJunctionElevationField}
                         />

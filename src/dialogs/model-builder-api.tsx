@@ -762,7 +762,6 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
       transactImport(
         hydraulicModel,
         factories,
-        idGenerator,
         {
           ...currentProjectSettings,
           units: spec.units,

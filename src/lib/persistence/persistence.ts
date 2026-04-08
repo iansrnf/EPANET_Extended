@@ -65,6 +65,21 @@ import { transformCoordinates } from "src/hydraulic-model/mutations/transform-co
 
 const MAX_CHANGES_BEFORE_MAP_SYNC = 500;
 
+const createBaseMoment = (hydraulicModel: HydraulicModel): ModelMoment => ({
+  note: "Base model",
+  putAssets: [...hydraulicModel.assets.values()],
+  deleteAssets: [],
+  patchAssetsAttributes: [],
+  putDemands: {
+    assignments: toDemandAssignments(hydraulicModel.demands),
+  },
+  putControls: hydraulicModel.controls,
+  putCustomerPoints: [...hydraulicModel.customerPoints.values()],
+  putPressureLoggers: [...hydraulicModel.pressureLoggers.values()],
+  putCurves: hydraulicModel.curves,
+  putPatterns: hydraulicModel.patterns,
+});
+
 export class Persistence implements IPersistenceWithSnapshots {
   private store: Store;
   private modelCache = new Map<
@@ -527,6 +542,10 @@ export class Persistence implements IPersistenceWithSnapshots {
       throw new Error(`Snapshot ${snapshotId} not found`);
     }
 
+    const mainSnapshot = worktree.snapshots.get(worktree.mainId);
+    const mainHasNoDeltas =
+      mainSnapshot !== undefined && mainSnapshot.deltas.length === 0;
+
     const allDeltas: ModelMoment[] = [];
     let current: Snapshot | undefined = snapshot;
 
@@ -545,6 +564,11 @@ export class Persistence implements IPersistenceWithSnapshots {
     const model = initializeHydraulicModel({
       idGenerator: factories.idGenerator,
     });
+
+    if (mainHasNoDeltas) {
+      const baseModel = this.store.get(baseModelAtom);
+      allDeltas.unshift(createBaseMoment(baseModel));
+    }
 
     for (const delta of allDeltas) {
       applyMomentToModel(model, delta, labelManager);
@@ -610,7 +634,7 @@ export class Persistence implements IPersistenceWithSnapshots {
   }
 
   private ensureAtValues(
-    features: IWrappedFeatureInput[],
+    features: IWrappedFeatureInput[] | undefined,
     hydraulicModel: HydraulicModel,
     ctx: Data,
   ): Asset[] {
@@ -652,9 +676,9 @@ export class Persistence implements IPersistenceWithSnapshots {
     const editedAssetsCount = deltasSinceLastSync.reduce(
       (count, moment) =>
         count +
-        moment.deleteAssets.length +
-        moment.putAssets.length +
-        moment.patchAssetsAttributes.length,
+        (moment.deleteAssets?.length ?? 0) +
+        (moment.putAssets?.length ?? 0) +
+        (moment.patchAssetsAttributes?.length ?? 0),
       0,
     );
     return editedAssetsCount > MAX_CHANGES_BEFORE_MAP_SYNC;

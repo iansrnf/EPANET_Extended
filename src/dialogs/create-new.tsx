@@ -141,7 +141,6 @@ export const CreateNew = () => {
           hydraulicModel,
           factories,
           projectSettings,
-          name: "Untitled",
           simulationSettings: defaultSimulationSettings,
           autoElevations: projection.id !== "xy-grid",
         });

@@ -100,7 +100,11 @@ export const applyMomentToModel = (
   }
 
   for (const pressureLogger of moment.putPressureLoggers || []) {
-    const oldPressureLogger = putPressureLogger(hydraulicModel, pressureLogger);
+    const oldPressureLogger = putPressureLogger(
+      hydraulicModel,
+      pressureLogger,
+      labelManager,
+    );
     if (oldPressureLogger) {
       reverseMoment.putPressureLoggers.push(oldPressureLogger);
     } else {
@@ -115,6 +119,7 @@ export const applyMomentToModel = (
     const deletedPressureLogger = deletePressureLogger(
       hydraulicModel,
       pressureLoggerId,
+      labelManager,
     );
     if (deletedPressureLogger) {
       reverseMoment.putPressureLoggers.push(deletedPressureLogger);
@@ -230,20 +235,35 @@ const deleteCustomerPoint = (
 const putPressureLogger = (
   hydraulicModel: HydraulicModel,
   pressureLogger: PressureLogger,
+  labelManager: LabelManager,
 ): PressureLogger | undefined => {
   const oldVersion = hydraulicModel.pressureLoggers.get(pressureLogger.id);
+  if (oldVersion) {
+    labelManager.remove(oldVersion.label, "pressureLogger", oldVersion.id);
+  }
   hydraulicModel.pressureLoggers.set(pressureLogger.id, pressureLogger);
+  labelManager.register(
+    pressureLogger.label,
+    "pressureLogger",
+    pressureLogger.id,
+  );
   return oldVersion;
 };
 
 const deletePressureLogger = (
   hydraulicModel: HydraulicModel,
   id: PressureLoggerId,
+  labelManager: LabelManager,
 ): PressureLogger | undefined => {
   const pressureLogger = hydraulicModel.pressureLoggers.get(id);
   if (!pressureLogger) return undefined;
 
   hydraulicModel.pressureLoggers.delete(id);
+  labelManager.remove(
+    pressureLogger.label,
+    "pressureLogger",
+    pressureLogger.id,
+  );
   return pressureLogger;
 };
 

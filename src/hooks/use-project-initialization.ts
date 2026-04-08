@@ -5,10 +5,8 @@ import type { HydraulicModel } from "src/hydraulic-model";
 import type { ModelFactories } from "src/hydraulic-model/factories";
 import type { ProjectSettings } from "src/lib/project-settings";
 import type { SimulationSettings } from "src/simulation/simulation-settings";
-import type { ModelMoment } from "src/hydraulic-model/model-operation";
 import { MomentLog } from "src/lib/persistence/moment-log";
 import { initializeWorktree } from "src/lib/worktree";
-import { toDemandAssignments } from "src/hydraulic-model/model-operation";
 import { stagingModelAtom, baseModelAtom } from "src/state/hydraulic-model";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import { projectSettingsAtom } from "src/state/project-settings";
@@ -43,7 +41,6 @@ type InitializeProjectInput = {
   hydraulicModel: HydraulicModel;
   factories: ModelFactories;
   projectSettings: ProjectSettings;
-  name: string;
   simulationSettings: SimulationSettings;
   autoElevations?: boolean;
 };
@@ -73,33 +70,20 @@ const resetAppState = (
   set(simulationSettingsAtom, simulationSettings);
 };
 
-const loadModel = (
-  set: Setter,
-  {
-    hydraulicModel,
-    factories,
-    projectSettings,
-    name,
-    simulationSettings,
-  }: InitializeProjectInput,
+const syncModelLabels = (
+  hydraulicModel: HydraulicModel,
+  factories: ModelFactories,
 ) => {
-  const assets = [...hydraulicModel.assets.values()];
-
-  const snapshotMoment: ModelMoment = {
-    note: `Import ${name}`,
-    putAssets: assets,
-    deleteAssets: [],
-    patchAssetsAttributes: [],
-    putDemands: {
-      assignments: toDemandAssignments(hydraulicModel.demands),
-    },
-    putControls: hydraulicModel.controls,
-    putCustomerPoints: [...hydraulicModel.customerPoints.values()],
-    putPressureLoggers: [...hydraulicModel.pressureLoggers.values()],
-    putCurves: hydraulicModel.curves,
-    putPatterns: hydraulicModel.patterns,
-  };
-
+  hydraulicModel.assets.forEach((asset) => {
+    factories.labelManager.register(asset.label, asset.type, asset.id);
+  });
+  hydraulicModel.customerPoints.forEach((customerPoint) => {
+    factories.labelManager.register(
+      customerPoint.label,
+      "customerPoint",
+      customerPoint.id,
+    );
+  });
   hydraulicModel.pressureLoggers.forEach((pressureLogger) => {
     factories.labelManager.register(
       pressureLogger.label,
@@ -107,20 +91,33 @@ const loadModel = (
       pressureLogger.id,
     );
   });
+};
 
+const loadModel = (
+  set: Setter,
+  {
+    hydraulicModel,
+    factories,
+    projectSettings,
+    simulationSettings,
+    autoElevations,
+  }: InitializeProjectInput,
+) => {
   const momentLog = new MomentLog();
-  momentLog.setSnapshot(snapshotMoment, hydraulicModel.version);
+  syncModelLabels(hydraulicModel, factories);
 
   set(stagingModelAtom, hydraulicModel);
   set(baseModelAtom, hydraulicModel);
   set(modelFactoriesAtom, factories);
   set(projectSettingsAtom, projectSettings);
   set(momentLogAtom, momentLog);
+  if (autoElevations !== undefined) {
+    set(autoElevationsAtom, autoElevations);
+  }
 
   set(
     worktreeAtom,
     initializeWorktree({
-      snapshotMoment,
       momentLog,
       version: hydraulicModel.version,
       simulationSettings,

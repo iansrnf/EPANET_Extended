@@ -1,11 +1,10 @@
 import type { MomentLog } from "src/lib/persistence/moment-log";
 import type { ModelMoment } from "src/hydraulic-model/model-operation";
 import type { SimulationSettings } from "src/simulation/simulation-settings";
-import { initialSimulationState } from "src/state/simulation";
 import type { Snapshot, Worktree } from "./types";
 
 type InitializeWorktreeInput = {
-  snapshotMoment: ModelMoment;
+  snapshotMoment?: ModelMoment;
   momentLog: MomentLog;
   version: string;
   simulationSettings: SimulationSettings;
@@ -21,10 +20,10 @@ export const initializeWorktree = ({
     id: "main",
     name: "Main",
     parentId: null,
-    deltas: [snapshotMoment],
+    deltas: snapshotMoment ? [snapshotMoment] : [],
     version,
     momentLog,
-    simulation: initialSimulationState,
+    simulation: { status: "idle" },
     simulationSourceId: "main",
     simulationSettings,
     status: "open",

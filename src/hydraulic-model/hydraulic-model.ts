@@ -11,8 +11,9 @@ import { AssetIndex } from "./asset-index";
 import { Asset } from "./asset-types";
 import { Curves } from "./curves";
 import { Controls, createEmptyControls } from "./controls";
-import { Patterns } from "./patterns";
+import { deepClonePatterns, Patterns } from "./patterns";
 import { PressureLoggers, initializePressureLoggers } from "./pressure-loggers";
+import type { Demand } from "./demands";
 
 export type HydraulicModel = {
   version: string;
@@ -57,6 +58,40 @@ export const initializeHydraulicModel = ({
     curves: new Map(),
     patterns: new Map(),
     controls,
+  };
+};
+
+export const copyModel = (source: HydraulicModel): HydraulicModel => {
+  const assets: AssetsMap = new Map(source.assets);
+
+  return {
+    ...source,
+    assets,
+    customerPoints: new Map(source.customerPoints),
+    customerPointsLookup: source.customerPointsLookup.copy(),
+    pressureLoggers: new Map(source.pressureLoggers),
+    topology: source.topology.copy(),
+    assetIndex: source.assetIndex.copy(assets),
+    demands: {
+      junctions: new Map(
+        Array.from(source.demands.junctions, ([id, demands]) => [
+          id,
+          demands.map((demand: Demand) => ({ ...demand })),
+        ]),
+      ),
+      customerPoints: new Map(
+        Array.from(source.demands.customerPoints, ([id, demands]) => [
+          id,
+          demands.map((demand: Demand) => ({ ...demand })),
+        ]),
+      ),
+    },
+    curves: new Map(source.curves),
+    patterns: deepClonePatterns(source.patterns),
+    controls: {
+      rules: [...source.controls.rules],
+      simple: [...source.controls.simple],
+    },
   };
 };
 

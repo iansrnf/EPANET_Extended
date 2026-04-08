@@ -8,6 +8,7 @@ import {
 } from "src/simulation/epanet/eps-results-reader";
 import { getAppId } from "src/infra/app-instance";
 import { captureError } from "src/infra/error-tracking";
+import { useGetEpsResultsReader } from "src/hooks/use-eps-results-reader";
 import type {
   QuickGraphAssetType,
   QuickGraphPropertyByAssetType,
@@ -33,6 +34,7 @@ export function useTimeSeries<T extends QuickGraphAssetType>({
 }: UseTimeSeriesOptions<T>): UseTimeSeriesResult {
   const simulation = useAtomValue(simulationAtom);
   const worktree = useAtomValue(worktreeAtom);
+  const getEpsResultsReader = useGetEpsResultsReader();
   const [data, setData] = useState<TimeSeries | null>(null);
   const [mainData, setMainData] = useState<TimeSeries | null>(null);
   const [isLoading, setIsLoading] = useState(() => {
@@ -80,10 +82,8 @@ export function useTimeSeries<T extends QuickGraphAssetType>({
 
       try {
         const appId = getAppId();
-        const scenarioKey = worktree.activeSnapshotId;
-        const storage = new OPFSStorage(appId, scenarioKey);
-        const epsReader = new EPSResultsReader(storage);
-        await epsReader.initialize(metadata, simulationIds);
+        const epsReader = await getEpsResultsReader();
+        if (!epsReader) return;
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await epsReader.getTimeSeries(
@@ -155,7 +155,7 @@ export function useTimeSeries<T extends QuickGraphAssetType>({
     status,
     metadata,
     simulationIds,
-    worktree.activeSnapshotId,
+    getEpsResultsReader,
     isInScenario,
     mainSimulation,
   ]);

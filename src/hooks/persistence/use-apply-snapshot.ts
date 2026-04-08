@@ -9,11 +9,7 @@ import { modelCacheAtom } from "src/state/model-cache";
 import { stagingModelAtom, baseModelAtom } from "src/state/hydraulic-model";
 import { momentLogAtom } from "src/state/model-changes";
 import { mapSyncMomentAtom } from "src/state/map";
-import {
-  simulationAtom,
-  initialSimulationState,
-  simulationResultsAtom,
-} from "src/state/simulation";
+import { simulationAtom, simulationResultsAtom } from "src/state/simulation";
 import { simulationSettingsAtom } from "src/state/simulation-settings";
 import { selectionAtom } from "src/state/selection";
 import { projectSettingsAtom } from "src/state/project-settings";
@@ -21,6 +17,7 @@ import { getSimulationForState } from "src/lib/worktree";
 import type { Worktree } from "src/lib/worktree/types";
 import { USelection } from "src/selection";
 import type { MomentLog } from "src/lib/persistence/moment-log";
+import { prepareSimulation, type ResultsReader } from "./simulation-helpers";
 
 type SimulationState = import("src/state/simulation").SimulationState;
 
@@ -74,11 +71,7 @@ function switchMomentLog(get: Getter, set: Setter, momentLog: MomentLog): void {
 function setSimulationState(
   set: Setter,
   simulation: SimulationState,
-  resultsReader: Awaited<
-    ReturnType<
-      import("src/simulation").EPSResultsReader["getResultsForTimestep"]
-    >
-  > | null,
+  resultsReader: ResultsReader,
   simulationSettings: import("src/simulation/simulation-settings").SimulationSettings,
 ): void {
   set(simulationAtom, simulation);
@@ -100,85 +93,6 @@ function validateSelection(
   set(selectionAtom, { ...validatedSelection });
 }
 
-async function prepareSimulation(
-  get: Getter,
-  worktree: Worktree,
-  snapshot: NonNullable<ReturnType<Worktree["snapshots"]["get"]>>,
-): Promise<{
-  finalSimulation: SimulationState;
-  resultsReader: Awaited<
-    ReturnType<
-      import("src/simulation").EPSResultsReader["getResultsForTimestep"]
-    >
-  > | null;
-}> {
-  const currentSimulation = get(simulationAtom);
-  const preserveTimestepIndex =
-    currentSimulation.status === "success" ||
-    currentSimulation.status === "warning"
-      ? currentSimulation.currentTimestepIndex
-      : undefined;
-
-  const simulation = getSimulationForState(worktree, initialSimulationState);
-  const { resultsReader, actualTimestepIndex } = await fetchSimulationResults(
-    simulation,
-    snapshot.simulationSourceId,
-    preserveTimestepIndex,
-  );
-
-  const finalSimulation =
-    actualTimestepIndex !== undefined &&
-    (simulation.status === "success" || simulation.status === "warning")
-      ? { ...simulation, currentTimestepIndex: actualTimestepIndex }
-      : simulation;
-
-  return { finalSimulation, resultsReader };
-}
-
-async function fetchSimulationResults(
-  simulation: SimulationState,
-  snapshotId: string,
-  preserveTimestepIndex?: number,
-): Promise<{
-  resultsReader: Awaited<
-    ReturnType<
-      import("src/simulation").EPSResultsReader["getResultsForTimestep"]
-    >
-  > | null;
-  actualTimestepIndex?: number;
-}> {
-  if (
-    (simulation.status === "success" || simulation.status === "warning") &&
-    simulation.metadata
-  ) {
-    const [{ OPFSStorage }, { EPSResultsReader }, { getAppId }] =
-      await Promise.all([
-        import("src/infra/storage"),
-        import("src/simulation"),
-        import("src/infra/app-instance"),
-      ]);
-
-    const appId = getAppId();
-    const storage = new OPFSStorage(appId, snapshotId);
-    const epsReader = new EPSResultsReader(storage);
-    await epsReader.initialize(simulation.metadata, simulation.simulationIds);
-
-    let timestepIndex: number;
-    if (preserveTimestepIndex !== undefined) {
-      timestepIndex = Math.min(
-        preserveTimestepIndex,
-        Math.max(0, epsReader.timestepCount - 1),
-      );
-    } else {
-      timestepIndex = simulation.currentTimestepIndex ?? 0;
-    }
-
-    const resultsReader = await epsReader.getResultsForTimestep(timestepIndex);
-    return { resultsReader, actualTimestepIndex: timestepIndex };
-  }
-  return { resultsReader: null };
-}
-
 export const useApplySnapshot = () => {
   const applySnapshot = useAtomCallback(
     useCallback(
@@ -191,10 +105,11 @@ export const useApplySnapshot = () => {
         const snapshot = worktree.snapshots.get(snapshotId);
         if (!snapshot) return;
 
+        const simulation = getSimulationForState(worktree, { status: "idle" });
         const { finalSimulation, resultsReader } = await prepareSimulation(
           get,
-          worktree,
-          snapshot,
+          simulation,
+          snapshot.simulationSourceId,
         );
         const stagingModel = getModelFromCache(get, snapshotId);
         const baseModel = getModelFromCache(get, worktree.mainId);

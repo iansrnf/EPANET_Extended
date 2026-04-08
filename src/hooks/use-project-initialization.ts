@@ -105,19 +105,6 @@ const loadModel = (
   };
 
   trackMoment({ note: snapshotMoment.note!, putAssets: assets });
-
-  assets.forEach((asset) => {
-    factories.labelManager.register(asset.label, asset.type, asset.id);
-    if (asset.isLink) {
-      hydraulicModel.assetIndex.addLink(asset.id);
-    } else if (asset.isNode) {
-      hydraulicModel.assetIndex.addNode(asset.id);
-    }
-  });
-
-  hydraulicModel.customerPoints.forEach((cp) => {
-    factories.labelManager.register(cp.label, "customerPoint", cp.id);
-  });
   hydraulicModel.pressureLoggers.forEach((pressureLogger) => {
     factories.labelManager.register(
       pressureLogger.label,

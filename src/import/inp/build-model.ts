@@ -104,6 +104,7 @@ export const buildModel = (
     inpData.options.headlossFormula,
   );
   const skipWgs84Validation = options?.skipWgs84Validation ?? false;
+  const populateAssetIndex = options?.populateAssetIndex ?? false;
   const nodeIds = new ItemData<AssetId>();
   const linkIds = new ItemData<AssetId>();
 
@@ -149,6 +150,7 @@ export const buildModel = (
       nodeIds,
       patternContext,
       skipWgs84Validation,
+      populateAssetIndex,
     });
   }
 
@@ -159,6 +161,7 @@ export const buildModel = (
       nodeIds,
       patternContext,
       skipWgs84Validation,
+      populateAssetIndex,
     });
   }
 
@@ -168,6 +171,7 @@ export const buildModel = (
       issues,
       nodeIds,
       skipWgs84Validation,
+      populateAssetIndex,
     });
   }
 
@@ -184,6 +188,7 @@ export const buildModel = (
         nodeIds,
         linkIds,
         skipWgs84Validation,
+        populateAssetIndex,
       },
     );
   }
@@ -195,6 +200,7 @@ export const buildModel = (
       nodeIds,
       linkIds,
       skipWgs84Validation,
+      populateAssetIndex,
     });
   }
 
@@ -206,6 +212,7 @@ export const buildModel = (
       linkIds,
       options,
       skipWgs84Validation,
+      populateAssetIndex,
     });
   }
 
@@ -218,7 +225,13 @@ export const buildModel = (
     });
   }
 
-  addCurves(hydraulicModel, labelManager, curvesContext, issues, inpData.curves);
+  addCurves(
+    hydraulicModel,
+    labelManager,
+    curvesContext,
+    issues,
+    inpData.curves,
+  );
 
   addPatterns(
     hydraulicModel,
@@ -399,12 +412,14 @@ const addJunction = (
     nodeIds,
     patternContext,
     skipWgs84Validation,
+    populateAssetIndex,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
     nodeIds: ItemData<AssetId>;
     patternContext: PatternsContext;
     skipWgs84Validation: boolean;
+    populateAssetIndex: boolean;
   },
 ) => {
   const coordinates = getNodeCoordinates(
@@ -448,6 +463,7 @@ const addJunction = (
     isActive: junctionData.isActive,
   });
   hydraulicModel.assets.set(junction.id, junction);
+  if (populateAssetIndex) hydraulicModel.assetIndex.addNode(junction.id);
   hydraulicModel.demands.junctions.set(junction.id, demands);
   nodeIds.set(junctionData.id, junction.id);
 };
@@ -462,12 +478,14 @@ const addReservoir = (
     nodeIds,
     patternContext,
     skipWgs84Validation,
+    populateAssetIndex,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
     nodeIds: ItemData<AssetId>;
     patternContext: PatternsContext;
     skipWgs84Validation: boolean;
+    populateAssetIndex: boolean;
   },
 ) => {
   const coordinates = getNodeCoordinates(
@@ -508,6 +526,7 @@ const addReservoir = (
     isActive: reservoirData.isActive,
   });
   hydraulicModel.assets.set(reservoir.id, reservoir);
+  if (populateAssetIndex) hydraulicModel.assetIndex.addNode(reservoir.id);
   nodeIds.set(reservoirData.id, reservoir.id);
 };
 
@@ -521,11 +540,13 @@ const addTank = (
     issues,
     nodeIds,
     skipWgs84Validation,
+    populateAssetIndex,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
     nodeIds: ItemData<AssetId>;
     skipWgs84Validation: boolean;
+    populateAssetIndex: boolean;
   },
 ) => {
   const coordinates = getNodeCoordinates(
@@ -572,6 +593,7 @@ const addTank = (
     isActive: tankData.isActive,
   });
   hydraulicModel.assets.set(tank.id, tank);
+  if (populateAssetIndex) hydraulicModel.assetIndex.addNode(tank.id);
   nodeIds.set(tankData.id, tank.id);
 };
 
@@ -587,12 +609,14 @@ const addPump = (
     nodeIds,
     linkIds,
     skipWgs84Validation,
+    populateAssetIndex,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
     nodeIds: ItemData<AssetId>;
     linkIds: ItemData<AssetId>;
     skipWgs84Validation: boolean;
+    populateAssetIndex: boolean;
   },
 ) => {
   const linkProperties = getLinkProperties(
@@ -718,6 +742,7 @@ const addPump = (
     isActive: pumpData.isActive,
   });
   hydraulicModel.assets.set(pump.id, pump);
+  if (populateAssetIndex) hydraulicModel.assetIndex.addLink(pump.id);
   hydraulicModel.topology.addLink(pump.id, connections[0], connections[1]);
   linkIds.set(pumpData.id, pump.id);
   if (pump.curveId) {
@@ -739,12 +764,14 @@ const addValve = (
     nodeIds,
     linkIds,
     skipWgs84Validation,
+    populateAssetIndex,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
     nodeIds: ItemData<AssetId>;
     linkIds: ItemData<AssetId>;
     skipWgs84Validation: boolean;
+    populateAssetIndex: boolean;
   },
 ) => {
   const linkProperties = getLinkProperties(
@@ -788,6 +815,7 @@ const addValve = (
     curveId: resolvedCurveId,
   });
   hydraulicModel.assets.set(valve.id, valve);
+  if (populateAssetIndex) hydraulicModel.assetIndex.addLink(valve.id);
   hydraulicModel.topology.addLink(valve.id, connections[0], connections[1]);
   linkIds.set(valveData.id, valve.id);
 };
@@ -803,6 +831,7 @@ const addPipe = (
     linkIds,
     options: _options,
     skipWgs84Validation,
+    populateAssetIndex,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
@@ -810,6 +839,7 @@ const addPipe = (
     linkIds: ItemData<AssetId>;
     options?: ParseInpOptions;
     skipWgs84Validation: boolean;
+    populateAssetIndex: boolean;
   },
 ) => {
   const linkProperties = getLinkProperties(
@@ -845,6 +875,7 @@ const addPipe = (
     isActive: pipeData.isActive,
   });
   hydraulicModel.assets.set(pipe.id, pipe);
+  if (populateAssetIndex) hydraulicModel.assetIndex.addLink(pipe.id);
   hydraulicModel.topology.addLink(pipe.id, connections[0], connections[1]);
   linkIds.set(pipeData.id, pipe.id);
 };

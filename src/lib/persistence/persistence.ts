@@ -64,23 +64,6 @@ import {
   updateModelCache,
 } from "./transaction-helpers";
 
-const MAX_CHANGES_BEFORE_MAP_SYNC = 500;
-
-const createBaseMoment = (hydraulicModel: HydraulicModel): ModelMoment => ({
-  note: "Base model",
-  putAssets: [...hydraulicModel.assets.values()],
-  deleteAssets: [],
-  patchAssetsAttributes: [],
-  putDemands: {
-    assignments: toDemandAssignments(hydraulicModel.demands),
-  },
-  putControls: hydraulicModel.controls,
-  putCustomerPoints: [...hydraulicModel.customerPoints.values()],
-  putPressureLoggers: [...hydraulicModel.pressureLoggers.values()],
-  putCurves: hydraulicModel.curves,
-  putPatterns: hydraulicModel.patterns,
-});
-
 export class Persistence implements IPersistenceWithSnapshots {
   private store: Store;
 
@@ -285,31 +268,18 @@ export class Persistence implements IPersistenceWithSnapshots {
     return (moment: ModelMoment) => {
       const get = this.store.get;
       const set = this.store.set;
+
       const momentLog = get(momentLogAtom).copy();
       const currentMapSyncMoment = get(mapSyncMomentAtom);
 
       const isTruncatingHistory = momentLog.nextRedo() !== null;
 
       trackMoment(moment);
-      const {
-        note,
-        deleteAssets,
-        putAssets,
-        patchAssetsAttributes,
-        ...optionalFields
-      } = moment;
-      const forwardMoment: ModelMoment = {
-        note,
-        deleteAssets: deleteAssets || [],
-        putAssets: putAssets || [],
-        patchAssetsAttributes: patchAssetsAttributes || [],
-        ...optionalFields,
-      };
       const newStateId = nanoid();
 
-      const reverseMoment = applyMoment(get, set, newStateId, forwardMoment);
+      const reverseMoment = applyMoment(get, set, newStateId, moment);
 
-      momentLog.append(forwardMoment, reverseMoment, newStateId);
+      momentLog.append(moment, reverseMoment, newStateId);
 
       const newMapSyncMoment = computeSyncMoment(
         currentMapSyncMoment,
@@ -523,6 +493,22 @@ export class Persistence implements IPersistenceWithSnapshots {
     const mainHasNoDeltas =
       mainSnapshot !== undefined && mainSnapshot.deltas.length === 0;
 
+    const factories = this.store.get(modelFactoriesAtom);
+    const labelManager = new LabelManager(factories.labelCounters);
+
+    if (mainHasNoDeltas) {
+      const baseModel = this.store.get(baseModelAtom);
+      const model = { ...baseModel };
+
+      const allDeltas = [...snapshot.deltas, ...snapshot.momentLog.getDeltas()];
+
+      for (const delta of allDeltas) {
+        applyMomentToModel(model, delta, labelManager);
+      }
+
+      return { model, labelManager };
+    }
+
     const allDeltas: ModelMoment[] = [];
     let current: Snapshot | undefined = snapshot;
 
@@ -536,16 +522,9 @@ export class Persistence implements IPersistenceWithSnapshots {
     const momentLogDeltas = snapshot.momentLog.getDeltas();
     allDeltas.push(...momentLogDeltas);
 
-    const factories = this.store.get(modelFactoriesAtom);
-    const labelManager = new LabelManager(factories.labelCounters);
     const model = initializeHydraulicModel({
       idGenerator: factories.idGenerator,
     });
-
-    if (mainHasNoDeltas) {
-      const baseModel = this.store.get(baseModelAtom);
-      allDeltas.unshift(createBaseMoment(baseModel));
-    }
 
     for (const delta of allDeltas) {
       applyMomentToModel(model, delta, labelManager);

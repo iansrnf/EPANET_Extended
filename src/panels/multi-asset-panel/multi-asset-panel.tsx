@@ -16,7 +16,10 @@ import { modelFactoriesAtom } from "src/state/model-factories";
 import { multiAssetPanelCollapseAtom } from "src/state/layout";
 import { selectionAtom } from "src/state/selection";
 import { simulationAtom, simulationResultsAtom } from "src/state/simulation";
-import { simulationDerivedAtom } from "src/state/derived-branch-state";
+import {
+  simulationDerivedAtom,
+  simulationResultsDerivedAtom,
+} from "src/state/derived-branch-state";
 import { computeMultiAssetData } from "./data";
 import { BATCH_EDITABLE_PROPERTIES } from "./batch-edit-property-config";
 import { usePersistence } from "src/lib/persistence";
@@ -47,7 +50,9 @@ export function MultiAssetPanel({
   const simulationState = useAtomValue(
     isStateRefactorOn ? simulationDerivedAtom : simulationAtom,
   );
-  const simulationResults = useAtomValue(simulationResultsAtom);
+  const simulationResults = useAtomValue(
+    isStateRefactorOn ? simulationResultsDerivedAtom : simulationResultsAtom,
+  );
   const hydraulicModel = useAtomValue(
     isStateRefactorOn ? stagingModelDerivedAtom : stagingModelAtom,
   );

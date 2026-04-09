@@ -137,7 +137,9 @@ const detectChanges = (
     hasEphemeralStateReset:
       prev.ephemeralState.type !== "none" &&
       state.ephemeralState.type === "none",
-    hasNewSimulation: state.simulation !== prev.simulation,
+    hasNewSimulation:
+      state.simulation !== prev.simulation ||
+      state.simulationStep !== prev.simulationStep,
     hasNewSymbology: state.symbology !== prev.symbology,
     hasNewCustomerPoints: state.customerPoints !== prev.customerPoints,
     hasNewPressureLoggers: state.pressureLoggers !== prev.pressureLoggers,

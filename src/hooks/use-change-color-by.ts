@@ -1,7 +1,6 @@
 import { useAtomValue } from "jotai";
 import { useCallback, useState } from "react";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { useGetEpsResultsReader } from "src/hooks/use-eps-results-reader";
 import { useUserTracking } from "src/infra/user-tracking";
 import { symbologyBuilders } from "src/map/symbology/symbology-builders";
 import {
@@ -13,9 +12,11 @@ import {
   SupportedProperty,
   nullSymbologySpec,
 } from "src/map/symbology/symbology-types";
-import { getSimulationMetadata } from "src/simulation/epanet/simulation-metadata";
 import { stagingModelAtom } from "src/state/hydraulic-model";
-import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
+import {
+  simulationDerivedAtom,
+  stagingModelDerivedAtom,
+} from "src/state/derived-branch-state";
 import {
   type RangeColorPreference,
   useSymbologyState,
@@ -32,7 +33,9 @@ const absValuesFor = (property: SupportedProperty): boolean =>
 export const useChangeColorBy = (geometryType: "node" | "link") => {
   const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
   const userTracking = useUserTracking();
-  const simulation = useAtomValue(simulationAtom);
+  const simulation = useAtomValue(
+    isStateRefactorOn ? simulationDerivedAtom : simulationAtom,
+  );
   const simulationResults = useAtomValue(
     isStateRefactorOn ? simulationResultsDerivedAtom : simulationResultsAtom,
   );
@@ -46,20 +49,18 @@ export const useChangeColorBy = (geometryType: "node" | "link") => {
   const isPersistMapPreferencesOn = useFeatureFlag(
     "FLAG_RESTORE_MAP_PREFERENCES",
   );
-  const getEpsResultsReader = useGetEpsResultsReader();
   const [isWorking, setIsWorking] = useState(false);
-
-  const isEpsSimulation =
-    (simulation.status === "success" || simulation.status === "warning") &&
-    !!simulation.metadata &&
-    getSimulationMetadata(simulation.metadata).reportingStepsCount > 1;
 
   const fetchSortedData = useCallback(
     async (property: SupportedProperty): Promise<number[] | null> => {
       const absValues = absValuesFor(property);
 
+      const isEpsSimulation =
+        "epsResultsReader" in simulation &&
+        (simulation.epsResultsReader?.timestepCount ?? 0) > 1;
+
       if (isWaterAgeOn && isEpsSimulation && isSimulationProperty(property)) {
-        const epsReader = await getEpsResultsReader();
+        const epsReader = simulation.epsResultsReader!;
         if (epsReader) {
           const sorted = await getSortedSimulationDataForBreaks(
             property,
@@ -79,13 +80,7 @@ export const useChangeColorBy = (geometryType: "node" | "link") => {
         },
       );
     },
-    [
-      isWaterAgeOn,
-      isEpsSimulation,
-      getEpsResultsReader,
-      hydraulicModel,
-      simulationResults,
-    ],
+    [isWaterAgeOn, hydraulicModel, simulationResults, simulation],
   );
 
   const changeColorBy = useCallback(

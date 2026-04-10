@@ -8,7 +8,6 @@ import { selectionAtom } from "src/state/selection";
 import { stagingModelAtom } from "src/state/hydraulic-model";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { simulationAtom, simulationStepAtom } from "src/state/simulation";
-import { worktreeAtom } from "src/state/scenarios";
 import { useTranslate } from "src/hooks/use-translate";
 import { ActionButton } from "src/components/action-button";
 import { SectionList } from "src/components/form/fields";
@@ -19,12 +18,10 @@ import type { StyledPointValue } from "src/components/graphs";
 import { localizeDecimal } from "src/infra/i18n/numbers";
 import { colors } from "src/lib/constants";
 import { convertTo, type Unit } from "src/quantity";
-import { OPFSStorage } from "src/infra/storage/opfs-storage";
-import {
+import type {
   EPSResultsReader,
   TimeSeries,
 } from "src/simulation/epanet/eps-results-reader";
-import { getAppId } from "src/infra/app-instance";
 import { captureError } from "src/infra/error-tracking";
 import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
@@ -413,7 +410,6 @@ const useConnectedNodeSimulationSeries = (
   sourcePressureUnit: Unit,
 ) => {
   const simulation = useAtomValue(simulationAtom);
-  const worktree = useAtomValue(worktreeAtom);
   const [simulationSeriesByNodeId, setSimulationSeriesByNodeId] = useState<
     Record<number, ConnectedNodeTimeSeries>
   >({});
@@ -422,14 +418,8 @@ const useConnectedNodeSimulationSeries = (
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const status = simulation.status;
-  const metadata =
-    status === "success" || status === "warning"
-      ? simulation.metadata
-      : undefined;
-  const simulationIds =
-    status === "success" || status === "warning"
-      ? simulation.simulationIds
-      : undefined;
+  const epsResultsReader =
+    "epsResultsReader" in simulation ? simulation.epsResultsReader : null;
 
   useEffect(() => {
     if (connectedNodes.length === 0) {
@@ -444,11 +434,7 @@ const useConnectedNodeSimulationSeries = (
       return;
     }
 
-    if (
-      (status !== "success" && status !== "warning") ||
-      !metadata ||
-      !simulationIds
-    ) {
+    if ((status !== "success" && status !== "warning") || !epsResultsReader) {
       setSimulationSeriesByNodeId({});
       setIsLoadingSimulationSeries(false);
       return;
@@ -461,13 +447,12 @@ const useConnectedNodeSimulationSeries = (
       setIsLoadingSimulationSeries(true);
 
       try {
-        const storage = new OPFSStorage(getAppId(), worktree.activeSnapshotId);
-        const reader = new EPSResultsReader(storage);
-        await reader.initialize(metadata, simulationIds);
-
         const seriesEntries = await Promise.all(
           connectedNodes.map(async (node) => {
-            const series = await getNodePressureTimeSeries(reader, node);
+            const series = await getNodePressureTimeSeries(
+              epsResultsReader,
+              node,
+            );
             if (!series) return null;
 
             return [
@@ -508,11 +493,9 @@ const useConnectedNodeSimulationSeries = (
     };
   }, [
     connectedNodes,
-    metadata,
-    simulationIds,
+    epsResultsReader,
     sourcePressureUnit,
     status,
-    worktree.activeSnapshotId,
   ]);
 
   return { simulationSeriesByNodeId, isLoadingSimulationSeries };

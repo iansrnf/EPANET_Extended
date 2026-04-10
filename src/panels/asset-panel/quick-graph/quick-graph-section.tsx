@@ -7,7 +7,11 @@ import { useTranslate } from "src/hooks/use-translate";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { stagingModelAtom } from "src/state/hydraulic-model";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
-import { simulationAtom, simulationStepAtom } from "src/state/simulation";
+import {
+  type SimulationState,
+  simulationAtom,
+  simulationStepAtom,
+} from "src/state/simulation";
 import { simulationDerivedAtom } from "src/state/derived-branch-state";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { worktreeAtom } from "src/state/scenarios";
@@ -115,10 +119,13 @@ const getValveSettingQuantityKey = (valve: Valve): QuantityProperty | null => {
 
 const getPropertyDefinitions = (
   assetType: QuickGraphAssetType,
-  simulation: { epsResultsReader?: { qualityType?: string } | null },
+  simulation: SimulationState,
 ) => {
   const baseOptions = QUICK_GRAPH_PROPERTIES[assetType];
-  if (simulation.epsResultsReader?.qualityType !== "age") {
+  const hasWaterAge =
+    "epsResultsReader" in simulation &&
+    simulation.epsResultsReader?.qualityType === "age";
+  if (!hasWaterAge) {
     return baseOptions;
   }
 

@@ -24,8 +24,6 @@ import {
 } from "src/state/map";
 import { gridPreviewAtom, showGridAtom } from "src/state/map-projection";
 import { momentLogAtom } from "src/state/model-changes";
-import { simulationResultsAtom } from "src/state/simulation";
-import { simulationResultsDerivedAtom } from "src/state/derived-branch-state";
 import type { ResultsReader } from "src/simulation/results-reader";
 import { MapEngine } from "./map-engine";
 import {
@@ -122,6 +120,7 @@ const detectChanges = (
   hasNewZoom: boolean;
   hasSyncMomentChanged: boolean;
   hasNewModelVersion: boolean;
+  hasNewResults: boolean;
   hasNewMapOverlay: boolean;
 } => {
   return {
@@ -147,6 +146,7 @@ const detectChanges = (
       state.loggerTelemetry !== prev.loggerTelemetry,
     hasNewZoom: state.currentZoom !== prev.currentZoom,
     hasSyncMomentChanged: state.syncMomentVersion !== prev.syncMomentVersion,
+    hasNewResults: state.resultsReader !== prev.resultsReader,
     hasNewMapOverlay: state.mapOverlayFeatures !== prev.mapOverlayFeatures,
   };
 };
@@ -171,12 +171,8 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
   const { units, formatting } = useAtomValue(projectSettingsAtom);
   const isGridOn = useAtomValue(showGridAtom);
   const isGridPreview = useAtomValue(gridPreviewAtom);
-  const simulationResults = useAtomValue(
-    isStateRefactorOn ? simulationResultsDerivedAtom : simulationResultsAtom,
-  );
   const lastHiddenFeatures = useRef<Set<AssetId>>(new Set([]));
   const previousMapStateRef = useRef<MapState>(nullMapState);
-  const previousResultsReaderRef = useRef<ResultsReader | null>(null);
   const customerPointsOverlayRef = useRef<CustomerPointsOverlay>([]);
   const pressureLoggersOverlayRef = useRef<PressureLoggersOverlay>([]);
   const selectionDeckLayersRef = useRef<CustomerPointsOverlay>([]);
@@ -185,13 +181,12 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
   const pipeFlowOverlayRef = useRef<PipeFlowAnimationOverlay>([]);
   const baseDeckLayersRef = useRef<LayersList>([]);
   const pipeFlowAnimationFrameRef = useRef<number | null>(null);
-  const resultsReader = simulationResults;
   const pipeFlowAnimationContextRef = useRef<{
     assets: AssetsMap;
     simulationResults: ResultsReader | null;
   }>({
     assets,
-    simulationResults: resultsReader,
+    simulationResults: mapState.resultsReader,
   });
   const gridRef = useRef<Grid | null>(null);
   const scaleControlRef = useRef<mapboxgl.ScaleControl | null>(null);
@@ -200,11 +195,9 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
 
   const doUpdates = useCallback(() => {
     if (!map) return;
+    const resultsReader = mapState.resultsReader;
 
-    const hasNewResults = resultsReader !== previousResultsReaderRef.current;
-    previousResultsReaderRef.current = resultsReader;
-
-    if (mapState === previousMapStateRef.current && !hasNewResults) return;
+    if (mapState === previousMapStateRef.current) return;
 
     const previousMapState = previousMapStateRef.current;
     previousMapStateRef.current = mapState;
@@ -225,6 +218,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
       hasNewZoom,
       hasSyncMomentChanged,
       hasNewModelVersion,
+      hasNewResults,
       hasNewMapOverlay,
     } = changes;
 
@@ -284,7 +278,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             units,
             formatting,
             translateUnit,
-            resultsReader,
+            mapState.resultsReader,
           );
           lastHiddenFeatures.current = new Set();
           setMapSyncMoment((prev) => {
@@ -313,7 +307,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             units,
             formatting,
             translateUnit,
-            resultsReader,
+            mapState.resultsReader,
           );
           lastHiddenFeatures.current = editedAssetIds;
         }
@@ -331,7 +325,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             map,
             assets,
             mapState.selection,
-            resultsReader,
+            mapState.resultsReader,
           );
         }
 
@@ -473,7 +467,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             assets,
             units,
             mapState.movedAssetIds,
-            resultsReader,
+            mapState.resultsReader,
           );
 
           await hideSymbologyForSelectedJunctions(
@@ -554,7 +548,6 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
     translate,
     translateUnit,
     hydraulicModel,
-    resultsReader,
     isGridOn,
     isGridPreview,
     pipeFlowAnimationFrameRef,

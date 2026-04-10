@@ -21,6 +21,7 @@ import {
   momentLogDerivedAtom,
   simulationDerivedAtom,
   stagingModelDerivedAtom,
+  simulationResultsDerivedAtom,
   customerPointsDerivedAtom,
   pressureLoggersDerivedAtom,
 } from "src/state/derived-branch-state";
@@ -34,6 +35,7 @@ import {
   type SimulationState,
   initialSimulationState,
   simulationAtom,
+  simulationResultsAtom,
   simulationStepAtom,
 } from "src/state/simulation";
 import { stagingModelAtom } from "src/state/hydraulic-model";
@@ -48,6 +50,7 @@ import {
   loggerTelemetryAtom,
   type LoggerTelemetryState,
 } from "./logger-telemetry";
+import type { ResultsReader } from "src/simulation/results-reader";
 
 export type MomentPointer = {
   pointer: number;
@@ -139,6 +142,7 @@ export type MapState = {
   symbology: SymbologySpec;
   simulation: SimulationState;
   simulationStep: number | null;
+  resultsReader: ResultsReader | null;
   selectedAssetIds: Set<AssetId>;
   movedAssetIds: Set<AssetId>;
   isOffline: boolean;
@@ -165,6 +169,7 @@ export const nullMapState: MapState = {
   symbology: nullSymbologySpec,
   simulation: initialSimulationState,
   simulationStep: null,
+  resultsReader: null,
   selectedAssetIds: new Set(),
   movedAssetIds: new Set(),
   isOffline: false,
@@ -204,6 +209,7 @@ export const mapStateAtom = atom<MapState>((get) => {
   const simulationStep = get(simulationStepAtom);
   const hydraulicModel = get(stagingModelAtom);
   const modelVersion = hydraulicModel.version;
+  const resultsReader = get(simulationResultsAtom);
   const customerPoints = hydraulicModel.customerPoints;
   const pressureLoggers = hydraulicModel.pressureLoggers;
   const loggerTelemetry = get(loggerTelemetryAtom);
@@ -226,6 +232,7 @@ export const mapStateAtom = atom<MapState>((get) => {
     symbology,
     simulation,
     simulationStep,
+    resultsReader,
     selectedAssetIds,
     movedAssetIds,
     isOffline,
@@ -247,6 +254,8 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
   const simulation = get(simulationDerivedAtom);
   const hydraulicModel = get(stagingModelDerivedAtom);
   const modelVersion = hydraulicModel.version;
+  const simulationStep = get(simulationStepAtom);
+  const resultsReader = get(simulationResultsDerivedAtom);
   const customerPoints = get(customerPointsDerivedAtom);
   const pressureLoggers = get(pressureLoggersDerivedAtom);
   const loggerTelemetry = get(loggerTelemetryAtom);
@@ -268,7 +277,8 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
     ephemeralState,
     symbology,
     simulation,
-    simulationStep: null,
+    simulationStep,
+    resultsReader,
     selectedAssetIds,
     movedAssetIds,
     isOffline,

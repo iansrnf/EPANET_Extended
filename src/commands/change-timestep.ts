@@ -7,7 +7,6 @@ import {
   simulationResultsAtom,
   simulationStepAtom,
 } from "src/state/simulation";
-import { simulationResultsDerivedAtom } from "src/state/derived-branch-state";
 import { captureError } from "src/infra/error-tracking";
 import { useUserTracking } from "src/infra/user-tracking";
 
@@ -27,9 +26,7 @@ export const useChangeTimestep = () => {
   const [simulation, setSimulationState] = useAtom(
     isStateRefactorOn ? simulationDerivedAtom : simulationAtom,
   );
-  const setSimulationResults = useSetAtom(
-    isStateRefactorOn ? simulationResultsDerivedAtom : simulationResultsAtom,
-  );
+  const setSimulationResults = useSetAtom(simulationResultsAtom);
 
   const userTracking = useUserTracking();
 
@@ -57,7 +54,7 @@ export const useChangeTimestep = () => {
           await epsReader.getResultsForTimestep(newTimeStep);
 
         setSimulationStep(newTimeStep);
-        setSimulationResults(resultsReader);
+        if (!isStateRefactorOn) setSimulationResults(resultsReader);
 
         userTracking.capture({
           name: "simulation.timestep.changed",
@@ -68,7 +65,7 @@ export const useChangeTimestep = () => {
         captureError(error as Error);
         setSimulationStep(null);
         setSimulationState({ status: "idle" });
-        setSimulationResults(null);
+        if (!isStateRefactorOn) setSimulationResults(null);
       }
     },
     [
@@ -78,6 +75,7 @@ export const useChangeTimestep = () => {
       setSimulationResults,
       userTracking,
       setSimulationState,
+      isStateRefactorOn,
     ],
   );
 

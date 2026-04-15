@@ -35,7 +35,6 @@ type MultiValueRowProps = {
   curves?: Curves;
   patterns?: Patterns;
   labelManager?: LabelManager;
-  labelOverride?: string;
   onOpenLibrary?: (
     library: "curves" | "patterns" | "pumps",
     filterByType?: CurveType | PatternType,
@@ -51,7 +50,6 @@ export function MultiValueRow({
   curves,
   patterns,
   labelManager,
-  labelOverride,
   onOpenLibrary,
 }: MultiValueRowProps) {
   const translate = useTranslate();
@@ -59,10 +57,9 @@ export function MultiValueRow({
 
   const isMixed = propertyStats.values.size > 1;
   const label =
-    labelOverride ??
-    (propertyStats.type === "quantity" && propertyStats.unit
+    propertyStats.type === "quantity" && propertyStats.unit
       ? `${translate(propertyStats.property)} (${translateUnit(propertyStats.unit)})`
-      : translate(propertyStats.property));
+      : translate(propertyStats.property);
   const nullLabel =
     "nullLabelKey" in config && config.nullLabelKey
       ? translate(config.nullLabelKey)

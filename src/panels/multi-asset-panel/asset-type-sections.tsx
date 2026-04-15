@@ -24,7 +24,6 @@ type SectionProps = {
   curves?: Curves;
   patterns?: Patterns;
   labelManager?: LabelManager;
-  labelOverrides?: Record<string, string>;
   onOpenLibrary?: (
     library: "curves" | "patterns" | "pumps",
     filterByType?: CurveType | PatternType,
@@ -41,7 +40,6 @@ export function AssetTypeSections({
   curves,
   patterns,
   labelManager,
-  labelOverrides,
   onOpenLibrary,
 }: SectionProps) {
   const useAutoIndentation = useFeatureFlag("FLAG_UI_COLLAPSIBLE");
@@ -86,8 +84,6 @@ export function AssetTypeSections({
                   ? editableProperties[stat.property]
                   : undefined;
 
-              const labelOverride = labelOverrides?.[stat.property];
-
               if (config) {
                 return (
                   <MultiValueRow
@@ -100,7 +96,6 @@ export function AssetTypeSections({
                     curves={curves}
                     patterns={patterns}
                     labelManager={labelManager}
-                    labelOverride={labelOverride}
                     onOpenLibrary={onOpenLibrary}
                   />
                 );
@@ -111,7 +106,6 @@ export function AssetTypeSections({
                   key={stat.property}
                   propertyStats={stat}
                   onSelectAssets={onSelectAssets}
-                  labelOverride={labelOverride}
                 />
               );
             })}

@@ -650,6 +650,7 @@ export const WaterQualitySection = () => {
           }}
           disabled={!isChemical || hasScenarios || !isWaterChemicalOn}
           allowEmpty
+          placeholder={translate("simulationSettings.qualityDefaultChemical")}
         />
 
         <SelectorSetting
@@ -1068,6 +1069,7 @@ const TextSetting = ({
   errorMessage,
   onChange,
   allowEmpty = false,
+  placeholder,
 }: {
   label: string;
   description: string;
@@ -1076,6 +1078,7 @@ const TextSetting = ({
   errorMessage?: string | null;
   onChange: (value: string) => void;
   allowEmpty?: boolean;
+  placeholder?: string;
 }) => (
   <SettingsRow label={label} description={description}>
     <div className="flex items-center gap-2">
@@ -1095,6 +1098,7 @@ const TextSetting = ({
           }}
           disabled={disabled}
           allowEmpty={allowEmpty}
+          placeholder={placeholder}
           styleOptions={{
             textSize: "xs",
             border: "sm",

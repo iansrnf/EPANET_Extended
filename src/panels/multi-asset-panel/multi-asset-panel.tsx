@@ -104,7 +104,7 @@ export function MultiAssetPanel({
     const name = formatCapitalize(
       simulationSettings.qualityChemicalName || translate("chemical"),
     );
-    const unit = translateUnit(simulationSettings.qualityMassUnit ?? null);
+    const unit = translateUnit(units.chemicalConcentration);
     return {
       chemicalConcentration: translate("chemicalConcentration", name, unit),
       initialChemicalConcentration: translate(
@@ -116,8 +116,8 @@ export function MultiAssetPanel({
   }, [
     translate,
     translateUnit,
+    units.chemicalConcentration,
     simulationSettings.qualityChemicalName,
-    simulationSettings.qualityMassUnit,
   ]);
 
   const assetIdsByType = useMemo(() => {

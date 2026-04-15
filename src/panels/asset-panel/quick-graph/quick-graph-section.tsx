@@ -255,12 +255,9 @@ const QuickGraphSection = ({
       const name = formatCapitalize(
         simulationSettings.qualityChemicalName || translate("chemical"),
       );
-      const massUnit = translateUnit(
-        simulationSettings.qualityMassUnit ?? null,
-      );
       mapped.push({
         value: "chemicalConcentration" as const,
-        label: `${name} (${massUnit})`,
+        label: `${name} (${translateUnit(units.chemicalConcentration)})`,
       });
     }
 
@@ -276,7 +273,6 @@ const QuickGraphSection = ({
     simulation,
     isWaterChemicalOn,
     simulationSettings.qualityChemicalName,
-    simulationSettings.qualityMassUnit,
   ]);
 
   const handlePropertyChange = useCallback(

@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom, useAtom } from "jotai";
 import { Form, Formik } from "formik";
 
 import { BaseDialog, SimpleDialogActions, useDialogState } from "../../components/dialog";
@@ -7,6 +7,7 @@ import { useTranslate } from "src/hooks/use-translate";
 import { simulationSettingsAtom } from "src/state/simulation-settings";
 import { simulationSettingsDerivedAtom } from "src/state/derived-branch-state";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { projectSettingsAtom } from "src/state/project-settings";
 
 import { SimulationSettingsSidebar } from "./simulation-settings-sidebar";
 import {
@@ -45,6 +46,7 @@ export const SimulationSettingsDialog = () => {
   const setSimulationSettings = useSetAtom(
     isStateRefactorOn ? simulationSettingsDerivedAtom : simulationSettingsAtom,
   );
+  const [projectSettings, setProjectSettings] = useAtom(projectSettingsAtom);
 
   const sectionIds = useMemo(buildSectionIds, []);
 
@@ -58,9 +60,26 @@ export const SimulationSettingsDialog = () => {
       if (hasChanges(values, simulationSettings)) {
         setSimulationSettings(buildUpdatedSettings(values, simulationSettings));
       }
+      if (
+        values.qualityMassUnit !== projectSettings.units.chemicalConcentration
+      ) {
+        setProjectSettings({
+          ...projectSettings,
+          units: {
+            ...projectSettings.units,
+            chemicalConcentration: values.qualityMassUnit,
+          },
+        });
+      }
       closeDialog();
     },
-    [simulationSettings, setSimulationSettings, closeDialog],
+    [
+      simulationSettings,
+      setSimulationSettings,
+      projectSettings,
+      setProjectSettings,
+      closeDialog,
+    ],
   );
 
   return (

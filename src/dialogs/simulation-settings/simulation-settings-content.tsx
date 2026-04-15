@@ -649,6 +649,7 @@ export const WaterQualitySection = () => {
             void setFieldValue("qualityChemicalName", v);
           }}
           disabled={!isChemical || hasScenarios || !isWaterChemicalOn}
+          allowEmpty
         />
 
         <SelectorSetting
@@ -1066,6 +1067,7 @@ const TextSetting = ({
   disabled = false,
   errorMessage,
   onChange,
+  allowEmpty = false,
 }: {
   label: string;
   description: string;
@@ -1073,6 +1075,7 @@ const TextSetting = ({
   disabled?: boolean;
   errorMessage?: string | null;
   onChange: (value: string) => void;
+  allowEmpty?: boolean;
 }) => (
   <SettingsRow label={label} description={description}>
     <div className="flex items-center gap-2">
@@ -1091,6 +1094,7 @@ const TextSetting = ({
             return false;
           }}
           disabled={disabled}
+          allowEmpty={allowEmpty}
           styleOptions={{
             textSize: "xs",
             border: "sm",

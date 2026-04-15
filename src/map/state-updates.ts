@@ -250,6 +250,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
     setTimeout(async () => {
       try {
         if (hasNewStyles) {
+          map.suspendOverlayStyleReactions();
           resetMapState(map);
           await buildBaseStyleAndSetOnMap(
             map,
@@ -257,6 +258,8 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             translate,
           );
           addEditingLayersToMap(map, mapState.stylesConfig);
+          await map.addIcons();
+          map.resumeOverlayStyleReactions();
           if (isCustomGisLayersOn) {
             addGisLayersToMap(map, mapState.stylesConfig, gisData);
           }

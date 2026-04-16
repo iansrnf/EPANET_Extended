@@ -52,7 +52,6 @@ import { Hints } from "src/components/hints";
 import { useAuth } from "src/hooks/use-auth";
 import { satelliteLimitedZoom } from "src/commands/toggle-satellite";
 import { useTranslate } from "src/hooks/use-translate";
-import { MapLoading } from "./map-loader";
 import { supportEmail } from "src/global-config";
 import { MapHandlers, MoveEvent } from "./types";
 import { PipeDrawingFloatingPanel } from "src/components/pipe-drawing-floating-panel";
@@ -418,7 +417,6 @@ export const MapCanvas = memo(function MapCanvas({
       </CM.Trigger>
       <MapContextMenu contextInfo={contextInfo} />
       <Hints />
-      <MapLoading />
       <SatelliteToggle />
       <SatelliteResolutionMessage zoom={currentZoom} />
       <PipeDrawingFloatingPanel />

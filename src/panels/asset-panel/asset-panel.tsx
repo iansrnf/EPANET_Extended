@@ -115,6 +115,7 @@ import {
   getCurveBounds,
 } from "src/hydraulic-model/curves";
 import { useShowCurveLibrary } from "src/commands/show-curve-library";
+import { formatCapitalize } from "src/lib/utils";
 
 type OnPropertyChange = <P extends ChangeableProperty>(
   name: P,
@@ -399,8 +400,9 @@ const JunctionEditor = ({
   const simulationSettings = useAtomValue(
     isStateRefactorOn ? simulationSettingsDerivedAtom : simulationSettingsAtom,
   );
-  const chemicalName =
-    simulationSettings.qualityChemicalName || translate("chemical");
+  const chemicalName = formatCapitalize(
+    simulationSettings.qualityChemicalName || translate("chemical"),
+  );
   const chemicalUnit = simulationSettings.qualityMassUnit || "";
   const { footer } = useQuickGraph(junction.id, "junction");
   const {
@@ -705,8 +707,9 @@ const PipeEditor = ({
   const simulationSettings = useAtomValue(
     isStateRefactorOn ? simulationSettingsDerivedAtom : simulationSettingsAtom,
   );
-  const chemicalName =
-    simulationSettings.qualityChemicalName || translate("chemical");
+  const chemicalName = formatCapitalize(
+    simulationSettings.qualityChemicalName || translate("chemical"),
+  );
   const chemicalUnit = simulationSettings.qualityMassUnit || "";
   const { footer } = useQuickGraph(pipe.id, "pipe");
   const {
@@ -1013,8 +1016,9 @@ const ReservoirEditor = ({
   const simulationSettings = useAtomValue(
     isStateRefactorOn ? simulationSettingsDerivedAtom : simulationSettingsAtom,
   );
-  const chemicalName =
-    simulationSettings.qualityChemicalName || translate("chemical");
+  const chemicalName = formatCapitalize(
+    simulationSettings.qualityChemicalName || translate("chemical"),
+  );
   const chemicalUnit = simulationSettings.qualityMassUnit || "";
   const { footer } = useQuickGraph(reservoir.id, "reservoir");
   const { getComparison, getPatternComparison, isNew } =
@@ -1218,8 +1222,9 @@ const TankEditor = ({
   const simulationSettings = useAtomValue(
     isStateRefactorOn ? simulationSettingsDerivedAtom : simulationSettingsAtom,
   );
-  const chemicalName =
-    simulationSettings.qualityChemicalName || translate("chemical");
+  const chemicalName = formatCapitalize(
+    simulationSettings.qualityChemicalName || translate("chemical"),
+  );
   const chemicalUnit = simulationSettings.qualityMassUnit || "";
   const { footer } = useQuickGraph(tank.id, "tank");
   const { getComparison, getCurveComparison, isNew } = useAssetComparison(tank);
@@ -1990,8 +1995,9 @@ const ValveEditor = ({
   const simulationSettings = useAtomValue(
     isStateRefactorOn ? simulationSettingsDerivedAtom : simulationSettingsAtom,
   );
-  const chemicalName =
-    simulationSettings.qualityChemicalName || translate("chemical");
+  const chemicalName = formatCapitalize(
+    simulationSettings.qualityChemicalName || translate("chemical"),
+  );
   const chemicalUnit = simulationSettings.qualityMassUnit || "";
   const { footer } = useQuickGraph(valve.id, "valve");
   const { getComparison, getCurveComparison, isNew } =
@@ -2256,8 +2262,9 @@ const PumpEditor = ({
     isStateRefactorOn ? simulationSettingsDerivedAtom : simulationSettingsAtom,
   );
   const translate = useTranslate();
-  const chemicalName =
-    simulationSettings.qualityChemicalName || translate("chemical");
+  const chemicalName = formatCapitalize(
+    simulationSettings.qualityChemicalName || translate("chemical"),
+  );
   const chemicalUnit = simulationSettings.qualityMassUnit || "";
   const { footer } = useQuickGraph(pump.id, "pump");
   const {

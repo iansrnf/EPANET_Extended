@@ -346,7 +346,7 @@ describe("build inp", () => {
       .build();
 
     const simulationSettings = SimulationSettingsBuilder.with()
-      .qualitySimulationType("AGE")
+      .qualitySimulationType("age")
       .build();
 
     const inp = buildInp(hydraulicModel, {
@@ -400,7 +400,7 @@ describe("build inp", () => {
     );
 
     const simulationSettings = SimulationSettingsBuilder.with()
-      .qualitySimulationType("AGE")
+      .qualitySimulationType("age")
       .build();
 
     const inp = buildInp(hydraulicModel, {
@@ -704,7 +704,7 @@ describe("build inp", () => {
       .build();
 
     const simulationSettings = SimulationSettingsBuilder.with()
-      .qualitySimulationType("TRACE")
+      .qualitySimulationType("trace")
       .qualityTraceNodeId(TANK_ID)
       .build();
 
@@ -723,7 +723,7 @@ describe("build inp", () => {
       .build();
 
     const simulationSettings = SimulationSettingsBuilder.with()
-      .qualitySimulationType("TRACE")
+      .qualitySimulationType("trace")
       .qualityTraceNodeId(TANK_ID)
       .build();
 
@@ -740,7 +740,7 @@ describe("build inp", () => {
     const hydraulicModel = HydraulicModelBuilder.with().build();
 
     const simulationSettings = SimulationSettingsBuilder.with()
-      .qualitySimulationType("TRACE")
+      .qualitySimulationType("trace")
       .qualityTraceNodeId(null)
       .build();
 
@@ -1569,7 +1569,7 @@ describe("build inp", () => {
         .build();
 
       const simulationSettings = SimulationSettingsBuilder.with()
-        .qualitySimulationType("AGE")
+        .qualitySimulationType("age")
         .build();
 
       const inp = buildInp(hydraulicModel, {
@@ -2437,7 +2437,7 @@ THEN LINK {{1}} STATUS IS OPEN`,
       const IDS = { J1: 1, J2: 2 };
       const chemicalSettings = {
         ...defaultSimulationSettings,
-        qualitySimulationType: "CHEMICAL" as const,
+        qualitySimulationType: "chemical" as const,
         qualityChemicalName: "Chlorine",
         qualityMassUnit: "mg/L" as const,
       };
@@ -2487,7 +2487,7 @@ THEN LINK {{1}} STATUS IS OPEN`,
       const IDS = { T1: 1, R1: 2 };
       const chemicalSettings = {
         ...defaultSimulationSettings,
-        qualitySimulationType: "CHEMICAL" as const,
+        qualitySimulationType: "chemical" as const,
         qualityChemicalName: "Chlorine",
         qualityMassUnit: "mg/L" as const,
       };

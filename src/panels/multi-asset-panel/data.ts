@@ -35,7 +35,6 @@ import { tankVolumeCurveRange } from "src/hydraulic-model/asset-types/tank";
 export type QuantityStats = {
   type: "quantity";
   property: string;
-  labelParams?: string[];
   sum: number;
   max: number;
   min: number;
@@ -105,8 +104,6 @@ export const computeMultiAssetData = (
   options?: {
     waterAge?: boolean;
     waterChemical?: boolean;
-    chemicalName?: string;
-    chemicalUnit?: string;
   },
 ): ComputedMultiAssetData => {
   const counts: AssetCounts = {
@@ -141,8 +138,6 @@ export const computeMultiAssetData = (
           hydraulicModel.demands,
           hydraulicModel.patterns,
           simulationResults,
-          options?.chemicalName,
-          options?.chemicalUnit,
         );
         break;
       case "pipe":
@@ -189,8 +184,6 @@ export const computeMultiAssetData = (
           formatting,
           hydraulicModel.patterns,
           simulationResults,
-          options?.chemicalName,
-          options?.chemicalUnit,
         );
         break;
       case "tank":
@@ -203,8 +196,6 @@ export const computeMultiAssetData = (
           hydraulicModel.curves,
           hydraulicModel.patterns,
           simulationResults,
-          options?.chemicalName,
-          options?.chemicalUnit,
         );
         break;
     }
@@ -233,8 +224,6 @@ const appendJunctionStats = (
   demands: Demands,
   patterns: Patterns,
   simulationResults?: ResultsReader | null,
-  chemicalName?: string,
-  chemicalUnit?: string,
 ) => {
   const id = junction.id;
   updateBooleanStats(statsMap, "isEnabled", junction.isActive, id);
@@ -269,7 +258,6 @@ const appendJunctionStats = (
     units,
     formatting,
     id,
-    { labelParams: [chemicalName ?? "", chemicalUnit ?? ""] },
   );
   if (junction.chemicalSourceType) {
     updateCategoryStats(
@@ -1014,8 +1002,6 @@ const appendReservoirStats = (
   formatting: FormattingSpec,
   patterns: Patterns,
   simulationResults?: ResultsReader | null,
-  chemicalName?: string,
-  chemicalUnit?: string,
 ) => {
   const id = reservoir.id;
   updateBooleanStats(statsMap, "isEnabled", reservoir.isActive, id);
@@ -1042,7 +1028,6 @@ const appendReservoirStats = (
     units,
     formatting,
     id,
-    { labelParams: [chemicalName ?? "", chemicalUnit ?? ""] },
   );
   if (reservoir.chemicalSourceType) {
     updateCategoryStats(
@@ -1177,8 +1162,6 @@ const appendTankStats = (
   curves: Curves,
   patterns: Patterns,
   simulationResults?: ResultsReader | null,
-  chemicalName?: string,
-  chemicalUnit?: string,
 ) => {
   const id = tank.id;
   updateBooleanStats(statsMap, "isEnabled", tank.isActive, id);
@@ -1299,7 +1282,6 @@ const appendTankStats = (
     units,
     formatting,
     id,
-    { labelParams: [chemicalName ?? "", chemicalUnit ?? ""] },
   );
   if (tank.bulkReactionCoeff !== undefined) {
     updateQuantityStats(
@@ -1488,7 +1470,7 @@ const updateQuantityStats = (
   units: UnitsSpec,
   formatting: FormattingSpec,
   assetId: AssetId,
-  overrides?: { unit?: Unit; decimals?: number; labelParams?: string[] },
+  overrides?: { unit?: Unit; decimals?: number },
 ) => {
   if (value === null) return;
 
@@ -1505,7 +1487,6 @@ const updateQuantityStats = (
     statsMap.set(property, {
       type: "quantity",
       property,
-      labelParams: overrides?.labelParams,
       sum: 0,
       min: Infinity,
       max: -Infinity,

@@ -75,9 +75,9 @@ export const useRunSimulation = () => {
           usedCurves: true,
           includeQuality:
             (isWaterAgeOn &&
-              simulationSettings.qualitySimulationType === "AGE") ||
+              simulationSettings.qualitySimulationType === "age") ||
             (isWaterChemicalOn &&
-              simulationSettings.qualitySimulationType === "CHEMICAL"),
+              simulationSettings.qualitySimulationType === "chemical"),
           simulationSettings,
           units: projectSettings.units,
           headlossFormula: projectSettings.headlossFormula,
@@ -105,11 +105,11 @@ export const useRunSimulation = () => {
         const scenarioKey = worktree.activeSnapshotId;
         const runQuality =
           (isWaterAgeOn &&
-            simulationSettings.qualitySimulationType === "AGE") ||
+            simulationSettings.qualitySimulationType === "age") ||
           (isWaterTraceOn &&
-            simulationSettings.qualitySimulationType === "TRACE") ||
+            simulationSettings.qualitySimulationType === "trace") ||
           (isWaterChemicalOn &&
-            simulationSettings.qualitySimulationType === "CHEMICAL");
+            simulationSettings.qualitySimulationType === "chemical");
         const { report, status, metadata } = await runSimulationWorker(
           inp,
           appId,
@@ -140,17 +140,24 @@ export const useRunSimulation = () => {
 
         if (status === "success" || status === "warning") {
           const newSimulationHasWaterAge =
-            isWaterAgeOn && simulationSettings.qualitySimulationType === "AGE";
+            isWaterAgeOn && simulationSettings.qualitySimulationType === "age";
           if (!newSimulationHasWaterAge) {
             set(clearQuickGraphPropertyAtom, "waterAge");
             set(clearSymbologyForPropertyAtom, "waterAge");
           }
           const newSimulationHasWaterTrace =
             isWaterTraceOn &&
-            simulationSettings.qualitySimulationType === "TRACE";
+            simulationSettings.qualitySimulationType === "trace";
           if (!newSimulationHasWaterTrace) {
             set(clearQuickGraphPropertyAtom, "waterTrace");
             set(clearSymbologyForPropertyAtom, "waterTrace");
+          }
+          const newSimulationHasChemical =
+            isWaterChemicalOn &&
+            simulationSettings.qualitySimulationType === "chemical";
+          if (!newSimulationHasChemical) {
+            set(clearQuickGraphPropertyAtom, "chemicalConcentration");
+            set(clearSymbologyForPropertyAtom, "chemicalConcentration");
           }
         }
 
@@ -179,6 +186,7 @@ export const useRunSimulation = () => {
           type: "simulationSummary",
           status,
           duration,
+          qualityType: epsReader?.qualityType ?? "none",
           onContinue: options?.onContinue,
           onIgnore: options?.onIgnore,
           ignoreLabel: options?.ignoreLabel,

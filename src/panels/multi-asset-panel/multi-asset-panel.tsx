@@ -1,6 +1,6 @@
 import { useMemo, useCallback } from "react";
 import { useTranslate } from "src/hooks/use-translate";
-import { pluralize } from "src/lib/utils";
+import { pluralize, formatCapitalize } from "src/lib/utils";
 import { IWrappedFeature } from "src/types";
 import { CollapsibleSection, SectionList } from "src/components/form/fields";
 import { MultiAssetActions } from "./actions";
@@ -86,8 +86,6 @@ export function MultiAssetPanel({
       {
         waterAge: isWaterAgeOn,
         waterChemical: isWaterChemicalOn,
-        chemicalName: simulationSettings.qualityChemicalName ?? "",
-        chemicalUnit: simulationSettings.qualityMassUnit ?? "",
       },
     );
   }, [
@@ -98,6 +96,23 @@ export function MultiAssetPanel({
     simulationResults,
     isWaterAgeOn,
     isWaterChemicalOn,
+  ]);
+
+  const labelOverrides = useMemo(() => {
+    const name = formatCapitalize(
+      simulationSettings.qualityChemicalName || translate("chemical"),
+    );
+    const unit = simulationSettings.qualityMassUnit ?? "";
+    return {
+      chemicalConcentration: translate("chemicalConcentration", name, unit),
+      initialChemicalConcentration: translate(
+        "initialChemicalConcentration",
+        name,
+        unit,
+      ),
+    };
+  }, [
+    translate,
     simulationSettings.qualityChemicalName,
     simulationSettings.qualityMassUnit,
   ]);
@@ -265,6 +280,7 @@ export function MultiAssetPanel({
           }
         >
           <AssetTypeSections
+            labelOverrides={labelOverrides}
             sections={multiAssetData.junction}
             editableProperties={junctionEditableProperties}
             hasSimulation={hasSimulation}
@@ -295,6 +311,7 @@ export function MultiAssetPanel({
           }
         >
           <AssetTypeSections
+            labelOverrides={labelOverrides}
             sections={multiAssetData.pipe}
             editableProperties={pipeEditableProperties}
             hasSimulation={hasSimulation}
@@ -323,6 +340,7 @@ export function MultiAssetPanel({
           }
         >
           <AssetTypeSections
+            labelOverrides={labelOverrides}
             sections={multiAssetData.pump}
             editableProperties={BATCH_EDITABLE_PROPERTIES.pump!}
             hasSimulation={hasSimulation}
@@ -355,6 +373,7 @@ export function MultiAssetPanel({
           }
         >
           <AssetTypeSections
+            labelOverrides={labelOverrides}
             sections={multiAssetData.valve}
             editableProperties={BATCH_EDITABLE_PROPERTIES.valve!}
             hasSimulation={hasSimulation}
@@ -385,6 +404,7 @@ export function MultiAssetPanel({
           }
         >
           <AssetTypeSections
+            labelOverrides={labelOverrides}
             sections={multiAssetData.reservoir}
             editableProperties={reservoirEditableProperties}
             onPropertyChange={(p, v) =>
@@ -414,6 +434,7 @@ export function MultiAssetPanel({
           }
         >
           <AssetTypeSections
+            labelOverrides={labelOverrides}
             sections={multiAssetData.tank}
             editableProperties={tankEditableProperties}
             hasSimulation={hasSimulation}

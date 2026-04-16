@@ -412,6 +412,7 @@ export const Dialogs = memo(function Dialogs() {
           name: "simulationSummary.seen",
           status: dialog.status,
           duration: dialog.duration,
+          qualityType: dialog.qualityType,
         });
       }
       if (dialog.type === "unexpectedError") {

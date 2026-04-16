@@ -99,6 +99,12 @@ export const defaultPropertyColorConfigs: PropertyColorConfigMap = {
     reversedRamp: false,
     numIntervals: 5,
   },
+  chemicalConcentration: {
+    rampName: "BluGrn",
+    mode: "prettyBreaks",
+    reversedRamp: false,
+    numIntervals: 5,
+  },
 };
 
 export const propertyColorConfigAtom = atom<PropertyColorConfigMap>(

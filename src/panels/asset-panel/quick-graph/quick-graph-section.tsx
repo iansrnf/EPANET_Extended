@@ -12,7 +12,11 @@ import {
   simulationAtom,
   simulationStepAtom,
 } from "src/state/simulation";
-import { simulationDerivedAtom } from "src/state/derived-branch-state";
+import { simulationSettingsAtom } from "src/state/simulation-settings";
+import {
+  simulationDerivedAtom,
+  simulationSettingsDerivedAtom,
+} from "src/state/derived-branch-state";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { worktreeAtom } from "src/state/scenarios";
 import {
@@ -30,6 +34,7 @@ import { useTimeSeries } from "./use-time-series";
 import { QuickGraphChart } from "./quick-graph-chart";
 import { useChangeTimestep } from "src/commands/change-timestep";
 import clsx from "clsx";
+import { formatCapitalize } from "src/lib/utils";
 
 const QUICK_GRAPH_PROPERTIES: {
   [K in QuickGraphAssetType]: {
@@ -166,8 +171,12 @@ const QuickGraphSection = ({
   const [footerState, setFooterState] = useAtom(assetPanelFooterAtom);
   const [propertyByType, setPropertyByType] = useAtom(quickGraphPropertyAtom);
   const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
+  const isWaterChemicalOn = useFeatureFlag("FLAG_WATER_CHEMICAL");
   const simulation = useAtomValue(
     isStateRefactorOn ? simulationDerivedAtom : simulationAtom,
+  );
+  const simulationSettings = useAtomValue(
+    isStateRefactorOn ? simulationSettingsDerivedAtom : simulationSettingsAtom,
   );
   const simulationStep = useAtomValue(simulationStepAtom);
   const worktree = useAtomValue(worktreeAtom);
@@ -219,7 +228,13 @@ const QuickGraphSection = ({
   const timeStepIndex = simulationStep ?? 0;
 
   const propertyOptions = useMemo(() => {
-    return propertyDefinitions.map((opt) => {
+    const hasCompletedSimulation =
+      "epsResultsReader" in simulation && !!simulation.epsResultsReader;
+    const qualityType = hasCompletedSimulation
+      ? simulation.epsResultsReader?.qualityType
+      : null;
+
+    const mapped = propertyDefinitions.map((opt) => {
       const label = translate(opt.labelKey);
       let quantityKey = opt.quantityKey;
       if (assetType === "valve" && opt.value === "setting") {
@@ -234,6 +249,19 @@ const QuickGraphSection = ({
         label: unit ? `${label} (${unit})` : label,
       };
     });
+
+    if (qualityType === "chemical" && isWaterChemicalOn) {
+      const name = formatCapitalize(
+        simulationSettings.qualityChemicalName || translate("chemical"),
+      );
+      const massUnit = simulationSettings.qualityMassUnit || "";
+      mapped.push({
+        value: "chemicalConcentration" as const,
+        label: `${name} (${massUnit})`,
+      });
+    }
+
+    return mapped;
   }, [
     propertyDefinitions,
     assetType,
@@ -241,6 +269,10 @@ const QuickGraphSection = ({
     hydraulicModel,
     translate,
     units,
+    simulation,
+    isWaterChemicalOn,
+    simulationSettings.qualityChemicalName,
+    simulationSettings.qualityMassUnit,
   ]);
 
   const handlePropertyChange = useCallback(

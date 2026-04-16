@@ -1,6 +1,7 @@
 import { useAtomValue } from "jotai";
 import clsx from "clsx";
 import * as Popover from "@radix-ui/react-popover";
+import * as DD from "@radix-ui/react-dropdown-menu";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   CheckIcon,
@@ -10,12 +11,28 @@ import {
   PauseIcon,
   PlayIcon,
 } from "src/icons";
+import { Button, DDContent, StyledRadioItem } from "src/components/elements";
 import { simulationStepAtom } from "src/state/simulation";
 import { simulationDerivedAtom } from "src/state/derived-branch-state";
 import { triggerStylesFor } from "./form/selector";
 import { useEffect, useState } from "react";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
-import { useChangeTimestep } from "src/commands/change-timestep";
+import {
+  useChangeTimestep,
+  ChangeTimestepSource,
+} from "src/commands/change-timestep";
+import { simulationPlaybackAtom } from "src/state/simulation-playback";
+import { useTogglePlayback } from "src/commands/toggle-playback";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
+
+type PlaybackSpeed = 2000 | 1000 | 500 | 250;
+
+const SPEED_OPTIONS: { label: string; value: PlaybackSpeed }[] = [
+  { label: "0.5×", value: 2000 },
+  { label: "1×", value: 1000 },
+  { label: "2×", value: 500 },
+  { label: "4×", value: 250 },
+];
 
 export const TimestepSelector = () => {
   const simulationStep = useAtomValue(simulationStepAtom);
@@ -41,8 +58,6 @@ export const TimestepSelector = () => {
   );
 };
 
-type ChangeTimestepSource = "buttons" | "dropdown" | "autoplay";
-
 type TimestepSelectorUIProps = {
   currentTimestepIndex: number;
   timestepCount: number;
@@ -56,47 +71,21 @@ export const TimestepSelectorUI = ({
   reportTimestep,
   onChangeTimestep,
 }: TimestepSelectorUIProps) => {
-  const [isAutoplaying, setIsAutoplaying] = useState(false);
+  const isAnimateSimulationOn = useFeatureFlag("FLAG_ANIMATE_SIMULATION");
   const canGoPrevious = currentTimestepIndex > 0;
   const canGoNext = currentTimestepIndex < timestepCount - 1;
 
-  useEffect(() => {
-    if (!isAutoplaying) return;
-
-    if (!canGoNext) {
-      setIsAutoplaying(false);
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      void onChangeTimestep(currentTimestepIndex + 1, "autoplay");
-    }, 2000);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [canGoNext, currentTimestepIndex, isAutoplaying, onChangeTimestep]);
-
-  useEffect(() => {
-    if (currentTimestepIndex >= timestepCount - 1) {
-      setIsAutoplaying(false);
-    }
-  }, [currentTimestepIndex, timestepCount]);
-
-  const toggleAutoplay = () => {
-    if (!isAutoplaying && !canGoNext) {
-      void onChangeTimestep(0, "autoplay");
-      setIsAutoplaying(true);
-      return;
-    }
-
-    setIsAutoplaying((active) => !active);
-  };
+  const playback = useAtomValue(simulationPlaybackAtom);
+  const { togglePlayback, stopPlayback, changePlaybackSpeed } =
+    useTogglePlayback();
+  const { goToPreviousTimestep, goToNextTimestep } = useChangeTimestep();
+  const isPlaying = playback.isPlaying;
+  const playbackSpeed = playback.playbackSpeedMs as PlaybackSpeed;
 
   return (
     <div className="absolute top-3 right-3 flex items-center gap-1 p-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-black rounded-sm shadow-sm">
       <button
-        onClick={() => onChangeTimestep(currentTimestepIndex - 1, "buttons")}
+        onClick={() => goToPreviousTimestep("buttons")}
         disabled={!canGoPrevious}
         className={clsx(
           "size-[1.875rem] p-1.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-l-sm",
@@ -108,21 +97,7 @@ export const TimestepSelectorUI = ({
         <ChevronLeftIcon />
       </button>
       <button
-        onClick={toggleAutoplay}
-        className={clsx(
-          "size-[1.875rem] p-1.5 rounded-sm transition-colors",
-          isAutoplaying
-            ? "bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-violet-950 dark:text-violet-200 dark:hover:bg-violet-900"
-            : "hover:bg-gray-200 dark:hover:bg-gray-800",
-          "active:bg-gray-300 dark:active:bg-gray-600",
-        )}
-        aria-label={isAutoplaying ? "Pause autoplay" : "Play timeline"}
-        aria-pressed={isAutoplaying}
-      >
-        {isAutoplaying ? <PauseIcon /> : <PlayIcon />}
-      </button>
-      <button
-        onClick={() => onChangeTimestep(currentTimestepIndex + 1, "buttons")}
+        onClick={() => goToNextTimestep("buttons")}
         disabled={!canGoNext}
         className={clsx(
           "size-[1.875rem] p-1.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-r-sm",
@@ -137,8 +112,25 @@ export const TimestepSelectorUI = ({
         currentTimestepIndex={currentTimestepIndex}
         timestepCount={timestepCount}
         reportTimestep={reportTimestep}
+        onOpen={() => stopPlayback("dropdown")}
         onChangeTimestep={(index) => onChangeTimestep(index, "dropdown")}
       />
+      {isAnimateSimulationOn && (
+        <>
+          <Button
+            onClick={() => togglePlayback("buttons")}
+            variant="quiet"
+            size="xs"
+            aria-label={isPlaying ? "Pause playback" : "Play simulation"}
+          >
+            {isPlaying ? <PauseIcon /> : <PlayIcon />}
+          </Button>
+          <PlaybackSpeedDropdown
+            playbackSpeed={playbackSpeed}
+            onSpeedChange={changePlaybackSpeed}
+          />
+        </>
+      )}
     </div>
   );
 };
@@ -150,6 +142,7 @@ type TimestepDropdownProps = {
   currentTimestepIndex: number;
   timestepCount: number;
   reportTimestep: number;
+  onOpen?: () => void;
   onChangeTimestep: (index: number) => void;
 };
 
@@ -157,6 +150,7 @@ const TimestepDropdown = ({
   currentTimestepIndex,
   timestepCount,
   reportTimestep,
+  onOpen,
   onChangeTimestep,
 }: TimestepDropdownProps) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -178,7 +172,13 @@ const TimestepDropdown = ({
   }, [isOpen, scrollElement, currentTimestepIndex, virtualizer]);
 
   return (
-    <Popover.Root open={isOpen} onOpenChange={setIsOpen}>
+    <Popover.Root
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (open) onOpen?.();
+        setIsOpen(open);
+      }}
+    >
       <Popover.Trigger
         aria-label="Select timestep"
         className={triggerStyles}
@@ -247,6 +247,49 @@ const TimestepDropdown = ({
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  );
+};
+
+type PlaybackSpeedDropdownProps = {
+  playbackSpeed: PlaybackSpeed;
+  onSpeedChange: (speed: PlaybackSpeed) => void;
+};
+
+const PlaybackSpeedDropdown = ({
+  playbackSpeed,
+  onSpeedChange,
+}: PlaybackSpeedDropdownProps) => {
+  return (
+    <DD.Root>
+      <DD.Trigger asChild>
+        <button
+          className={clsx(
+            "size-[1.875rem] p-1.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-sm",
+            "active:bg-gray-300 dark:active:bg-gray-600",
+          )}
+          aria-label="Playback speed"
+        >
+          <ChevronDownIcon />
+        </button>
+      </DD.Trigger>
+      <DD.Portal>
+        <DDContent align="end" sideOffset={4}>
+          <DD.RadioGroup
+            value={String(playbackSpeed)}
+            onValueChange={(v) => onSpeedChange(Number(v) as PlaybackSpeed)}
+          >
+            {SPEED_OPTIONS.map(({ label, value }) => (
+              <StyledRadioItem key={value} value={String(value)}>
+                <DD.ItemIndicator>
+                  <CheckIcon className="text-purple-700" />
+                </DD.ItemIndicator>
+                {label}
+              </StyledRadioItem>
+            ))}
+          </DD.RadioGroup>
+        </DDContent>
+      </DD.Portal>
+    </DD.Root>
   );
 };
 

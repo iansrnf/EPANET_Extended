@@ -582,7 +582,6 @@ export const buildInp = withDebugInstrumentation(
             asset as Reservoir,
             opts.inactiveAssets,
             excludedAssets,
-            opts.simulationSettings,
           );
           appendSource(sections, idMap, asset as Reservoir);
         }
@@ -610,7 +609,6 @@ export const buildInp = withDebugInstrumentation(
             asset as Tank,
             opts.inactiveAssets,
             excludedAssets,
-            opts.simulationSettings,
           );
           appendMixing(sections, idMap, asset as Tank);
           appendSource(sections, idMap, asset as Tank);
@@ -644,7 +642,6 @@ export const buildInp = withDebugInstrumentation(
             asset as Junction,
             opts.inactiveAssets,
             excludedAssets,
-            opts.simulationSettings,
           );
           appendSource(sections, idMap, asset as Junction);
         }
@@ -803,15 +800,11 @@ const appendInitialQuality = (
   node: Junction | Tank | Reservoir,
   inactiveAssets: boolean,
   excludedAssets: SimulationExclusions,
-  simulationSettings: SimulationSettings,
 ) => {
   if (excludedAssets.nodeIds.has(node.id)) return;
   if (!node.isActive && !inactiveAssets) return;
 
-  const value =
-    simulationSettings.qualitySimulationType === "chemical"
-      ? node.initialChemicalConcentration
-      : node.initialWaterAge;
+  const value = node.initialQuality;
   if (value !== undefined && value !== 0) {
     const commentPrefix = !node.isActive ? ";" : "";
     sections.quality.push(commentPrefix + `${idMap.nodeId(node)}\t${value}`);

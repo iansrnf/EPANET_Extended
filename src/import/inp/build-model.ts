@@ -139,7 +139,8 @@ export const buildModel = (
   const isSupportedQualityType =
     qualityType === "NONE" ||
     (options?.waterAge && qualityType === "AGE") ||
-    (options?.waterTrace && qualityType === "TRACE");
+    (options?.waterTrace && qualityType === "TRACE") ||
+    (options?.waterChemical && qualityType === "CHEMICAL");
 
   if (!isSupportedQualityType && qualityType) {
     issues.addWaterQualityType(qualityType);
@@ -153,6 +154,7 @@ export const buildModel = (
       patternContext,
       skipWgs84Validation,
       populateAssetIndex,
+      options,
     });
   }
 
@@ -164,6 +166,7 @@ export const buildModel = (
       patternContext,
       skipWgs84Validation,
       populateAssetIndex,
+      options,
     });
   }
 
@@ -172,8 +175,10 @@ export const buildModel = (
       inpData,
       issues,
       nodeIds,
+      patternContext,
       skipWgs84Validation,
       populateAssetIndex,
+      options,
     });
   }
 
@@ -415,6 +420,7 @@ const addJunction = (
     patternContext,
     skipWgs84Validation,
     populateAssetIndex,
+    options,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
@@ -422,6 +428,7 @@ const addJunction = (
     patternContext: PatternsContext;
     skipWgs84Validation: boolean;
     populateAssetIndex: boolean;
+    options?: ParseInpOptions;
   },
 ) => {
   const coordinates = getNodeCoordinates(
@@ -456,12 +463,41 @@ const addJunction = (
       ? inpData.quality.get(junctionData.id)
       : undefined;
 
+  const initialChemicalConcentration =
+    options?.waterChemical &&
+    inpData.options.qualitySimulationType === "CHEMICAL"
+      ? inpData.quality.get(junctionData.id)
+      : undefined;
+
+  const sourceData = options?.waterChemical
+    ? inpData.sources.get(junctionData.id)
+    : undefined;
+
+  let chemicalSourcePatternId: PatternId | undefined;
+  if (sourceData?.patternId) {
+    const patternId = patternContext.labelManager.getIdByLabel(
+      sourceData.patternId,
+      "pattern",
+    );
+    if (patternId !== undefined) {
+      chemicalSourcePatternId = markPatternUsed(
+        patternContext,
+        patternId,
+        "qualitySourceStrength",
+      );
+    }
+  }
+
   const junction = assetFactory.createJunction({
     label: junctionData.id,
     coordinates,
     elevation: junctionData.elevation,
     emitterCoefficient,
     initialWaterAge,
+    initialChemicalConcentration,
+    chemicalSourceType: sourceData?.type,
+    chemicalSourceStrength: sourceData?.strength,
+    chemicalSourcePatternId,
     isActive: junctionData.isActive,
   });
   hydraulicModel.assets.set(junction.id, junction);
@@ -481,6 +517,7 @@ const addReservoir = (
     patternContext,
     skipWgs84Validation,
     populateAssetIndex,
+    options,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
@@ -488,6 +525,7 @@ const addReservoir = (
     patternContext: PatternsContext;
     skipWgs84Validation: boolean;
     populateAssetIndex: boolean;
+    options?: ParseInpOptions;
   },
 ) => {
   const coordinates = getNodeCoordinates(
@@ -518,6 +556,31 @@ const addReservoir = (
       ? inpData.quality.get(reservoirData.id)
       : undefined;
 
+  const initialChemicalConcentration =
+    options?.waterChemical &&
+    inpData.options.qualitySimulationType === "CHEMICAL"
+      ? inpData.quality.get(reservoirData.id)
+      : undefined;
+
+  const sourceData = options?.waterChemical
+    ? inpData.sources.get(reservoirData.id)
+    : undefined;
+
+  let chemicalSourcePatternId: PatternId | undefined;
+  if (sourceData?.patternId) {
+    const patternId = patternContext.labelManager.getIdByLabel(
+      sourceData.patternId,
+      "pattern",
+    );
+    if (patternId !== undefined) {
+      chemicalSourcePatternId = markPatternUsed(
+        patternContext,
+        patternId,
+        "qualitySourceStrength",
+      );
+    }
+  }
+
   const reservoir = assetFactory.createReservoir({
     label: reservoirData.id,
     coordinates,
@@ -525,6 +588,10 @@ const addReservoir = (
     elevation: reservoirData.elevation,
     headPatternId,
     initialWaterAge,
+    initialChemicalConcentration,
+    chemicalSourceType: sourceData?.type,
+    chemicalSourceStrength: sourceData?.strength,
+    chemicalSourcePatternId,
     isActive: reservoirData.isActive,
   });
   hydraulicModel.assets.set(reservoir.id, reservoir);
@@ -541,14 +608,18 @@ const addTank = (
     inpData,
     issues,
     nodeIds,
+    patternContext,
     skipWgs84Validation,
     populateAssetIndex,
+    options,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
     nodeIds: ItemData<AssetId>;
+    patternContext: PatternsContext;
     skipWgs84Validation: boolean;
     populateAssetIndex: boolean;
+    options?: ParseInpOptions;
   },
 ) => {
   const coordinates = getNodeCoordinates(
@@ -575,6 +646,36 @@ const addTank = (
     inpData.options.qualitySimulationType === "AGE"
       ? inpData.quality.get(tankData.id)
       : undefined;
+
+  const initialChemicalConcentration =
+    options?.waterChemical &&
+    inpData.options.qualitySimulationType === "CHEMICAL"
+      ? inpData.quality.get(tankData.id)
+      : undefined;
+
+  const sourceData = options?.waterChemical
+    ? inpData.sources.get(tankData.id)
+    : undefined;
+
+  let chemicalSourcePatternId: PatternId | undefined;
+  if (sourceData?.patternId) {
+    const patternId = patternContext.labelManager.getIdByLabel(
+      sourceData.patternId,
+      "pattern",
+    );
+    if (patternId !== undefined) {
+      chemicalSourcePatternId = markPatternUsed(
+        patternContext,
+        patternId,
+        "qualitySourceStrength",
+      );
+    }
+  }
+
+  const bulkReactionCoeff = options?.waterChemical
+    ? inpData.reactions.tankBulk.get(tankData.id)
+    : undefined;
+
   const mixingData = inpData.mixing.get(tankData.id);
   const mixingModel = mixingData?.model as TankMixingModel | undefined;
 
@@ -592,6 +693,11 @@ const addTank = (
     mixingFraction: mixingData?.fraction,
     volumeCurveId,
     initialWaterAge,
+    initialChemicalConcentration,
+    bulkReactionCoeff,
+    chemicalSourceType: sourceData?.type,
+    chemicalSourceStrength: sourceData?.strength,
+    chemicalSourcePatternId,
     isActive: tankData.isActive,
   });
   hydraulicModel.assets.set(tank.id, tank);
@@ -831,7 +937,7 @@ const addPipe = (
     issues,
     nodeIds,
     linkIds,
-    options: _options,
+    options,
     skipWgs84Validation,
     populateAssetIndex,
   }: {
@@ -865,6 +971,13 @@ const addPipe = (
     }
   }
 
+  const bulkReactionCoeff = options?.waterChemical
+    ? inpData.reactions.pipeBulk.get(pipeData.id)
+    : undefined;
+  const wallReactionCoeff = options?.waterChemical
+    ? inpData.reactions.pipeWall.get(pipeData.id)
+    : undefined;
+
   const pipe = assetFactory.createPipe({
     label: pipeData.id,
     length: pipeData.length,
@@ -872,6 +985,8 @@ const addPipe = (
     minorLoss: pipeData.minorLoss,
     roughness: pipeData.roughness,
     initialStatus,
+    bulkReactionCoeff,
+    wallReactionCoeff,
     connections,
     coordinates,
     isActive: pipeData.isActive,

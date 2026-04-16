@@ -344,6 +344,7 @@ type InpSections = {
   customersDemands: string[];
   quality: string[];
   mixing: string[];
+  sources: string[];
   reactions: string[];
   energy: string[];
   controls: string[];
@@ -542,6 +543,7 @@ export const buildInp = withDebugInstrumentation(
       customersDemands: [";[CUSTOMERS_DEMANDS]", ";Id\tBaseDemand\tPatternId"],
       quality: ["[QUALITY]", ";Node\tInitialQuality"],
       mixing: ["[MIXING]", ";Tank\tModel\tFraction"],
+      sources: ["[SOURCES]", ";Node\tType\tStrength\tPattern"],
       reactions: buildReactionsSection(opts.simulationSettings),
       energy: buildEnergySection(opts.simulationSettings, idMap),
       controls: ["[CONTROLS]"],
@@ -569,14 +571,20 @@ export const buildInp = withDebugInstrumentation(
           excludedAssets,
           transformCoord,
         );
-        if (opts.includeQuality) {
+        if (
+          opts.includeQuality &&
+          !excludedAssets.nodeIds.has(asset.id) &&
+          (asset.isActive || opts.inactiveAssets)
+        ) {
           appendInitialQuality(
             sections,
             idMap,
             asset as Reservoir,
             opts.inactiveAssets,
             excludedAssets,
+            opts.simulationSettings,
           );
+          appendSource(sections, idMap, asset as Reservoir);
         }
       }
 
@@ -591,15 +599,22 @@ export const buildInp = withDebugInstrumentation(
           excludedAssets,
           transformCoord,
         );
-        if (opts.includeQuality) {
+        if (
+          opts.includeQuality &&
+          !excludedAssets.nodeIds.has(asset.id) &&
+          (asset.isActive || opts.inactiveAssets)
+        ) {
           appendInitialQuality(
             sections,
             idMap,
             asset as Tank,
             opts.inactiveAssets,
             excludedAssets,
+            opts.simulationSettings,
           );
           appendMixing(sections, idMap, asset as Tank);
+          appendSource(sections, idMap, asset as Tank);
+          appendTankReaction(sections, idMap, asset as Tank);
         }
       }
 
@@ -618,14 +633,20 @@ export const buildInp = withDebugInstrumentation(
           excludedAssets,
           transformCoord,
         );
-        if (opts.includeQuality) {
+        if (
+          opts.includeQuality &&
+          !excludedAssets.nodeIds.has(asset.id) &&
+          (asset.isActive || opts.inactiveAssets)
+        ) {
           appendInitialQuality(
             sections,
             idMap,
             asset as Junction,
             opts.inactiveAssets,
             excludedAssets,
+            opts.simulationSettings,
           );
+          appendSource(sections, idMap, asset as Junction);
         }
       }
 
@@ -640,6 +661,9 @@ export const buildInp = withDebugInstrumentation(
           excludedAssets,
           transformCoord,
         );
+        if (opts.includeQuality) {
+          appendPipeReaction(sections, idMap, asset as Pipe);
+        }
       }
 
       if (asset.type === "pump") {
@@ -717,6 +741,7 @@ export const buildInp = withDebugInstrumentation(
     const hasEmitters = sections.emitters.length > 2;
     const hasQuality = sections.quality.length > 2;
     const hasMixing = sections.mixing.length > 2;
+    const hasSources = sections.sources.length > 2;
     const hasReactions = sections.reactions.length > 1;
     const hasEnergy = sections.energy.length > 1;
 
@@ -737,6 +762,7 @@ export const buildInp = withDebugInstrumentation(
       sections.options.join("\n"),
       hasQuality && sections.quality.join("\n"),
       hasMixing && sections.mixing.join("\n"),
+      hasSources && sections.sources.join("\n"),
       hasReactions && sections.reactions.join("\n"),
       hasEnergy && sections.energy.join("\n"),
       opts.geolocation && sections.backdrop.join("\n"),
@@ -777,15 +803,19 @@ const appendInitialQuality = (
   node: Junction | Tank | Reservoir,
   inactiveAssets: boolean,
   excludedAssets: SimulationExclusions,
+  simulationSettings: SimulationSettings,
 ) => {
   if (excludedAssets.nodeIds.has(node.id)) return;
   if (!node.isActive && !inactiveAssets) return;
 
-  const age = node.initialWaterAge;
-  if (age === 0) return;
-
-  const commentPrefix = !node.isActive ? ";" : "";
-  sections.quality.push(commentPrefix + `${idMap.nodeId(node)}\t${age}`);
+  const value =
+    simulationSettings.qualitySimulationType === "CHEMICAL"
+      ? node.initialChemicalConcentration
+      : node.initialWaterAge;
+  if (value !== undefined && value !== 0) {
+    const commentPrefix = !node.isActive ? ";" : "";
+    sections.quality.push(commentPrefix + `${idMap.nodeId(node)}\t${value}`);
+  }
 };
 
 const MIXING_MODEL_TO_INP: Record<string, string> = {
@@ -805,6 +835,51 @@ const appendMixing = (sections: InpSections, idMap: EpanetIds, tank: Tank) => {
       : `${idMap.nodeId(tank)}\t${model}`;
 
   sections.mixing.push(row);
+};
+
+const appendSource = (
+  sections: InpSections,
+  idMap: EpanetIds,
+  node: NodeAsset,
+) => {
+  const typedNode = node as Junction | Tank | Reservoir;
+  const sourceType = typedNode.chemicalSourceType;
+  if (!sourceType) return;
+  const strength = typedNode.chemicalSourceStrength ?? 0;
+  const patternId = typedNode.chemicalSourcePatternId;
+  const row = patternId
+    ? `${idMap.nodeId(node)}\t${sourceType}\t${strength}\t${idMap.patternId(patternId)}`
+    : `${idMap.nodeId(node)}\t${sourceType}\t${strength}`;
+  sections.sources.push(row);
+};
+
+const appendPipeReaction = (
+  sections: InpSections,
+  idMap: EpanetIds,
+  pipe: Pipe,
+) => {
+  if (pipe.bulkReactionCoeff !== undefined) {
+    sections.reactions.push(
+      `Bulk\t${idMap.linkId(pipe)}\t${pipe.bulkReactionCoeff}`,
+    );
+  }
+  if (pipe.wallReactionCoeff !== undefined) {
+    sections.reactions.push(
+      `Wall\t${idMap.linkId(pipe)}\t${pipe.wallReactionCoeff}`,
+    );
+  }
+};
+
+const appendTankReaction = (
+  sections: InpSections,
+  idMap: EpanetIds,
+  tank: Tank,
+) => {
+  if (tank.bulkReactionCoeff !== undefined) {
+    sections.reactions.push(
+      `Tank\t${idMap.nodeId(tank)}\t${tank.bulkReactionCoeff}`,
+    );
+  }
 };
 
 const appendReservoir = (

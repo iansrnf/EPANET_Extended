@@ -10,6 +10,7 @@ import type { RangeColorPreference } from "src/state/map-symbology";
 import type { RangeColorRule } from "./range-color-rule";
 import type { RangeEndpoints } from "./range-color-rule";
 import type { Unit } from "src/quantity";
+import { defaultPropertyColorConfigs } from "src/state/map-symbology";
 
 const applyCustomColors = (
   colorRule: RangeColorRule,
@@ -43,6 +44,8 @@ const getFallbackEndpoints = (
   return result;
 };
 
+const defaults = defaultPropertyColorConfigs;
+
 type SymbologyBuilderFn<T> = (
   units: UnitsSpec,
   sortedData: number[],
@@ -60,6 +63,7 @@ type SymbologyBuilders = {
   elevation: SymbologyBuilderFn<NodeSymbology>;
   head: SymbologyBuilderFn<NodeSymbology>;
   waterAge: SymbologyBuilderFn<NodeSymbology & LinkSymbology>;
+  waterTrace: SymbologyBuilderFn<NodeSymbology & LinkSymbology>;
 };
 
 export const symbologyBuilders: SymbologyBuilders = {
@@ -70,7 +74,7 @@ export const symbologyBuilders: SymbologyBuilders = {
       rampName: preference?.rampName ?? "SunsetDark",
       mode: preference?.mode ?? "prettyBreaks",
       numIntervals: preference?.numIntervals ?? 7,
-      reverseRamp: preference?.reversedRamp,
+      reverseRamp: preference?.reversedRamp ?? defaults.diameter.reversedRamp,
       sortedData,
     });
     return {
@@ -86,8 +90,8 @@ export const symbologyBuilders: SymbologyBuilders = {
       unit: units.roughness,
       rampName: preference?.rampName ?? "Emrld",
       mode: preference?.mode ?? "ckmeans",
-      numIntervals: preference?.numIntervals,
-      reverseRamp: preference?.reversedRamp,
+      numIntervals: preference?.numIntervals ?? defaults.roughness.numIntervals,
+      reverseRamp: preference?.reversedRamp ?? defaults.roughness.reversedRamp,
       sortedData,
     });
     return {
@@ -103,8 +107,8 @@ export const symbologyBuilders: SymbologyBuilders = {
       unit: units.elevation,
       rampName: preference?.rampName ?? "Fall",
       mode: preference?.mode ?? "prettyBreaks",
-      numIntervals: preference?.numIntervals,
-      reverseRamp: preference?.reversedRamp,
+      numIntervals: preference?.numIntervals ?? defaults.elevation.numIntervals,
+      reverseRamp: preference?.reversedRamp ?? defaults.elevation.reversedRamp,
       fallbackEndpoints: [0, 100],
       sortedData,
     });
@@ -121,8 +125,8 @@ export const symbologyBuilders: SymbologyBuilders = {
       unit: units.flow,
       rampName: preference?.rampName ?? "Teal",
       mode: preference?.mode ?? "equalQuantiles",
-      numIntervals: preference?.numIntervals,
-      reverseRamp: preference?.reversedRamp,
+      numIntervals: preference?.numIntervals ?? defaults.flow.numIntervals,
+      reverseRamp: preference?.reversedRamp ?? defaults.flow.reversedRamp,
       absValues: true,
       sortedData,
     });
@@ -139,8 +143,8 @@ export const symbologyBuilders: SymbologyBuilders = {
       unit: units.velocity,
       rampName: preference?.rampName ?? "RedOr",
       mode: preference?.mode ?? "prettyBreaks",
-      numIntervals: preference?.numIntervals,
-      reverseRamp: preference?.reversedRamp,
+      numIntervals: preference?.numIntervals ?? defaults.velocity.numIntervals,
+      reverseRamp: preference?.reversedRamp ?? defaults.velocity.reversedRamp,
       sortedData,
       fallbackEndpoints: getFallbackEndpoints(
         units.velocity,
@@ -160,8 +164,10 @@ export const symbologyBuilders: SymbologyBuilders = {
       unit: units.unitHeadloss,
       rampName: preference?.rampName ?? "Emrld",
       mode: preference?.mode ?? "prettyBreaks",
-      numIntervals: preference?.numIntervals,
-      reverseRamp: preference?.reversedRamp,
+      numIntervals:
+        preference?.numIntervals ?? defaults.unitHeadloss.numIntervals,
+      reverseRamp:
+        preference?.reversedRamp ?? defaults.unitHeadloss.reversedRamp,
       sortedData,
       fallbackEndpoints: getFallbackEndpoints(
         units.unitHeadloss,
@@ -181,8 +187,8 @@ export const symbologyBuilders: SymbologyBuilders = {
       unit: units.pressure,
       rampName: preference?.rampName ?? "Temps",
       mode: preference?.mode ?? "prettyBreaks",
-      numIntervals: preference?.numIntervals,
-      reverseRamp: preference?.reversedRamp,
+      numIntervals: preference?.numIntervals ?? defaults.pressure.numIntervals,
+      reverseRamp: preference?.reversedRamp ?? defaults.pressure.reversedRamp,
       fallbackEndpoints: [0, 100],
       sortedData,
     });
@@ -199,8 +205,10 @@ export const symbologyBuilders: SymbologyBuilders = {
       unit: units.actualDemand,
       rampName: preference?.rampName ?? "Emrld",
       mode: preference?.mode ?? "prettyBreaks",
-      numIntervals: preference?.numIntervals,
-      reverseRamp: preference?.reversedRamp,
+      numIntervals:
+        preference?.numIntervals ?? defaults.actualDemand.numIntervals,
+      reverseRamp:
+        preference?.reversedRamp ?? defaults.actualDemand.reversedRamp,
       fallbackEndpoints: [0, 100],
       sortedData,
     });
@@ -217,8 +225,8 @@ export const symbologyBuilders: SymbologyBuilders = {
       unit: units.head,
       rampName: preference?.rampName ?? "Purp",
       mode: preference?.mode ?? "prettyBreaks",
-      numIntervals: preference?.numIntervals,
-      reverseRamp: preference?.reversedRamp,
+      numIntervals: preference?.numIntervals ?? defaults.head.numIntervals,
+      reverseRamp: preference?.reversedRamp ?? defaults.head.reversedRamp,
       fallbackEndpoints: [0, 100],
       sortedData,
     });
@@ -235,13 +243,28 @@ export const symbologyBuilders: SymbologyBuilders = {
       unit: units.waterAge,
       rampName: preference?.rampName ?? "Sunset",
       mode: preference?.mode ?? "prettyBreaks",
-      numIntervals: preference?.numIntervals,
-      reverseRamp: preference?.reversedRamp,
+      numIntervals: preference?.numIntervals ?? defaults.waterAge.numIntervals,
+      reverseRamp: preference?.reversedRamp ?? defaults.waterAge.reversedRamp,
       fallbackEndpoints: [0, 48],
       sortedData,
     });
     return {
       colorRule: applyCustomColors(colorRule, preference),
+      labelRule: nullLabelRule,
+      defaults: nullSymbologySpec.node.defaults,
+    };
+  },
+
+  waterTrace: (units): NodeSymbology & LinkSymbology => {
+    const colorRule = initializeColorRule({
+      property: "waterTrace",
+      unit: units.waterTrace,
+      ...defaults.waterTrace,
+      fallbackEndpoints: [0, 100],
+      sortedData: [0, 100],
+    });
+    return {
+      colorRule,
       labelRule: nullLabelRule,
       defaults: nullSymbologySpec.node.defaults,
     };

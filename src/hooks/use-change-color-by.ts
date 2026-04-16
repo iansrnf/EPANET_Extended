@@ -49,17 +49,24 @@ export const useChangeColorBy = (geometryType: "node" | "link") => {
   const isPersistMapPreferencesOn = useFeatureFlag(
     "FLAG_RESTORE_MAP_PREFERENCES",
   );
+  const isWaterTraceOn = useFeatureFlag("FLAG_WATER_TRACE");
   const [isWorking, setIsWorking] = useState(false);
 
   const fetchSortedData = useCallback(
     async (property: SupportedProperty): Promise<number[] | null> => {
+      if (property === "waterTrace") return [];
+
       const absValues = absValuesFor(property);
 
       const isEpsSimulation =
         "epsResultsReader" in simulation &&
         (simulation.epsResultsReader?.timestepCount ?? 0) > 1;
 
-      if (isWaterAgeOn && isEpsSimulation && isSimulationProperty(property)) {
+      if (
+        (isWaterAgeOn || isWaterTraceOn) &&
+        isEpsSimulation &&
+        isSimulationProperty(property)
+      ) {
         const epsReader = simulation.epsResultsReader!;
         if (epsReader) {
           const sorted = await getSortedSimulationDataForBreaks(
@@ -80,7 +87,13 @@ export const useChangeColorBy = (geometryType: "node" | "link") => {
         },
       );
     },
-    [isWaterAgeOn, hydraulicModel, simulationResults, simulation],
+    [
+      isWaterAgeOn,
+      isWaterTraceOn,
+      hydraulicModel,
+      simulationResults,
+      simulation,
+    ],
   );
 
   const changeColorBy = useCallback(

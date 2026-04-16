@@ -7,8 +7,8 @@ import { colors } from "src/lib/constants";
 
 interface QuickGraphChartProps {
   values: number[];
-  mainValues: number[] | null;
-  mainLabel: string | null;
+  baseValues: number[] | null;
+  baseLabel: string | null;
   intervalsCount: number;
   intervalSeconds: number;
   decimals: number;
@@ -25,8 +25,8 @@ export const QuickGraphChart = memo(function QuickGraphChart(
 
 function QuickGraphChartECharts({
   values,
-  mainValues,
-  mainLabel,
+  baseValues,
+  baseLabel,
   intervalsCount,
   intervalSeconds,
   currentIntervalIndex,
@@ -36,12 +36,12 @@ function QuickGraphChartECharts({
 }: QuickGraphChartProps) {
   const translate = useTranslate();
 
-  const showLegend = mainValues && mainValues.length > 0;
+  const showLegend = baseValues && baseValues.length > 0;
 
   const allValues = useMemo(() => {
-    if (!mainValues || mainValues.length === 0) return values;
-    return [...values, ...mainValues];
-  }, [values, mainValues]);
+    if (!baseValues || baseValues.length === 0) return values;
+    return [...values, ...baseValues];
+  }, [values, baseValues]);
 
   const xAxis: EChartsOption["xAxis"] = useMemo(
     () => buildXAxis(intervalsCount, intervalSeconds),
@@ -80,14 +80,14 @@ function QuickGraphChartECharts({
       },
     };
 
-    if (!mainValues || mainValues.length === 0) {
+    if (!baseValues || baseValues.length === 0) {
       return [scenarioSeries];
     }
 
-    const mainSeries = {
+    const baseSeries = {
       type: "line" as const,
-      name: mainLabel ?? undefined,
-      data: mainValues,
+      name: baseLabel ?? undefined,
+      data: baseValues,
       lineStyle: {
         color: colors.gray400,
         width: 1.5,
@@ -100,10 +100,10 @@ function QuickGraphChartECharts({
       z: 0,
     };
 
-    return [mainSeries, scenarioSeries];
-  }, [values, mainValues, mainLabel, scenarioName]);
+    return [baseSeries, scenarioSeries];
+  }, [scenarioName, values, baseValues, baseLabel]);
 
-  const scenarioSeriesIndex = mainValues && mainValues.length > 0 ? 1 : 0;
+  const scenarioSeriesIndex = baseValues && baseValues.length > 0 ? 1 : 0;
 
   const legend: EChartsOption["legend"] = useMemo(() => {
     if (!showLegend) return undefined;
@@ -120,7 +120,7 @@ function QuickGraphChartECharts({
     };
   }, [showLegend]);
 
-  const isComparingScenarios = mainValues !== null;
+  const isComparingScenarios = baseValues !== null;
   const option: EChartsOption = useMemo(
     () => ({
       animation: false,
@@ -163,7 +163,7 @@ function QuickGraphChartECharts({
   const chartRef = useRef<ReactECharts>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useEffect(function resizeChart() {
     const container = containerRef.current;
     if (!container) return;
 
@@ -176,23 +176,36 @@ function QuickGraphChartECharts({
     return () => resizeObserver.disconnect();
   }, []);
 
-  useEffect(() => {
-    const chart = chartRef.current?.getEchartsInstance();
-    if (!chart) return;
-    const seriesUpdate: any[] = [];
-    for (let i = 0; i < scenarioSeriesIndex; i++) seriesUpdate.push({});
-    seriesUpdate.push({
-      markLine: {
-        symbol: "none",
-        label: { show: false },
-        data: [{ xAxis: currentIntervalIndex }],
-      },
-    });
-    chart.setOption({ series: seriesUpdate });
-  }, [currentIntervalIndex, scenarioSeriesIndex, option]);
+  const applyMarkLine = useCallback(
+    (chart: EChartsInstance) => {
+      const seriesUpdate: any[] = [];
+      for (let i = 0; i < scenarioSeriesIndex; i++) seriesUpdate.push({});
+      seriesUpdate.push({
+        markLine: {
+          silent: true,
+          symbol: "none",
+          label: { show: false },
+          data: [{ xAxis: currentIntervalIndex }],
+        },
+      });
+      chart.setOption({ series: seriesUpdate });
+    },
+    [currentIntervalIndex, scenarioSeriesIndex],
+  );
+
+  useEffect(
+    function updateMarkLinePosition() {
+      const chart = chartRef.current?.getEchartsInstance();
+      if (!chart) return;
+      applyMarkLine(chart);
+    },
+    [applyMarkLine],
+  );
 
   const onChartReady = useCallback(
     (chart: EChartsInstance) => {
+      applyMarkLine(chart);
+
       const zr = chart.getZr();
 
       zr.on("click", (params: any) => {
@@ -212,7 +225,7 @@ function QuickGraphChartECharts({
         zr.setCursorStyle(isInGrid ? "pointer" : "default");
       });
     },
-    [onIntevalClick, values.length],
+    [onIntevalClick, values.length, applyMarkLine],
   );
 
   if (intervalsCount === 0 || values.length === 0) {

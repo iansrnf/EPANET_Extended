@@ -106,7 +106,7 @@ interface QuickGraphSectionProps {
   assetType: QuickGraphAssetType;
   assetId: AssetId;
   data: TimeSeries | null;
-  mainData: TimeSeries | null;
+  baseData: TimeSeries | null;
   isLoading: boolean;
 }
 
@@ -122,28 +122,43 @@ const getPropertyDefinitions = (
   simulation: SimulationState,
 ) => {
   const baseOptions = QUICK_GRAPH_PROPERTIES[assetType];
-  const hasWaterAge =
+  const hasCompletedSimulation =
     "epsResultsReader" in simulation &&
-    simulation.epsResultsReader?.qualityType === "age";
-  if (!hasWaterAge) {
-    return baseOptions;
+    !!simulation.epsResultsReader;
+  const qualityType = hasCompletedSimulation
+    ? simulation.epsResultsReader?.qualityType
+    : null;
+
+  if (qualityType === "age") {
+    return [
+      ...baseOptions,
+      {
+        value: "waterAge" as const,
+        labelKey: "waterAge",
+        quantityKey: "waterAge" as QuantityProperty,
+      },
+    ];
   }
 
-  return [
-    ...baseOptions,
-    {
-      value: "waterAge" as const,
-      labelKey: "waterAge",
-      quantityKey: "waterAge" as QuantityProperty,
-    },
-  ];
+  if (qualityType === "trace") {
+    return [
+      ...baseOptions,
+      {
+        value: "waterTrace" as const,
+        labelKey: "waterTrace",
+        quantityKey: "waterTrace" as QuantityProperty,
+      },
+    ];
+  }
+
+  return baseOptions;
 };
 
 const QuickGraphSection = ({
   assetType,
   assetId,
   data,
-  mainData,
+  baseData,
   isLoading,
 }: QuickGraphSectionProps) => {
   const useAutoIndentation = useFeatureFlag("FLAG_UI_COLLAPSIBLE");
@@ -167,7 +182,7 @@ const QuickGraphSection = ({
     worktree.branches.get(worktree.activeSnapshotId) ??
     worktree.snapshots.get(worktree.activeSnapshotId);
   const scenarioName = isInScenario ? (activeBranch?.name ?? null) : null;
-  const mainLabel = isInScenario ? translate("scenarios.main") : null;
+  const baseLabel = isInScenario ? translate("scenarios.main") : null;
 
   const selectedProperty = propertyByType[assetType];
   const propertyDefinitions = useMemo(
@@ -197,9 +212,9 @@ const QuickGraphSection = ({
   ]);
 
   const values = useMemo(() => (data ? Array.from(data.values) : []), [data]);
-  const mainValues = useMemo(
-    () => (mainData ? Array.from(mainData.values) : null),
-    [mainData],
+  const baseValues = useMemo(
+    () => (baseData ? Array.from(baseData.values) : null),
+    [baseData],
   );
   const timeStepIndex = simulationStep ?? 0;
 
@@ -308,8 +323,8 @@ const QuickGraphSection = ({
           <div className="absolute inset-0">
             <QuickGraphChart
               values={values}
-              mainValues={mainValues}
-              mainLabel={mainLabel}
+              baseValues={baseValues}
+              baseLabel={baseLabel}
               intervalSeconds={data.intervalSeconds}
               intervalsCount={data.intervalsCount}
               currentIntervalIndex={timeStepIndex}
@@ -338,7 +353,7 @@ export function useQuickGraph<T extends QuickGraphAssetType>(
   const [propertyByType] = useAtom(quickGraphPropertyAtom);
   const selectedProperty = propertyByType[assetType];
 
-  const { data, mainData, isLoading } = useTimeSeries({
+  const { data, baseData, isLoading } = useTimeSeries({
     assetId,
     assetType,
     property: selectedProperty,
@@ -349,7 +364,7 @@ export function useQuickGraph<T extends QuickGraphAssetType>(
       assetId={assetId}
       assetType={assetType}
       data={data}
-      mainData={mainData}
+      baseData={baseData}
       isLoading={isLoading}
     />
   ) : undefined;

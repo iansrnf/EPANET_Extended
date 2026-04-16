@@ -19,6 +19,7 @@ import {
   WaterQualitySection,
   EnergySection,
   useTimeSettingsValidation,
+  useQualitySettingsValidation,
 } from "./simulation-settings-content";
 import { useScrollSpy } from "./use-scroll-spy";
 import {
@@ -125,7 +126,10 @@ const SimulationSettingsFooter = ({
   onClose: () => void;
 }) => {
   const translate = useTranslate();
-  const { hasValidationError } = useTimeSettingsValidation();
+  const { hasValidationError: hasTimeError } = useTimeSettingsValidation();
+  const { hasValidationError: hasQualityError } =
+    useQualitySettingsValidation();
+  const hasValidationError = hasTimeError || hasQualityError;
 
   return (
     <SimpleDialogActions

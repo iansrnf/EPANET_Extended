@@ -10,7 +10,7 @@ import {
   PauseIcon,
   PlayIcon,
 } from "src/icons";
-import { simulationAtom } from "src/state/simulation";
+import { currentTimestepIndexAtom, simulationAtom } from "src/state/simulation";
 import { triggerStylesFor } from "./form/selector";
 import { useEffect, useState } from "react";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
@@ -19,6 +19,7 @@ import { getSimulationMetadata } from "src/simulation/epanet/simulation-metadata
 
 export const TimestepSelector = () => {
   const simulation = useAtomValue(simulationAtom);
+  const currentTimestepIndex = useAtomValue(currentTimestepIndexAtom) ?? 0;
   const { changeTimestep } = useChangeTimestep();
   const isSmOrLarger = useBreakpoint("sm");
 
@@ -29,8 +30,6 @@ export const TimestepSelector = () => {
   const { timestepCount, reportingTimeStep } = getSimulationMetadataValues(
     simulation.metadata,
   );
-  const currentTimestepIndex = simulation.currentTimestepIndex ?? 0;
-
   if (timestepCount <= 1) return null;
 
   return (

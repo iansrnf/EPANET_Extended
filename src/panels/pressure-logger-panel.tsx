@@ -7,23 +7,23 @@ import { useZoomTo } from "src/hooks/use-zoom-to";
 import { selectionAtom } from "src/state/selection";
 import { stagingModelAtom } from "src/state/hydraulic-model";
 import { projectSettingsAtom } from "src/state/project-settings";
-import { simulationAtom } from "src/state/simulation";
+import { currentTimestepIndexAtom, simulationAtom } from "src/state/simulation";
 import { worktreeAtom } from "src/state/scenarios";
 import { useTranslate } from "src/hooks/use-translate";
 import { ActionButton } from "src/components/action-button";
 import { SectionList } from "src/components/form/fields";
 import { Checkbox } from "src/components/form/Checkbox";
-import {
-  SectionWrapper,
-  TextRow,
-} from "src/panels/asset-panel/ui-components";
+import { SectionWrapper, TextRow } from "src/panels/asset-panel/ui-components";
 import { loggerTelemetryAtom } from "src/state/logger-telemetry";
 import type { StyledPointValue } from "src/components/graphs";
 import { localizeDecimal } from "src/infra/i18n/numbers";
 import { colors } from "src/lib/constants";
 import { convertTo, type Unit } from "src/quantity";
 import { OPFSStorage } from "src/infra/storage/opfs-storage";
-import { EPSResultsReader, TimeSeries } from "src/simulation/epanet/eps-results-reader";
+import {
+  EPSResultsReader,
+  TimeSeries,
+} from "src/simulation/epanet/eps-results-reader";
 import { getAppId } from "src/infra/app-instance";
 import { captureError } from "src/infra/error-tracking";
 import ReactECharts from "echarts-for-react";
@@ -40,7 +40,7 @@ export function PressureLoggerPanel() {
   const hydraulicModel = useAtomValue(stagingModelAtom);
   const projectSettings = useAtomValue(projectSettingsAtom);
   const loggerTelemetry = useAtomValue(loggerTelemetryAtom);
-  const simulation = useAtomValue(simulationAtom);
+  const currentTimestepIndex = useAtomValue(currentTimestepIndexAtom);
   const translate = useTranslate();
   const zoomTo = useZoomTo();
 
@@ -64,9 +64,10 @@ export function PressureLoggerPanel() {
     const reading = loggerTelemetry.readingsByDeviceId[pressureLogger.label];
     return {
       status: reading?.status ?? translate("notAvailable"),
-      currentPressure: reading?.psi !== undefined
-        ? `${reading.psi.toFixed(2)} psi`
-        : translate("notAvailable"),
+      currentPressure:
+        reading?.psi !== undefined
+          ? `${reading.psi.toFixed(2)} psi`
+          : translate("notAvailable"),
       lastUpdated: reading?.timestamp ?? translate("notAvailable"),
       tempOrStatus: reading?.tempOrStatus ?? translate("notAvailable"),
       batteryVoltage: reading?.batteryVoltage ?? translate("notAvailable"),
@@ -81,12 +82,16 @@ export function PressureLoggerPanel() {
 
   const livePressurePsi = useMemo(() => {
     if (!pressureLogger) return null;
-    return loggerTelemetry.readingsByDeviceId[pressureLogger.label]?.psi ?? null;
+    return (
+      loggerTelemetry.readingsByDeviceId[pressureLogger.label]?.psi ?? null
+    );
   }, [loggerTelemetry.readingsByDeviceId, pressureLogger]);
 
   const pressureHistory = useMemo(() => {
     if (!pressureLogger) return [];
-    return loggerTelemetry.pressureHistoryByDeviceId[pressureLogger.label] ?? [];
+    return (
+      loggerTelemetry.pressureHistoryByDeviceId[pressureLogger.label] ?? []
+    );
   }, [loggerTelemetry.pressureHistoryByDeviceId, pressureLogger]);
 
   const pressureHistoryPoints = useMemo<StyledPointValue[]>(() => {
@@ -122,15 +127,18 @@ export function PressureLoggerPanel() {
   const selectedSimulationSeries = useMemo<PressureGraphSeries[]>(() => {
     const alignedSeries = selectedConnectedNodeIds
       .map((nodeId, index) => {
-        const node = connectedNodes.find((candidate) => candidate.id === nodeId);
+        const node = connectedNodes.find(
+          (candidate) => candidate.id === nodeId,
+        );
         const series = simulationSeriesByNodeId[nodeId];
         if (!node || !series) return null;
 
         const nextSeries: PressureGraphSeries = {
           name: node.label,
-          color: CONNECTED_NODE_SERIES_COLORS[
-            index % CONNECTED_NODE_SERIES_COLORS.length
-          ],
+          color:
+            CONNECTED_NODE_SERIES_COLORS[
+              index % CONNECTED_NODE_SERIES_COLORS.length
+            ],
           points: alignSimulationValuesToLoggerPoints(
             pressureHistoryPoints.map((point) => ({ x: point.x, y: point.y })),
             series.values,
@@ -152,11 +160,6 @@ export function PressureLoggerPanel() {
   ]);
 
   const connectedSimulationComparisons = useMemo(() => {
-    const currentTimestepIndex =
-      simulation.status === "success" || simulation.status === "warning"
-        ? (simulation.currentTimestepIndex ?? 0)
-        : null;
-
     if (currentTimestepIndex === null || livePressurePsi === null) return [];
 
     return connectedNodes
@@ -190,7 +193,12 @@ export function PressureLoggerPanel() {
           delta: number;
         } => Boolean(comparison),
       );
-  }, [connectedNodes, livePressurePsi, simulation, simulationSeriesByNodeId]);
+  }, [
+    connectedNodes,
+    currentTimestepIndex,
+    livePressurePsi,
+    simulationSeriesByNodeId,
+  ]);
 
   if (!pressureLogger || !coordinates) return null;
 
@@ -431,7 +439,11 @@ const useConnectedNodeSimulationSeries = (
       return;
     }
 
-    if ((status !== "success" && status !== "warning") || !metadata || !simulationIds) {
+    if (
+      (status !== "success" && status !== "warning") ||
+      !metadata ||
+      !simulationIds
+    ) {
       setSimulationSeriesByNodeId({});
       setIsLoadingSimulationSeries(false);
       return;
@@ -468,9 +480,7 @@ const useConnectedNodeSimulationSeries = (
         setSimulationSeriesByNodeId(
           Object.fromEntries(
             seriesEntries.filter(
-              (
-                entry,
-              ): entry is readonly [number, ConnectedNodeTimeSeries] =>
+              (entry): entry is readonly [number, ConnectedNodeTimeSeries] =>
                 Boolean(entry),
             ),
           ),
@@ -548,7 +558,10 @@ const PressureLoggerGraph = ({
 }) => {
   const translate = useTranslate();
   const chartSeries = useMemo<PressureGraphSeries[]>(() => {
-    const loggerData = loggerSeries.map((point) => ({ x: point.x, y: point.y }));
+    const loggerData = loggerSeries.map((point) => ({
+      x: point.x,
+      y: point.y,
+    }));
 
     return [
       {
@@ -561,7 +574,8 @@ const PressureLoggerGraph = ({
   }, [loggerLabel, loggerSeries, simulationSeries]);
 
   const xValues = useMemo(
-    () => chartSeries.flatMap((series) => series.points.map((point) => point.x)),
+    () =>
+      chartSeries.flatMap((series) => series.points.map((point) => point.x)),
     [chartSeries],
   );
   const option = useMemo<EChartsOption>(() => {
@@ -643,7 +657,9 @@ const PressureLoggerGraph = ({
           if (!Array.isArray(params) || params.length === 0) return "";
           const timeLabel = formatGraphElapsedTime(params[0]?.axisValue ?? 0);
           const rows = params.map((param: any) => {
-            const value = localizeDecimal(param.value?.[1] ?? 0, { decimals: 2 });
+            const value = localizeDecimal(param.value?.[1] ?? 0, {
+              decimals: 2,
+            });
             const dot = `<span style="display:inline-block;width:8px;height:8px;background:${param.color};margin-right:4px;border-radius:50%;"></span>`;
             return `${dot}${param.seriesName}: ${value}`;
           });

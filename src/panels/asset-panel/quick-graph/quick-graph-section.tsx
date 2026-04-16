@@ -6,7 +6,7 @@ import { Selector } from "src/components/form/selector";
 import { useTranslate } from "src/hooks/use-translate";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { stagingModelAtom } from "src/state/hydraulic-model";
-import { simulationAtom } from "src/state/simulation";
+import { currentTimestepIndexAtom, simulationAtom } from "src/state/simulation";
 import { worktreeAtom } from "src/state/scenarios";
 import { getSimulationMetadata } from "src/simulation/epanet/simulation-metadata";
 import {
@@ -146,6 +146,7 @@ const QuickGraphSection = ({
   const [footerState, setFooterState] = useAtom(assetPanelFooterAtom);
   const [propertyByType, setPropertyByType] = useAtom(quickGraphPropertyAtom);
   const simulation = useAtomValue(simulationAtom);
+  const currentTimestepIndex = useAtomValue(currentTimestepIndexAtom);
   const worktree = useAtomValue(worktreeAtom);
   const { units, formatting } = useAtomValue(projectSettingsAtom);
   const hydraulicModel = useAtomValue(stagingModelAtom);
@@ -188,10 +189,7 @@ const QuickGraphSection = ({
     () => (mainData ? Array.from(mainData.values) : null),
     [mainData],
   );
-  const timeStepIndex =
-    simulation.status === "success" || simulation.status === "warning"
-      ? (simulation.currentTimestepIndex ?? 0)
-      : 0;
+  const timeStepIndex = currentTimestepIndex ?? 0;
 
   const propertyOptions = useMemo(() => {
     return propertyDefinitions.map((opt) => {
@@ -209,7 +207,14 @@ const QuickGraphSection = ({
         label: unit ? `${label} (${unit})` : label,
       };
     });
-  }, [propertyDefinitions, assetType, assetId, hydraulicModel, translate, units]);
+  }, [
+    propertyDefinitions,
+    assetType,
+    assetId,
+    hydraulicModel,
+    translate,
+    units,
+  ]);
 
   const handlePropertyChange = useCallback(
     (value: QuickGraphPropertyByAssetType[typeof assetType]) => {

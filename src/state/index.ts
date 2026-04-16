@@ -136,10 +136,13 @@ export type {
   SimulationIdle,
   SimulationFinished,
   SimulationRunning,
+  SimulationStep,
   SimulationState,
 } from "src/state/simulation";
 export {
+  currentTimestepIndexAtom,
   simulationResultsAtom,
+  simulationStepAtom,
   initialSimulationState,
   simulationAtom,
 } from "src/state/simulation";

@@ -16,10 +16,12 @@ import {
   type SimulationState,
   simulationAtom,
   initialSimulationState,
+  simulationStepAtom,
+  currentTimestepIndexAtom,
+  type SimulationStep,
 } from "src/state/simulation";
 import { Store } from "src/state";
 import { baseModelAtom } from "src/state/hydraulic-model";
-import { simulationResultsAtom } from "src/state/simulation";
 import { trackMoment } from "./shared";
 import {
   HydraulicModel,
@@ -133,7 +135,7 @@ export class Persistence implements IPersistenceWithSnapshots {
       this.store.set(momentLogAtom, momentLog);
       this.store.set(mapSyncMomentAtom, { pointer: -1, version: 0 });
       this.store.set(simulationAtom, initialSimulationState);
-      this.store.set(simulationResultsAtom, null);
+      this.store.set(simulationStepAtom, null);
       this.store.set(nodeSymbologyAtom, nullSymbologySpec.node);
       this.store.set(linkSymbologyAtom, nullSymbologySpec.link);
       this.store.set(savedSymbologiesAtom, new Map());
@@ -207,7 +209,7 @@ export class Persistence implements IPersistenceWithSnapshots {
       this.store.set(momentLogAtom, momentLog);
       this.store.set(mapSyncMomentAtom, { pointer: -1, version: 0 });
       this.store.set(simulationAtom, initialSimulationState);
-      this.store.set(simulationResultsAtom, null);
+      this.store.set(simulationStepAtom, null);
       this.store.set(modeAtom, { mode: Mode.NONE });
       this.store.set(ephemeralStateAtom, { type: "none" });
       this.store.set(selectionAtom, { type: "none" });
@@ -366,12 +368,8 @@ export class Persistence implements IPersistenceWithSnapshots {
     const snapshot = worktree.snapshots.get(snapshotId);
     if (!snapshot) return;
 
-    const currentSimulation = this.store.get(simulationAtom);
     const preserveTimestepIndex =
-      currentSimulation.status === "success" ||
-      currentSimulation.status === "warning"
-        ? currentSimulation.currentTimestepIndex
-        : undefined;
+      this.store.get(currentTimestepIndexAtom) ?? undefined;
 
     const { model: stagingModel, labelManager: snapshotLabelManager } =
       this.getOrBuildModel(worktree, snapshotId);
@@ -381,18 +379,11 @@ export class Persistence implements IPersistenceWithSnapshots {
     );
     const simulation = getSimulationForState(worktree, initialSimulationState);
     const resultsSourceId = snapshot.simulationSourceId;
-    const { resultsReader, actualTimestepIndex } =
-      await this.loadSimulationResults(
-        simulation,
-        resultsSourceId,
-        preserveTimestepIndex,
-      );
-
-    const finalSimulation =
-      actualTimestepIndex !== undefined &&
-      (simulation.status === "success" || simulation.status === "warning")
-        ? { ...simulation, currentTimestepIndex: actualTimestepIndex }
-        : simulation;
+    const simulationStep = await this.loadSimulationStep(
+      simulation,
+      resultsSourceId,
+      preserveTimestepIndex,
+    );
 
     const currentFactories = this.store.get(modelFactoriesAtom);
     this.store.set(stagingModelAtom, stagingModel);
@@ -408,8 +399,8 @@ export class Persistence implements IPersistenceWithSnapshots {
     );
     this.switchMomentLog(snapshot.momentLog);
     this.setModelVersion(snapshot.version);
-    this.store.set(simulationAtom, finalSimulation);
-    this.store.set(simulationResultsAtom, resultsReader);
+    this.store.set(simulationAtom, simulation);
+    this.store.set(simulationStepAtom, simulationStep);
     this.store.set(simulationSettingsAtom, snapshot.simulationSettings);
 
     const selection = this.store.get(selectionAtom);
@@ -421,49 +412,38 @@ export class Persistence implements IPersistenceWithSnapshots {
     this.store.set(selectionAtom, { ...validatedSelection });
   }
 
-  private async loadSimulationResults(
+  private async loadSimulationStep(
     simulation: SimulationState,
     snapshotId: string,
     preserveTimestepIndex?: number,
-  ): Promise<{
-    resultsReader: Awaited<
-      ReturnType<
-        import("src/simulation").EPSResultsReader["getResultsForTimestep"]
-      >
-    > | null;
-    actualTimestepIndex?: number;
-  }> {
+  ): Promise<SimulationStep | null> {
     if (
-      (simulation.status === "success" || simulation.status === "warning") &&
-      simulation.metadata
+      (simulation.status !== "success" && simulation.status !== "warning") ||
+      !simulation.metadata
     ) {
-      const [{ OPFSStorage }, { EPSResultsReader }, { getAppId }] =
-        await Promise.all([
-          import("src/infra/storage"),
-          import("src/simulation"),
-          import("src/infra/app-instance"),
-        ]);
-
-      const appId = getAppId();
-      const storage = new OPFSStorage(appId, snapshotId);
-      const epsReader = new EPSResultsReader(storage);
-      await epsReader.initialize(simulation.metadata, simulation.simulationIds);
-
-      let timestepIndex: number;
-      if (preserveTimestepIndex !== undefined) {
-        timestepIndex = Math.min(
-          preserveTimestepIndex,
-          epsReader.timestepCount - 1,
-        );
-      } else {
-        timestepIndex = simulation.currentTimestepIndex ?? 0;
-      }
-
-      const resultsReader =
-        await epsReader.getResultsForTimestep(timestepIndex);
-      return { resultsReader, actualTimestepIndex: timestepIndex };
+      return null;
     }
-    return { resultsReader: null };
+
+    const [{ OPFSStorage }, { EPSResultsReader }, { getAppId }] =
+      await Promise.all([
+        import("src/infra/storage"),
+        import("src/simulation"),
+        import("src/infra/app-instance"),
+      ]);
+
+    const appId = getAppId();
+    const storage = new OPFSStorage(appId, snapshotId);
+    const epsReader = new EPSResultsReader(storage);
+    await epsReader.initialize(simulation.metadata, simulation.simulationIds);
+
+    const currentTimestepIndex =
+      preserveTimestepIndex !== undefined
+        ? Math.min(preserveTimestepIndex, epsReader.timestepCount - 1)
+        : 0;
+
+    const resultsReader =
+      await epsReader.getResultsForTimestep(currentTimestepIndex);
+    return { resultsReader, currentTimestepIndex };
   }
 
   private getOrBuildModel(

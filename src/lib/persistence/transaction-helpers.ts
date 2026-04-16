@@ -9,7 +9,7 @@ import {
   applyMomentToModel,
 } from "src/hydraulic-model";
 import { type Data, dataAtom } from "src/state/data";
-import { stagingModelAtom } from "src/state/hydraulic-model";
+import { baseModelAtom, stagingModelAtom } from "src/state/hydraulic-model";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import { worktreeAtom } from "src/state/scenarios";
 import { modelCacheAtom } from "src/state/model-cache";

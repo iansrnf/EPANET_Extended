@@ -28,8 +28,7 @@ import {
   initialSimulationState,
   simulationAtom,
 } from "src/state/simulation";
-import { customerPointsAtom } from "src/state/hydraulic-model";
-import { pressureLoggersAtom } from "src/state/hydraulic-model";
+import { stagingModelAtom } from "src/state/hydraulic-model";
 import { offlineAtom } from "src/state/offline";
 import { mapOverlayFeaturesAtom } from "src/state/map-overlay";
 import { USelection } from "src/selection";
@@ -121,6 +120,7 @@ export type StylesConfig = {
 };
 
 export type MapState = {
+  modelVersion: string;
   momentLogId: string;
   momentLogPointer: number;
   syncMomentPointer: number;
@@ -141,6 +141,7 @@ export type MapState = {
 };
 
 export const nullMapState: MapState = {
+  modelVersion: "",
   momentLogId: "",
   momentLogPointer: -1,
   syncMomentPointer: -1,
@@ -190,8 +191,10 @@ export const mapStateAtom = atom<MapState>((get) => {
   const ephemeralState = get(ephemeralStateAtom);
   const symbology = get(symbologyAtom);
   const simulation = get(simulationAtom);
-  const customerPoints = get(customerPointsAtom);
-  const pressureLoggers = get(pressureLoggersAtom);
+  const hydraulicModel = get(stagingModelAtom);
+  const modelVersion = hydraulicModel.version;
+  const customerPoints = hydraulicModel.customerPoints;
+  const pressureLoggers = hydraulicModel.pressureLoggers;
   const loggerTelemetry = get(loggerTelemetryAtom);
   const currentZoom = get(currentZoomAtom);
   const mapOverlayFeatures = get(mapOverlayFeaturesAtom);
@@ -201,6 +204,7 @@ export const mapStateAtom = atom<MapState>((get) => {
   const isOffline = get(offlineAtom);
 
   return {
+    modelVersion,
     momentLogId: momentLog.id,
     momentLogPointer: momentLog.getPointer(),
     syncMomentPointer: mapSyncMoment.pointer,

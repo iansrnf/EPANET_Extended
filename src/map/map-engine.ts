@@ -371,6 +371,8 @@ export class MapEngine {
     }
 
     return new Promise((resolve) => {
+      callback();
+
       const idleTimeoutMs = sourceUpdateTimeoutFor(updateSize);
       const timeout = setTimeout(() => {
         resolve();
@@ -380,8 +382,6 @@ export class MapEngine {
         clearTimeout(timeout);
         resolve();
       });
-
-      callback();
     });
   }
 }

@@ -186,7 +186,6 @@ export const selectedJunctionsLayer = ({
       ],
       ...junctionCircleSizes(),
     },
-    minzoom: 13,
   };
 };
 

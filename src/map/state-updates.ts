@@ -6,7 +6,7 @@ import { Unit } from "src/quantity";
 import type { ModelMoment } from "src/hydraulic-model/model-operation";
 import { projectSettingsAtom } from "src/state/project-settings";
 import type { EphemeralEditingState } from "src/state/drawing";
-import { assetsAtom, stagingModelAtom } from "src/state/hydraulic-model";
+import { stagingModelAtom } from "src/state/hydraulic-model";
 import {
   type StylesConfig,
   type MapState,
@@ -111,9 +111,11 @@ const detectChanges = (
   hasNewPressureLoggerTelemetry: boolean;
   hasNewZoom: boolean;
   hasSyncMomentChanged: boolean;
+  hasNewModelVersion: boolean;
   hasNewMapOverlay: boolean;
 } => {
   return {
+    hasNewModelVersion: state.modelVersion !== prev.modelVersion,
     hasNewImport: state.momentLogId !== prev.momentLogId,
     hasNewEditions: state.momentLogPointer !== prev.momentLogPointer,
     hasNewStyles:
@@ -143,8 +145,8 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
   const mapState = useAtomValue(mapStateAtom);
   const setMapLoading = useSetAtom(mapLoadingAtom);
 
-  const assets = useAtomValue(assetsAtom);
   const hydraulicModel = useAtomValue(stagingModelAtom);
+  const assets = hydraulicModel.assets;
   const { units, formatting } = useAtomValue(projectSettingsAtom);
   const isGridOn = useAtomValue(showGridAtom);
   const isGridPreview = useAtomValue(gridPreviewAtom);
@@ -195,6 +197,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
       hasNewPressureLoggerTelemetry,
       hasNewZoom,
       hasSyncMomentChanged,
+      hasNewModelVersion,
       hasNewMapOverlay,
     } = changes;
 
@@ -239,6 +242,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
 
         if (
           hasSyncMomentChanged ||
+          hasNewModelVersion ||
           hasNewImport ||
           hasNewStyles ||
           hasNewSymbology ||
@@ -270,7 +274,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           });
         }
 
-        if (hasNewEditions && !hasSyncMomentChanged) {
+        if (hasNewEditions && !hasSyncMomentChanged && !hasNewModelVersion) {
           const { editedAssetIds } = await syncSourcesWithEdits(
             map,
             momentLog,

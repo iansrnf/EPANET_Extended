@@ -28,7 +28,7 @@ export const buildSelectionSource = (
   }
   const maxAbsFlow =
     simulationResults
-      ?.getAllFlows()
+      ?.getAllValues("flow")
       .reduce((max, flow) => Math.max(max, Math.abs(flow)), 0) ?? 0;
 
   const features: Feature[] = [];

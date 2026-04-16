@@ -75,7 +75,7 @@ const buildAnimationPaths = (
   assets: AssetsMap,
   simulationResults: ResultsReader,
 ): PipeFlowAnimationPath[] => {
-  const allFlows = simulationResults.getAllFlows();
+  const allFlows = simulationResults.getAllValues("flow");
   const maxAbsFlow = allFlows.reduce(
     (max, flow) => Math.max(max, Math.abs(flow)),
     0,

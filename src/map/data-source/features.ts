@@ -358,6 +358,6 @@ const getMaxAbsFlow = (simulationResults?: ResultsReader | null): number => {
   if (!simulationResults) return 0;
 
   return simulationResults
-    .getAllFlows()
+    .getAllValues("flow")
     .reduce((max, flow) => Math.max(max, Math.abs(flow)), 0);
 };

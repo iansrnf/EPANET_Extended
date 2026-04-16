@@ -7,7 +7,7 @@ import { useZoomTo } from "src/hooks/use-zoom-to";
 import { selectionAtom } from "src/state/selection";
 import { stagingModelAtom } from "src/state/hydraulic-model";
 import { projectSettingsAtom } from "src/state/project-settings";
-import { simulationAtom } from "src/state/simulation";
+import { simulationAtom, simulationStepAtom } from "src/state/simulation";
 import { worktreeAtom } from "src/state/scenarios";
 import { useTranslate } from "src/hooks/use-translate";
 import { ActionButton } from "src/components/action-button";
@@ -41,9 +41,10 @@ export function PressureLoggerPanel() {
   const projectSettings = useAtomValue(projectSettingsAtom);
   const loggerTelemetry = useAtomValue(loggerTelemetryAtom);
   const simulation = useAtomValue(simulationAtom);
+  const simulationStep = useAtomValue(simulationStepAtom);
   const currentTimestepIndex =
     simulation.status === "success" || simulation.status === "warning"
-      ? (simulation.currentTimestepIndex ?? 0)
+      ? (simulationStep ?? 0)
       : null;
   const translate = useTranslate();
   const zoomTo = useZoomTo();

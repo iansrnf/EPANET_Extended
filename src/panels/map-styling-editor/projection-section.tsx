@@ -4,12 +4,18 @@ import type { FeatureCollection } from "geojson";
 import type { LngLatBoundsLike } from "mapbox-gl";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { stagingModelAtom } from "src/state/hydraulic-model";
+import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { dialogAtom } from "src/state/dialog";
 import { Button } from "src/components/elements";
 import { CollapsibleSection } from "src/components/form/fields";
 import { mapStylingPanelSectionsExpandedAtom } from "src/state/layout";
 import { MapPinnedIcon } from "src/icons";
-import type { Projection } from "src/lib/projections/projection";
+import {
+  type Projection,
+  type ProjectionConfig,
+  WGS84,
+  XY_GRID,
+} from "src/lib/projections/projection";
 import {
   inverseProjectGeoJson,
   createProjectionMapper,
@@ -22,15 +28,26 @@ import { MapContext } from "src/map";
 import { captureError } from "src/infra/error-tracking";
 import { hasScenariosAtom } from "src/state/scenarios";
 import { useTranslate } from "src/hooks/use-translate";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
+
+const toProjection = (projection: ProjectionConfig): Projection => {
+  if (projection.type === "wgs84") return WGS84;
+  if (projection.type === "xy-grid") {
+    return { ...XY_GRID, centroid: projection.centroid };
+  }
+  return projection;
+};
 
 export const ProjectionSection = () => {
+  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
   const projectSettings = useAtomValue(projectSettingsAtom);
   const { projection } = projectSettings;
-  const hydraulicModel = useAtomValue(stagingModelAtom);
+  const hydraulicModel = useAtomValue(
+    isStateRefactorOn ? stagingModelDerivedAtom : stagingModelAtom,
+  );
   const setDialogState = useSetAtom(dialogAtom);
   const map = useContext(MapContext);
   const rep = usePersistence();
-  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
   const transactReprojectionDeprecated =
     rep.useTransactReprojectionDeprecated();
   const { reprojectionReset } = useReprojectionReset();
@@ -70,7 +87,10 @@ export const ProjectionSection = () => {
               autoElevations: newProjection.type !== "xy-grid",
             });
           } else {
-            await transactReprojectionDeprecated(newProjection, projection);
+            await transactReprojectionDeprecated(
+              newProjection,
+              toProjection(projection),
+            );
           }
           if (extent) {
             map?.map.once("idle", () => {
@@ -103,9 +123,17 @@ export const ProjectionSection = () => {
   };
 
   const projectionName =
-    projection.type === "wgs84" ? "WGS 84" : projection.name;
+    projection.type === "wgs84"
+      ? "WGS 84"
+      : projection.type === "xy-grid"
+        ? "XY Grid"
+        : projection.name;
   const projectionCode =
-    projection.type === "wgs84" ? "EPSG:4326" : projection.id;
+    projection.type === "wgs84"
+      ? "EPSG:4326"
+      : projection.type === "xy-grid"
+        ? "xy-grid"
+        : projection.id;
 
   const [sections, setSections] = useAtom(mapStylingPanelSectionsExpandedAtom);
 

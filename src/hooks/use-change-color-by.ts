@@ -10,12 +10,12 @@ import {
   isSimulationProperty,
 } from "src/map/symbology/symbology-data-source";
 import {
-  NodeSymbology,
   SupportedProperty,
   nullSymbologySpec,
 } from "src/map/symbology/symbology-types";
 import { getSimulationMetadata } from "src/simulation/epanet/simulation-metadata";
 import { stagingModelAtom } from "src/state/hydraulic-model";
+import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import {
   type RangeColorPreference,
   useSymbologyState,
@@ -29,10 +29,13 @@ const absValuesFor = (property: SupportedProperty): boolean =>
   property === "flow";
 
 export const useChangeColorBy = (geometryType: "node" | "link") => {
+  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
   const userTracking = useUserTracking();
   const simulation = useAtomValue(simulationAtom);
   const simulationResults = useAtomValue(simulationResultsAtom);
-  const hydraulicModel = useAtomValue(stagingModelAtom);
+  const hydraulicModel = useAtomValue(
+    isStateRefactorOn ? stagingModelDerivedAtom : stagingModelAtom,
+  );
   const { units } = useAtomValue(projectSettingsAtom);
   const { symbologyPreferences, switchNodeSymbologyTo, switchLinkSymbologyTo } =
     useSymbologyState();
@@ -112,14 +115,8 @@ export const useChangeColorBy = (geometryType: "node" | "link") => {
         if (!sortedData) return;
 
         if (geometryType === "node") {
-          switchNodeSymbologyTo(
-            property,
-            () =>
-              symbologyBuilders[property](
-                units,
-                sortedData,
-                preference,
-              ) as NodeSymbology,
+          switchNodeSymbologyTo(property, () =>
+            symbologyBuilders[property](units, sortedData, preference),
           );
         } else {
           switchLinkSymbologyTo(property, () =>

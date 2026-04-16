@@ -11,10 +11,12 @@ import { SelectOnlyButton } from "./select-only-button";
 import { useAtom, useAtomValue } from "jotai";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { stagingModelAtom } from "src/state/hydraulic-model";
+import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import { multiAssetPanelCollapseAtom } from "src/state/layout";
 import { selectionAtom } from "src/state/selection";
 import { simulationAtom, simulationResultsAtom } from "src/state/simulation";
+import { simulationDerivedAtom } from "src/state/derived-branch-state";
 import { computeMultiAssetData } from "./data";
 import { BATCH_EDITABLE_PROPERTIES } from "./batch-edit-property-config";
 import { usePersistence } from "src/lib/persistence";
@@ -41,16 +43,20 @@ export function MultiAssetPanel({
   const { formatting, units } = useAtomValue(projectSettingsAtom);
   const useAutoIndentation = useFeatureFlag("FLAG_UI_COLLAPSIBLE");
   const translate = useTranslate();
-  const simulationState = useAtomValue(simulationAtom);
+  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
+  const simulationState = useAtomValue(
+    isStateRefactorOn ? simulationDerivedAtom : simulationAtom,
+  );
   const simulationResults = useAtomValue(simulationResultsAtom);
-  const hydraulicModel = useAtomValue(stagingModelAtom);
+  const hydraulicModel = useAtomValue(
+    isStateRefactorOn ? stagingModelDerivedAtom : stagingModelAtom,
+  );
   const { labelManager } = useAtomValue(modelFactoriesAtom);
   const hasSimulation = simulationState.status !== "idle";
   const [collapseState, setCollapseState] = useAtom(
     multiAssetPanelCollapseAtom,
   );
   const rep = usePersistence();
-  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
   const transactDeprecated = rep.useTransactDeprecated();
   const { transact: transactNew } = useModelTransaction();
   const transact = isStateRefactorOn ? transactNew : transactDeprecated;

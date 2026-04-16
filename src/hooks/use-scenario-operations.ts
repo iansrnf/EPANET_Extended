@@ -3,16 +3,12 @@ import { useAtomCallback } from "jotai/utils";
 import { useCallback } from "react";
 import { usePersistenceWithSnapshots, Persistence } from "src/lib/persistence";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { useApplySnapshot } from "src/hooks/persistence/use-apply-snapshot";
 import { useInitializeBranch } from "src/hooks/persistence/use-initialize-branch";
 import { useSwitchBranch } from "src/hooks/persistence/use-switch-branch";
 import { useDeleteBranch } from "src/hooks/persistence/use-delete-branch";
-import { copyModel } from "src/hydraulic-model";
-import { LabelManager } from "src/hydraulic-model/label-manager";
 import { worktreeAtom } from "src/state/scenarios";
 import { simulationSettingsAtom } from "src/state/simulation-settings";
-import { modelCacheAtom } from "src/state/model-cache";
-import { modelFactoriesAtom } from "src/state/model-factories";
+import { simulationSettingsDerivedAtom } from "src/state/derived-branch-state";
 import { modeAtom, Mode } from "src/state/mode";
 import {
   createScenario,
@@ -52,7 +48,6 @@ const saveSettingsToOutgoingSnapshot = (
 export const useScenarioOperations = () => {
   const persistence = usePersistenceWithSnapshots();
   const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
-  const { applySnapshot } = useApplySnapshot();
   const { initializeBranch } = useInitializeBranch();
   const { switchBranch } = useSwitchBranch();
   const { deleteBranch } = useDeleteBranch();
@@ -65,7 +60,6 @@ export const useScenarioOperations = () => {
 
       if (result.snapshot) {
         if (isStateRefactorOn) {
-          await applySnapshot(result.worktree, result.snapshot.id);
           await switchBranch(result.snapshot.id);
         } else {
           await (persistence as Persistence).applySnapshotDeprecated(
@@ -91,28 +85,26 @@ export const useScenarioOperations = () => {
 
       return result;
     },
-    [
-      persistence,
-      isStateRefactorOn,
-      applySnapshot,
-      switchBranch,
-      setWorktree,
-      setMode,
-    ],
+    [persistence, isStateRefactorOn, switchBranch, setWorktree, setMode],
   );
 
   const switchToSnapshot = useAtomCallback(
     useCallback(
       (get, _set, snapshotId: string) => {
         const worktree = get(worktreeAtom);
-        const currentSettings = get(simulationSettingsAtom);
-        const updated = saveSettingsToOutgoingSnapshot(
-          worktree,
-          currentSettings,
-        );
+        const updated = isStateRefactorOn
+          ? worktree
+          : saveSettingsToOutgoingSnapshot(
+              worktree,
+              get(
+                isStateRefactorOn
+                  ? simulationSettingsDerivedAtom
+                  : simulationSettingsAtom,
+              ),
+            );
         void performSwitch(updated, snapshotId);
       },
-      [performSwitch],
+      [performSwitch, isStateRefactorOn],
     ),
   );
 
@@ -120,26 +112,34 @@ export const useScenarioOperations = () => {
     useCallback(
       (get) => {
         const worktree = get(worktreeAtom);
-        const currentSettings = get(simulationSettingsAtom);
-        const updated = saveSettingsToOutgoingSnapshot(
-          worktree,
-          currentSettings,
-        );
+        const updated = isStateRefactorOn
+          ? worktree
+          : saveSettingsToOutgoingSnapshot(
+              worktree,
+              get(
+                isStateRefactorOn
+                  ? simulationSettingsDerivedAtom
+                  : simulationSettingsAtom,
+              ),
+            );
         void performSwitch(updated, updated.mainId);
       },
-      [performSwitch],
+      [performSwitch, isStateRefactorOn],
     ),
   );
 
   const createNewScenario = useAtomCallback(
     useCallback(
-      async (get, set) => {
+      async (get, _set) => {
         const worktree = get(worktreeAtom);
-        const currentSettings = get(simulationSettingsAtom);
-        const updated = saveSettingsToOutgoingSnapshot(
-          worktree,
-          currentSettings,
+        const currentSettings = get(
+          isStateRefactorOn
+            ? simulationSettingsDerivedAtom
+            : simulationSettingsAtom,
         );
+        const updated = isStateRefactorOn
+          ? worktree
+          : saveSettingsToOutgoingSnapshot(worktree, currentSettings);
         const created = createScenario(
           updated,
           currentSettings,
@@ -147,18 +147,6 @@ export const useScenarioOperations = () => {
         );
 
         if (isStateRefactorOn) {
-          const currentCache = get(modelCacheAtom);
-          const mainEntry = currentCache.get(updated.mainId);
-          if (mainEntry) {
-            const factories = get(modelFactoriesAtom);
-            const newCache = new Map(currentCache);
-            newCache.set(created.scenario.id, {
-              model: copyModel(mainEntry.model),
-              labelManager: new LabelManager(new Map(factories.labelCounters)),
-            });
-            set(modelCacheAtom, newCache);
-          }
-
           const branch: Branch = {
             id: created.scenario.id,
             name: created.scenario.name,
@@ -166,24 +154,28 @@ export const useScenarioOperations = () => {
             status: "open",
           };
           initializeBranch(branch);
-        }
-        const result = switchToSnapshotFn(
-          created.worktree,
-          created.scenario.id,
-        );
+          await switchBranch(created.scenario.id);
 
-        if (result.snapshot) {
-          if (isStateRefactorOn) {
-            await applySnapshot(result.worktree, result.snapshot.id);
-          } else {
+          const result = switchToSnapshotFn(
+            created.worktree,
+            created.scenario.id,
+          );
+          setWorktree(result.worktree);
+        } else {
+          const result = switchToSnapshotFn(
+            created.worktree,
+            created.scenario.id,
+          );
+
+          if (result.snapshot) {
             await (persistence as Persistence).applySnapshotDeprecated(
               result.worktree,
               result.snapshot.id,
             );
           }
-        }
 
-        setWorktree(result.worktree);
+          setWorktree(result.worktree);
+        }
 
         return {
           scenarioId: created.scenario.id,
@@ -193,8 +185,8 @@ export const useScenarioOperations = () => {
       [
         persistence,
         isStateRefactorOn,
-        applySnapshot,
         initializeBranch,
+        switchBranch,
         setWorktree,
       ],
     ),
@@ -204,18 +196,19 @@ export const useScenarioOperations = () => {
     useCallback(
       async (get, set, scenarioId: string) => {
         const worktree = get(worktreeAtom);
-        const currentSettings = get(simulationSettingsAtom);
-        const updated = saveSettingsToOutgoingSnapshot(
-          worktree,
-          currentSettings,
-        );
+        const updated = isStateRefactorOn
+          ? worktree
+          : saveSettingsToOutgoingSnapshot(
+              worktree,
+              get(
+                isStateRefactorOn
+                  ? simulationSettingsDerivedAtom
+                  : simulationSettingsAtom,
+              ),
+            );
         const result = deleteScenario(updated, scenarioId);
 
         if (isStateRefactorOn) {
-          const cache = new Map(get(modelCacheAtom));
-          cache.delete(scenarioId);
-          set(modelCacheAtom, cache);
-
           await deleteBranch(scenarioId, result.snapshot?.id ?? null);
         } else {
           persistence.deleteSnapshotFromCache(scenarioId);
@@ -228,19 +221,9 @@ export const useScenarioOperations = () => {
           }
         }
 
-        if (isStateRefactorOn && result.snapshot) {
-          await applySnapshot(result.worktree, result.snapshot.id);
-        }
-
         setWorktree(result.worktree);
       },
-      [
-        persistence,
-        isStateRefactorOn,
-        applySnapshot,
-        deleteBranch,
-        setWorktree,
-      ],
+      [persistence, isStateRefactorOn, deleteBranch, setWorktree],
     ),
   );
 

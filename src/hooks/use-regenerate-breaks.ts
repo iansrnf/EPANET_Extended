@@ -14,6 +14,7 @@ import {
 } from "src/map/symbology/symbology-data-source";
 import { getSimulationMetadata } from "src/simulation/epanet/simulation-metadata";
 import { stagingModelAtom } from "src/state/hydraulic-model";
+import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { useSymbologyState } from "src/state/map-symbology";
 import { simulationAtom, simulationResultsAtom } from "src/state/simulation";
 
@@ -23,8 +24,11 @@ export type RegenerateResult = {
 };
 
 export const useRegenerateBreaks = (geometryType: "node" | "link") => {
+  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
   const userTracking = useUserTracking();
-  const hydraulicModel = useAtomValue(stagingModelAtom);
+  const hydraulicModel = useAtomValue(
+    isStateRefactorOn ? stagingModelDerivedAtom : stagingModelAtom,
+  );
   const simulationResults = useAtomValue(simulationResultsAtom);
   const simulation = useAtomValue(simulationAtom);
   const { nodeSymbology, linkSymbology } = useSymbologyState();

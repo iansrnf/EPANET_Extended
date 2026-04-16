@@ -6,12 +6,19 @@ import { Unit } from "src/quantity";
 import type { ModelMoment } from "src/hydraulic-model/model-operation";
 import { projectSettingsAtom } from "src/state/project-settings";
 import type { EphemeralEditingState } from "src/state/drawing";
-import { stagingModelAtom } from "src/state/hydraulic-model";
+import { assetsAtom, stagingModelAtom } from "src/state/hydraulic-model";
+import {
+  assetsDerivedAtom,
+  stagingModelDerivedAtom,
+  momentLogDerivedAtom,
+} from "src/state/derived-branch-state";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import {
   type StylesConfig,
   type MapState,
   nullMapState,
   mapStateAtom,
+  mapStateDerivedAtom,
   mapSyncMomentAtom,
   mapLoadingAtom,
 } from "src/state/map";
@@ -84,11 +91,13 @@ const PIPE_FLOW_PULSE_LAYERS: LayerId[] = [
 const getAssetIdsInMoments = (moments: ModelMoment[]): Set<AssetId> => {
   const assetIds = new Set<AssetId>();
   moments.forEach((moment) => {
-    moment.deleteAssets.forEach((assetId) => {
+    (moment.deleteAssets ?? []).forEach((assetId) => {
       assetIds.add(assetId);
     });
-    moment.putAssets.forEach((asset) => assetIds.add(asset.id));
-    moment.patchAssetsAttributes.forEach((patch) => assetIds.add(patch.id));
+    (moment.putAssets ?? []).forEach((asset) => assetIds.add(asset.id));
+    (moment.patchAssetsAttributes ?? []).forEach((patch) =>
+      assetIds.add(patch.id),
+    );
   });
   return assetIds;
 };
@@ -140,13 +149,22 @@ const detectChanges = (
 };
 
 export const useMapStateUpdates = (map: MapEngine | null) => {
-  const momentLog = useAtomValue(momentLogAtom);
+  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
+  const momentLog = useAtomValue(
+    isStateRefactorOn ? momentLogDerivedAtom : momentLogAtom,
+  );
   const setMapSyncMoment = useSetAtom(mapSyncMomentAtom);
-  const mapState = useAtomValue(mapStateAtom);
+  const mapState = useAtomValue(
+    isStateRefactorOn ? mapStateDerivedAtom : mapStateAtom,
+  );
   const setMapLoading = useSetAtom(mapLoadingAtom);
 
-  const hydraulicModel = useAtomValue(stagingModelAtom);
-  const assets = hydraulicModel.assets;
+  const assets = useAtomValue(
+    isStateRefactorOn ? assetsDerivedAtom : assetsAtom,
+  );
+  const hydraulicModel = useAtomValue(
+    isStateRefactorOn ? stagingModelDerivedAtom : stagingModelAtom,
+  );
   const { units, formatting } = useAtomValue(projectSettingsAtom);
   const isGridOn = useAtomValue(showGridAtom);
   const isGridPreview = useAtomValue(gridPreviewAtom);

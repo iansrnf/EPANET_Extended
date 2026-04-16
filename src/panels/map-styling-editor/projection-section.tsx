@@ -3,7 +3,6 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import type { FeatureCollection } from "geojson";
 import type { LngLatBoundsLike } from "mapbox-gl";
 import { projectSettingsAtom } from "src/state/project-settings";
-import { stagingModelAtom } from "src/state/hydraulic-model";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { dialogAtom } from "src/state/dialog";
 import { Button } from "src/components/elements";
@@ -22,13 +21,12 @@ import {
 } from "src/lib/projections";
 import { transformCoordinates } from "src/hydraulic-model/mutations/transform-coordinates";
 import { chooseUnitSystem } from "src/simulation/build-inp";
-import { usePersistence } from "src/lib/persistence";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useReprojectionReset } from "src/hooks/persistence/use-reprojection-reset";
 import { MapContext } from "src/map";
 import { captureError } from "src/infra/error-tracking";
 import { hasScenariosAtom } from "src/state/scenarios";
 import { useTranslate } from "src/hooks/use-translate";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 
 const toProjection = (projection: ProjectionConfig): Projection => {
   if (projection.type === "wgs84") return WGS84;
@@ -39,17 +37,11 @@ const toProjection = (projection: ProjectionConfig): Projection => {
 };
 
 export const ProjectionSection = () => {
-  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
   const projectSettings = useAtomValue(projectSettingsAtom);
   const { projection } = projectSettings;
-  const hydraulicModel = useAtomValue(
-    isStateRefactorOn ? stagingModelDerivedAtom : stagingModelAtom,
-  );
+  const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
   const setDialogState = useSetAtom(dialogAtom);
   const map = useContext(MapContext);
-  const rep = usePersistence();
-  const transactReprojectionDeprecated =
-    rep.useTransactReprojectionDeprecated();
   const { reprojectionReset } = useReprojectionReset();
   const hasScenarios = useAtomValue(hasScenariosAtom);
   const isXYGrid = projection.type === "xy-grid";
@@ -71,27 +63,20 @@ export const ProjectionSection = () => {
       onImportWithProjection: async (newProjection: Projection, extent) => {
         setDialogState({ type: "loading" });
         try {
-          if (isStateRefactorOn) {
-            const currentMapper = createProjectionMapper(projection);
-            const newMapper = createProjectionMapper(newProjection);
-            transformCoordinates(hydraulicModel, (p) => {
-              const source = currentMapper.toSource(p);
-              return newMapper.toWgs84(source);
-            });
-            await reprojectionReset({
-              hydraulicModel: { ...hydraulicModel },
-              projectSettings: {
-                ...projectSettings,
-                projection: newProjection,
-              },
-              autoElevations: newProjection.type !== "xy-grid",
-            });
-          } else {
-            await transactReprojectionDeprecated(
-              newProjection,
-              toProjection(projection),
-            );
-          }
+          const currentMapper = createProjectionMapper(projection);
+          const newMapper = createProjectionMapper(newProjection);
+          transformCoordinates(hydraulicModel, (p) => {
+            const source = currentMapper.toSource(p);
+            return newMapper.toWgs84(source);
+          });
+          await reprojectionReset({
+            hydraulicModel: { ...hydraulicModel },
+            projectSettings: {
+              ...projectSettings,
+              projection: newProjection,
+            },
+            autoElevations: newProjection.type !== "xy-grid",
+          });
           if (extent) {
             map?.map.once("idle", () => {
               map.map.fitBounds(extent as LngLatBoundsLike, {

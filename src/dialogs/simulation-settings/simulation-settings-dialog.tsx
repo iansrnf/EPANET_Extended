@@ -4,9 +4,7 @@ import { Form, Formik } from "formik";
 
 import { BaseDialog, SimpleDialogActions, useDialogState } from "../../components/dialog";
 import { useTranslate } from "src/hooks/use-translate";
-import { simulationSettingsAtom } from "src/state/simulation-settings";
 import { simulationSettingsDerivedAtom } from "src/state/derived-branch-state";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { projectSettingsAtom } from "src/state/project-settings";
 
 import { SimulationSettingsSidebar } from "./simulation-settings-sidebar";
@@ -37,15 +35,10 @@ export type {
 } from "./simulation-settings-data";
 
 export const SimulationSettingsDialog = () => {
-  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
   const translate = useTranslate();
   const { closeDialog } = useDialogState();
-  const simulationSettings = useAtomValue(
-    isStateRefactorOn ? simulationSettingsDerivedAtom : simulationSettingsAtom,
-  );
-  const setSimulationSettings = useSetAtom(
-    isStateRefactorOn ? simulationSettingsDerivedAtom : simulationSettingsAtom,
-  );
+  const simulationSettings = useAtomValue(simulationSettingsDerivedAtom);
+  const setSimulationSettings = useSetAtom(simulationSettingsDerivedAtom);
   const [projectSettings, setProjectSettings] = useAtom(projectSettingsAtom);
 
   const sectionIds = useMemo(buildSectionIds, []);

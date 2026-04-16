@@ -11,7 +11,6 @@ import {
   parseCoordinatesGeoJson,
 } from "src/import/inp";
 import type { ParseInpResult } from "src/import/inp";
-import { usePersistence } from "src/lib/persistence";
 import { FeatureCollection } from "geojson";
 import { getExtent } from "src/lib/geometry";
 import { LngLatBoundsLike } from "mapbox-gl";
@@ -27,7 +26,6 @@ import { isDemoNetwork } from "src/demo/demo-networks";
 import { useRecentFiles } from "src/hooks/use-recent-files";
 import { type Projection, createProjectionMapper } from "src/lib/projections";
 import { transformCoordinates } from "src/hydraulic-model/mutations/transform-coordinates";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useProjectInitialization } from "src/hooks/persistence/use-project-initialization";
 
 export const inpExtension = ".inp";
@@ -37,13 +35,10 @@ export const useImportInp = () => {
   const setDialogState = useSetAtom(dialogAtom);
   const map = useContext(MapContext);
   const setFileInfo = useSetAtom(fileInfoAtom);
-  const rep = usePersistence();
-  const transactImportDeprecated = rep.useTransactImportDeprecated();
   const userTracking = useUserTracking();
   const isWaterAgeOn = useFeatureFlag("FLAG_WATER_AGE");
   const isWaterTraceOn = useFeatureFlag("FLAG_WATER_TRACE");
   const isWaterChemicalOn = useFeatureFlag("FLAG_WATER_CHEMICAL");
-  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
   const { initializeProject } = useProjectInitialization();
   const { addRecent } = useRecentFiles();
 
@@ -63,24 +58,13 @@ export const useImportInp = () => {
         isMadeByApp,
       } = result;
 
-      if (isStateRefactorOn) {
-        await initializeProject({
-          hydraulicModel,
-          factories,
-          projectSettings,
-          simulationSettings,
-          autoElevations: options?.autoElevations,
-        });
-      } else {
-        transactImportDeprecated(
-          hydraulicModel,
-          factories,
-          projectSettings,
-          file.name,
-          simulationSettings,
-          options,
-        );
-      }
+      await initializeProject({
+        hydraulicModel,
+        factories,
+        projectSettings,
+        simulationSettings,
+        autoElevations: options?.autoElevations,
+      });
 
       const features: FeatureCollection = {
         type: "FeatureCollection",
@@ -129,15 +113,7 @@ export const useImportInp = () => {
 
       setDialogState({ type: "inpIssues", issues });
     },
-    [
-      addRecent,
-      initializeProject,
-      isStateRefactorOn,
-      map,
-      setDialogState,
-      setFileInfo,
-      transactImportDeprecated,
-    ],
+    [addRecent, initializeProject, map, setDialogState, setFileInfo],
   );
 
   const validateAndPrepare = useCallback(
@@ -184,7 +160,7 @@ export const useImportInp = () => {
           waterAge: isWaterAgeOn,
           waterTrace: isWaterTraceOn,
           waterChemical: isWaterChemicalOn,
-          populateAssetIndex: isStateRefactorOn,
+          populateAssetIndex: true,
         };
 
         const result = parseInp(content, parseOptions);
@@ -246,7 +222,6 @@ export const useImportInp = () => {
     },
     [
       completeImport,
-      isStateRefactorOn,
       isWaterAgeOn,
       isWaterTraceOn,
       isWaterChemicalOn,

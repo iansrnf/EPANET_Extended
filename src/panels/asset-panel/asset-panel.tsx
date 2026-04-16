@@ -36,18 +36,15 @@ import {
 import { UnitsSpec } from "src/lib/project-settings/quantities-spec";
 import { getMinorLossUnit } from "src/lib/project-settings";
 import { useTranslate } from "src/hooks/use-translate";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { usePersistence } from "src/lib/persistence";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
 import { useUserTracking } from "src/infra/user-tracking";
-import { stagingModelAtom } from "src/state/hydraulic-model";
 import {
   stagingModelDerivedAtom,
   simulationSettingsDerivedAtom,
 } from "src/state/derived-branch-state";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import { projectSettingsAtom } from "src/state/project-settings";
-import { simulationSettingsAtom } from "src/state/simulation-settings";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import {
   changeProperty,
   changeProperties,
@@ -133,16 +130,10 @@ export function AssetPanel({
   units: UnitsSpec;
   readonly?: boolean;
 }) {
-  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
-  const hydraulicModel = useAtomValue(
-    isStateRefactorOn ? stagingModelDerivedAtom : stagingModelAtom,
-  );
+  const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
   const { labelManager } = useAtomValue(modelFactoriesAtom);
   const projectSettings = useAtomValue(projectSettingsAtom);
-  const rep = usePersistence();
-  const transactDeprecated = rep.useTransactDeprecated();
-  const { transact: transactNew } = useModelTransaction();
-  const transact = isStateRefactorOn ? transactNew : transactDeprecated;
+  const { transact } = useModelTransaction();
   const userTracking = useUserTracking();
   const translate = useTranslate();
 
@@ -691,10 +682,7 @@ const PipeEditor = ({
   const translate = useTranslate();
   const translateUnit = useTranslateUnit();
   const isWaterChemicalOn = useFeatureFlag("FLAG_WATER_CHEMICAL");
-  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
-  const simulationSettings = useAtomValue(
-    isStateRefactorOn ? simulationSettingsDerivedAtom : simulationSettingsAtom,
-  );
+  const simulationSettings = useAtomValue(simulationSettingsDerivedAtom);
   const { footer } = useQuickGraph(pipe.id, "pipe");
   const {
     getComparison,
@@ -1189,10 +1177,7 @@ const TankEditor = ({
   const translateUnit = useTranslateUnit();
   const isWaterAgeOn = useFeatureFlag("FLAG_WATER_AGE");
   const isWaterChemicalOn = useFeatureFlag("FLAG_WATER_CHEMICAL");
-  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
-  const simulationSettings = useAtomValue(
-    isStateRefactorOn ? simulationSettingsDerivedAtom : simulationSettingsAtom,
-  );
+  const simulationSettings = useAtomValue(simulationSettingsDerivedAtom);
   const { footer } = useQuickGraph(tank.id, "tank");
   const { getComparison, getCurveComparison, isNew } = useAssetComparison(tank);
   const simulation = useSimulation();
@@ -2209,10 +2194,7 @@ const PumpEditor = ({
   units: UnitsSpec;
   readonly?: boolean;
 }) => {
-  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
-  const simulationSettings = useAtomValue(
-    isStateRefactorOn ? simulationSettingsDerivedAtom : simulationSettingsAtom,
-  );
+  const simulationSettings = useAtomValue(simulationSettingsDerivedAtom);
   const translate = useTranslate();
   const { footer } = useQuickGraph(pump.id, "pump");
   const {

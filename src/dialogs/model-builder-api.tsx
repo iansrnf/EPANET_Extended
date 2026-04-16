@@ -28,13 +28,13 @@ import {
   collectPropertyNames,
 } from "./model-builder-api-transform";
 import { projectSettingsAtom } from "src/state/project-settings";
-import { usePersistence } from "src/lib/persistence";
 import { initializeHydraulicModel } from "src/hydraulic-model";
 import { initializeModelFactories } from "src/hydraulic-model/factories";
 import { LabelManager } from "src/hydraulic-model/label-manager";
 import { ConsecutiveIdsGenerator } from "src/lib/id-generator";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import { fileInfoAtom } from "src/state/file-system";
+import { useProjectInitialization } from "src/hooks/persistence/use-project-initialization";
 import { convertTo } from "src/quantity";
 import { useToggleNetworkReview } from "src/commands/toggle-network-review";
 import { useElevations } from "src/map/elevations/use-elevations";
@@ -254,8 +254,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
   const map = useContext(MapContext);
   const currentProjectSettings = useAtomValue(projectSettingsAtom);
   const setFileInfo = useSetAtom(fileInfoAtom);
-  const rep = usePersistence();
-  const transactImportDeprecated = rep.useTransactImportDeprecated();
+  const { initializeProject } = useProjectInitialization();
   const toggleNetworkReview = useToggleNetworkReview();
   const assignedSources = useMemo(
     () => apiEntries.filter((entry) => entry.assignment !== null),
@@ -707,6 +706,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
         });
 
         hydraulicModel.assets.set(junction.id, junction);
+        hydraulicModel.assetIndex.addNode(junction.id);
         junctionIdByDraftId.set(junctionDraft.id, junction.id);
       }
 
@@ -734,6 +734,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
           });
 
           hydraulicModel.assets.set(pipe.id, pipe);
+          hydraulicModel.assetIndex.addLink(pipe.id);
           hydraulicModel.topology.addLink(pipe.id, startNodeId, endNodeId);
         }
       }
@@ -772,6 +773,9 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
         hydraulicModel.assets.set(suctionJunction.id, suctionJunction);
         hydraulicModel.assets.set(dischargeJunction.id, dischargeJunction);
         hydraulicModel.assets.set(pump.id, pump);
+        hydraulicModel.assetIndex.addNode(suctionJunction.id);
+        hydraulicModel.assetIndex.addNode(dischargeJunction.id);
+        hydraulicModel.assetIndex.addLink(pump.id);
         hydraulicModel.topology.addLink(
           pump.id,
           suctionJunction.id,
@@ -779,10 +783,10 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
         );
       }
 
-      transactImportDeprecated(
+      await initializeProject({
         hydraulicModel,
         factories,
-        {
+        projectSettings: {
           ...currentProjectSettings,
           units: spec.units,
           defaults: spec.defaults,
@@ -792,14 +796,9 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
             defaultDecimals: 3,
           },
         },
-        assignedSources.length === 1
-          ? assignedSources[0].source.name
-          : `GIS API import (${assignedSources.length} sources)`,
-        defaultSimulationSettings,
-        {
-          autoElevations: currentProjectSettings.projection.type !== "xy-grid",
-        },
-      );
+        simulationSettings: defaultSimulationSettings,
+        autoElevations: currentProjectSettings.projection.type !== "xy-grid",
+      });
 
       const importedFeatures: FeatureCollection = {
         type: "FeatureCollection",

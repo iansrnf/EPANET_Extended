@@ -16,12 +16,10 @@ import mapboxgl /*, { LngLatBoundsLike } */ from "mapbox-gl";
 import { dataAtom, Data } from "src/state/data";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { ephemeralStateAtom, EphemeralEditingState } from "src/state/drawing";
-import { stagingModelAtom } from "src/state/hydraulic-model";
 import {
   stagingModelDerivedAtom,
   selectedFeaturesDerivedAtom,
 } from "src/state/derived-branch-state";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import {
   cursorStyleAtom,
   satelliteModeOnAtom,
@@ -29,7 +27,6 @@ import {
   mapViewportAtom,
 } from "src/state/map";
 import { modeAtom, Mode } from "src/state/mode";
-import { selectedFeaturesAtom } from "src/state/selection";
 import { MapEngine } from "./map-engine";
 import { EmptyIndex } from "src/lib/generate-flatbush-instance";
 import * as CM from "@radix-ui/react-context-menu";
@@ -107,7 +104,6 @@ export const MapCanvas = memo(function MapCanvas({
 }: {
   setMap: (arg0: MapEngine | null) => void;
 }) {
-  const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
   const rep = usePersistence();
   const setMapViewport = useSetAtom(mapViewportAtom);
   const readViewport = useAtomCallback(
@@ -122,9 +118,7 @@ export const MapCanvas = memo(function MapCanvas({
   if (isDebugAppStateOn) exposeAppStateInWindow(data, ephemeralState);
 
   const { folderMap } = data;
-  const hydraulicModel = useAtomValue(
-    isStateRefactorOn ? stagingModelDerivedAtom : stagingModelAtom,
-  );
+  const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
   // State
   const [flatbushInstance, setFlatbushInstance] =
     useState<FlatbushLike>(EmptyIndex);
@@ -341,9 +335,7 @@ export const MapCanvas = memo(function MapCanvas({
   const onContextMenu = useAtomCallback(
     useCallback(
       (get, _set, event: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
-        const { assets } = get(
-          isStateRefactorOn ? stagingModelDerivedAtom : stagingModelAtom,
-        );
+        const { assets } = get(stagingModelDerivedAtom);
         const mapDivBox = mapDivRef.current?.getBoundingClientRect();
         const map = mapRef.current;
         if (mapDivBox && map) {
@@ -361,11 +353,7 @@ export const MapCanvas = memo(function MapCanvas({
             ])
             .toArray() as Pos2;
 
-          const selectedFeatures = get(
-            isStateRefactorOn
-              ? selectedFeaturesDerivedAtom
-              : selectedFeaturesAtom,
-          );
+          const selectedFeatures = get(selectedFeaturesDerivedAtom);
 
           setContextInfo({
             features: wrappedFeaturesFromMapFeatures(featureUnderMouse, assets),
@@ -374,7 +362,7 @@ export const MapCanvas = memo(function MapCanvas({
           });
         }
       },
-      [mapDivRef, isStateRefactorOn],
+      [mapDivRef],
     ),
   );
 

@@ -18,8 +18,10 @@ import { Resizer, useWindowResizeSplits } from "src/components/resizer";
 import { BottomPanel, LeftSidePanel, SidePanel } from "src/panels";
 import { MapContext } from "src/map";
 import Notifications from "src/components/notifications";
-import { atom, useAtom, type WritableAtom } from "jotai";
+import { atom, useAtom } from "jotai";
+import type { WritableAtom } from "jotai";
 import { dialogAtom } from "src/state/dialog";
+import type { DialogState } from "src/state/dialog";
 import { defaultSplits, splitsAtom } from "src/state/layout";
 import clsx from "clsx";
 import {
@@ -60,8 +62,6 @@ interface Transform {
   x: number;
   y: number;
 }
-
-type AnyHydratableAtom = WritableAtom<any, any[], any>;
 
 const persistentTransformAtom = atom<Transform>({
   x: 5,
@@ -127,18 +127,13 @@ export function EpanetApp() {
     persistentTransformAtom,
   );
 
-  useHydrateAtoms(
-    new Map<AnyHydratableAtom, unknown>([
-      [
-        dialogAtom as unknown as AnyHydratableAtom,
-        dialogFromUrl() ?? { type: "welcome" },
-      ],
-      [
-        splitsAtom as unknown as AnyHydratableAtom,
-        { ...defaultSplits, rightOpen: isMdOrLarger },
-      ],
-    ]),
-  );
+  useHydrateAtoms([
+    [
+      dialogAtom as WritableAtom<DialogState, [DialogState], void>,
+      (dialogFromUrl() ?? { type: "welcome" }) as DialogState,
+    ],
+    [splitsAtom, { ...defaultSplits, rightOpen: isMdOrLarger }],
+  ] as const);
 
   if (!isReady) {
     return <AppLoader progress={progress} />;

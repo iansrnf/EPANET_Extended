@@ -61,6 +61,32 @@ const customerPointsSymbologyPreferenceAtom =
     nullSymbologySpec.customerPoints,
   );
 
+/**
+ * Write-only atom: clears the active node/link symbology when its color rule
+ * references the given property, and removes the entry from the saved
+ * symbologies map. Useful when a property becomes unavailable after a
+ * simulation.
+ */
+export const clearSymbologyForPropertyAtom = atom(
+  null,
+  (_get, set, property: SupportedProperty) => {
+    set(nodeSymbologyAtom, (prev) => {
+      if (prev.colorRule?.property !== property) return prev;
+      return { ...nullSymbologySpec.node, defaults: prev.defaults };
+    });
+    set(linkSymbologyAtom, (prev) => {
+      if (prev.colorRule?.property !== property) return prev;
+      return { ...nullSymbologySpec.link, defaults: prev.defaults };
+    });
+    set(savedSymbologiesAtom, (prev) => {
+      if (!prev.has(property)) return prev;
+      const next = new Map(prev);
+      next.delete(property);
+      return next;
+    });
+  },
+);
+
 export const symbologyAtom = atom((get) => {
   const node = get(nodeSymbologyAtom);
   const link = get(linkSymbologyAtom);

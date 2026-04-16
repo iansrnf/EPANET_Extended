@@ -42,9 +42,21 @@ export function useTimeSeries<T extends QuickGraphAssetType>({
   });
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const isInScenario = worktree.activeSnapshotId !== worktree.mainId;
-  const mainSnapshot = worktree.snapshots.get(worktree.mainId);
+  const mainSnapshotId = worktree.mainId;
+  const isInScenario = worktree.activeSnapshotId !== mainSnapshotId;
+  const mainSnapshot = worktree.snapshots.get(mainSnapshotId);
   const mainSimulation = mainSnapshot?.simulation ?? null;
+  const mainStatus = mainSimulation?.status;
+  const mainMetadata =
+    mainSimulation &&
+    (mainSimulation.status === "success" || mainSimulation.status === "warning")
+      ? mainSimulation.metadata
+      : undefined;
+  const mainSimulationIds =
+    mainSimulation &&
+    (mainSimulation.status === "success" || mainSimulation.status === "warning")
+      ? mainSimulation.simulationIds
+      : undefined;
 
   const status = simulation.status;
   const metadata =
@@ -81,7 +93,6 @@ export function useTimeSeries<T extends QuickGraphAssetType>({
       setIsLoading(true);
 
       try {
-        const appId = getAppId();
         const epsReader = await getEpsResultsReader();
         if (!epsReader) return;
 
@@ -99,19 +110,14 @@ export function useTimeSeries<T extends QuickGraphAssetType>({
 
         if (
           isInScenario &&
-          mainSimulation &&
-          (mainSimulation.status === "success" ||
-            mainSimulation.status === "warning") &&
-          mainSimulation.metadata &&
-          mainSimulation.simulationIds
+          (mainStatus === "success" || mainStatus === "warning") &&
+          mainMetadata &&
+          mainSimulationIds
         ) {
           try {
-            const mainStorage = new OPFSStorage(appId, "main");
+            const mainStorage = new OPFSStorage(getAppId(), mainSnapshotId);
             const mainReader = new EPSResultsReader(mainStorage);
-            await mainReader.initialize(
-              mainSimulation.metadata,
-              mainSimulation.simulationIds,
-            );
+            await mainReader.initialize(mainMetadata, mainSimulationIds);
 
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const mainResult = await mainReader.getTimeSeries(
@@ -157,7 +163,10 @@ export function useTimeSeries<T extends QuickGraphAssetType>({
     simulationIds,
     getEpsResultsReader,
     isInScenario,
-    mainSimulation,
+    mainStatus,
+    mainMetadata,
+    mainSimulationIds,
+    mainSnapshotId,
   ]);
 
   return { data, mainData, isLoading };

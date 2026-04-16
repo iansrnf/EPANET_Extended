@@ -216,6 +216,7 @@
   "runningHydraulicAnalysis": "Running hydraulic simulation at",
   "runningQualityAnalysis": "Running water quality simulation at",
   "finalizingSimulation": "Finalizing simulation…",
+  "savingResults": "Saving simulation results...",
   "notAvailable": "Not available",
   "pressure": "Pressure",
   "pressures": "Pressures",

@@ -8,6 +8,7 @@ import {
   FileIcon,
   FileAddIcon,
   FileSpreadsheetIcon,
+  FolderOpenIcon,
   GlobeIcon,
   EarlyAccessIcon,
   NewFromExampleIcon,
@@ -22,6 +23,7 @@ import { useOpenRecentFile } from "src/commands/open-recent-file";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
 import { useRecentFiles } from "src/hooks/use-recent-files";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import {
   Button,
   DDContent,
@@ -41,6 +43,7 @@ export const CreateNewDropdown = () => {
   const openModelBuilderApi = useOpenModelBuilderApi();
   const userTracking = useUserTracking();
   const translate = useTranslate();
+  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
 
   return (
     <Tooltip.Root delayDuration={200}>
@@ -86,6 +89,25 @@ export const CreateNewDropdown = () => {
                 {translate("startFromExample")}
               </StyledItem>
 
+              {isOurFileOn && <DDSeparator />}
+
+              {isOurFileOn && (
+                <StyledItem
+                  onSelect={() => {
+                    userTracking.capture({
+                      name: "openInp.started",
+                      source: "toolbar",
+                    });
+                    void openInpFromFs({ source: "toolbar" });
+                  }}
+                >
+                  <FolderOpenIcon />
+                  {translate("openProject")}
+                </StyledItem>
+              )}
+
+              {isOurFileOn && <DDSeparator />}
+
               <StyledItem
                 onSelect={() => {
                   userTracking.capture({
@@ -96,7 +118,7 @@ export const CreateNewDropdown = () => {
                 }}
               >
                 <FileSpreadsheetIcon />
-                {translate("openINP")}
+                {isOurFileOn ? translate("importINP") : translate("openINP")}
               </StyledItem>
 
               <StyledItem
@@ -119,20 +141,20 @@ export const CreateNewDropdown = () => {
                 <EarlyAccessIcon size="sm" />
               </StyledItem>
 
-              <RecentFilesMenu />
+              <RecentFilesMenu isOurFileOn={isOurFileOn} />
             </DDContent>
           </DD.Portal>
         </DD.Root>
       </div>
       <TContent side="bottom">
         <StyledTooltipArrow />
-        {translate("createNew")}
+        {isOurFileOn ? translate("file") : translate("createNew")}
       </TContent>
     </Tooltip.Root>
   );
 };
 
-const RecentFilesMenu = () => {
+const RecentFilesMenu = ({ isOurFileOn }: { isOurFileOn: boolean }) => {
   const openRecentFile = useOpenRecentFile();
   const translate = useTranslate();
   const { recentFiles, isSupported: isRecentFilesSupported } = useRecentFiles();
@@ -147,7 +169,7 @@ const RecentFilesMenu = () => {
       <DD.Sub>
         <DDSubTriggerItem>
           <OutdatedSimulationIcon />
-          {translate("recentNetworks")}
+          {isOurFileOn ? translate("recent") : translate("recentNetworks")}
           <ChevronRightIcon size="sm" className="ml-auto" />
         </DDSubTriggerItem>
         <DD.Portal>

@@ -10,15 +10,12 @@ import { CustomerPointPanel } from "./customer-point-panel";
 import { PressureLoggerPanel } from "./pressure-logger-panel";
 import { Asset } from "src/hydraulic-model";
 import { useIsSnapshotLocked } from "src/hooks/use-is-snapshot-locked";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { AssetSearch } from "./asset-panel/asset-search";
 
 export default function FeatureEditor() {
   const selectedFeatures = useAtomValue(selectedFeaturesDerivedAtom);
   const selection = useAtomValue(selectionAtom);
   const { units } = useAtomValue(projectSettingsAtom);
   const isSnapshotLocked = useIsSnapshotLocked();
-  const isAssetSearchOn = useFeatureFlag("FLAG_ASSET_SEARCH");
 
   if (selection.type === "singleCustomerPoint") {
     return <CustomerPointPanel />;

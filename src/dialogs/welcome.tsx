@@ -6,6 +6,7 @@ import { useOpenModelBuilderApi } from "src/commands/open-model-builder-api";
 import { useOpenRecentFile } from "src/commands/open-recent-file";
 import { useTranslate } from "src/hooks/use-translate";
 import { useRecentFiles } from "src/hooks/use-recent-files";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useUserTracking } from "src/infra/user-tracking";
 import { languageConfig } from "src/infra/i18n/locale";
 import { useLocale, LocaleProvider } from "src/hooks/use-locale";
@@ -27,6 +28,7 @@ import {
   CloseIcon,
   FileIcon,
   FileSpreadsheetIcon,
+  FolderOpenIcon,
   GlobeIcon,
   HelpIcon,
   EarlyAccessIcon,
@@ -46,6 +48,7 @@ export const WelcomeDialog = () => {
   const openModelBuilder = useOpenModelBuilder();
   const openModelBuilderApi = useOpenModelBuilderApi();
   const userTracking = useUserTracking();
+  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
 
   const currentLocale = useLocale();
   const currentLanguage = languageConfig.find(
@@ -88,9 +91,21 @@ export const WelcomeDialog = () => {
                 }}
                 style={{ width: "100%" }}
               >
-                <FileSpreadsheetIcon />
+                {isOurFileOn ? <FolderOpenIcon /> : <FileSpreadsheetIcon />}
                 {translate("openProject")}
               </Button>
+              {isOurFileOn && (
+                <Button
+                  variant="quiet"
+                  onClick={() => {
+                    void openInpFromFs({ source: "welcome" });
+                  }}
+                  style={{ width: "100%", marginTop: "0.5rem" }}
+                >
+                  <FileSpreadsheetIcon />
+                  {translate("importINP")}
+                </Button>
+              )}
               <div className="flex flex-col gap-2">
                 <Button
                   variant="quiet"

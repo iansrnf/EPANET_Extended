@@ -26,6 +26,7 @@ import {
   cursorStyleAtom,
   satelliteModeOnAtom,
   currentZoomAtom,
+  mapViewportAtom,
 } from "src/state/map";
 import { modeAtom, Mode } from "src/state/mode";
 import { selectedFeaturesAtom } from "src/state/selection";
@@ -38,7 +39,7 @@ import { useModeHandlers } from "./mode-handlers";
 import { wrappedFeaturesFromMapFeatures } from "src/lib/map-component-utils";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { usePersistence } from "src/lib/persistence";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useHotkeys } from "src/keyboard/hotkeys";
 import { useAtomCallback } from "jotai/utils";
 import { isDebugAppStateOn, isDebugOn } from "src/infra/debug-mode";
@@ -56,7 +57,7 @@ import { satelliteLimitedZoom } from "src/commands/toggle-satellite";
 import { useTranslate } from "src/hooks/use-translate";
 import { MapLoading } from "./map-loader";
 import { supportEmail } from "src/global-config";
-import { MapHandlers } from "./types";
+import { MapHandlers, MoveEvent } from "./types";
 import { PipeDrawingFloatingPanel } from "src/components/pipe-drawing-floating-panel";
 import { useIsSnapshotLocked } from "src/hooks/use-is-snapshot-locked";
 mapboxgl.accessToken = env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -108,6 +109,10 @@ export const MapCanvas = memo(function MapCanvas({
 }) {
   const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
   const rep = usePersistence();
+  const setMapViewport = useSetAtom(mapViewportAtom);
+  const readViewport = useAtomCallback(
+    useCallback((get) => get(mapViewportAtom), []),
+  );
 
   const data = useAtomValue(dataAtom);
   const { units } = useAtomValue(projectSettingsAtom);
@@ -173,6 +178,7 @@ export const MapCanvas = memo(function MapCanvas({
         element: mapDivRef.current,
         handlers: mapHandlers as MutableRefObject<MapHandlers>,
         onControlClick,
+        initialViewport: readViewport(),
       });
       setMap(mapRef.current);
     } catch (error) {
@@ -190,7 +196,7 @@ export const MapCanvas = memo(function MapCanvas({
       }
       mapRef.current = null;
     };
-  }, [mapRef, mapDivRef, setMap, onControlClick]);
+  }, [mapRef, mapDivRef, setMap, onControlClick, readViewport]);
 
   if (isDebugOn) (window as any).mapEngine = mapRef.current;
 
@@ -269,10 +275,15 @@ export const MapCanvas = memo(function MapCanvas({
 
       HANDLERS[mode.mode].double(e);
     },
-    onMoveEnd(e: mapboxgl.MapboxEvent & mapboxgl.EventData) {
+    onMoveEnd(e: MoveEvent) {
       debug(e, mode.mode, selection, dragTargetRef, "onMouseMoveEnd");
+      const center = e.target.getCenter();
+      setMapViewport({
+        center: [center.lng, center.lat],
+        zoom: e.target.getZoom(),
+      });
     },
-    onMove: throttle((e: mapboxgl.MapboxEvent & mapboxgl.EventData) => {
+    onMove: throttle((e: MoveEvent) => {
       debug(e, mode.mode, selection, dragTargetRef, "onMove");
       const center = e.target.getCenter().toArray();
       const bounds = e.target.getBounds().toArray();

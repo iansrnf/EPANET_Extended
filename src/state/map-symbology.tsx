@@ -219,6 +219,7 @@ export const useSymbologyState = () => {
       setNodesActive({
         ...nullSymbologySpec.node,
         defaults: nodeSymbology.defaults,
+        labelRule: nodeSymbology.labelRule,
       });
       return;
     }
@@ -233,6 +234,7 @@ export const useSymbologyState = () => {
     setNodesActive({
       ...(nextNodeSymbology as NodeSymbology),
       defaults: nodeSymbology.defaults,
+      labelRule: nodeSymbology.labelRule,
     });
   };
 
@@ -244,6 +246,7 @@ export const useSymbologyState = () => {
       setLinksActive({
         ...nullSymbologySpec.link,
         defaults: linkSymbology.defaults,
+        labelRule: linkSymbology.labelRule,
       });
       return;
     }
@@ -258,6 +261,7 @@ export const useSymbologyState = () => {
     setLinksActive({
       ...(nextLinkSymbology as LinkSymbology),
       defaults: linkSymbology.defaults,
+      labelRule: linkSymbology.labelRule,
     });
   };
 

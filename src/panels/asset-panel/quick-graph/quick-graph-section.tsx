@@ -4,6 +4,7 @@ import { PinIcon, PinOffIcon } from "src/icons";
 import { Button } from "src/components/elements";
 import { Selector } from "src/components/form/selector";
 import { useTranslate } from "src/hooks/use-translate";
+import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { stagingModelAtom } from "src/state/hydraulic-model";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
@@ -128,8 +129,7 @@ const getPropertyDefinitions = (
 ) => {
   const baseOptions = QUICK_GRAPH_PROPERTIES[assetType];
   const hasCompletedSimulation =
-    "epsResultsReader" in simulation &&
-    !!simulation.epsResultsReader;
+    "epsResultsReader" in simulation && !!simulation.epsResultsReader;
   const qualityType = hasCompletedSimulation
     ? simulation.epsResultsReader?.qualityType
     : null;
@@ -168,6 +168,7 @@ const QuickGraphSection = ({
 }: QuickGraphSectionProps) => {
   const useAutoIndentation = useFeatureFlag("FLAG_UI_COLLAPSIBLE");
   const translate = useTranslate();
+  const translateUnit = useTranslateUnit();
   const [footerState, setFooterState] = useAtom(assetPanelFooterAtom);
   const [propertyByType, setPropertyByType] = useAtom(quickGraphPropertyAtom);
   const isStateRefactorOn = useFeatureFlag("FLAG_STATE_REFACTOR");
@@ -254,7 +255,9 @@ const QuickGraphSection = ({
       const name = formatCapitalize(
         simulationSettings.qualityChemicalName || translate("chemical"),
       );
-      const massUnit = simulationSettings.qualityMassUnit || "";
+      const massUnit = translateUnit(
+        simulationSettings.qualityMassUnit ?? null,
+      );
       mapped.push({
         value: "chemicalConcentration" as const,
         label: `${name} (${massUnit})`,
@@ -268,6 +271,7 @@ const QuickGraphSection = ({
     assetId,
     hydraulicModel,
     translate,
+    translateUnit,
     units,
     simulation,
     isWaterChemicalOn,

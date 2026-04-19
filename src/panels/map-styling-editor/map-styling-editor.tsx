@@ -129,6 +129,7 @@ const simulationProperties = [
 ];
 
 type SelectOption = SupportedProperty | "none";
+type LabelSelectOption = SupportedProperty | "none" | "label";
 
 const SymbologyEditor = ({
   geometryType,
@@ -159,6 +160,7 @@ const SymbologyEditor = ({
   const isWaterAgeOn = useFeatureFlag("FLAG_WATER_AGE");
   const isWaterTraceOn = useFeatureFlag("FLAG_WATER_TRACE");
   const isWaterChemicalOn = useFeatureFlag("FLAG_WATER_CHEMICAL");
+  const isMapLabelsOn = useFeatureFlag("FLAG_MAP_LABELS");
   const hasCompletedSimulation =
     "epsResultsReader" in simulation && !!simulation.epsResultsReader;
   const hasWaterAge =
@@ -183,7 +185,9 @@ const SymbologyEditor = ({
     const chemicalName = formatCapitalize(
       simulationSettings.qualityChemicalName || translate("chemical"),
     );
-    const chemicalUnit = simulationSettings.qualityMassUnit || "";
+    const chemicalUnit = translateUnit(
+      simulationSettings.qualityMassUnit ?? null,
+    );
     const options = (["none", ...visibleProperties] as SelectOption[]).map(
       (type) => {
         const unit =
@@ -226,6 +230,27 @@ const SymbologyEditor = ({
     simulationSettings.qualityMassUnit,
   ]);
 
+  const labelByOptions = useMemo(() => {
+    const noneOption = {
+      value: "none" as LabelSelectOption,
+      label: translate("none"),
+      disabled: false,
+    };
+    const labelOption = {
+      value: "label" as LabelSelectOption,
+      label: translate("label"),
+      disabled: false,
+    };
+    const propertyOptions = colorByOptions
+      .filter((o) => o.value !== "none")
+      .map((o) => ({
+        ...o,
+        value: o.value as LabelSelectOption,
+      }));
+
+    return [noneOption, labelOption, ...propertyOptions];
+  }, [colorByOptions, translate]);
+
   const userTracking = useUserTracking();
 
   const handleLabelRuleChange = (label: string | null) => {
@@ -247,6 +272,10 @@ const SymbologyEditor = ({
     } else {
       updateLinkSymbology({ ...symbology, labelRule: label });
     }
+  };
+
+  const handleLabelByChange = (value: LabelSelectOption) => {
+    handleLabelRuleChange(value === "none" ? null : value);
   };
 
   const title =
@@ -324,21 +353,25 @@ const SymbologyEditor = ({
               </div>
             </InlineField>
           )}
-          <InlineField
-            name={translate("labels")}
-            labelSize="sm"
-            layout="fixed-label"
-          >
-            <Checkbox
-              checked={!!symbology.labelRule}
-              aria-label={`${translate(geometryType)} ${translate("labels")}`}
-              onChange={() =>
-                handleLabelRuleChange(
-                  !!symbology.labelRule ? null : symbology.colorRule!.property,
-                )
-              }
-            />
-          </InlineField>
+          {!isMapLabelsOn && (
+            <InlineField
+              name={translate("labels")}
+              labelSize="sm"
+              layout="fixed-label"
+            >
+              <Checkbox
+                checked={!!symbology.labelRule}
+                aria-label={`${translate(geometryType)} ${translate("labels")}`}
+                onChange={() =>
+                  handleLabelRuleChange(
+                    !!symbology.labelRule
+                      ? null
+                      : symbology.colorRule!.property,
+                  )
+                }
+              />
+            </InlineField>
+          )}
         </>
       ) : (
         <InlineField
@@ -353,6 +386,20 @@ const SymbologyEditor = ({
               ariaLabel={`Default ${geometryType} color`}
             />
           </div>
+        </InlineField>
+      )}
+      {isMapLabelsOn && (
+        <InlineField
+          name={translate("labelBy")}
+          labelSize="sm"
+          layout="fixed-label"
+        >
+          <Selector
+            ariaLabel={`${translate(geometryType)} ${translate("labelBy")}`}
+            options={labelByOptions}
+            selected={(symbology.labelRule ?? "none") as LabelSelectOption}
+            onChange={handleLabelByChange}
+          />
         </InlineField>
       )}
     </MapStylingSectionWrapper>

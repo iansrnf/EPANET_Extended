@@ -7,7 +7,7 @@ export type SimulationPlaybackState = {
 
 export const simulationPlaybackAtom = atom<SimulationPlaybackState>({
   isPlaying: false,
-  playbackSpeedMs: 1000,
+  playbackSpeedMs: 2000,
 });
 
 export const stopPlaybackAtom = atom(null, (_get, set) => {

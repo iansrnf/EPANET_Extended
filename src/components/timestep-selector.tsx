@@ -23,7 +23,6 @@ import {
 } from "src/commands/change-timestep";
 import { simulationPlaybackAtom } from "src/state/simulation-playback";
 import { useTogglePlayback } from "src/commands/toggle-playback";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useTranslate } from "src/hooks/use-translate";
 
 export const TimestepSelector = () => {
@@ -64,7 +63,6 @@ export const TimestepSelectorUI = ({
   onChangeTimestep,
 }: TimestepSelectorUIProps) => {
   const translate = useTranslate();
-  const isAnimateSimulationOn = useFeatureFlag("FLAG_ANIMATE_SIMULATION");
   const canGoPrevious = currentTimestepIndex > 0;
   const canGoNext = currentTimestepIndex < timestepCount - 1;
 
@@ -73,7 +71,7 @@ export const TimestepSelectorUI = ({
 
   return (
     <div className="flex items-center gap-1 p-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-black rounded-sm shadow-sm">
-      {isAnimateSimulationOn && <PlayButton />}
+      <PlayButton />
       <Button
         variant="quiet/mode"
         className="h-8"
@@ -106,9 +104,9 @@ export const TimestepSelectorUI = ({
 type PlaybackSpeed = 2000 | 1000 | 500 | 250;
 
 const SPEED_OPTIONS: { label: string; value: PlaybackSpeed }[] = [
-  { label: "x1", value: 1000 },
-  { label: "x2", value: 500 },
-  { label: "x4", value: 250 },
+  { label: "x1", value: 2000 },
+  { label: "x2", value: 1000 },
+  { label: "x4", value: 500 },
 ];
 
 const LONG_PRESS_DURATION_MS = 500;
@@ -193,7 +191,7 @@ const PlayButton = () => {
               className="absolute bottom-0.5 right-1 flex items-end gap-px"
               aria-hidden="true"
             >
-              {currentSpeed.value !== 1000 && (
+              {currentSpeed.value !== 2000 && (
                 <span className="text-[9px] leading-none text-gray-500 font-medium">
                   {currentSpeed.label}
                 </span>

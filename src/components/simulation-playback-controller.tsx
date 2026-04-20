@@ -34,20 +34,18 @@ const simulationPlaybackEffectAtom = atomEffect((get, set) => {
   const getCount = () => getTimestepCount(get.peek);
 
   async function runLoop() {
-    if (getStep() >= getCount() - 1) {
-      set(setTimestepAtom, 0);
-      if (signal.aborted) return;
-    }
-
     while (!signal.aborted) {
-      if (getStep() >= getCount() - 1) break;
       await sleep(getSpeed());
       if (signal.aborted) break;
-      set(setTimestepAtom, getStep() + 1);
-    }
 
-    if (!signal.aborted && getStep() >= getCount() - 1) {
-      set(stopPlaybackAtom);
+      const timestepCount = getCount();
+      if (timestepCount <= 1) {
+        set(stopPlaybackAtom);
+        break;
+      }
+
+      const nextStep = getStep() >= timestepCount - 1 ? 0 : getStep() + 1;
+      set(setTimestepAtom, nextStep);
     }
   }
 

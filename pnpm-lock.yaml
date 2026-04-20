@@ -14598,7 +14598,7 @@ snapshots:
     dependencies:
       but-unzip: 0.1.10
       parsedbf: 2.0.0
-      proj4: 2.11.0
+      proj4: 2.20.8
 
   side-channel-list@1.0.0:
     dependencies:

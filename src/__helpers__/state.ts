@@ -125,6 +125,7 @@ export const setInitialState = (
           labelManager: new LabelManager(),
           momentLog,
           simulation: branchSimulation,
+          simulationSourceId: "main",
           simulationSettings: simulationSettings ?? defaultSimulationSettings,
         },
       ],

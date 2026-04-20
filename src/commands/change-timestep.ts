@@ -13,8 +13,7 @@ export type ChangeTimestepSource =
   | "shortcut"
   | "buttons"
   | "dropdown"
-  | "quick-graph"
-  | "autoplay";
+  | "quick-graph";
 
 export const useChangeTimestep = () => {
   const userTracking = useUserTracking();

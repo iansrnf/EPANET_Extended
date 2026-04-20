@@ -328,7 +328,7 @@ describe("build inp", () => {
     const hydraulicModel = HydraulicModelBuilder.with()
       .aJunction(IDS.J1, {
         elevation: 10,
-        initialWaterAge: 2.5,
+        initialQuality: 2.5,
       })
       .aTank(IDS.T1, {
         elevation: 20,
@@ -337,11 +337,11 @@ describe("build inp", () => {
         maxLevel: 10,
         diameter: 15,
         minVolume: 0,
-        initialWaterAge: 4,
+        initialQuality: 4,
       })
       .aReservoir(IDS.R1, {
         head: 100,
-        initialWaterAge: 1,
+        initialQuality: 1,
       })
       .build();
 
@@ -372,12 +372,12 @@ describe("build inp", () => {
       .aJunction(IDS.LOGGER_NODE, {
         coordinates: [10, 20],
         elevation: 125,
-        initialWaterAge: 7,
+        initialQuality: 7,
       })
       .aJunction(IDS.NETWORK_NODE, {
         coordinates: [30, 40],
         elevation: 130,
-        initialWaterAge: 3,
+        initialQuality: 3,
       })
       .aPipe(IDS.LOGGER_PIPE, {
         startNodeId: IDS.LOGGER_NODE,
@@ -1559,12 +1559,12 @@ describe("build inp", () => {
         .aJunction(IDS.J1, {
           elevation: 10,
           isActive: true,
-          initialWaterAge: 2,
+          initialQuality: 2,
         })
         .aJunction(IDS.J2, {
           elevation: 20,
           isActive: false,
-          initialWaterAge: 5,
+          initialQuality: 5,
         })
         .build();
 
@@ -2156,8 +2156,8 @@ THEN LINK {{1}} STATUS IS OPEN`,
       it("includes QUALITY section with initial water age when includeQuality is true", () => {
         const IDS = { J1: 1, J2: 2 };
         const hydraulicModel = HydraulicModelBuilder.with()
-          .aJunction(IDS.J1, { elevation: 10, initialWaterAge: 5 })
-          .aJunction(IDS.J2, { elevation: 20, initialWaterAge: 12 })
+          .aJunction(IDS.J1, { elevation: 10, initialQuality: 5 })
+          .aJunction(IDS.J2, { elevation: 20, initialQuality: 12 })
           .build();
 
         const inp = buildInp(hydraulicModel, {
@@ -2174,7 +2174,7 @@ THEN LINK {{1}} STATUS IS OPEN`,
       it("omits QUALITY section when includeQuality is false", () => {
         const IDS = { J1: 1 };
         const hydraulicModel = HydraulicModelBuilder.with()
-          .aJunction(IDS.J1, { elevation: 10, initialWaterAge: 5 })
+          .aJunction(IDS.J1, { elevation: 10, initialQuality: 5 })
           .build();
 
         const inp = buildInp(hydraulicModel, {
@@ -2204,8 +2204,8 @@ THEN LINK {{1}} STATUS IS OPEN`,
       it("includes initial water age for tanks and reservoirs", () => {
         const IDS = { T1: 1, R1: 2 };
         const hydraulicModel = HydraulicModelBuilder.with()
-          .aTank(IDS.T1, { initialWaterAge: 8 })
-          .aReservoir(IDS.R1, { head: 100, initialWaterAge: 3 })
+          .aTank(IDS.T1, { initialQuality: 8 })
+          .aReservoir(IDS.R1, { head: 100, initialQuality: 3 })
           .build();
 
         const inp = buildInp(hydraulicModel, {
@@ -2222,8 +2222,8 @@ THEN LINK {{1}} STATUS IS OPEN`,
       it("skips nodes with zero initial water age", () => {
         const IDS = { J1: 1, J2: 2 };
         const hydraulicModel = HydraulicModelBuilder.with()
-          .aJunction(IDS.J1, { elevation: 10, initialWaterAge: 0 })
-          .aJunction(IDS.J2, { elevation: 20, initialWaterAge: 7 })
+          .aJunction(IDS.J1, { elevation: 10, initialQuality: 0 })
+          .aJunction(IDS.J2, { elevation: 20, initialQuality: 7 })
           .build();
 
         const inp = buildInp(hydraulicModel, {

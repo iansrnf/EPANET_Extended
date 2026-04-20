@@ -440,7 +440,7 @@ const JunctionEditor = ({
   const hasModelAttributesChanges = [
     "elevation",
     "emitterCoefficient",
-    "initialWaterAge",
+    "initialQuality",
   ].some(
     (property) =>
       getComparison(property, junction.getProperty(property)).hasChanged,
@@ -996,7 +996,7 @@ const ReservoirEditor = ({
   const hasModelAttributesChanges =
     getComparison("elevation", reservoir.elevation).hasChanged ||
     getComparison("head", reservoir.head).hasChanged ||
-    getComparison("initialWaterAge", reservoir.initialWaterAge).hasChanged ||
+    getComparison("initialQuality", reservoir.initialQuality).hasChanged ||
     getPatternComparison(
       "headPatternId",
       reservoir.headPatternId,
@@ -1195,7 +1195,7 @@ const TankEditor = ({
       "diameter",
       "minVolume",
       "overflow",
-      "initialWaterAge",
+      "initialQuality",
     ].some((p) => getComparison(p, tank.getProperty(p)).hasChanged) ||
     getCurveComparison(
       "volumeCurveId",

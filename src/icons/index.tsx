@@ -58,7 +58,6 @@ import {
   PanelRight,
   Pause,
   Pencil,
-  Pause,
   PencilLine,
   Pin,
   PinOff,
@@ -182,8 +181,6 @@ export const UnavailableIcon = icon(CircleSlash2);
 export const MultipleAssetsIcon = icon(SquareStack);
 export const PanelLeftIcon = icon(PanelLeft);
 export const PanelRightIcon = icon(PanelRight);
-export const PauseIcon = icon(Pause);
-export const PlayIcon = icon(Play);
 export const MultipleValuesIcon = icon(SquareStack);
 export const JunctionIcon = icon(Circle);
 export const ReservoirIcon = icon(Triangle);

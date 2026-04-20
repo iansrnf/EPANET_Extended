@@ -10,7 +10,7 @@ import {
   stagingModelDerivedAtom,
   simulationDerivedAtom,
 } from "src/state/derived-branch-state";
-import { simulationStepAtom } from "src/state/simulation";
+import { type SimulationState, simulationStepAtom } from "src/state/simulation";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { worktreeAtom } from "src/state/scenarios";
 import {

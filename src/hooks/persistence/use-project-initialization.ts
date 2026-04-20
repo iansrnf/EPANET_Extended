@@ -123,14 +123,7 @@ const loadModel = (
     set(autoElevationsAtom, autoElevations);
   }
 
-  set(
-    worktreeAtom,
-    initializeWorktree({
-      momentLog,
-      version: hydraulicModel.version,
-      simulationSettings,
-    }),
-  );
+  set(worktreeAtom, initializeWorktree());
 
   set(
     modelCacheAtom,

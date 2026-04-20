@@ -55,7 +55,7 @@ import { AppLoader } from "./app-loader";
 import { PrivacyBanner } from "./privacy-banner";
 import { usePrivacySettings } from "src/hooks/use-privacy-settings";
 import { initStorage } from "src/infra/storage";
-import { useIsSnapshotLocked } from "src/hooks/use-is-snapshot-locked";
+import { useIsBranchLocked } from "src/hooks/use-is-branch-locked";
 import { useIsCustomerAllocationDisabled } from "src/hooks/use-is-customer-allocation-disabled";
 import { useLoggerTelemetry } from "src/hooks/use-logger-telemetry";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
@@ -153,7 +153,7 @@ export function EpanetApp() {
         <div className="h-24">
           <MenuBarPlay />
           <Toolbar
-            readonly={isSnapshotLocked}
+            readonly={isBranchLocked}
             customerAllocationDisabled={isCustomerAllocationDisabled}
           />
         </div>

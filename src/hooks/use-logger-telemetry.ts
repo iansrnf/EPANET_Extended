@@ -10,7 +10,7 @@ import {
   recordLoggerTelemetryReading,
 } from "src/state/logger-telemetry";
 
-const DEFAULT_LOGGER_STREAM_URL = "wss://logger-api.gscwd.app/stream";
+const DEFAULT_LOGGER_STREAM_URL = process.env.DEFAULT_LOGGER_STREAM_URL || "ws://172.20.110.84:3004/stream";
 const RECONNECT_DELAY_MS = 5000;
 
 type LoggerPayload = {

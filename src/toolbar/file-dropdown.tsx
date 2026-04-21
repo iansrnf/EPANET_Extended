@@ -18,6 +18,8 @@ import {
   SaveIcon,
   SaveAllIcon,
 } from "src/icons";
+import { useSetAtom } from "jotai";
+import { dialogAtom } from "src/state/dialog";
 import { useNewProject } from "src/commands/create-new-project";
 import { useOpenInpFromFs } from "src/commands/open-inp-from-fs";
 import { useOpenProject } from "src/commands/open-project";
@@ -51,6 +53,7 @@ export const FileDropdown = () => {
   const openModelBuilderApi = useOpenModelBuilderApi();
   const saveInp = useSaveInp();
   const saveProject = useSaveProject();
+  const setDialogState = useSetAtom(dialogAtom);
   const userTracking = useUserTracking();
   const translate = useTranslate();
   const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
@@ -176,7 +179,15 @@ export const FileDropdown = () => {
               {isOurFileOn && (
                 <StyledItem
                   onSelect={() => {
-                    void saveInp({ source: "toolbar", isSaveAs: true });
+                    setDialogState({
+                      type: "alertExportInp",
+                      onSaveProject: () => {
+                        void saveProject({ source: "toolbar" });
+                      },
+                      onExportAnyway: () => {
+                        void saveInp({ source: "toolbar", isSaveAs: true });
+                      },
+                    });
                   }}
                 >
                   <DownloadIcon />

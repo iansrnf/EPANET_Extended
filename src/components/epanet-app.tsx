@@ -116,6 +116,7 @@ export function EpanetApp() {
 
   const isSmOrLarger = useBreakpoint("sm");
   const isMdOrLarger = useBreakpoint("md");
+  const isBottomPanelOn = useFeatureFlag("FLAG_BOTTOM_PANEL");
 
   const layout: ResolvedLayout = isSmOrLarger ? "HORIZONTAL" : "VERTICAL";
 
@@ -165,24 +166,28 @@ export function EpanetApp() {
           )}
         >
           {layout === "HORIZONTAL" && <LeftSidePanel />}
-          <DndContext
-            sensors={sensor}
-            modifiers={[restrictToWindowEdges]}
-            onDragEnd={(end) => {
-              setPersistentTransform((transform) => {
-                return {
-                  x: transform.x + end.delta.x,
-                  y: transform.y + end.delta.y,
-                };
-              });
-            }}
-          >
-            <DraggableMap
-              persistentTransform={persistentTransform}
-              setMap={setMap}
-              layout={layout}
-            />
-          </DndContext>
+          <div className="flex-auto flex flex-col relative min-w-0">
+            <DndContext
+              sensors={sensor}
+              modifiers={[restrictToWindowEdges]}
+              onDragEnd={(end) => {
+                setPersistentTransform((transform) => {
+                  return {
+                    x: transform.x + end.delta.x,
+                    y: transform.y + end.delta.y,
+                  };
+                });
+              }}
+            >
+              <DraggableMap
+                persistentTransform={persistentTransform}
+                setMap={setMap}
+                layout={layout}
+              />
+            </DndContext>
+            {layout === "HORIZONTAL" && isBottomPanelOn && <BottomPanel />}
+            {layout === "VERTICAL" && <BottomPanel />}
+          </div>
           {layout === "HORIZONTAL" && (
             <>
               <SidePanel />
@@ -190,7 +195,6 @@ export function EpanetApp() {
               <Resizer side="right" isToggleAllowed={false} />
             </>
           )}
-          {layout === "VERTICAL" && <BottomPanel />}
         </div>
         <Drop />
         <Dialogs />

@@ -241,7 +241,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
     setTimeout(async () => {
       try {
         const resultsUpdateStartedAt =
-          hasNewResults || hasNewSymbologyRules ? performance.now() : null;
+          hasNewResults || hasNewSymbology ? performance.now() : null;
 
         if (hasNewStyles) {
           map.suspendOverlayStyleReactions();
@@ -251,12 +251,12 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             mapState.stylesConfig,
             translate,
           );
-          addEditingLayersToMap(map, mapState.stylesConfig);
-          await map.addIcons();
-          map.resumeOverlayStyleReactions();
           if (isCustomGisLayersOn) {
             addGisLayersToMap(map, mapState.stylesConfig, gisData);
           }
+          addEditingLayersToMap(map, mapState.stylesConfig);
+          await map.addIcons();
+          map.resumeOverlayStyleReactions();
           toggleAnalysisLayers(map, mapState.symbology);
         }
 

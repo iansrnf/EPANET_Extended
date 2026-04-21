@@ -32,9 +32,14 @@ export const createProjectionMapper = (
       };
     case "xy-grid":
       return {
-        projection: XY_GRID,
-        toWgs84: (p) => transformPoint(p, config.centroid),
-        toSource: (p) => inverseTransformPoint(p, config.centroid),
+        projection: {
+          ...XY_GRID,
+          centroid: config.centroid,
+          ...(config.scale !== undefined && { scale: config.scale }),
+        },
+        toWgs84: (p) => transformPoint(p, config.centroid, config.scale),
+        toSource: (p) =>
+          inverseTransformPoint(p, config.centroid, config.scale),
         backdropUnits: "NONE",
       };
     case "proj4": {
@@ -63,7 +68,11 @@ export const buildProjectionConfig = (
     case "wgs84":
       return { type: "wgs84" };
     case "xy-grid":
-      return { type: "xy-grid", centroid: computeCentroid(allPoints()) };
+      return {
+        type: "xy-grid",
+        centroid: computeCentroid(allPoints()),
+        ...(projection.scale !== undefined && { scale: projection.scale }),
+      };
     case "proj4":
       return {
         type: "proj4",

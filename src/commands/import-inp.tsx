@@ -28,6 +28,7 @@ import { type Projection, createProjectionMapper } from "src/lib/projections";
 import { transformCoordinates } from "src/hydraulic-model/mutations/transform-coordinates";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useProjectInitialization } from "src/hooks/persistence/use-project-initialization";
+import * as db from "src/db";
 
 export const inpExtension = ".inp";
 
@@ -40,6 +41,8 @@ export const useImportInp = () => {
   const isWaterAgeOn = useFeatureFlag("FLAG_WATER_AGE");
   const isWaterTraceOn = useFeatureFlag("FLAG_WATER_TRACE");
   const isWaterChemicalOn = useFeatureFlag("FLAG_WATER_CHEMICAL");
+  const isXyDetectOn = useFeatureFlag("FLAG_XY_DETECT");
+  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
   const { initializeProject } = useProjectInitialization();
   const { addRecent } = useRecentFiles();
 
@@ -59,6 +62,9 @@ export const useImportInp = () => {
         isMadeByApp,
       } = result;
 
+      if (isOurFileOn) {
+        await db.newProject();
+      }
       await initializeProject({
         hydraulicModel,
         factories,
@@ -114,7 +120,14 @@ export const useImportInp = () => {
 
       setDialogState({ type: "inpIssues", issues });
     },
-    [addRecent, initializeProject, map, setDialogState, setFileInfo],
+    [
+      addRecent,
+      initializeProject,
+      map,
+      setDialogState,
+      setFileInfo,
+      isOurFileOn,
+    ],
   );
 
   const validateAndPrepare = useCallback(
@@ -162,6 +175,7 @@ export const useImportInp = () => {
           waterTrace: isWaterTraceOn,
           waterChemical: isWaterChemicalOn,
           populateAssetIndex: true,
+          xyDetect: isXyDetectOn,
         };
 
         const result = parseInp(content, parseOptions);
@@ -171,6 +185,7 @@ export const useImportInp = () => {
           issues,
           stats,
           projectionStatus,
+          suggestedXyScale,
         } = result;
         userTracking.capture(
           buildCompleteEvent(hydraulicModel, projectSettings, issues, stats),
@@ -205,6 +220,7 @@ export const useImportInp = () => {
             onImportWithProjection,
             filename: file.name,
             flowUnits: chooseUnitSystem(projectSettings.units),
+            suggestedXyScale,
           });
           return;
         }
@@ -226,6 +242,7 @@ export const useImportInp = () => {
       isWaterAgeOn,
       isWaterTraceOn,
       isWaterChemicalOn,
+      isXyDetectOn,
       setDialogState,
       userTracking,
       validateAndPrepare,

@@ -7,6 +7,7 @@ export type XYGridProjection = {
   id: string;
   name: string;
   centroid: Position;
+  scale?: number;
 };
 
 export type Proj4Projection = {
@@ -42,7 +43,7 @@ export const projectionFromId = (id: string): Projection => {
 
 export type ProjectionConfig =
   | { type: "wgs84" }
-  | { type: "xy-grid"; centroid: Position }
+  | { type: "xy-grid"; centroid: Position; scale?: number }
   | {
       type: "proj4";
       id: string;

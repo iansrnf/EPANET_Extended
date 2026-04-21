@@ -20,9 +20,12 @@ import {
   defaultReportValues,
 } from "src/simulation/simulation-settings";
 import type { SimulationSettings } from "src/simulation/simulation-settings";
+import { isUsUnitSystem } from "src/simulation/build-inp";
 import { checksum } from "src/infra/checksum";
 import { InpData, InpStats } from "./inp-data";
 import { Position } from "geojson";
+import turfDistance from "@turf/distance";
+import { convertTo, type Unit } from "src/quantity";
 import {
   type Projection,
   WGS84,
@@ -42,6 +45,7 @@ export type ParseInpOptions = {
   waterTrace?: boolean;
   waterChemical?: boolean;
   populateAssetIndex?: boolean;
+  xyDetect?: boolean;
 };
 
 export type ParseInpResult = {
@@ -54,6 +58,7 @@ export type ParseInpResult = {
   issues: ParserIssues | null;
   stats: InpStats;
   projectionStatus?: "wgs84" | "unknown";
+  suggestedXyScale?: number;
 };
 
 export const parseInp = (
@@ -86,7 +91,12 @@ export const parseInp = (
         skipWgs84Validation: true,
       });
 
-    projectionStatus = detectProjectionStatus(hydraulicModel);
+    const detection = detectProjectionStatusWithLengths(
+      hydraulicModel,
+      inpData,
+      safeOptions,
+    );
+    projectionStatus = detection.status;
 
     return {
       isMadeByApp: header.isMadeByApp,
@@ -105,6 +115,7 @@ export const parseInp = (
       issues: issues.buildResult(),
       stats,
       projectionStatus,
+      suggestedXyScale: detection.suggestedXyScale,
     };
   }
 
@@ -289,6 +300,78 @@ const detectProjectionStatus = (
     }
   }
   return "wgs84";
+};
+
+const lengthRatioLowerBound = 0.1;
+const lengthRatioUpperBound = 10;
+
+type ProjectionDetection = {
+  status: "wgs84" | "unknown";
+  suggestedXyScale?: number;
+};
+
+const detectProjectionStatusWithLengths = (
+  hydraulicModel: HydraulicModel,
+  inpData: InpData,
+  options: ParseInpOptions,
+): ProjectionDetection => {
+  const rangeStatus = detectProjectionStatus(hydraulicModel);
+  if (!options.xyDetect) return { status: rangeStatus };
+
+  const declaredUnit: Unit = isUsUnitSystem(inpData.options.units) ? "ft" : "m";
+  const geodesicRatios: number[] = [];
+  const rawScales: number[] = [];
+
+  for (const pipe of inpData.pipes) {
+    if (!Number.isFinite(pipe.length) || pipe.length <= 0) continue;
+
+    const start = inpData.coordinates.get(pipe.startNodeDirtyId);
+    const end = inpData.coordinates.get(pipe.endNodeDirtyId);
+    if (!start || !end) continue;
+    if (start[0] === end[0] && start[1] === end[1]) continue;
+
+    const declaredMeters = convertTo(
+      { value: pipe.length, unit: declaredUnit },
+      "m",
+    );
+    if (!Number.isFinite(declaredMeters) || declaredMeters <= 0) continue;
+
+    const dx = end[0] - start[0];
+    const dy = end[1] - start[1];
+    const rawEuclidean = Math.sqrt(dx * dx + dy * dy);
+    if (rawEuclidean > 0) {
+      rawScales.push(declaredMeters / rawEuclidean);
+    }
+
+    if (rangeStatus === "wgs84") {
+      const geodesicMeters = turfDistance(start, end, { units: "meters" });
+      geodesicRatios.push(geodesicMeters / declaredMeters);
+    }
+  }
+
+  const suggestedXyScale = rawScales.length > 0 ? median(rawScales) : undefined;
+
+  if (rangeStatus === "unknown") {
+    return { status: "unknown", suggestedXyScale };
+  }
+
+  if (geodesicRatios.length === 0) {
+    return { status: "wgs84" };
+  }
+
+  const medianRatio = median(geodesicRatios);
+  if (
+    medianRatio < lengthRatioLowerBound ||
+    medianRatio > lengthRatioUpperBound
+  ) {
+    return { status: "unknown", suggestedXyScale };
+  }
+  return { status: "wgs84" };
+};
+
+const median = (values: number[]): number => {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
 };
 
 const buildSimulationSettings = (

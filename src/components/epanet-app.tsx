@@ -80,7 +80,7 @@ export function EpanetApp() {
   const { user, isSignedIn } = useAuth();
   const { enableAllTracking } = usePrivacySettings();
   const hasIdentifiedRef = useRef(false);
-  const isSnapshotLocked = useIsSnapshotLocked();
+  const isBranchLocked = useIsBranchLocked();
   const isCustomerAllocationDisabled = useIsCustomerAllocationDisabled();
   useLoggerTelemetry();
 

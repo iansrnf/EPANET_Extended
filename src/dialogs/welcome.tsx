@@ -3,6 +3,7 @@ import { useOpenInpFromFs } from "src/commands/open-inp-from-fs";
 import { useOpenInpFromUrl } from "src/commands/open-inp-from-url";
 import { useOpenModelBuilder } from "src/commands/open-model-builder";
 import { useOpenModelBuilderApi } from "src/commands/open-model-builder-api";
+import { useOpenProject } from "src/commands/open-project";
 import { useOpenRecentFile } from "src/commands/open-recent-file";
 import { useTranslate } from "src/hooks/use-translate";
 import { useRecentFiles } from "src/hooks/use-recent-files";
@@ -17,7 +18,6 @@ import {
   quickStartTutorialUrl,
   termsAndConditionsUrl,
 } from "src/global-config";
-import { Checkbox } from "../components/form/Checkbox";
 import {
   Button,
   Loading,
@@ -46,6 +46,7 @@ export const WelcomeDialog = () => {
   const translate = useTranslate();
   const createNew = useNewProject();
   const openInpFromFs = useOpenInpFromFs();
+  const openProject = useOpenProject();
   const openModelBuilder = useOpenModelBuilder();
   const openModelBuilderApi = useOpenModelBuilderApi();
   const userTracking = useUserTracking();
@@ -88,7 +89,11 @@ export const WelcomeDialog = () => {
               <Button
                 variant="quiet"
                 onClick={() => {
-                  void openInpFromFs({ source: "welcome" });
+                  if (isOurFileOn) {
+                    openProject({ source: "welcome" });
+                  } else {
+                    void openInpFromFs({ source: "welcome" });
+                  }
                 }}
                 style={{ width: "100%" }}
               >

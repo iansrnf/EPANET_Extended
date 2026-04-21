@@ -177,11 +177,11 @@ const QuickGraphSection = ({
   isLoading,
 }: QuickGraphSectionProps) => {
   const useAutoIndentation = useFeatureFlag("FLAG_UI_COLLAPSIBLE");
+  const isWaterChemicalOn = useFeatureFlag("FLAG_WATER_CHEMICAL");
   const translate = useTranslate();
   const translateUnit = useTranslateUnit();
   const [footerState, setFooterState] = useAtom(assetPanelFooterAtom);
   const [propertyByType, setPropertyByType] = useAtom(quickGraphPropertyAtom);
-  const isWaterChemicalOn = useFeatureFlag("FLAG_WATER_CHEMICAL");
   const simulation = useAtomValue(simulationDerivedAtom);
   const simulationStep = useAtomValue(simulationStepAtom);
   const worktree = useAtomValue(worktreeAtom);

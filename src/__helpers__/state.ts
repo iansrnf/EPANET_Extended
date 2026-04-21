@@ -11,8 +11,6 @@ import {
   SimulationFinished,
   SimulationState,
   initialSimulationState,
-  simulationAtom,
-  simulationResultsAtom,
   simulationStepAtom,
 } from "src/state/simulation";
 import { simulationSettingsAtom } from "src/state/simulation-settings";
@@ -82,7 +80,6 @@ export const setInitialState = (
     selection,
   });
   store.set(momentLogAtom, momentLog);
-  store.set(simulationAtom, simulation);
   store.set(simulationStepAtom, simulationStep);
   store.set(inpFileInfoAtom, fileInfo);
   store.set(layerConfigAtom, layerConfigs);
@@ -91,7 +88,6 @@ export const setInitialState = (
   store.set(localeAtom, locale);
   store.set(modeAtom, { mode });
   if (simulationResults) {
-    store.set(simulationResultsAtom, simulationResults);
     if (!simulationStepWasExplicit) {
       store.set(simulationStepAtom, 0);
     }

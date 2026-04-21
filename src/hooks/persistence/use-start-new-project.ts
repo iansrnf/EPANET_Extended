@@ -42,7 +42,7 @@ import {
 } from "src/state/performance";
 import { simulationPlaybackAtom } from "src/state/simulation-playback";
 
-type InitializeProjectInput = {
+export type ProjectLoadInput = {
   hydraulicModel: HydraulicModel;
   factories: ModelFactories;
   projectSettings: ProjectSettings;
@@ -50,9 +50,9 @@ type InitializeProjectInput = {
   autoElevations?: boolean;
 };
 
-const resetAppState = (
+export const resetAppState = (
   set: Setter,
-  simulationSettings: SimulationSettings,
+  simulationSettings?: SimulationSettings,
   autoElevations?: boolean,
 ) => {
   set(splitsAtom, defaultSplits);
@@ -67,7 +67,9 @@ const resetAppState = (
   set(selectionAtom, { type: "none" });
   set(pipeDrawingDefaultsAtom, {});
   set(autoElevationsAtom, autoElevations ?? true);
-  set(simulationSettingsAtom, simulationSettings);
+  if (simulationSettings) {
+    set(simulationSettingsAtom, simulationSettings);
+  }
   set(sourceRebuildDurationsAtom, []);
   set(resultsFetchDurationsAtom, []);
   set(simulationPlaybackAtom, (prev) => ({ ...prev, playingAtSpeedMs: 0 }));
@@ -96,24 +98,24 @@ const syncModelLabels = (
   });
 };
 
-const loadModel = async (
+export const loadModel = (
   set: Setter,
-  {
+  input: ProjectLoadInput,
+): ProjectSettings => {
+  const {
     hydraulicModel,
     factories,
     projectSettings,
     simulationSettings,
     autoElevations,
-  }: InitializeProjectInput,
-  isOurFileOn: boolean,
-) => {
+  } = input;
   const momentLog = new MomentLog();
   syncModelLabels(hydraulicModel, factories);
 
   set(stagingModelAtom, hydraulicModel);
   set(baseModelAtom, hydraulicModel);
   set(modelFactoriesAtom, factories);
-  const mergedProjectSettings = {
+  const mergedProjectSettings: ProjectSettings = {
     ...projectSettings,
     units: {
       ...projectSettings.units,
@@ -121,9 +123,6 @@ const loadModel = async (
     },
   };
   set(projectSettingsAtom, mergedProjectSettings);
-  if (isOurFileOn) {
-    await db.saveProjectSettings(mergedProjectSettings);
-  }
   set(momentLogAtom, momentLog);
   set(simulationSettingsAtom, simulationSettings);
   if (autoElevations !== undefined) {
@@ -150,25 +149,35 @@ const loadModel = async (
       ],
     ]),
   );
+
+  return mergedProjectSettings;
 };
 
-const clearSimulationStorage = async () => {
+export const clearSimulationStorage = async () => {
   const storage = new OPFSStorage(getAppId());
   await storage.clear();
 };
 
-export const useProjectInitialization = () => {
+export const useStartNewProject = () => {
   const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
-  const initializeProject = useAtomCallback(
+
+  const startNewProject = useAtomCallback(
     useCallback(
-      async (_get: Getter, set: Setter, input: InitializeProjectInput) => {
+      async (_get: Getter, set: Setter, input: ProjectLoadInput) => {
         await clearSimulationStorage();
         resetAppState(set, input.simulationSettings, input.autoElevations);
-        await loadModel(set, input, isOurFileOn);
+        if (isOurFileOn) {
+          await db.newProject();
+        }
+        const mergedProjectSettings = loadModel(set, input);
+        if (isOurFileOn) {
+          await db.saveProjectSettings(mergedProjectSettings);
+          await db.setAllAssets(input.hydraulicModel.assets);
+        }
       },
       [isOurFileOn],
     ),
   );
 
-  return { initializeProject };
+  return { startNewProject };
 };

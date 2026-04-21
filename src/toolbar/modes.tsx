@@ -5,8 +5,10 @@ import { useAtomValue } from "jotai";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useDrawingMode } from "src/commands/set-drawing-mode";
 import { useTranslate } from "src/hooks/use-translate";
+import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { SelectionTool } from "./selection-tool";
 import { TraceTool } from "./trace-tool";
+import { DrawingToolDropdown } from "./drawing-tool-dropdown";
 
 import {
   JunctionIcon,
@@ -20,14 +22,13 @@ import {
   PressureLoggerIcon,
 } from "src/icons";
 
-type DrawingModeOption = {
+export type DrawingModeOption = {
   mode: Mode;
   hotkey: string;
-  labelKey?: string;
   Icon: () => JSX.Element;
 };
 
-const MODE_OPTIONS: readonly DrawingModeOption[] = [
+export const DRAWING_MODE_OPTIONS: readonly DrawingModeOption[] = [
   {
     mode: Mode.DRAW_JUNCTION,
     hotkey: "2",
@@ -58,21 +59,17 @@ const MODE_OPTIONS: readonly DrawingModeOption[] = [
     hotkey: "7",
     Icon: () => <ValveIcon />,
   },
+  {
+    mode: Mode.DRAW_CUSTOMER_POINT,
+    hotkey: "8",
+    Icon: () => <CustomerPointIcon />,
+  },
+  {
+    mode: Mode.DRAW_PRESSURE_LOGGER,
+    hotkey: "9",
+    Icon: () => <PressureLoggerIcon />,
+  },
 ] as const;
-
-const CUSTOMER_POINT_MODE: DrawingModeOption = {
-  mode: Mode.DRAW_CUSTOMER_POINT,
-  hotkey: "8",
-  labelKey: "customerPoint",
-  Icon: () => <CustomerPointIcon />,
-};
-
-const PRESSURE_LOGGER_MODE: DrawingModeOption = {
-  mode: Mode.DRAW_PRESSURE_LOGGER,
-  hotkey: "9",
-  labelKey: "pressureLogger",
-  Icon: () => <PressureLoggerIcon />,
-};
 
 export default memo(function Modes({
   disabled = false,
@@ -83,11 +80,7 @@ export default memo(function Modes({
   const setDrawingMode = useDrawingMode();
   const userTracking = useUserTracking();
   const translate = useTranslate();
-  const drawingModes = [
-    ...MODE_OPTIONS,
-    CUSTOMER_POINT_MODE,
-    PRESSURE_LOGGER_MODE,
-  ];
+  const isLgOrLarger = useBreakpoint("lg");
 
   return (
     <div className="flex items-center justify-start" role="radiogroup">
@@ -110,31 +103,34 @@ export default memo(function Modes({
       </MenuAction>
       <SelectionTool />
       <TraceTool />
-      {drawingModes.map(({ mode, hotkey, labelKey, Icon }) => {
-        const modeInfo = MODE_INFO[mode];
-        const label = translate(labelKey ?? modeInfo.name);
+      {isLgOrLarger ? (
+        DRAWING_MODE_OPTIONS.map(({ mode, hotkey, Icon }) => {
+          const modeInfo = MODE_INFO[mode];
 
-        return (
-          <MenuAction
-            role="radio"
-            key={`${mode}-${hotkey}`}
-            selected={currentMode === mode}
-            readOnlyHotkey={hotkey}
-            label={label}
-            onClick={() => {
-              userTracking.capture({
-                name: "drawingMode.enabled",
-                source: "toolbar",
-                type: labelKey ?? modeInfo.name,
-              });
-              void setDrawingMode(mode);
-            }}
-            disabled={disabled}
-          >
-            <Icon />
-          </MenuAction>
-        );
-      })}
+          return (
+            <MenuAction
+              role="radio"
+              key={mode}
+              selected={currentMode === mode}
+              readOnlyHotkey={hotkey}
+              label={translate(modeInfo.name)}
+              onClick={() => {
+                userTracking.capture({
+                  name: "drawingMode.enabled",
+                  source: "toolbar",
+                  type: modeInfo.name,
+                });
+                void setDrawingMode(mode);
+              }}
+              disabled={disabled}
+            >
+              <Icon />
+            </MenuAction>
+          );
+        })
+      ) : (
+        <DrawingToolDropdown disabled={disabled} />
+      )}
     </div>
   );
 });

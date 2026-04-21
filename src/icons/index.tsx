@@ -21,6 +21,7 @@ import {
   CircleX,
   Copy,
   Crosshair,
+  Download,
   EllipsisVertical,
   Eye,
   EyeOff,
@@ -146,6 +147,7 @@ export const PauseIcon = icon(Pause);
 export const CloseIcon = icon(X);
 export const PlayIcon = icon(Play);
 export const UploadIcon = icon(Upload);
+export const DownloadIcon = icon(Download);
 export const EarlyAccessIcon = icon(Star);
 export const LabelsIcon = icon(Type);
 export const CheckIcon = icon(Check);

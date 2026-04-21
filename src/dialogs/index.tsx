@@ -140,6 +140,20 @@ const AlertExportInpDialog = dynamic<{
   },
 );
 
+const ProjectSavedInfoDialog = dynamic<{
+  onConfirm: () => void;
+  onCancel?: () => void;
+  onClose: () => void;
+}>(
+  () =>
+    import("src/dialogs/project-saved-info").then(
+      (r) => r.ProjectSavedInfoDialog,
+    ),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
 const AlertScenariosNotSavedDialog = dynamic<{
   onContinue: () => void;
   onClose: () => void;
@@ -574,6 +588,13 @@ export const Dialogs = memo(function Dialogs() {
       <AlertExportInpDialog
         onSaveProject={onSaveProject}
         onExportAnyway={onExportAnyway}
+        onClose={onClose}
+      />
+    ))
+    .with({ type: "projectSavedInfo" }, ({ onConfirm, onCancel }) => (
+      <ProjectSavedInfoDialog
+        onConfirm={onConfirm}
+        onCancel={onCancel}
         onClose={onClose}
       />
     ))

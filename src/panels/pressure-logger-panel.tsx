@@ -5,9 +5,12 @@ import { WarningIcon, ZoomToIcon } from "src/icons";
 import { BBox } from "src/types";
 import { useZoomTo } from "src/hooks/use-zoom-to";
 import { selectionAtom } from "src/state/selection";
-import { stagingModelAtom } from "src/state/hydraulic-model";
 import { projectSettingsAtom } from "src/state/project-settings";
-import { simulationAtom, simulationStepAtom } from "src/state/simulation";
+import { simulationStepAtom } from "src/state/simulation";
+import {
+  simulationDerivedAtom,
+  stagingModelDerivedAtom,
+} from "src/state/derived-branch-state";
 import { useTranslate } from "src/hooks/use-translate";
 import { ActionButton } from "src/components/action-button";
 import { SectionList } from "src/components/form/fields";
@@ -27,6 +30,7 @@ import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import {
   alignSimulationValuesToLoggerPoints,
+  buildPressureLoggerConnectionDebug,
   buildLoggerPressurePoints,
   getConnectedPressureLoggerNodes,
 } from "./pressure-logger-panel-utils";
@@ -34,10 +38,10 @@ import type { ConnectedPressureLoggerNode } from "./pressure-logger-panel-utils"
 
 export function PressureLoggerPanel() {
   const selection = useAtomValue(selectionAtom);
-  const hydraulicModel = useAtomValue(stagingModelAtom);
+  const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
   const projectSettings = useAtomValue(projectSettingsAtom);
   const loggerTelemetry = useAtomValue(loggerTelemetryAtom);
-  const simulation = useAtomValue(simulationAtom);
+  const simulation = useAtomValue(simulationDerivedAtom);
   const simulationStep = useAtomValue(simulationStepAtom);
   const currentTimestepIndex =
     simulation.status === "success" || simulation.status === "warning"
@@ -64,11 +68,16 @@ export function PressureLoggerPanel() {
     if (!pressureLogger) return null;
 
     const reading = loggerTelemetry.readingsByDeviceId[pressureLogger.label];
+    const pressureHistory =
+      loggerTelemetry.pressureHistoryByDeviceId[pressureLogger.label] ?? [];
+    const latestPressureSample = pressureHistory[pressureHistory.length - 1];
+    const currentPressurePsi = reading?.psi ?? latestPressureSample?.psi;
+
     return {
       status: reading?.status ?? translate("notAvailable"),
       currentPressure:
-        reading?.psi !== undefined
-          ? `${reading.psi.toFixed(2)} psi`
+        currentPressurePsi !== undefined
+          ? `${currentPressurePsi.toFixed(2)} psi`
           : translate("notAvailable"),
       lastUpdated: reading?.timestamp ?? translate("notAvailable"),
       tempOrStatus: reading?.tempOrStatus ?? translate("notAvailable"),
@@ -80,14 +89,27 @@ export function PressureLoggerPanel() {
           : translate("notAvailable"),
       raw: reading?.raw ?? translate("notAvailable"),
     };
-  }, [loggerTelemetry.readingsByDeviceId, pressureLogger, translate]);
+  }, [
+    loggerTelemetry.pressureHistoryByDeviceId,
+    loggerTelemetry.readingsByDeviceId,
+    pressureLogger,
+    translate,
+  ]);
 
   const livePressurePsi = useMemo(() => {
     if (!pressureLogger) return null;
     return (
-      loggerTelemetry.readingsByDeviceId[pressureLogger.label]?.psi ?? null
+      loggerTelemetry.readingsByDeviceId[pressureLogger.label]?.psi ??
+      loggerTelemetry.pressureHistoryByDeviceId[pressureLogger.label]?.[
+        loggerTelemetry.pressureHistoryByDeviceId[pressureLogger.label].length - 1
+      ]?.psi ??
+      null
     );
-  }, [loggerTelemetry.readingsByDeviceId, pressureLogger]);
+  }, [
+    loggerTelemetry.pressureHistoryByDeviceId,
+    loggerTelemetry.readingsByDeviceId,
+    pressureLogger,
+  ]);
 
   const pressureHistory = useMemo(() => {
     if (!pressureLogger) return [];
@@ -109,22 +131,35 @@ export function PressureLoggerPanel() {
     return getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger);
   }, [hydraulicModel, pressureLogger]);
 
-  const [selectedConnectedNodeIds, setSelectedConnectedNodeIds] = useState<
-    number[]
-  >([]);
-
-  useEffect(() => {
-    const validNodeIds = new Set(connectedNodes.map((node) => node.id));
-    setSelectedConnectedNodeIds((currentIds) =>
-      currentIds.filter((nodeId) => validNodeIds.has(nodeId)),
-    );
-  }, [connectedNodes]);
+  const connectionDebug = useMemo(() => {
+    if (!pressureLogger) return null;
+    return buildPressureLoggerConnectionDebug(hydraulicModel, pressureLogger);
+  }, [hydraulicModel, pressureLogger]);
 
   const { simulationSeriesByNodeId, isLoadingSimulationSeries } =
     useConnectedNodeSimulationSeries(
       connectedNodes,
       projectSettings.units.pressure,
     );
+
+  const [selectedConnectedNodeIds, setSelectedConnectedNodeIds] = useState<
+    number[]
+  >([]);
+
+  useEffect(() => {
+    const validNodeIds = new Set(connectedNodes.map((node) => node.id));
+    const connectedNodeIds = connectedNodes.map((node) => node.id);
+    setSelectedConnectedNodeIds((currentIds) => {
+      const currentValidIds = currentIds.filter((nodeId) =>
+        validNodeIds.has(nodeId),
+      );
+      const missingConnectedIds = connectedNodeIds.filter(
+        (nodeId) => !currentValidIds.includes(nodeId),
+      );
+
+      return [...currentValidIds, ...missingConnectedIds];
+    });
+  }, [connectedNodes]);
 
   const selectedSimulationSeries = useMemo<PressureGraphSeries[]>(() => {
     const alignedSeries = selectedConnectedNodeIds
@@ -206,6 +241,7 @@ export function PressureLoggerPanel() {
 
   return (
     <div className="flex flex-col flex-grow overflow-hidden">
+      Test dawdawd
       <div className="px-3 pt-4 pb-3 relative">
         <div className="flex items-center justify-between gap-2">
           <span className="text-sm font-semibold p-1 truncate">
@@ -332,6 +368,112 @@ export function PressureLoggerPanel() {
             </div>
           </div>
         </SectionWrapper>
+        {connectionDebug && (
+          <SectionWrapper title="Logger Debug" section="modelAttributes">
+            <details className="rounded border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+              <summary className="cursor-pointer font-medium text-gray-800">
+                Connection resolver
+              </summary>
+              <div className="mt-3 space-y-3">
+                <DebugBlock
+                  title="Logger"
+                  rows={[
+                    ["id", connectionDebug.logger.id],
+                    ["label", connectionDebug.logger.label],
+                    ["coordinates", formatDebugCoordinates(connectionDebug.logger.coordinates)],
+                    [
+                      "connection",
+                      connectionDebug.logger.connectionJunctionId ?? "none",
+                    ],
+                  ]}
+                />
+                <DebugBlock
+                  title="Resolved simulation nodes"
+                  rows={
+                    connectionDebug.connectedNodes.length > 0
+                      ? connectionDebug.connectedNodes.map((node) => [
+                          node.label,
+                          `${node.assetType} #${node.id}`,
+                        ])
+                      : [["nodes", "none"]]
+                  }
+                />
+                <DebugBlock
+                  title="Anchor nodes"
+                  rows={
+                    connectionDebug.anchors.length > 0
+                      ? connectionDebug.anchors.flatMap((anchor) => [
+                          [
+                            `${anchor.label || anchor.id}`,
+                            `${anchor.type} #${anchor.id}`,
+                          ],
+                          ["reasons", anchor.reasons.join(", ")],
+                          [
+                            "coordinates",
+                            formatDebugCoordinates(anchor.coordinates),
+                          ],
+                          ["visibility", String(anchor.visibility)],
+                          ["pressureLoggerId", String(anchor.pressureLoggerId)],
+                          ["links", anchor.connectedLinkIds.join(", ") || "none"],
+                        ])
+                      : [["anchors", "none"]]
+                  }
+                />
+                <DebugBlock
+                  title="Pipe endpoint matches"
+                  rows={
+                    connectionDebug.pipeMatches.length > 0
+                      ? connectionDebug.pipeMatches.flatMap((pipe) => [
+                          [
+                            pipe.label || `pipe ${pipe.id}`,
+                            `#${pipe.id}`,
+                          ],
+                          [
+                            "nodes",
+                            `${pipe.startNodeLabel} #${pipe.startNodeId} -> ${pipe.endNodeLabel} #${pipe.endNodeId}`,
+                          ],
+                          [
+                            "first vertex",
+                            `${formatDebugCoordinates(pipe.firstVertex)} near=${pipe.firstVertexNearLogger}`,
+                          ],
+                          [
+                            "last vertex",
+                            `${formatDebugCoordinates(pipe.lastVertex)} near=${pipe.lastVertexNearLogger}`,
+                          ],
+                          [
+                            "line distance",
+                            pipe.lineDistanceMeters === null
+                              ? "unknown"
+                              : `${localizeDecimal(pipe.lineDistanceMeters, {
+                                  decimals: 2,
+                                })} m near=${pipe.lineNearLogger}`,
+                          ],
+                        ])
+                      : [["pipes", "none"]]
+                  }
+                />
+                <DebugBlock
+                  title="Runtime gates"
+                  rows={[
+                    ["simulation status", simulation.status],
+                    ["timestep index", currentTimestepIndex ?? "none"],
+                    ["live pressure psi", livePressurePsi ?? "none"],
+                    ["logger history points", pressureHistoryPoints.length],
+                    ["connected nodes", connectedNodes.length],
+                    [
+                      "series loaded",
+                      Object.keys(simulationSeriesByNodeId).join(", ") || "none",
+                    ],
+                    [
+                      "comparisons",
+                      connectedSimulationComparisons.length,
+                    ],
+                  ]}
+                />
+              </div>
+            </details>
+          </SectionWrapper>
+        )}
         <SectionWrapper title="Live Status" section="modelAttributes">
           <TextRow
             name="status"
@@ -378,6 +520,36 @@ export function PressureLoggerPanel() {
   );
 }
 
+const DebugBlock = ({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: unknown[][];
+}) => {
+  return (
+    <div>
+      <div className="mb-1 font-medium text-gray-800">{title}</div>
+      <div className="space-y-1">
+        {rows.map(([name, value], index) => (
+          <div
+            key={`${title}-${name}-${index}`}
+            className="grid grid-cols-[92px_1fr] gap-2"
+          >
+            <span className="text-gray-500">{String(name)}</span>
+            <span className="break-all font-mono text-gray-800">
+              {String(value)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const formatDebugCoordinates = (coordinates: readonly number[]) =>
+  coordinates.map((coordinate) => localizeDecimal(coordinate, { decimals: 6 })).join(", ");
+
 const formatGraphElapsedTime = (value: number) => {
   const totalSeconds = Math.max(0, Math.round(value));
   const hours = Math.floor(totalSeconds / 3600)
@@ -409,7 +581,7 @@ const useConnectedNodeSimulationSeries = (
   connectedNodes: ConnectedPressureLoggerNode[],
   sourcePressureUnit: Unit,
 ) => {
-  const simulation = useAtomValue(simulationAtom);
+  const simulation = useAtomValue(simulationDerivedAtom);
   const [simulationSeriesByNodeId, setSimulationSeriesByNodeId] = useState<
     Record<number, ConnectedNodeTimeSeries>
   >({});

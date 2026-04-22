@@ -33,8 +33,8 @@ import { initializeModelFactories } from "src/hydraulic-model/factories";
 import { LabelManager } from "src/hydraulic-model/label-manager";
 import { ConsecutiveIdsGenerator } from "src/lib/id-generator";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
-import { fileInfoAtom } from "src/state/file-system";
-import { useProjectInitialization } from "src/hooks/persistence/use-project-initialization";
+import { inpFileInfoAtom } from "src/state/file-system";
+import { useStartNewProject } from "src/hooks/persistence/use-start-new-project";
 import { convertTo } from "src/quantity";
 import { useToggleNetworkReview } from "src/commands/toggle-network-review";
 import { useElevations } from "src/map/elevations/use-elevations";
@@ -253,8 +253,8 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
   const { fitToBbox, fitToNetwork, setHandle } = useMapPreview();
   const map = useContext(MapContext);
   const currentProjectSettings = useAtomValue(projectSettingsAtom);
-  const setFileInfo = useSetAtom(fileInfoAtom);
-  const { initializeProject } = useProjectInitialization();
+  const setFileInfo = useSetAtom(inpFileInfoAtom);
+  const { startNewProject } = useStartNewProject();
   const toggleNetworkReview = useToggleNetworkReview();
   const assignedSources = useMemo(
     () => apiEntries.filter((entry) => entry.assignment !== null),
@@ -783,7 +783,7 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
         );
       }
 
-      await initializeProject({
+      await startNewProject({
         hydraulicModel,
         factories,
         projectSettings: {
@@ -802,7 +802,9 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
 
       const importedFeatures: FeatureCollection = {
         type: "FeatureCollection",
-        features: [...hydraulicModel.assets.values()].map((asset) => asset.feature),
+        features: [...hydraulicModel.assets.values()].map(
+          (asset) => asset.feature,
+        ),
       };
       const nextExtent = getExtent(importedFeatures).extract();
       if (nextExtent) {

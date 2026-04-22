@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useAtomCallback } from "jotai/utils";
 import type { Getter, Setter } from "jotai";
-import * as db from "src/db";
+import * as db from "src/lib/db";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import type { HydraulicModel } from "src/hydraulic-model";
 import type { ProjectSettings } from "src/lib/project-settings";
@@ -58,6 +58,8 @@ const loadModel = async (
       hydraulicModel.customerPoints,
       hydraulicModel.demands.customerPoints,
     );
+    await db.setAllPatterns(hydraulicModel.patterns);
+    await db.setAllJunctionDemands(hydraulicModel.demands.junctions);
   }
   set(momentLogDerivedAtom, momentLog);
   if (autoElevations !== undefined) {

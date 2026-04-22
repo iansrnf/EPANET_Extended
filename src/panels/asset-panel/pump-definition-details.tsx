@@ -419,8 +419,8 @@ const PowerDefinition = ({
   readOnly: boolean;
 }) => {
   const handlePowerChange = useCallback(
-    (_name: string, newValue: number, _oldValue: number | null) => {
-      onChange([{ property: "power", value: newValue }]);
+    (_name: string, newValue: number | null, _oldValue: number | null) => {
+      onChange([{ property: "power", value: newValue ?? 0 }]);
     },
     [onChange],
   );

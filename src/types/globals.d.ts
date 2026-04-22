@@ -34,7 +34,7 @@ type StringId = string;
 
 type LayerScopedEvent = mapboxgl.MapMouseEvent & {
   features?: mapboxgl.MapboxGeoJSONFeature[];
-} & mapboxgl.EventData;
+};
 
 type BothHandler = (
   arg0: mapboxgl.MapMouseEvent | mapboxgl.MapTouchEvent,

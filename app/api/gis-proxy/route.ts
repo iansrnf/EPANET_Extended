@@ -8,20 +8,14 @@ export async function POST(request: NextRequest) {
     const urlValue = body?.url?.trim();
 
     if (!urlValue) {
-      return NextResponse.json(
-        { error: "Missing API URL." },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Missing API URL." }, { status: 400 });
     }
 
     let targetUrl: URL;
     try {
       targetUrl = new URL(urlValue);
     } catch {
-      return NextResponse.json(
-        { error: "Invalid API URL." },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Invalid API URL." }, { status: 400 });
     }
 
     if (!ALLOWED_PROTOCOLS.has(targetUrl.protocol)) {

@@ -8,7 +8,8 @@ import { Pipe } from "../asset-types/pipe";
 import { HydraulicModel } from "../hydraulic-model";
 
 const createAssetFactory = (hydraulicModel: HydraulicModel) =>
-  buildTestFactories({ labelManager: hydraulicModel.labelManager }).assetFactory;
+  buildTestFactories({ labelManager: hydraulicModel.labelManager })
+    .assetFactory;
 
 describe("splitPipe", () => {
   it("splits a pipe at specified coordinates", () => {

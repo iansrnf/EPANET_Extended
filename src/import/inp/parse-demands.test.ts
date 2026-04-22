@@ -765,5 +765,4 @@ describe("parse junctions demands", () => {
       expect(pattern2?.label).toBe("residential");
     });
   });
-
 });

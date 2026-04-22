@@ -132,9 +132,7 @@ export const InlineFieldLegacy = ({
       isNested &&
       useExtraMargin,
     "w-[120px] flex-shrink-0":
-      (layout === "fixed-label" || isFluid) &&
-      labelSize === "md" &&
-      !isNested,
+      (layout === "fixed-label" || isFluid) && labelSize === "md" && !isNested,
     "grow shrink": isFluid,
     "w-1/2": layout === "half-split",
     "flex-none": layout === "label-flex-none",
@@ -527,7 +525,7 @@ const InlineFieldWithNesting = ({
       ? { flexBasis: 150 }
       : layout === "fixed-label" && labelSize === "md" && hasNesting
         ? { flexBasis: 150 }
-      : undefined;
+        : undefined;
 
   const labelClasses = clsx("text-sm text-gray-500 min-w-0", {
     "grow shrink":

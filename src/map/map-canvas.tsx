@@ -79,7 +79,7 @@ const exposeAppStateInWindow = (
 const noop = () => null;
 const debug = isDebugOn
   ? (
-      e: mapboxgl.MapboxEvent<any>,
+      e: mapboxgl.MapboxEvent,
       mode: Mode,
       selection: Sel,
       dragTargetRef: MutableRefObject<DragTarget | null>,
@@ -279,13 +279,15 @@ export const MapCanvas = memo(function MapCanvas({
     onMove: throttle((e: MoveEvent) => {
       debug(e, mode.mode, selection, dragTargetRef, "onMove");
       const center = e.target.getCenter().toArray();
-      const bounds = e.target.getBounds().toArray();
+      const mapBounds = e.target.getBounds();
+      if (!mapBounds) return;
+      const bounds = mapBounds.toArray();
       return {
         center,
         bounds,
       };
     }, 300),
-    onZoom: (e: mapboxgl.MapBoxZoomEvent) => {
+    onZoom: (e: mapboxgl.MapboxEvent) => {
       const zoom = e.target.getZoom();
       setCurrentZoom(zoom);
     },

@@ -43,7 +43,8 @@ export const recordLoggerTelemetryReading = (
   reading: LoggerTelemetryReading,
 ): LoggerTelemetryState => {
   const existingReading = state.readingsByDeviceId[reading.deviceId];
-  const existingHistory = state.pressureHistoryByDeviceId[reading.deviceId] ?? [];
+  const existingHistory =
+    state.pressureHistoryByDeviceId[reading.deviceId] ?? [];
   const mergedReading = {
     ...existingReading,
     ...reading,

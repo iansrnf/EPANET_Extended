@@ -123,9 +123,9 @@ describe("parseLoggerTelemetryMessage", () => {
 
     for (let index = 0; index < MAX_LOGGER_HISTORY_POINTS + 5; index += 1) {
       state = recordLoggerTelemetryReading(state, {
-          deviceId: "L1",
-          psi: index + 1,
-          timestamp: `2026-03-17T00:${String(index).padStart(2, "0")}:00`,
+        deviceId: "L1",
+        psi: index + 1,
+        timestamp: `2026-03-17T00:${String(index).padStart(2, "0")}:00`,
       });
     }
 
@@ -140,9 +140,7 @@ describe("parseLoggerTelemetryMessage", () => {
     );
     expect(state.pressureHistoryByDeviceId.L1?.[0]?.psi).toBe(6);
     expect(
-      state.pressureHistoryByDeviceId.L1?.[
-        MAX_LOGGER_HISTORY_POINTS - 1
-      ]?.psi,
+      state.pressureHistoryByDeviceId.L1?.[MAX_LOGGER_HISTORY_POINTS - 1]?.psi,
     ).toBe(MAX_LOGGER_HISTORY_POINTS + 5);
   });
 

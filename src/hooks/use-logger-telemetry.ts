@@ -10,7 +10,8 @@ import {
   recordLoggerTelemetryReading,
 } from "src/state/logger-telemetry";
 
-const DEFAULT_LOGGER_STREAM_URL = process.env.DEFAULT_LOGGER_STREAM_URL || "ws://172.20.110.84:3004/stream";
+const DEFAULT_LOGGER_STREAM_URL =
+  process.env.DEFAULT_LOGGER_STREAM_URL || "ws://172.20.110.84:3004/stream";
 const RECONNECT_DELAY_MS = 5000;
 
 type LoggerPayload = {
@@ -164,8 +165,7 @@ export const parseLoggerTelemetryMessage = (
       maybePayload.gsm_pct === undefined || maybePayload.gsm_pct === null
         ? undefined
         : String(maybePayload.gsm_pct),
-    raw:
-      typeof maybePayload.raw === "string" ? maybePayload.raw : undefined,
+    raw: typeof maybePayload.raw === "string" ? maybePayload.raw : undefined,
   };
 };
 
@@ -223,7 +223,9 @@ export const useLoggerTelemetry = () => {
           const reading = parseLoggerTelemetryMessage(payload);
           if (!reading) return;
 
-          setLoggerTelemetry((prev) => recordLoggerTelemetryReading(prev, reading));
+          setLoggerTelemetry((prev) =>
+            recordLoggerTelemetryReading(prev, reading),
+          );
         } catch (error) {
           setLoggerTelemetry((prev) => ({
             ...prev,

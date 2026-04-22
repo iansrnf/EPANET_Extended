@@ -131,7 +131,9 @@ const getPressureLoggerAnchorMatches = (
   };
 
   if (pressureLogger.connection?.junctionId !== undefined) {
-    const node = hydraulicModel.assets.get(pressureLogger.connection.junctionId);
+    const node = hydraulicModel.assets.get(
+      pressureLogger.connection.junctionId,
+    );
     if (node?.isNode) {
       addAnchor(node as NodeAsset, "logger.connection.junctionId");
     }
@@ -390,7 +392,9 @@ export const alignSimulationValuesToLoggerPoints = (
     );
     return {
       x: loggerPoint.x,
-      y: simulationValues[simulationIndex] ?? simulationValues[lastSimulationIndex]!,
+      y:
+        simulationValues[simulationIndex] ??
+        simulationValues[lastSimulationIndex]!,
     };
   });
 };

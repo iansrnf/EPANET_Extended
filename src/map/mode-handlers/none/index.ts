@@ -116,7 +116,10 @@ export function useNoneHandlers({
           hasClickableElement = true;
           break;
         }
-        if (pickInfo.layer?.id === "pressure-loggers-layer" && pickInfo.object) {
+        if (
+          pickInfo.layer?.id === "pressure-loggers-layer" &&
+          pickInfo.object
+        ) {
           hasClickableElement = true;
           break;
         }

@@ -9,12 +9,7 @@ import { Button } from "src/components/elements";
 import { CollapsibleSection } from "src/components/form/fields";
 import { mapStylingPanelSectionsExpandedAtom } from "src/state/layout";
 import { MapPinnedIcon } from "src/icons";
-import {
-  type Projection,
-  type ProjectionConfig,
-  WGS84,
-  XY_GRID,
-} from "src/lib/projections/projection";
+import { type Projection } from "src/lib/projections/projection";
 import {
   inverseProjectGeoJson,
   createProjectionMapper,
@@ -27,14 +22,6 @@ import { MapContext } from "src/map";
 import { captureError } from "src/infra/error-tracking";
 import { hasScenariosAtom } from "src/state/scenarios";
 import { useTranslate } from "src/hooks/use-translate";
-
-const toProjection = (projection: ProjectionConfig): Projection => {
-  if (projection.type === "wgs84") return WGS84;
-  if (projection.type === "xy-grid") {
-    return { ...XY_GRID, centroid: projection.centroid };
-  }
-  return projection;
-};
 
 export const ProjectionSection = () => {
   const projectSettings = useAtomValue(projectSettingsAtom);

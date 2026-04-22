@@ -126,10 +126,7 @@ describe("fetchElevationFromSources", () => {
 
   it("falls back to next source when geotiff doesn't cover the point", async () => {
     mockFetchMapbox.mockResolvedValue(100);
-    const sources: ElevationSource[] = [
-      aTileServerSource(),
-      aGeotiffSource(),
-    ];
+    const sources: ElevationSource[] = [aTileServerSource(), aGeotiffSource()];
     const result = await fetchElevationFromSources(sources, -10, 55.5, "m");
     expect(result).toBe(100);
     expect(mockFetchMapbox).toHaveBeenCalled();

@@ -5,8 +5,9 @@ import { InlineError } from "src/components/inline-error";
 import type { B3Size } from "src/components/elements";
 import { Input, StyledLabelSpan } from "src/components/elements";
 
-export interface LabeledTextFieldProps
-  extends PropsWithoutRef<JSX.IntrinsicElements["input"]> {
+export interface LabeledTextFieldProps extends PropsWithoutRef<
+  JSX.IntrinsicElements["input"]
+> {
   name: string;
   label: string;
   type?: "text" | "password" | "email" | "number" | "url";

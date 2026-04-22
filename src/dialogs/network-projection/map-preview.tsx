@@ -157,6 +157,7 @@ export const MapPreview = ({
       }
       if (!onBoundsChangeRef.current) return;
       const b = map.getBounds();
+      if (!b) return;
       onBoundsChangeRef.current([
         b.getWest(),
         b.getSouth(),

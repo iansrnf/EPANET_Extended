@@ -1,6 +1,11 @@
 import { useState } from "react";
 import * as DD from "@radix-ui/react-dropdown-menu";
-import { B3Variant, Button, DDContent, StyledItem } from "src/components/elements";
+import {
+  B3Variant,
+  Button,
+  DDContent,
+  StyledItem,
+} from "src/components/elements";
 import { MoreActionsIcon } from "src/icons";
 
 export type ItemAction = {

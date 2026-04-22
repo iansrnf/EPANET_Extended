@@ -129,6 +129,7 @@ const DELTA_FEATURES_POINT_LABEL_LAYER_NAME = "delta-features-point-label";
 const DELTA_FEATURES_LINE_LABEL_LAYER_NAME = "delta-features-line-label";
 const DELTA_FEATURES_LINE_LAYER_NAME = "delta-features-line";
 const DELTA_FEATURES_POINT_LAYER_NAME = "delta-features-symbol";
+type SymbolLayout = NonNullable<mapboxgl.SymbolLayout>;
 
 const CONTENT_LAYER_FILTERS: {
   [key: string]: mapboxgl.Layer["filter"];
@@ -163,7 +164,7 @@ function LABEL_PAINT(
 
 function LABEL_LAYOUT(
   previewProperty: PreviewProperty,
-  placement: mapboxgl.SymbolLayout["symbol-placement"],
+  placement: SymbolLayout["symbol-placement"],
 ): mapboxgl.SymbolLayout {
   const paint: mapboxgl.SymbolLayout = {
     "text-field": ["get", previewProperty],

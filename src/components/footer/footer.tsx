@@ -13,7 +13,11 @@ import {
   stagingModelDerivedAtom,
 } from "src/state/derived-branch-state";
 import * as Popover from "@radix-ui/react-popover";
-import { Button, StyledPopoverArrow, StyledPopoverContent } from "src/components/elements";
+import {
+  Button,
+  StyledPopoverArrow,
+  StyledPopoverContent,
+} from "src/components/elements";
 import { HydraulicModel } from "src/hydraulic-model";
 import { ScenarioSwitcher } from "./scenario-switcher";
 

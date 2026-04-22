@@ -25,7 +25,9 @@ describe("getConnectedPressureLoggerNodes", () => {
 
     hydraulicModel.pressureLoggers.set(pressureLogger.id, pressureLogger);
 
-    expect(getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger)).toEqual([
+    expect(
+      getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger),
+    ).toEqual([
       { id: 1, label: "J1", assetType: "junction" },
       { id: 3, label: "T1", assetType: "tank" },
     ]);
@@ -43,9 +45,9 @@ describe("getConnectedPressureLoggerNodes", () => {
 
     hydraulicModel.pressureLoggers.set(pressureLogger.id, pressureLogger);
 
-    expect(getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger)).toEqual([
-      { id: 1, label: "J103", assetType: "junction" },
-    ]);
+    expect(
+      getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger),
+    ).toEqual([{ id: 1, label: "J103", assetType: "junction" }]);
   });
 
   it("returns visible neighbors of a logger-owned helper junction even without logger connection metadata", () => {
@@ -63,9 +65,9 @@ describe("getConnectedPressureLoggerNodes", () => {
 
     hydraulicModel.pressureLoggers.set(pressureLogger.id, pressureLogger);
 
-    expect(getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger)).toEqual([
-      { id: 1, label: "J103", assetType: "junction" },
-    ]);
+    expect(
+      getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger),
+    ).toEqual([{ id: 1, label: "J103", assetType: "junction" }]);
   });
 
   it("returns visible neighbors of a hidden helper junction at the logger coordinates", () => {
@@ -82,9 +84,9 @@ describe("getConnectedPressureLoggerNodes", () => {
 
     hydraulicModel.pressureLoggers.set(pressureLogger.id, pressureLogger);
 
-    expect(getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger)).toEqual([
-      { id: 1, label: "J103", assetType: "junction" },
-    ]);
+    expect(
+      getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger),
+    ).toEqual([{ id: 1, label: "J103", assetType: "junction" }]);
   });
 
   it("matches logger-owned helper junctions by logger label", () => {
@@ -102,9 +104,9 @@ describe("getConnectedPressureLoggerNodes", () => {
 
     hydraulicModel.pressureLoggers.set(pressureLogger.id, pressureLogger);
 
-    expect(getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger)).toEqual([
-      { id: 1, label: "J103", assetType: "junction" },
-    ]);
+    expect(
+      getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger),
+    ).toEqual([{ id: 1, label: "J103", assetType: "junction" }]);
   });
 
   it("uses a nearby hidden helper junction when imported logger metadata is missing", () => {
@@ -121,9 +123,9 @@ describe("getConnectedPressureLoggerNodes", () => {
 
     hydraulicModel.pressureLoggers.set(pressureLogger.id, pressureLogger);
 
-    expect(getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger)).toEqual([
-      { id: 1, label: "J103", assetType: "junction" },
-    ]);
+    expect(
+      getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger),
+    ).toEqual([{ id: 1, label: "J103", assetType: "junction" }]);
   });
 
   it("returns junctions connected to the logger point through a pipe endpoint", () => {
@@ -148,9 +150,9 @@ describe("getConnectedPressureLoggerNodes", () => {
 
     hydraulicModel.pressureLoggers.set(pressureLogger.id, pressureLogger);
 
-    expect(getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger)).toEqual([
-      { id: 2, label: "J103", assetType: "junction" },
-    ]);
+    expect(
+      getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger),
+    ).toEqual([{ id: 2, label: "J103", assetType: "junction" }]);
   });
 
   it("uses a pipe endpoint node with the logger label as the connection anchor", () => {
@@ -166,9 +168,9 @@ describe("getConnectedPressureLoggerNodes", () => {
 
     hydraulicModel.pressureLoggers.set(pressureLogger.id, pressureLogger);
 
-    expect(getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger)).toEqual([
-      { id: 1, label: "J103", assetType: "junction" },
-    ]);
+    expect(
+      getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger),
+    ).toEqual([{ id: 1, label: "J103", assetType: "junction" }]);
   });
 
   it("uses nearby pipe geometry as the connection reference when the logger is not on an endpoint", () => {
@@ -192,9 +194,9 @@ describe("getConnectedPressureLoggerNodes", () => {
 
     hydraulicModel.pressureLoggers.set(pressureLogger.id, pressureLogger);
 
-    expect(getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger)).toEqual([
-      { id: 1, label: "J103", assetType: "junction" },
-    ]);
+    expect(
+      getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger),
+    ).toEqual([{ id: 1, label: "J103", assetType: "junction" }]);
   });
 
   it("returns an empty list when the logger is not connected", () => {
@@ -203,9 +205,9 @@ describe("getConnectedPressureLoggerNodes", () => {
       label: "L1",
     });
 
-    expect(getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger)).toEqual(
-      [],
-    );
+    expect(
+      getConnectedPressureLoggerNodes(hydraulicModel, pressureLogger),
+    ).toEqual([]);
   });
 
   it("keeps logger readings at per-point timestamp resolution", () => {

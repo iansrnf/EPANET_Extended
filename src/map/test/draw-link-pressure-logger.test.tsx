@@ -158,10 +158,7 @@ describe("Drawing a pipe from a pressure logger", () => {
       expect(hiddenHelperJunction?.getProperty("pressureLoggerId")).toBe(
         pressureLogger.id,
       );
-      expect(pipes[0].connections).toEqual([
-        hiddenHelperJunction!.id,
-        IDS.J1,
-      ]);
+      expect(pipes[0].connections).toEqual([hiddenHelperJunction!.id, IDS.J1]);
       expect(getSourceFeatures(map, "ephemeral")).toHaveLength(0);
     });
   });

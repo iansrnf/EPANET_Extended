@@ -1,5 +1,5 @@
 import mapboxgl from "mapbox-gl";
-import type { GeoJSONSourceRaw, PointLike } from "mapbox-gl";
+import type { GeoJSONSourceSpecification, PointLike } from "mapbox-gl";
 import type { MapHandlers, ClickEvent } from "../../types";
 import { DataSource } from "src/map/data-source";
 import { Feature } from "geojson";
@@ -9,7 +9,7 @@ type FeatureState = Record<string, string | boolean | number>;
 
 class MapTestEngine {
   handlers: React.MutableRefObject<MapHandlers>;
-  private sources: Map<string, GeoJSONSourceRaw> = new Map();
+  private sources: Map<string, GeoJSONSourceSpecification> = new Map();
   private features: Map<string, any[]> = new Map();
   private featureStates: Map<string, Map<string, FeatureState>> = new Map();
 
@@ -40,7 +40,7 @@ class MapTestEngine {
   }
 
   map = {
-    getSource: (name: string): GeoJSONSourceRaw | null =>
+    getSource: (name: string): GeoJSONSourceSpecification | null =>
       this.sources.get(name) || null,
     on: vi.fn(),
     once: vi.fn(),
@@ -104,7 +104,7 @@ class MapTestEngine {
 
   pickOverlayObjects = vi.fn().mockReturnValue([]);
 
-  getSource(name: string): GeoJSONSourceRaw | null {
+  getSource(name: string): GeoJSONSourceSpecification | null {
     return this.sources.get(name) || null;
   }
 

@@ -185,7 +185,9 @@ describe("addNode", () => {
       expect(putAssets!.filter((asset) => asset.type === "pipe")).toHaveLength(
         2,
       );
-      expect(putAssets!.find((asset) => asset.type === "junction")).toBeDefined();
+      expect(
+        putAssets!.find((asset) => asset.type === "junction"),
+      ).toBeDefined();
     });
 
     it("throws error for invalid pipe ID", () => {

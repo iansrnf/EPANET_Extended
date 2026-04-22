@@ -390,9 +390,7 @@ describe("EPSResultsReader (unit tests)", () => {
         pumpCount: 0,
         timestepCount: 1,
         qualityType: QualityTypeCode.Age,
-        nodeResults: [
-          [0, 0, 100, 110, 50, 60, expectedAge1, expectedAge2],
-        ],
+        nodeResults: [[0, 0, 100, 110, 50, 60, expectedAge1, expectedAge2]],
       });
 
       const storage = new InMemoryStorage("test-water-age");
@@ -517,9 +515,7 @@ describe("EPSResultsReader (unit tests)", () => {
         pumpCount: 0,
         timestepCount: 1,
         qualityType: QualityTypeCode.Age,
-        nodeResults: [
-          [0, 0, 0, 100, 110, 115, 50, 60, 70, 5.0, 3.0, 8.0],
-        ],
+        nodeResults: [[0, 0, 0, 100, 110, 115, 50, 60, 70, 5.0, 3.0, 8.0]],
         tankVolumes: [[0, 1000]],
       });
 

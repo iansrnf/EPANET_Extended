@@ -139,11 +139,11 @@ export class HydraulicModelBuilder {
     options:
       | AssetQuantitiesSpec
       | {
-      quantitiesSpec?: AssetQuantitiesSpec;
-      labelManager?: LabelManager;
-      assetFactory?: AssetFactory;
-      idGenerator?: WritableIdGenerator;
-    } = {},
+          quantitiesSpec?: AssetQuantitiesSpec;
+          labelManager?: LabelManager;
+          assetFactory?: AssetFactory;
+          idGenerator?: WritableIdGenerator;
+        } = {},
   ) {
     return new HydraulicModelBuilder(options);
   }
@@ -156,16 +156,14 @@ export class HydraulicModelBuilder {
     options:
       | AssetQuantitiesSpec
       | {
-      quantitiesSpec?: AssetQuantitiesSpec;
-      labelManager?: LabelManager;
-      assetFactory?: AssetFactory;
-      idGenerator?: WritableIdGenerator;
-    } = {},
+          quantitiesSpec?: AssetQuantitiesSpec;
+          labelManager?: LabelManager;
+          assetFactory?: AssetFactory;
+          idGenerator?: WritableIdGenerator;
+        } = {},
   ) {
     const resolvedOptions =
-      "units" in options
-        ? { quantitiesSpec: options }
-        : options;
+      "units" in options ? { quantitiesSpec: options } : options;
     const quantitiesSpec = resolvedOptions.quantitiesSpec ?? presets.LPS;
     this.assets = new Map();
     this.customerPointsMap = initializeCustomerPoints();

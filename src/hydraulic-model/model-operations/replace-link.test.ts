@@ -10,7 +10,8 @@ import { CustomerPoint } from "../customer-points";
 import type { HydraulicModel } from "../hydraulic-model";
 
 const createAssetFactory = (hydraulicModel: HydraulicModel) =>
-  buildTestFactories({ labelManager: hydraulicModel.labelManager }).assetFactory;
+  buildTestFactories({ labelManager: hydraulicModel.labelManager })
+    .assetFactory;
 
 describe("replaceLink", () => {
   describe("basic functionality", () => {

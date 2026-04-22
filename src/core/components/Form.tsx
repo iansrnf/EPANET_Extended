@@ -6,8 +6,10 @@ import { InlineError } from "src/components/inline-error";
 import type { z } from "zod";
 import { SimpleDialogActions } from "src/components/dialog";
 
-export interface FormProps<S extends z.ZodType<any, any>>
-  extends Omit<PropsWithoutRef<JSX.IntrinsicElements["form"]>, "onSubmit"> {
+export interface FormProps<S extends z.ZodType<any, any>> extends Omit<
+  PropsWithoutRef<JSX.IntrinsicElements["form"]>,
+  "onSubmit"
+> {
   children?: ReactNode;
   submitText?: string;
   schema?: S;

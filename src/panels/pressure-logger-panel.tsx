@@ -101,7 +101,8 @@ export function PressureLoggerPanel() {
     return (
       loggerTelemetry.readingsByDeviceId[pressureLogger.label]?.psi ??
       loggerTelemetry.pressureHistoryByDeviceId[pressureLogger.label]?.[
-        loggerTelemetry.pressureHistoryByDeviceId[pressureLogger.label].length - 1
+        loggerTelemetry.pressureHistoryByDeviceId[pressureLogger.label].length -
+          1
       ]?.psi ??
       null
     );
@@ -380,7 +381,12 @@ export function PressureLoggerPanel() {
                   rows={[
                     ["id", connectionDebug.logger.id],
                     ["label", connectionDebug.logger.label],
-                    ["coordinates", formatDebugCoordinates(connectionDebug.logger.coordinates)],
+                    [
+                      "coordinates",
+                      formatDebugCoordinates(
+                        connectionDebug.logger.coordinates,
+                      ),
+                    ],
                     [
                       "connection",
                       connectionDebug.logger.connectionJunctionId ?? "none",
@@ -414,7 +420,10 @@ export function PressureLoggerPanel() {
                           ],
                           ["visibility", String(anchor.visibility)],
                           ["pressureLoggerId", String(anchor.pressureLoggerId)],
-                          ["links", anchor.connectedLinkIds.join(", ") || "none"],
+                          [
+                            "links",
+                            anchor.connectedLinkIds.join(", ") || "none",
+                          ],
                         ])
                       : [["anchors", "none"]]
                   }
@@ -424,10 +433,7 @@ export function PressureLoggerPanel() {
                   rows={
                     connectionDebug.pipeMatches.length > 0
                       ? connectionDebug.pipeMatches.flatMap((pipe) => [
-                          [
-                            pipe.label || `pipe ${pipe.id}`,
-                            `#${pipe.id}`,
-                          ],
+                          [pipe.label || `pipe ${pipe.id}`, `#${pipe.id}`],
                           [
                             "nodes",
                             `${pipe.startNodeLabel} #${pipe.startNodeId} -> ${pipe.endNodeLabel} #${pipe.endNodeId}`,
@@ -462,12 +468,10 @@ export function PressureLoggerPanel() {
                     ["connected nodes", connectedNodes.length],
                     [
                       "series loaded",
-                      Object.keys(simulationSeriesByNodeId).join(", ") || "none",
+                      Object.keys(simulationSeriesByNodeId).join(", ") ||
+                        "none",
                     ],
-                    [
-                      "comparisons",
-                      connectedSimulationComparisons.length,
-                    ],
+                    ["comparisons", connectedSimulationComparisons.length],
                   ]}
                 />
               </div>
@@ -520,20 +524,14 @@ export function PressureLoggerPanel() {
   );
 }
 
-const DebugBlock = ({
-  title,
-  rows,
-}: {
-  title: string;
-  rows: unknown[][];
-}) => {
+const DebugBlock = ({ title, rows }: { title: string; rows: unknown[][] }) => {
   return (
     <div>
       <div className="mb-1 font-medium text-gray-800">{title}</div>
       <div className="space-y-1">
         {rows.map(([name, value], index) => (
           <div
-            key={`${title}-${name}-${index}`}
+            key={`${title}-${String(name)}-${index}`}
             className="grid grid-cols-[92px_1fr] gap-2"
           >
             <span className="text-gray-500">{String(name)}</span>
@@ -548,7 +546,9 @@ const DebugBlock = ({
 };
 
 const formatDebugCoordinates = (coordinates: readonly number[]) =>
-  coordinates.map((coordinate) => localizeDecimal(coordinate, { decimals: 6 })).join(", ");
+  coordinates
+    .map((coordinate) => localizeDecimal(coordinate, { decimals: 6 }))
+    .join(", ");
 
 const formatGraphElapsedTime = (value: number) => {
   const totalSeconds = Math.max(0, Math.round(value));
@@ -663,12 +663,7 @@ const useConnectedNodeSimulationSeries = (
     return () => {
       abortControllerRef.current?.abort();
     };
-  }, [
-    connectedNodes,
-    epsResultsReader,
-    sourcePressureUnit,
-    status,
-  ]);
+  }, [connectedNodes, epsResultsReader, sourcePressureUnit, status]);
 
   return { simulationSeriesByNodeId, isLoadingSimulationSeries };
 };

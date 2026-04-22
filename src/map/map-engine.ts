@@ -1,5 +1,5 @@
 import mapboxgl, { Style } from "mapbox-gl";
-import type { Map as MapboxMap, MapboxGeoJSONFeature } from "mapbox-gl";
+import type { MapboxGeoJSONFeature } from "mapbox-gl";
 
 import { CURSOR_DEFAULT } from "src/lib/constants";
 import type { Feature, IFeatureCollection } from "src/types";
@@ -35,6 +35,16 @@ const MAP_OPTIONS: Omit<mapboxgl.MapboxOptions, "container"> = {
   antialias: true,
   doubleClickZoom: false,
   preserveDrawingBuffer: true,
+};
+
+type PaintPropertyName = keyof mapboxgl.PaintSpecification;
+type QueryGeometry =
+  | mapboxgl.PointLike
+  | [mapboxgl.PointLike, mapboxgl.PointLike];
+type QueryRenderedFeaturesOptions = {
+  layers?: string[];
+  filter?: mapboxgl.FilterSpecification;
+  validate?: boolean;
 };
 
 const sourceUpdateTimeoutFor = (totalFeatures: number): number => {
@@ -114,9 +124,7 @@ export class MapEngine {
     map.on("touchstart", (e) => this.handlers.current.onMapTouchStart(e));
     map.on("touchmove", (e) => this.handlers.current.onMapTouchMove(e));
     map.on("touchend", (e) => this.handlers.current.onMapTouchEnd(e));
-    map.on("zoom", (e: mapboxgl.MapBoxZoomEvent) =>
-      this.handlers.current.onZoom(e),
-    );
+    map.on("zoom", (e) => this.handlers.current.onZoom(e));
 
     this.map = map;
   }
@@ -127,7 +135,11 @@ export class MapEngine {
         resolve();
       });
 
-      const forceStyleLoadEvent = { diff: false };
+      const forceStyleLoadEvent = {
+        diff: false,
+        localFontFamily: undefined,
+        localIdeographFontFamily: undefined,
+      };
       this.map.setStyle(style, forceStyleLoadEvent);
     });
   }
@@ -247,8 +259,8 @@ export class MapEngine {
 
   setPaintProperty(
     layerId: LayerId,
-    name: string,
-    value: mapboxgl.Expression | string | number,
+    name: PaintPropertyName,
+    value: mapboxgl.PaintSpecification[PaintPropertyName],
   ): void {
     if (!this.hasLayer(layerId)) return;
 
@@ -306,7 +318,7 @@ export class MapEngine {
     return this.map.getZoom();
   }
 
-  getBounds(): mapboxgl.LngLatBounds {
+  getBounds(): mapboxgl.LngLatBounds | null {
     return this.map.getBounds();
   }
 
@@ -318,13 +330,13 @@ export class MapEngine {
   }
 
   queryRenderedFeatures(
-    pointOrBox: Parameters<MapboxMap["queryRenderedFeatures"]>[0],
-    options: Parameters<MapboxMap["queryRenderedFeatures"]>[1],
-  ) {
+    pointOrBox: QueryGeometry,
+    options: QueryRenderedFeaturesOptions = {},
+  ): MapboxGeoJSONFeature[] {
     const layers = options?.layers || [];
 
     const availableLayers = layers.filter(
-      (layer) => !!this.map.getLayer(layer),
+      (layer: string) => !!this.map.getLayer(layer),
     );
 
     return this.map.queryRenderedFeatures(pointOrBox, {

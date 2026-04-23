@@ -86,14 +86,24 @@ export const useRunSimulation = () => {
             : undefined;
         const previousSourceId = get(simulationSourceIdDerivedAtom);
         const runQuality = simulationSettings.qualitySimulationType !== "none";
-        const { report, status, metadata, jsError } = await runSimulationWorker(
+        const simulationResult = await runSimulationWorker(
           inp,
           appId,
           reportProgress,
           { runQuality },
           scenarioKey,
           runId,
-        );
+        ).catch((error: unknown) => {
+          const message = getErrorMessage(error);
+          return {
+            report: buildApplicationErrorReport(message),
+            status: "failure" as const,
+            metadata: new ArrayBuffer(0),
+            jsError: message,
+          };
+        });
+        const { metadata } = simulationResult;
+        let { report, status, jsError } = simulationResult;
 
         const dialogStatus =
           status === "failure" && jsError === "Simulation stopped by user"
@@ -107,8 +117,17 @@ export const useRunSimulation = () => {
         if (status === "success" || status === "warning") {
           const storage = new OPFSStorage(appId, scenarioKey, runId);
           epsReader = new EPSResultsReader(storage);
-          await epsReader.initialize(metadata);
-          setSimulationStep(0);
+          try {
+            await epsReader.initialize(metadata);
+            setSimulationStep(0);
+          } catch (error) {
+            const message = getErrorMessage(error);
+            report = appendApplicationError(report, message);
+            status = "failure";
+            jsError = message;
+            epsReader = undefined;
+            setSimulationStep(0);
+          }
         } else {
           setSimulationStep(0);
         }
@@ -177,4 +196,22 @@ export const useRunSimulation = () => {
   );
 
   return runSimulation;
+};
+
+const getErrorMessage = (error: unknown): string => {
+  return error instanceof Error ? error.message : String(error);
+};
+
+const buildApplicationErrorReport = (errorMessage: string): string => {
+  return `Application result processing error:
+${errorMessage}`;
+};
+
+const appendApplicationError = (
+  report: string,
+  errorMessage: string,
+): string => {
+  return `${report}
+
+${buildApplicationErrorReport(errorMessage)}`;
 };

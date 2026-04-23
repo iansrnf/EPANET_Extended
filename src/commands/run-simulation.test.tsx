@@ -63,6 +63,27 @@ describe("Run simulation", () => {
     });
   });
 
+  it("persists an application error report when the worker fails after launch", async () => {
+    const hydraulicModel = aSimulableModel();
+    const store = setInitialState({ hydraulicModel });
+    renderComponent({ store });
+    (lib.runSimulation as unknown as Mock).mockRejectedValueOnce(
+      new Error("worker result storage failed"),
+    );
+
+    await triggerRun();
+
+    await waitFor(() => {
+      const simulation = store.get(simulationDerivedAtom) as SimulationFinished;
+      expect(simulation.status).toEqual("failure");
+      expect(simulation.report).toContain(
+        "Application result processing error",
+      );
+      expect(simulation.report).toContain("worker result storage failed");
+      expect(simulation.modelVersion).toEqual(hydraulicModel.version);
+    });
+  });
+
   it("can show the report after a failure", async () => {
     const hydraulicModel = aNonSimulableModel();
     const store = setInitialState({ hydraulicModel });

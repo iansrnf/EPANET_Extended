@@ -137,10 +137,14 @@ export const runSimulation = async (
     const displayMessage = isWasmMemoryError
       ? `The simulation ran out of memory at timestep ${timestepCount}. The network may be too large for the current engine. (${errorMessage})`
       : errorMessage;
+    const curatedReport = report.length > 0 ? curateReport(report) : "";
 
     return {
       status: "failure",
-      report: report.length > 0 ? curateReport(report) : displayMessage,
+      report:
+        curatedReport.length > 0 && !isEpanetError
+          ? appendApplicationError(curatedReport, displayMessage)
+          : curatedReport || displayMessage,
       metadata: new ArrayBuffer(PROLOG_SIZE + EPILOG_SIZE),
       jsError: isEpanetError ? undefined : displayMessage,
     };
@@ -150,6 +154,16 @@ export const runSimulation = async (
 const curateReport = (input: string): string => {
   const errorOnlyOncePerLine = /(Error [A-Za-z0-9]+:)(?=.*\1)/g;
   return input.replace(errorOnlyOncePerLine, "");
+};
+
+const appendApplicationError = (
+  report: string,
+  errorMessage: string,
+): string => {
+  return `${report}
+
+Application result processing error:
+${errorMessage}`;
 };
 
 const extractResultsData = (ws: Workspace) => {

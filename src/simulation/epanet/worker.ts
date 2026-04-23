@@ -230,7 +230,7 @@ class MissingSimulationDataAccumulator {
     const tankVolumesBinary = new Float32Array(
       this.tankVolumesPerTimestep.flat(),
     );
-    return tankVolumesBinary.buffer as ArrayBuffer;
+    return tankVolumesBinary.buffer;
   }
 
   pumpStatus(): ArrayBuffer {
@@ -239,6 +239,6 @@ class MissingSimulationDataAccumulator {
     const pumpStatusBinary = new Float32Array(
       this.pumpStatusPerTimestep.flat(),
     );
-    return pumpStatusBinary.buffer as ArrayBuffer;
+    return pumpStatusBinary.buffer;
   }
 }

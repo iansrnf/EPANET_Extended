@@ -13,13 +13,7 @@ export class OPFSStorage implements IKeyBufferStore {
   async save(filename: string, data: ArrayBuffer): Promise<void> {
     const dir = await this.getAppDir();
     const fileHandle = await dir.getFileHandle(filename, { create: true });
-    // @ts-expect-error createSyncAccessHandle is only available in Web Workers (lib.webworker.d.ts)
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-    const accessHandle = await fileHandle.createSyncAccessHandle();
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-    accessHandle.write(data);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call
-    accessHandle.close();
+    await writeFile(fileHandle, data);
   }
 
   async readSlice(
@@ -140,6 +134,35 @@ export class OPFSStorage implements IKeyBufferStore {
     return await scenarioDir.getDirectoryHandle(this.runId, { create: true });
   }
 }
+
+type SyncFileHandle = FileSystemFileHandle & {
+  createSyncAccessHandle?: () => Promise<{
+    write: (data: BufferSource) => void;
+    close: () => void;
+  }>;
+};
+
+const writeFile = async (
+  fileHandle: FileSystemFileHandle,
+  data: ArrayBuffer,
+): Promise<void> => {
+  const syncFileHandle = fileHandle as SyncFileHandle;
+  if (syncFileHandle.createSyncAccessHandle) {
+    try {
+      const accessHandle = await syncFileHandle.createSyncAccessHandle();
+      accessHandle.write(data);
+      accessHandle.close();
+      return;
+    } catch {
+      // Some production runtimes expose createSyncAccessHandle but reject it.
+      // Fall back to the standard async writer rather than failing simulation.
+    }
+  }
+
+  const writable = await fileHandle.createWritable();
+  await writable.write(data);
+  await writable.close();
+};
 
 export async function cleanupStaleOPFS(thresholdMs: number): Promise<void> {
   const staleAppIds = findStaleAppIds(thresholdMs);

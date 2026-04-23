@@ -78,6 +78,11 @@ describe("OPFSStorage", () => {
     close: vi.fn(),
   });
 
+  const createMockWritable = () => ({
+    write: vi.fn(),
+    close: vi.fn(),
+  });
+
   const createMockFileHandle = (
     data: ArrayBuffer,
     syncAccessHandle = createMockSyncAccessHandle(),
@@ -89,6 +94,7 @@ describe("OPFSStorage", () => {
       })),
     }),
     createSyncAccessHandle: vi.fn().mockResolvedValue(syncAccessHandle),
+    createWritable: vi.fn(),
   });
 
   describe("save", () => {
@@ -107,6 +113,40 @@ describe("OPFSStorage", () => {
       });
       expect(mockAccessHandle.write).toHaveBeenCalledWith(data);
       expect(mockAccessHandle.close).toHaveBeenCalled();
+    });
+
+    it("falls back to async writable when sync access handles are unavailable", async () => {
+      const mockWritable = createMockWritable();
+      const mockFileHandle = {
+        ...createMockFileHandle(new ArrayBuffer(0)),
+        createSyncAccessHandle: undefined,
+      };
+      mockFileHandle.createWritable.mockResolvedValue(mockWritable);
+      mockAppDir.getFileHandle.mockResolvedValue(mockFileHandle);
+
+      const storage = new OPFSStorage("test-app-id");
+      const data = new Uint8Array([1, 2, 3]).buffer;
+      await storage.save("results.out", data);
+
+      expect(mockWritable.write).toHaveBeenCalledWith(data);
+      expect(mockWritable.close).toHaveBeenCalled();
+    });
+
+    it("falls back to async writable when sync access handle creation fails", async () => {
+      const mockWritable = createMockWritable();
+      const mockFileHandle = createMockFileHandle(new ArrayBuffer(0));
+      mockFileHandle.createSyncAccessHandle.mockRejectedValue(
+        new Error("sync access unavailable"),
+      );
+      mockFileHandle.createWritable.mockResolvedValue(mockWritable);
+      mockAppDir.getFileHandle.mockResolvedValue(mockFileHandle);
+
+      const storage = new OPFSStorage("test-app-id");
+      const data = new Uint8Array([1, 2, 3]).buffer;
+      await storage.save("results.out", data);
+
+      expect(mockWritable.write).toHaveBeenCalledWith(data);
+      expect(mockWritable.close).toHaveBeenCalled();
     });
 
     it("does not update last access after saving (save runs in Web Worker where localStorage is unavailable)", async () => {

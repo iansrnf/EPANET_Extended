@@ -15,8 +15,8 @@ const haloFillColor = hexToArray(colors.orange500, 0.35) as [
 ];
 
 const pressureLoggerIconSvg = ({
-  stroke = colors.orange700,
-  accent = colors.orange500,
+  stroke = colors.gray700,
+  accent = colors.gray700,
   body = "#ffffff",
 }: {
   stroke?: string;
@@ -24,12 +24,20 @@ const pressureLoggerIconSvg = ({
   body?: string;
 }) => `
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
-  <path d="M12 4V2.5" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="7" y="4.5" width="10" height="15" rx="2.5" fill="${body}" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M10 9.5a2 2 0 1 1 4 0" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M12 9.5v2.5" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M9.5 15.5h5" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="16.5" cy="17" r="1.4" fill="${accent}"/>
+  <rect x="5" y="3.5" width="16" height="17" rx="2.5" fill="${body}" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M3 9v6" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M3 12h2" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="10" y="7" width="6" height="4.5" rx="1" fill="${body}" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="8" cy="7.5" r="0.8" fill="${accent}"/>
+  <circle cx="8" cy="10.5" r="0.8" fill="${accent}"/>
+  <circle cx="9.5" cy="15.5" r="2.4" fill="${body}" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M7.6 15.5h3.8" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="15" cy="15.5" r="2.4" fill="${body}" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M13.4 13.9l3.2 3.2" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M18 6.5h1.5" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M18 9.5h1.5" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M18 12.5h1.5" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M18 15.5h1.5" stroke="${stroke}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
 `;
 

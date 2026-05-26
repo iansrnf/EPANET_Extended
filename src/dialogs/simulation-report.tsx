@@ -73,7 +73,7 @@ export const SimulationReportDialog = () => {
             parts.push(
               <span
                 key={`${index}-slot-${slotIndex}`}
-                className="text-purple-600 underline cursor-pointer hover:text-purple-700 hover:bg-purple-50 px-1 rounded"
+                className="text-purple-600 underline cursor-pointer hover:text-purple-700 hover:bg-purple-50 px-1 rounded-sm"
                 onClick={() => handleAssetClick(assetId)}
               >
                 {asset.label}
@@ -94,12 +94,7 @@ export const SimulationReportDialog = () => {
   );
 
   const processedReport = useMemo(() => {
-    if (
-      simulation.status !== "success" &&
-      simulation.status !== "failure" &&
-      simulation.status !== "warning"
-    )
-      return [];
+    if (!("report" in simulation) || !simulation.report) return [];
 
     const { processedReport, errorCollector } = processReportWithSlots(
       simulation.report,
@@ -129,10 +124,8 @@ export const SimulationReportDialog = () => {
         <AckDialogAction label={translate("understood")} onAck={closeDialog} />
       }
     >
-      <div className="flex-1 min-h-0 overflow-auto bg-gray-100">
-        <div className="min-w-max p-4 text-sm text-gray-700 font-mono leading-loose">
-          {processedReport.map(renderRowWithSlots)}
-        </div>
+      <div className="flex-1 p-4 text-sm bg-gray-100 text-gray-700 font-mono leading-loose">
+        {processedReport.map(renderRowWithSlots)}
       </div>
     </BaseDialog>
   );

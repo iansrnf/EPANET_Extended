@@ -18,8 +18,15 @@ import {
   simulationDerivedAtom,
   simulationResultsDerivedAtom,
 } from "src/state/derived-branch-state";
-import { computeMultiAssetData } from "./data";
-import { BATCH_EDITABLE_PROPERTIES } from "./batch-edit-property-config";
+import {
+  computeMultiAssetData,
+  computeMultiAssetDataWithPipeAttributes,
+} from "./data";
+import {
+  BATCH_EDITABLE_PROPERTIES,
+  PIPE_BATCH_EDITABLE_PROPERTIES_WITH_ATTRIBUTES,
+} from "./batch-edit-property-config";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
 import { useUserTracking } from "src/infra/user-tracking";
 import { changeProperty } from "src/hydraulic-model/model-operations";
@@ -27,7 +34,6 @@ import type { ChangeableProperty } from "src/hydraulic-model/model-operations/ch
 import { activateAssets } from "src/hydraulic-model/model-operations/activate-assets";
 import { deactivateAssets } from "src/hydraulic-model/model-operations/deactivate-assets";
 import { useSelection } from "src/selection/use-selection";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useShowPumpLibrary } from "src/commands/show-pump-library";
 import { useShowPatternsLibrary } from "src/commands/show-patterns-library";
 import type { CurveType } from "src/hydraulic-model/curves";
@@ -41,7 +47,6 @@ export function MultiAssetPanel({
   readonly?: boolean;
 }) {
   const { formatting, units } = useAtomValue(projectSettingsAtom);
-  const useAutoIndentation = useFeatureFlag("FLAG_UI_COLLAPSIBLE");
   const translate = useTranslate();
   const simulationState = useAtomValue(simulationDerivedAtom);
   const simulationResults = useAtomValue(simulationResultsDerivedAtom);
@@ -55,16 +60,30 @@ export function MultiAssetPanel({
   const userTracking = useUserTracking();
   const showPumpLibrary = useShowPumpLibrary();
   const showPatternsLibrary = useShowPatternsLibrary();
+  const pipeAttributesOn = useFeatureFlag("FLAG_PIPE_ATTRIBUTES");
+  const computeData = pipeAttributesOn
+    ? computeMultiAssetDataWithPipeAttributes
+    : computeMultiAssetData;
+  const pipeEditableProperties = pipeAttributesOn
+    ? PIPE_BATCH_EDITABLE_PROPERTIES_WITH_ATTRIBUTES
+    : BATCH_EDITABLE_PROPERTIES.pipe;
   const { data: multiAssetData, counts: assetCounts } = useMemo(() => {
     const assets = selectedFeatures as Asset[];
-    return computeMultiAssetData(
+    return computeData(
       assets,
       units,
       formatting,
       hydraulicModel,
       simulationResults,
     );
-  }, [selectedFeatures, units, formatting, hydraulicModel, simulationResults]);
+  }, [
+    selectedFeatures,
+    units,
+    formatting,
+    hydraulicModel,
+    simulationResults,
+    computeData,
+  ]);
 
   const assetIdsByType = useMemo(() => {
     const map: Record<Asset["type"], Asset["id"][]> = {
@@ -165,14 +184,12 @@ export function MultiAssetPanel({
 
   return (
     <SectionList
-      gap={useAutoIndentation ? 1 : 3}
-      padding={useAutoIndentation ? 3 : 4}
+      padding={3}
       header={<Header selectedCount={selectedFeatures.length} />}
       overflow={true}
     >
       {assetCounts.junction > 0 && (
         <CollapsibleSection
-          indicatorPosition={useAutoIndentation ? "left" : "right"}
           title={`${translate("junction")} (${assetCounts.junction})`}
           open={collapseState.junction}
           onOpenChange={(open) =>
@@ -202,7 +219,6 @@ export function MultiAssetPanel({
 
       {assetCounts.pipe > 0 && (
         <CollapsibleSection
-          indicatorPosition={useAutoIndentation ? "left" : "right"}
           title={`${translate("pipe")} (${assetCounts.pipe})`}
           open={collapseState.pipe}
           onOpenChange={(open) =>
@@ -219,7 +235,7 @@ export function MultiAssetPanel({
         >
           <AssetTypeSections
             sections={multiAssetData.pipe}
-            editableProperties={BATCH_EDITABLE_PROPERTIES.pipe}
+            editableProperties={pipeEditableProperties}
             hasSimulation={hasSimulation}
             onPropertyChange={(p, v) => handleBatchPropertyChange("pipe", p, v)}
             readonly={readonly}
@@ -230,7 +246,6 @@ export function MultiAssetPanel({
 
       {assetCounts.pump > 0 && (
         <CollapsibleSection
-          indicatorPosition={useAutoIndentation ? "left" : "right"}
           title={`${translate("pump")} (${assetCounts.pump})`}
           open={collapseState.pump}
           onOpenChange={(open) =>
@@ -262,7 +277,6 @@ export function MultiAssetPanel({
 
       {assetCounts.valve > 0 && (
         <CollapsibleSection
-          indicatorPosition={useAutoIndentation ? "left" : "right"}
           title={`${translate("valve")} (${assetCounts.valve})`}
           open={collapseState.valve}
           onOpenChange={(open) =>
@@ -292,7 +306,6 @@ export function MultiAssetPanel({
 
       {assetCounts.reservoir > 0 && (
         <CollapsibleSection
-          indicatorPosition={useAutoIndentation ? "left" : "right"}
           title={`${translate("reservoir")} (${assetCounts.reservoir})`}
           open={collapseState.reservoir}
           onOpenChange={(open) =>
@@ -321,7 +334,6 @@ export function MultiAssetPanel({
 
       {assetCounts.tank > 0 && (
         <CollapsibleSection
-          indicatorPosition={useAutoIndentation ? "left" : "right"}
           title={`${translate("tank")} (${assetCounts.tank})`}
           open={collapseState.tank}
           onOpenChange={(open) =>

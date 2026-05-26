@@ -1,7 +1,9 @@
 import { useCallback, useContext } from "react";
 import { useSetAtom } from "jotai";
+import { useAtomCallback } from "jotai/utils";
 import { dialogAtom } from "src/state/dialog";
 import { inpFileInfoAtom, projectFileInfoAtom } from "src/state/file-system";
+import { userSettingsAtom } from "src/state/user-settings";
 import { captureError } from "src/infra/error-tracking";
 import { FileWithHandle } from "browser-fs-access";
 import { useTranslate } from "src/hooks/use-translate";
@@ -38,8 +40,33 @@ export const useImportInp = () => {
   const setProjectFileInfo = useSetAtom(projectFileInfoAtom);
   const userTracking = useUserTracking();
   const isXyDetectOn = useFeatureFlag("FLAG_XY_DETECT");
+  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
   const { startNewProject } = useStartNewProject();
   const { addRecent } = useRecentFiles();
+
+  const handleImportComplete = useAtomCallback(
+    useCallback(
+      (get, set, issues: ParserIssues | null) => {
+        const showFormat =
+          isOurFileOn && get(userSettingsAtom).showFileFormatUpdated;
+        const openFormatDialog = () =>
+          set(dialogAtom, { type: "fileFormatUpdated" });
+
+        if (!issues) {
+          if (showFormat) openFormatDialog();
+          else set(dialogAtom, null);
+          return;
+        }
+
+        set(dialogAtom, {
+          type: "inpIssues",
+          issues,
+          onAfterClose: showFormat ? openFormatDialog : undefined,
+        });
+      },
+      [isOurFileOn],
+    ),
+  );
 
   const completeImport = useCallback(
     async (
@@ -57,13 +84,33 @@ export const useImportInp = () => {
         isMadeByApp,
       } = result;
 
-      await startNewProject({
-        hydraulicModel,
-        factories,
-        projectSettings,
-        simulationSettings,
-        autoElevations: options?.autoElevations,
-      });
+      const projectName = file.name.replace(/\.[^.]+$/, "");
+
+      try {
+        await startNewProject({
+          hydraulicModel,
+          factories,
+          projectSettings: { ...projectSettings, name: projectName },
+          simulationSettings,
+          autoElevations: options?.autoElevations,
+        });
+      } catch (error) {
+        captureError(error as Error);
+        setDialogState(null);
+        notify({
+          variant: "error",
+          size: "md",
+          title: translate("projectOpenFailed"),
+          description: translate("unexpectedErrorContactSupport"),
+          Icon: WarningIcon,
+        });
+        userTracking.capture({
+          name: "projectFile.openFailed",
+          source: "inpImport",
+          reason: "exception",
+        });
+        return;
+      }
 
       const features: FeatureCollection = {
         type: "FeatureCollection",
@@ -106,20 +153,18 @@ export const useImportInp = () => {
           void addRecent(name, handle);
         }
       }
-      if (!issues) {
-        setDialogState(null);
-        return;
-      }
-
-      setDialogState({ type: "inpIssues", issues });
+      handleImportComplete(issues);
     },
     [
       addRecent,
       startNewProject,
       map,
-      setDialogState,
       setInpFileInfo,
       setProjectFileInfo,
+      handleImportComplete,
+      setDialogState,
+      translate,
+      userTracking,
     ],
   );
 
@@ -151,7 +196,7 @@ export const useImportInp = () => {
   );
 
   const importInp = useCallback(
-    async (files: FileWithHandle[]) => {
+    async (files: FileWithHandle[], source: string) => {
       const file = validateAndPrepare(files);
       if (!file) return;
 
@@ -178,7 +223,7 @@ export const useImportInp = () => {
           suggestedXyScale,
         } = result;
         userTracking.capture(
-          buildCompleteEvent(projectSettings, issues, stats),
+          buildCompleteEvent(source, projectSettings, issues, stats),
         );
 
         if (projectionStatus === "unknown") {
@@ -240,6 +285,7 @@ export const useImportInp = () => {
 };
 
 const buildCompleteEvent = (
+  source: string,
   projectSettings: ProjectSettings,
   issues: ParserIssues | null,
   stats: InpStats,
@@ -267,6 +313,7 @@ const buildCompleteEvent = (
 
   return {
     name: "importInp.completed",
+    source,
     counts: Object.fromEntries(stats.counts),
     headlossFormula: projectSettings.headlossFormula,
     units: chooseUnitSystem(projectSettings.units),

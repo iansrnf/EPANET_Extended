@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue } from "jotai";
 import { useAtomCallback } from "jotai/utils";
 import { FeaturePaywall, type FeaturePaywallConfig } from "./feature-paywall";
 import { useScenarioOperations } from "src/hooks/use-scenario-operations";
@@ -15,6 +15,7 @@ import {
 } from "src/state/derived-branch-state";
 import { userSettingsAtom } from "src/state/user-settings";
 import { dialogAtom } from "src/state/dialog";
+import { useSetAtom } from "jotai";
 import { SuccessIcon, DisconnectIcon } from "src/icons";
 import { notify } from "src/components/notifications";
 import { captureError } from "src/infra/error-tracking";
@@ -103,7 +104,7 @@ export const ScenariosPaywallConnector = ({
     const file = new File([await response.blob()], name);
 
     checkUnsavedChanges(async () => {
-      await importInp([file]);
+      await importInp([file], "scenariosPaywall");
       runSimulationThenProceed();
     });
   }, [checkUnsavedChanges, importInp, runSimulationThenProceed]);

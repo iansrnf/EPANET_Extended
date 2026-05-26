@@ -1,0 +1,157 @@
+import * as CM from "@radix-ui/react-context-menu";
+import { Table } from "@tanstack/react-table";
+import clsx from "clsx";
+import { CMContent, CMItem } from "src/components/elements";
+import { CopyIcon, ClipboardPasteIcon } from "src/icons";
+import { useTranslate } from "src/hooks/use-translate";
+import { CellContextAction, GutterContextAction } from "../types";
+
+const itemClassName = (isDisabled: boolean) =>
+  clsx({ "opacity-50 cursor-not-allowed": isDisabled });
+
+type CellContextMenuContentProps<TData extends Record<string, unknown>> = {
+  table: Table<TData>;
+  actions: CellContextAction<TData>[];
+  readOnly: boolean;
+};
+
+export function CellContextMenuContent<TData extends Record<string, unknown>>({
+  table,
+  actions,
+  readOnly,
+}: CellContextMenuContentProps<TData>) {
+  const translate = useTranslate();
+  const selection = table.getSelection();
+  if (!selection) return null;
+  const sortedRows = table.getRowModel().rows.map((r) => r.original);
+
+  return (
+    <CM.Portal>
+      <CMContent>
+        <CMItem onSelect={() => void table.copySelection()}>
+          <CopyIcon />
+          {translate("copy")}
+        </CMItem>
+        <CMItem
+          disabled={readOnly}
+          className={itemClassName(readOnly)}
+          onSelect={() => {
+            if (readOnly) return;
+            void table.pasteSelection();
+          }}
+        >
+          <ClipboardPasteIcon />
+          {translate("paste")}
+        </CMItem>
+        {actions.length > 0 && (
+          <CM.Separator className="border-t border-gray-100 dark:border-gray-700 my-1" />
+        )}
+        {actions.map((action, index) => {
+          const { disabled, onSelect } = action;
+          const isDisabled = disabled ? disabled(selection) : false;
+          const variant =
+            action.variant === "destructive" ? "destructive" : "default";
+          return (
+            <CMItem
+              key={index}
+              disabled={isDisabled}
+              className={itemClassName(isDisabled)}
+              variant={variant}
+              onSelect={() => {
+                if (isDisabled) return;
+                onSelect(selection, sortedRows);
+              }}
+            >
+              {action.icon}
+              {action.label}
+            </CMItem>
+          );
+        })}
+      </CMContent>
+    </CM.Portal>
+  );
+}
+
+export type GridContextMenuTarget = {
+  type: "cell" | "gutter";
+  rowIndex: number;
+};
+
+type GridContextMenuContentProps<TData extends Record<string, unknown>> = {
+  target: GridContextMenuTarget | null;
+  table: Table<TData>;
+  cellContextActions?: CellContextAction<TData>[];
+  gutterContextActions?: GutterContextAction<TData>[];
+  readOnly: boolean;
+};
+
+export function GridContextMenuContent<TData extends Record<string, unknown>>({
+  target,
+  table,
+  cellContextActions,
+  gutterContextActions,
+  readOnly,
+}: GridContextMenuContentProps<TData>) {
+  if (!target) return null;
+  if (target.type === "cell" && cellContextActions) {
+    return (
+      <CellContextMenuContent
+        table={table}
+        actions={cellContextActions}
+        readOnly={readOnly}
+      />
+    );
+  }
+  if (target.type === "gutter" && gutterContextActions) {
+    return (
+      <GutterContextMenuContent
+        table={table}
+        actions={gutterContextActions}
+        rowIndex={target.rowIndex}
+      />
+    );
+  }
+  return null;
+}
+
+type GutterContextMenuContentProps<TData extends Record<string, unknown>> = {
+  table: Table<TData>;
+  actions: GutterContextAction<TData>[];
+  rowIndex: number;
+};
+
+export function GutterContextMenuContent<
+  TData extends Record<string, unknown>,
+>({ table, actions, rowIndex }: GutterContextMenuContentProps<TData>) {
+  const selection = table.getSelection();
+  if (!selection) return null;
+  if (actions.length === 0) return null;
+  const sortedRows = table.getRowModel().rows.map((r) => r.original);
+
+  return (
+    <CM.Portal>
+      <CMContent>
+        {actions.map((action, index) => {
+          const isDisabled = action.disabled?.(rowIndex) ?? false;
+          const variant =
+            action.variant === "destructive" ? "destructive" : "default";
+          return (
+            <CMItem
+              key={index}
+              disabled={isDisabled}
+              className={itemClassName(isDisabled)}
+              variant={variant}
+              onSelect={() => {
+                if (isDisabled) return;
+                action.onSelect(selection, sortedRows);
+              }}
+            >
+              {action.icon}
+              {action.label}
+            </CMItem>
+          );
+        })}
+      </CMContent>
+    </CM.Portal>
+  );
+}

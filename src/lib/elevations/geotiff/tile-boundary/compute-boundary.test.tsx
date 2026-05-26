@@ -50,7 +50,7 @@ function collectResults(
   return { results, promise };
 }
 
-// Fixture: 4x4 float32 grid, origin (-4, 56), pixel size 0.25 degrees
+// Fixture: 4x4 float32 grid, origin (-4, 56), pixel size 0.25°
 // bbox: [-4, 55, -3, 56], nodata: -9999
 
 describe("computeTileBoundaries", () => {

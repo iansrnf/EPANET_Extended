@@ -1,7 +1,114 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
+@plugin "@tailwindcss/forms";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@custom-variant pointer-coarse (@media (pointer: coarse));
+@custom-variant pointer-fine (@media (pointer: fine));
+@custom-variant pointer-none (@media (pointer: none));
+@custom-variant hover-hover (@media (hover: hover));
+@custom-variant hover-none (@media (hover: none));
+
+/* Portrait orientation breakpoints */
+@custom-variant vsm (@media (width < 768px) and (orientation: portrait));
+@custom-variant vmd (@media (width >= 768px) and (orientation: portrait));
+
+/* Landscape height breakpoints */
+@custom-variant hxs (@media (height < 400px) and (orientation: landscape));
+@custom-variant hsm (@media (height >= 400px) and (orientation: landscape));
+@custom-variant hmd (@media (height >= 640px) and (orientation: landscape));
+@custom-variant hlg (@media (height >= 800px) and (orientation: landscape));
+@custom-variant hxl (@media (height > 1080px) and (orientation: landscape));
+
+/* max-xs: not built-in in v4 (max-sm and above are built-in) */
+@custom-variant max-xs (@media not all and (width >= 480px));
+
+@theme {
+  /* Fonts */
+  --font-sans: Inter, sans-serif;
+  --font-mono: "Source Code Pro", monospace;
+  --font-handwritten: Caveat, cursive;
+
+  /* gray → neutral (v3 used colors.neutral for gray) */
+  --color-gray-50: oklch(98.5% 0 0);
+  --color-gray-100: oklch(97% 0 0);
+  --color-gray-200: oklch(92.2% 0 0);
+  --color-gray-300: oklch(87% 0 0);
+  --color-gray-400: oklch(70.8% 0 0);
+  --color-gray-500: oklch(55.6% 0 0);
+  --color-gray-600: oklch(43.9% 0 0);
+  --color-gray-700: oklch(37.1% 0 0);
+  --color-gray-800: oklch(26.9% 0 0);
+  --color-gray-900: oklch(20.5% 0 0);
+  --color-gray-950: oklch(14.5% 0 0);
+
+  --color-black: #000;
+  --color-white: #fff;
+  --color-purple-100: oklch(94.6% 0.033 307.174);
+  --color-purple-300: oklch(82.7% 0.119 306.383);
+  --color-purple-500: oklch(62.7% 0.265 303.9);
+  --color-purple-700: oklch(49.6% 0.265 301.924);
+  --color-yellow-100: oklch(97.3% 0.071 103.193);
+  --color-yellow-300: oklch(90.5% 0.182 98.111);
+  --color-yellow-500: oklch(79.5% 0.184 86.047);
+
+  /* Semantic token colors (dark overrides in .dark below) */
+  --color-accent: var(--color-purple-600);
+  --color-base-hover: var(--color-gray-100);
+  --color-popover: var(--color-white);
+  --color-default: var(--color-gray-900);
+  --color-subtle: var(--color-gray-500);
+  --color-warning: var(--color-orange-600);
+  --color-warning-subtle: var(--color-orange-50);
+  --color-error: var(--color-red-600);
+  --color-error-subtle: var(--color-red-50);
+  --color-success: var(--color-green-600);
+  --color-success-subtle: var(--color-green-50);
+  --color-info: var(--color-blue-600);
+  --color-info-subtle: var(--color-blue-50);
+
+  --color-panel: var(--color-gray-50);
+  --color-base-active: var(--color-gray-200);
+  --color-disabled: var(--color-gray-300);
+
+  /* Semantic font sizes */
+  --text-size-heading-1: 1.5rem;
+  --text-size-heading-2: 1.25rem;
+  --text-size-heading-3: 1.125rem;
+  --text-size-base: 0.875rem;
+  --text-size-small: 0.75rem;
+}
+
+/*
+  The default border color changed to `currentcolor` in Tailwind CSS v4.
+  This restores the v3 default so existing border utilities keep their appearance.
+*/
+
+:root {
+  --color-background-base: var(--color-white);
+  --color-border: var(--color-gray-200);
+  --color-border-strong: var(--color-gray-300);
+}
+
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border);
+  }
+}
+
+@utility bg-base {
+  background-color: var(--color-background-base);
+}
+
+@utility border-strong {
+  border-color: var(--color-border-strong);
+}
 
 .mapboxgl-ctrl-bottom-right {
   display: none !important;
@@ -179,29 +286,51 @@ details summary::-webkit-details-marker {
 }
 
 :root {
-  --highlight-purple: theme("colors.purple.500");
-  --highlight-dark-purple: theme("colors.purple.700");
-  --highlight-yellow: theme("colors.yellow.500");
-  --highlight-dark-yellow: theme("colors.yellow.500");
-  --highlight-gray: theme("colors.gray.300");
-  --highlight-dark-gray: theme("colors.gray.500");
-  --highlight-light-gray: theme("colors.purple.100");
-  --highlight-tooltip-text: theme("colors.black");
-  --highlight-background: theme("colors.white");
-  --cm-font: theme("fontFamily.mono");
+  --highlight-purple: var(--color-purple-500);
+  --highlight-dark-purple: var(--color-purple-700);
+  --highlight-yellow: var(--color-yellow-500);
+  --highlight-dark-yellow: var(--color-yellow-500);
+  --highlight-gray: var(--color-gray-300);
+  --highlight-dark-gray: var(--color-gray-500);
+  --highlight-light-gray: var(--color-purple-100);
+  --highlight-tooltip-text: var(--color-black);
+  --highlight-background: var(--color-white);
+  --cm-font: var(--font-mono);
 }
 
 .dark {
-  --highlight-purple: theme("colors.purple.300");
-  --highlight-dark-purple: theme("colors.purple.100");
-  --highlight-yellow: theme("colors.yellow.100");
-  --highlight-dark-yellow: theme("colors.yellow.300");
-  --highlight-gray: theme("colors.gray.300");
-  --highlight-dark-gray: theme("colors.gray.500");
-  --highlight-light-gray: theme("colors.gray.700");
-  --highlight-background: theme("colors.gray.800");
-  --highlight-tooltip-text: theme("colors.white");
-  --cm-font: theme("fontFamily.mono");
+  /* Semantic token dark overrides */
+  --color-accent: var(--color-purple-400);
+  --color-base-hover: var(--color-gray-700);
+  --color-base-active: var(--color-gray-600);
+  --color-panel: var(--color-gray-800);
+  --color-popover: var(--color-gray-800);
+  --color-default: var(--color-white);
+  --color-subtle: var(--color-gray-400);
+  --color-disabled: var(--color-gray-600);
+  --color-warning: var(--color-orange-400);
+  --color-warning-subtle: var(--color-orange-950);
+  --color-error: var(--color-red-300);
+  --color-error-subtle: var(--color-red-950);
+  --color-success: var(--color-green-400);
+  --color-success-subtle: var(--color-green-950);
+  --color-info: var(--color-blue-400);
+  --color-info-subtle: var(--color-blue-950);
+
+  --color-background-base: var(--color-gray-900);
+  --color-border: var(--color-gray-700);
+  --color-border-strong: var(--color-gray-600);
+
+  --highlight-purple: var(--color-purple-300);
+  --highlight-dark-purple: var(--color-purple-100);
+  --highlight-yellow: var(--color-yellow-100);
+  --highlight-dark-yellow: var(--color-yellow-300);
+  --highlight-gray: var(--color-gray-300);
+  --highlight-dark-gray: var(--color-gray-500);
+  --highlight-light-gray: var(--color-gray-700);
+  --highlight-background: var(--color-gray-800);
+  --highlight-tooltip-text: var(--color-white);
+  --cm-font: var(--font-mono);
 }
 
 .cm-editor.cm-focused {
@@ -218,7 +347,7 @@ details summary::-webkit-details-marker {
  */
 
 .properties-tab {
-  @apply py-0.5 px-1 text-xs cursor-pointer text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-sm;
+  @apply py-0.5 px-1 text-xs cursor-pointer text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xs;
 }
 
 .properties-tab[data-state="active"] {
@@ -251,8 +380,8 @@ details summary::-webkit-details-marker {
 }
 
 body.dark .mapboxgl-ctrl-group {
-  background-color: theme("colors.gray.800");
-  box-shadow: 0 0 0 1px theme("colors.gray.500");
+  background-color: var(--color-gray-800);
+  box-shadow: 0 0 0 1px var(--color-gray-500);
 }
 
 body.dark .mapboxgl-ctrl button.mapboxgl-ctrl-zoom-in .mapboxgl-ctrl-icon {
@@ -281,7 +410,7 @@ body.dark .mapboxgl-ctrl-attrib-button {
 
 .placemark-scrollbar::-webkit-scrollbar-thumb {
   @apply bg-gray-400 dark:bg-gray-100;
-  @apply hover:bg-gray-500 hover:dark:bg-white;
+  @apply hover:bg-gray-500 dark:hover:bg-white;
 }
 
 .placemark-scrollbar::-webkit-scrollbar {
@@ -395,6 +524,37 @@ body.dark .mapboxgl-ctrl-attrib-button {
   background: linear-gradient(to left, rgba(0, 0, 0, 0.3), transparent);
 }
 
+.profile-strip-fade-left,
+.profile-strip-fade-right {
+  position: absolute;
+  pointer-events: none;
+  z-index: 12;
+}
+
+.profile-strip-fade-left {
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.1), transparent);
+}
+
+.profile-strip-fade-right {
+  background: linear-gradient(to left, rgba(0, 0, 0, 0.1), transparent);
+}
+
+.dark .profile-strip-fade-left {
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.3), transparent);
+}
+
+.dark .profile-strip-fade-right {
+  background: linear-gradient(to left, rgba(0, 0, 0, 0.3), transparent);
+}
+
+.profile-cursor-line {
+  position: absolute;
+  pointer-events: none;
+  z-index: 11;
+  width: 0;
+  border-left: 1px dashed #9ca3af;
+}
+
 /* DataGrid scroll shadows — uses named scroll timelines so shadows
    (positioned as siblings outside the scroll container) can reference
    the scroll container's progress. */
@@ -450,7 +610,7 @@ body.dark .mapboxgl-ctrl-attrib-button {
     overflow-auto
     p-2
     border
-    border-gray-300 dark:border-gray-500 rounded
+    border-gray-300 dark:border-gray-500 rounded-sm
     dark:bg-gray-800 dark:text-white;
 
   > * + * {
@@ -595,6 +755,19 @@ body.dark .mapboxgl-ctrl-attrib-button {
 
 .progress-indeterminate {
   animation: progressIndeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes progressShimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.progress-shimmer {
+  animation: progressShimmer 1.8s linear infinite;
 }
 
 @media (prefers-reduced-motion: no-preference) {

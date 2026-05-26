@@ -18,9 +18,9 @@ import {
   sourceCodeUrl,
   utilitiesUrl,
 } from "src/global-config";
-import { SignedIn, SignedOut, UserButton } from "src/components/auth";
 import { useAuth } from "src/hooks/use-auth";
-import { useClerk } from "src/hooks/use-clerk";
+import { SignedIn, SignedOut, UserButton } from "src/components/auth";
+import { useClerk } from "@clerk/nextjs";
 import { SignInButton, SignUpButton } from "./auth-buttons";
 import { useShowWelcome } from "src/commands/show-welcome";
 import { useUserTracking } from "src/infra/user-tracking";
@@ -29,7 +29,6 @@ import { getTrialDaysRemaining } from "src/lib/account-plans";
 import { useEffectivePlan } from "src/hooks/use-effective-plan";
 import { usePermissions } from "src/hooks/use-permissions";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { PlanBadge } from "./plan-badge";
 import { PlanLabel } from "./plan-label";
 import { useSetAtom } from "jotai";
 import { dialogAtom } from "src/state/dialog";
@@ -71,7 +70,6 @@ export const MenuBarPlay = memo(function MenuBar() {
   const isMdOrLarger = useBreakpoint("md");
   const isSmOrLarger = useBreakpoint("sm");
   const isActivateTrialOn = useFeatureFlag("FLAG_ACTIVATE_TRIAL");
-  const isOrgsOn = useFeatureFlag("FLAG_ORGS");
   const effectivePlan = useEffectivePlan();
   const { openOrganizationProfile } = useClerk();
   const { canManageOrganization } = usePermissions();
@@ -109,38 +107,9 @@ export const MenuBarPlay = memo(function MenuBar() {
           </>
         )}
         <SignedIn>
-          <div
-            className={`relative flex items-center gap-x-2 ${isOrgsOn ? "" : "px-2"}`}
-          >
-            {isOrgsOn ? (
-              <AccountSection layout="navbar">
-                {effectivePlan === "free" ? (
-                  <TrialOrUpgradeButton
-                    user={user}
-                    isActivateTrialOn={isActivateTrialOn}
-                    translate={translate}
-                    onUpgrade={() => {
-                      userTracking.capture({
-                        name: "upgradeButton.clicked",
-                        source: "menu",
-                      });
-                      setDialogState({ type: "upgrade" });
-                    }}
-                  />
-                ) : (
-                  <PlanLabel
-                    plan={effectivePlan}
-                    onOrgClick={
-                      canManageOrganization
-                        ? () => openOrganizationProfile()
-                        : undefined
-                    }
-                  />
-                )}
-                <UserButton />
-              </AccountSection>
-            ) : (
-              <>
+          <div className="relative flex items-center gap-x-2">
+            <AccountSection layout="navbar">
+              {effectivePlan === "free" ? (
                 <TrialOrUpgradeButton
                   user={user}
                   isActivateTrialOn={isActivateTrialOn}
@@ -150,17 +119,24 @@ export const MenuBarPlay = memo(function MenuBar() {
                       name: "upgradeButton.clicked",
                       source: "menu",
                     });
-                    setDialogState({ type: "upgrade" });
+                    setDialogState({
+                      type: "upgrade",
+                      source: { kind: "menu" },
+                    });
                   }}
                 />
-                {isMdOrLarger && (
-                  <>
-                    <PlanBadge plan={effectivePlan} />
-                    <UserButton />
-                  </>
-                )}
-              </>
-            )}
+              ) : (
+                <PlanLabel
+                  plan={effectivePlan}
+                  onOrgClick={
+                    canManageOrganization
+                      ? () => openOrganizationProfile()
+                      : undefined
+                  }
+                />
+              )}
+              <UserButton />
+            </AccountSection>
           </div>
         </SignedIn>
         <SignedOut>
@@ -286,7 +262,6 @@ export const SideMenu = () => {
   const showWelcome = useShowWelcome();
   const { user } = useAuth();
   const isActivateTrialOn = useFeatureFlag("FLAG_ACTIVATE_TRIAL");
-  const isOrgsOn = useFeatureFlag("FLAG_ORGS");
   const effectivePlan = useEffectivePlan();
   const { openOrganizationProfile } = useClerk();
   const { canManageOrganization } = usePermissions();
@@ -385,7 +360,7 @@ export const SideMenu = () => {
             <hr className="my-4 border-gray-200" />
             <SignedIn>
               <AccountSection layout="sidebar">
-                {isOrgsOn && effectivePlan !== "free" && (
+                {effectivePlan !== "free" && (
                   <PlanLabel
                     plan={effectivePlan}
                     onOrgClick={
@@ -395,7 +370,7 @@ export const SideMenu = () => {
                     }
                   />
                 )}
-                {(!isOrgsOn || effectivePlan === "free") && (
+                {effectivePlan === "free" && (
                   <TrialOrUpgradeButton
                     user={user}
                     isActivateTrialOn={isActivateTrialOn}
@@ -407,7 +382,10 @@ export const SideMenu = () => {
                         source: "menu",
                       });
                       setIsOpen(false);
-                      setDialogState({ type: "upgrade" });
+                      setDialogState({
+                        type: "upgrade",
+                        source: { kind: "menu" },
+                      });
                     }}
                   />
                 )}

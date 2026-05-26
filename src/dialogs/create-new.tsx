@@ -17,7 +17,7 @@ import {
   pressureUnitTranslationKeys,
 } from "src/lib/project-settings/quantities-spec";
 import type { Unit } from "src/quantity";
-import { ProjectSettings } from "src/lib/project-settings";
+import { defaultProjectName, ProjectSettings } from "src/lib/project-settings";
 import { type Projection, WGS84 } from "src/lib/projections";
 import {
   HeadlossFormula,
@@ -113,6 +113,7 @@ export const CreateNew = () => {
         : presets[unitsSpec];
       const defaults = withHeadlossDefaults(spec.defaults, headlossFormula);
       const projectSettings: ProjectSettings = {
+        name: defaultProjectName,
         units: spec.units,
         defaults,
         headlossFormula,
@@ -431,7 +432,7 @@ const ProjectionSelector = ({
           <div className="w-full border-b border-gray-200 h-28 overflow-hidden">
             <NetworkProjectedIllustration preserveAspectRatio="xMidYMid slice" />
           </div>
-          <div className="flex-grow p-2">
+          <div className="grow p-2">
             <p className="text-xs text-gray-700 dark:text-gray-300">
               {translate("inpProjectionChoice.projectedTitle")}
             </p>
@@ -451,7 +452,7 @@ const ProjectionSelector = ({
           <div className="w-full border-b border-gray-200 h-28 overflow-hidden">
             <NetworkUnprojectedIllustration preserveAspectRatio="xMidYMid slice" />
           </div>
-          <div className="flex-grow p-2">
+          <div className="grow p-2">
             <p className="text-xs text-gray-700 dark:text-gray-300">
               {translate("inpProjectionChoice.nonProjectedTitle")}
             </p>

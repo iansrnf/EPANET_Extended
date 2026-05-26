@@ -12,7 +12,7 @@ describe("label manager", () => {
     expect(labelManager.generateFor("junction", anId())).toEqual("J1");
   });
 
-  it("skips until not taken for the same type", () => {
+  it("skips taken labels without filling gaps", () => {
     const labelManager = new LabelManager();
 
     labelManager.register("P1", "pipe", anId());
@@ -24,7 +24,7 @@ describe("label manager", () => {
     expect(labelManager.generateFor("junction", anId())).toEqual("J1");
   });
 
-  it("can have the same label registerd for multiple ids", () => {
+  it("can have the same label registered for multiple ids", () => {
     const labelManager = new LabelManager();
 
     labelManager.register("LABEL_1", "junction", anId());
@@ -386,6 +386,38 @@ describe("label manager", () => {
       expect(sharedCounters.get("junction")).toEqual(2);
 
       expect(manager.generateFor("pipe", anId())).toEqual("P3");
+    });
+
+    it("copyTypeFrom copies counter and entries for a single type", () => {
+      const source = new LabelManager();
+      source.register("CP1", "customerPoint", anId());
+      source.register("CP3", "customerPoint", anId());
+      source.generateFor("customerPoint", anId());
+      source.generateFor("customerPoint", anId());
+      source.register("P1", "pipe", anId());
+
+      const target = new LabelManager();
+      target.copyTypeFrom("customerPoint", source);
+
+      expect(target.isLabelAvailable("CP1", "customerPoint")).toBe(false);
+      expect(target.isLabelAvailable("CP3", "customerPoint")).toBe(false);
+      expect(target.isLabelAvailable("P1", "pipe")).toBe(true);
+      expect(target.generateFor("customerPoint", anId())).toEqual("CP5");
+    });
+
+    it("copyTypeFrom does not mutate the source", () => {
+      const source = new LabelManager();
+      source.register("CP1", "customerPoint", anId());
+      source.generateFor("customerPoint", anId());
+
+      const target = new LabelManager();
+      target.copyTypeFrom("customerPoint", source);
+
+      target.generateFor("customerPoint", anId());
+      target.register("CP9", "customerPoint", anId());
+
+      expect(source.isLabelAvailable("CP9", "customerPoint")).toBe(true);
+      expect(source.generateFor("customerPoint", anId())).toEqual("CP3");
     });
 
     it("adoptCounters keeps the higher value from shared map", () => {

@@ -1,5 +1,5 @@
 /**
- * GeoTIFF fixture generator - creates minimal .tif files with precise geokeys.
+ * GeoTIFF fixture generator — creates minimal .tif files with precise geokeys.
  *
  * The `geotiff` library's `writeArrayBuffer` auto-builds the GeoKeyDirectory
  * from individual `*GeoKey` properties, but its `fieldTagTypes` map only
@@ -58,7 +58,7 @@ const RASTER_2x2 = [
 ];
 
 export type FixtureOptions = {
-  /** 3D raster [band][row][col] - defaults to 2x2 zeros. */
+  /** 3D raster [band][row][col] — defaults to 2×2 zeros. */
   raster?: number[][][];
   /** Flat Float32Array raster (requires width/height). */
   flatRaster?: { data: Float32Array; width: number; height: number };
@@ -76,7 +76,7 @@ function buildArrayBuffer(opts: FixtureOptions): ArrayBuffer {
   // writeArrayBuffer overwrites ModelTiepoint with a whole-globe default
   // when it doesn't find GeographicTypeGeoKey or ProjectedCSTypeGeoKey as
   // top-level properties (even if they're inside a raw GeoKeyDirectory).
-  // Pass a dummy to prevent that - it gets cleaned up internally.
+  // Pass a dummy to prevent that — it gets cleaned up internally.
   const projHint =
     opts.geoKeys[3072] != null
       ? { ProjectedCSTypeGeoKey: opts.geoKeys[3072] }

@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useContext } from "react";
 import { useAtomCallback } from "jotai/utils";
 import type { fileSave as fileSaveType } from "browser-fs-access";
 
@@ -10,16 +10,22 @@ import {
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { dialogAtom } from "src/state/dialog";
 import { userSettingsAtom } from "src/state/user-settings";
-import { notifyPromiseState } from "src/components/notifications";
+import { projectSettingsAtom } from "src/state/project-settings";
+import { notify } from "src/components/notifications";
+import { SpinnerIcon, SuccessIcon, WarningIcon } from "src/icons";
 import { useTranslate } from "src/hooks/use-translate";
 import { useRecentFiles } from "src/hooks/use-recent-files";
 import { useUserTracking } from "src/infra/user-tracking";
 import * as db from "src/lib/db";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { captureError, captureWarning } from "src/infra/error-tracking";
+import { MapContext, captureThumbnail } from "src/map";
 
 export const saveProjectShortcut = "ctrl+s";
 export const saveProjectAsShortcut = "ctrl+shift+s";
 export const projectExtension = ".ejsdb";
+
+const saveProjectToastId = "save-project";
 
 type FileAccess = { fileSave: typeof fileSaveType };
 
@@ -35,6 +41,7 @@ export const useSaveProject = ({
   const { addRecent } = useRecentFiles();
   const userTracking = useUserTracking();
   const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
+  const map = useContext(MapContext);
 
   const performSave = useAtomCallback(
     useCallback(
@@ -66,6 +73,19 @@ export const useSaveProject = ({
           );
 
           if (newHandle) {
+            const projectName = newHandle.name.replace(/\.[^.]+$/, "");
+            const updatedSettings = {
+              ...get(projectSettingsAtom),
+              name: projectName,
+            };
+            set(projectSettingsAtom, updatedSettings);
+
+            await db.saveProjectSettings(updatedSettings);
+            const updatedBlob = await db.exportDb();
+            const writable = await newHandle.createWritable();
+            await writable.write(updatedBlob);
+            await writable.close();
+
             const isDemo = get(isDemoNetworkAtom);
             set(projectFileInfoAtom, {
               name: newHandle.name,
@@ -73,24 +93,69 @@ export const useSaveProject = ({
               handle: newHandle,
             });
             if (!isDemo) {
-              void addRecent(newHandle.name, newHandle);
+              const thumbnail = map
+                ? (captureThumbnail(map) ?? undefined)
+                : undefined;
+              void addRecent(newHandle.name, newHandle, thumbnail);
             }
           }
         };
 
+        notify({
+          variant: "default",
+          title: translate("savingProject"),
+          Icon: SpinnerIcon,
+          id: saveProjectToastId,
+          size: "sm",
+          dismissable: false,
+          duration: Infinity,
+        });
         try {
-          const promise = asyncSave();
-          await notifyPromiseState(promise, {
-            loading: translate("saving"),
-            success: translate("saved"),
-            error: translate("saveCanceled"),
+          await asyncSave();
+          notify({
+            variant: "success",
+            title: translate("saved"),
+            Icon: SuccessIcon,
+            id: saveProjectToastId,
+            size: "sm",
           });
           return true;
-        } catch {
+        } catch (error) {
+          const err = error as Error;
+          if (err.name === "AbortError") {
+            notify({
+              variant: "warning",
+              title: translate("saveCanceled"),
+              Icon: WarningIcon,
+              id: saveProjectToastId,
+              size: "sm",
+            });
+            return false;
+          }
+          if (err.name === "NotAllowedError") {
+            notify({
+              variant: "warning",
+              title: translate("savePermissionDenied"),
+              Icon: WarningIcon,
+              id: saveProjectToastId,
+              size: "sm",
+            });
+            captureWarning("Save project: permission denied", err);
+            return false;
+          }
+          captureError(err);
+          notify({
+            variant: "error",
+            size: "md",
+            title: translate("projectSaveFailed"),
+            description: translate("unexpectedErrorContactSupport"),
+            Icon: WarningIcon,
+            id: saveProjectToastId,
+          });
           return false;
         }
       },
-      [getFsAccess, addRecent, translate],
+      [getFsAccess, addRecent, translate, map],
     ),
   );
 
@@ -101,9 +166,9 @@ export const useSaveProject = ({
         set,
         { source, isSaveAs = false }: { source: string; isSaveAs?: boolean },
       ) => {
-        userTracking.capture({ name: "project.saved", source, isSaveAs });
-
         if (!isOurFileOn) return false;
+
+        userTracking.capture({ name: "project.saved", source, isSaveAs });
 
         const projectInfo = get(projectFileInfoAtom);
         if (!projectInfo && get(userSettingsAtom).showProjectSavedInfo) {

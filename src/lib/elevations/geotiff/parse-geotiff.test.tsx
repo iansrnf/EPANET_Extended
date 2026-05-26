@@ -21,7 +21,7 @@ const WGS84_KEYS = {
   [GeoKey.GeographicType]: 4326,
 };
 
-/** Builds a WGS84 2x2 fixture with optional geokey overrides. */
+/** Builds a WGS84 2×2 fixture with optional geokey overrides. */
 function wgs84Fixture(
   geoKeys: Record<number, number> = {},
   pixelScale = [0.25, 0.25, 0],
@@ -41,7 +41,7 @@ const ELEVATION_RASTER = new Float32Array([
   115, 125, 135,   145,
 ]);
 
-/** 4x4 float32 grid, origin (-4, 56), pixel size 0.25 degrees, nodata -9999. */
+/** 4×4 float32 grid, origin (-4, 56), pixel size 0.25°, nodata -9999. */
 function elevationFixture() {
   return buildFixture({
     flatRaster: { data: ELEVATION_RASTER, width: 4, height: 4 },
@@ -169,6 +169,7 @@ describe("parseGeoTIFF", () => {
       });
       const metadata = await parseGeoTIFF(file, fetchProj4DefFake);
 
+      // Origin (400000, 650000) in OSGB-like tmerc — should be in the UK
       const [west, south, east, north] = metadata.bbox;
       expect(west).toBeGreaterThan(-10);
       expect(west).toBeLessThan(5);
@@ -299,6 +300,8 @@ describe("parseGeoTIFF", () => {
       const metadata = await parseGeoTIFF(file, fetchProj4DefFake);
 
       expect(metadata.pixelIsPoint).toBe(true);
+      // Origin (-4, 56), scale (0.25, -0.25), 2×2. Shift by -0.5 pixel:
+      //   gx = -4.125, gy = 56.125 → bottom-right = (-3.625, 55.625)
       expect(metadata.bbox[0]).toBeCloseTo(-4.125, 5);
       expect(metadata.bbox[1]).toBeCloseTo(55.625, 5);
       expect(metadata.bbox[2]).toBeCloseTo(-3.625, 5);

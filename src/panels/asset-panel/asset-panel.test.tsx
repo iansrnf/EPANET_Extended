@@ -79,6 +79,22 @@ describe("AssetPanel", () => {
       expect(screen.queryAllByText("Not available").length).toBeGreaterThan(0);
     });
 
+    it("does not show material or year fields when FLAG_PIPE_ATTRIBUTES is off", () => {
+      const IDS = { P1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with().aPipe(IDS.P1).build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.P1,
+      });
+
+      renderComponent(store);
+
+      expect(screen.queryByLabelText(/material/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByLabelText(/year of installation/i),
+      ).not.toBeInTheDocument();
+    });
+
     it("can show simulation results", async () => {
       const IDS = { P1: 1 };
       const hydraulicModel = HydraulicModelBuilder.with().aPipe(IDS.P1).build();
@@ -618,7 +634,7 @@ describe("AssetPanel", () => {
           label: "MY_PUMP",
           connections: [IDS.j1, IDS.j2],
           initialStatus: "on",
-          definitionType: "curve",
+          definitionType: "designPointCurve",
           curve: [{ x: 20, y: 10 }],
           speed: 0.8,
         })
@@ -669,7 +685,7 @@ describe("AssetPanel", () => {
           label: "MY_PUMP",
           connections: [IDS.j1, IDS.j2],
           initialStatus: "on",
-          definitionType: "curve",
+          definitionType: "designPointCurve",
           curve: [{ x: 20, y: 40 }],
           power: 100,
         })
@@ -705,7 +721,7 @@ describe("AssetPanel", () => {
           pumps: {
             [IDS.PU1]: {
               flow: 20.1234,
-              headloss: -10.1234,
+              head: 10.1234,
               status: "on",
             },
           },

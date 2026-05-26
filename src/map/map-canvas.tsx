@@ -26,6 +26,7 @@ import {
   currentZoomAtom,
   mapViewportAtom,
 } from "src/state/map";
+import { useSetAtom } from "jotai";
 import { modeAtom, Mode } from "src/state/mode";
 import { MapEngine } from "./map-engine";
 import { EmptyIndex } from "src/lib/generate-flatbush-instance";
@@ -36,7 +37,7 @@ import { useModeHandlers } from "./mode-handlers";
 import { wrappedFeaturesFromMapFeatures } from "src/lib/map-component-utils";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { usePersistence } from "src/lib/persistence";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { useHotkeys } from "src/keyboard/hotkeys";
 import { useAtomCallback } from "jotai/utils";
 import { isDebugAppStateOn, isDebugOn } from "src/infra/debug-mode";
@@ -53,9 +54,9 @@ import { useAuth } from "src/hooks/use-auth";
 import { satelliteLimitedZoom } from "src/commands/toggle-satellite";
 import { useTranslate } from "src/hooks/use-translate";
 import { supportEmail } from "src/global-config";
-import { MapHandlers, MoveEvent } from "./types";
+import { MapHandlers } from "./types";
 import { PipeDrawingFloatingPanel } from "src/components/pipe-drawing-floating-panel";
-import { useIsBranchLocked } from "src/hooks/use-is-branch-locked";
+import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
 mapboxgl.accessToken = env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 mapboxgl.setRTLTextPlugin(
@@ -79,7 +80,7 @@ const exposeAppStateInWindow = (
 const noop = () => null;
 const debug = isDebugOn
   ? (
-      e: mapboxgl.MapboxEvent,
+      e: mapboxgl.MapboxEvent<any>,
       mode: Mode,
       selection: Sel,
       dragTargetRef: MutableRefObject<DragTarget | null>,
@@ -118,6 +119,7 @@ export const MapCanvas = memo(function MapCanvas({
 
   const { folderMap } = data;
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
+
   // State
   const [flatbushInstance, setFlatbushInstance] =
     useState<FlatbushLike>(EmptyIndex);
@@ -135,7 +137,7 @@ export const MapCanvas = memo(function MapCanvas({
   const selection = data.selection;
   const mode = useAtomValue(modeAtom);
   const cursor = useAtomValue(cursorStyleAtom);
-  const isBranchLocked = useIsBranchLocked();
+  const isEditionBlocked = useIsEditionBlocked();
   const [initError, setInitError] = useState<boolean>(false);
 
   // Refs
@@ -204,7 +206,7 @@ export const MapCanvas = memo(function MapCanvas({
     selection,
     map: mapRef.current!,
     rep,
-    readonly: isBranchLocked,
+    readonly: isEditionBlocked,
   };
 
   const HANDLERS = useModeHandlers(handlerContext);
@@ -268,7 +270,7 @@ export const MapCanvas = memo(function MapCanvas({
 
       HANDLERS[mode.mode].double(e);
     },
-    onMoveEnd(e: MoveEvent) {
+    onMoveEnd(e: mapboxgl.MapboxEvent & mapboxgl.EventData) {
       debug(e, mode.mode, selection, dragTargetRef, "onMouseMoveEnd");
       const center = e.target.getCenter();
       setMapViewport({
@@ -276,18 +278,16 @@ export const MapCanvas = memo(function MapCanvas({
         zoom: e.target.getZoom(),
       });
     },
-    onMove: throttle((e: MoveEvent) => {
+    onMove: throttle((e: mapboxgl.MapboxEvent & mapboxgl.EventData) => {
       debug(e, mode.mode, selection, dragTargetRef, "onMove");
       const center = e.target.getCenter().toArray();
-      const mapBounds = e.target.getBounds();
-      if (!mapBounds) return;
-      const bounds = mapBounds.toArray();
+      const bounds = e.target.getBounds().toArray();
       return {
         center,
         bounds,
       };
     }, 300),
-    onZoom: (e: mapboxgl.MapboxEvent) => {
+    onZoom: (e: mapboxgl.MapBoxZoomEvent) => {
       const zoom = e.target.getZoom();
       setCurrentZoom(zoom);
     },
@@ -390,6 +390,7 @@ export const MapCanvas = memo(function MapCanvas({
 
     if (cursor === "pointer-add") return "cursor-pointer-add";
     if (cursor === "pointer-subtract") return "cursor-pointer-subtract";
+    if (cursor === "pointer") return "placemark-cursor-pointer";
 
     if (cursor === "move") return "cursor-move";
 
@@ -400,8 +401,6 @@ export const MapCanvas = memo(function MapCanvas({
       mode.mode !== Mode.DOWNSTREAM_TRACE_SELECT
     )
       return "cursor-crosshair";
-
-    if (cursor === "pointer") return "placemark-cursor-pointer";
 
     return "placemark-cursor-default";
   }, [cursor, mode]);
@@ -430,7 +429,7 @@ const MapError = () => {
   const translate = useTranslate();
   return (
     <div className="flex flex-col items-center justify-center w-full h-full">
-      <div className="flex flex-col items-start max-w-screen-sm p-6">
+      <div className="flex flex-col items-start max-w-(--breakpoint-sm) p-6">
         <h3 className="text-md font-semibold text-gray-700 mb-4">
           {translate("cannotRenderMap")}
         </h3>
@@ -456,7 +455,7 @@ const SatelliteResolutionMessage = ({ zoom }: { zoom: number | undefined }) => {
           "top-[60px] sm:top-1/2",
         )}
       >
-        <div className="bg-gray-800 text-white rounded shadow-md py-1 px-2 m-2">
+        <div className="bg-gray-800 text-white rounded-sm shadow-md py-1 px-2 m-2">
           {translate("signUpToUnlockResolution")}
         </div>
       </div>

@@ -2,6 +2,7 @@ import { useAtomValue } from "jotai";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { useTranslate } from "src/hooks/use-translate";
 import { localizeDecimal } from "src/infra/i18n/numbers";
+
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { autoElevationsAtom } from "src/state/drawing";
@@ -13,11 +14,7 @@ import {
   stagingModelDerivedAtom,
 } from "src/state/derived-branch-state";
 import * as Popover from "@radix-ui/react-popover";
-import {
-  Button,
-  StyledPopoverArrow,
-  StyledPopoverContent,
-} from "src/components/elements";
+import { Button, StyledPopoverArrow, StyledPopoverContent } from "../elements";
 import { HydraulicModel } from "src/hydraulic-model";
 import { ScenarioSwitcher } from "./scenario-switcher";
 
@@ -28,6 +25,7 @@ import {
   ChevronsLeftIcon,
   CircleIcon,
   OutdatedSimulationIcon,
+  StopSimulationIcon,
 } from "src/icons";
 
 export const Footer = () => {
@@ -218,6 +216,12 @@ const buildSimulationStatusStyles = (
         Icon: WarningIcon,
         colorClass: "text-yellow-600",
         text: translate("simulationWarning"),
+      };
+    case "stopped":
+      return {
+        Icon: StopSimulationIcon,
+        colorClass: "text-blue-500",
+        text: translate("simulationStopped"),
       };
   }
 };

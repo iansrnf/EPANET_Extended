@@ -15,12 +15,12 @@ export enum Mode {
   DRAW_VALVE = "DRAW_VALVE",
   DRAW_TANK = "DRAW_TANK",
   DRAW_CUSTOMER_POINT = "DRAW_CUSTOMER_POINT",
-  DRAW_PRESSURE_LOGGER = "DRAW_PRESSURE_LOGGER",
   CONNECT_CUSTOMER_POINTS = "CONNECT_CUSTOMER_POINTS",
   REDRAW_LINK = "REDRAW_LINK",
   BOUNDARY_TRACE_SELECT = "BOUNDARY_TRACE_SELECT",
   UPSTREAM_TRACE_SELECT = "UPSTREAM_TRACE_SELECT",
   DOWNSTREAM_TRACE_SELECT = "DOWNSTREAM_TRACE_SELECT",
+  HGL_PROFILE = "HGL_PROFILE",
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
@@ -43,12 +43,12 @@ export const MODE_INFO: Record<
   [Mode.DRAW_VALVE]: { name: "valve" },
   [Mode.DRAW_TANK]: { name: "tank" },
   [Mode.DRAW_CUSTOMER_POINT]: { name: "customerPoint" },
-  [Mode.DRAW_PRESSURE_LOGGER]: { name: "pressureLogger" },
   [Mode.CONNECT_CUSTOMER_POINTS]: { name: "connect customer points" },
   [Mode.REDRAW_LINK]: { name: "redraw link" },
   [Mode.BOUNDARY_TRACE_SELECT]: { name: "boundary trace" },
   [Mode.UPSTREAM_TRACE_SELECT]: { name: "upstream trace" },
   [Mode.DOWNSTREAM_TRACE_SELECT]: { name: "downstream trace" },
+  [Mode.HGL_PROFILE]: { name: "hglProfile" },
 };
 
 export type ModeWithOptions = {

@@ -16,12 +16,8 @@ import {
   stagingModelDerivedAtom,
   simulationResultsDerivedAtom,
 } from "src/state/derived-branch-state";
-import {
-  type RangeColorPreference,
-  useSymbologyState,
-} from "src/state/map-symbology";
+import { useSymbologyState } from "src/state/map-symbology";
 import { projectSettingsAtom } from "src/state/project-settings";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 
 export type ColorBySelection = SupportedProperty | "none";
 
@@ -34,11 +30,7 @@ export const useChangeColorBy = (geometryType: "node" | "link") => {
   const simulationResults = useAtomValue(simulationResultsDerivedAtom);
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
   const { units } = useAtomValue(projectSettingsAtom);
-  const { symbologyPreferences, switchNodeSymbologyTo, switchLinkSymbologyTo } =
-    useSymbologyState();
-  const isPersistMapPreferencesOn = useFeatureFlag(
-    "FLAG_RESTORE_MAP_PREFERENCES",
-  );
+  const { switchNodeSymbologyTo, switchLinkSymbologyTo } = useSymbologyState();
   const [isWorking, setIsWorking] = useState(false);
 
   const fetchSortedData = useCallback(
@@ -67,9 +59,7 @@ export const useChangeColorBy = (geometryType: "node" | "link") => {
         property,
         hydraulicModel,
         simulationResults,
-        {
-          absValues,
-        },
+        { absValues },
       );
     },
     [hydraulicModel, simulationResults, simulation],
@@ -81,6 +71,7 @@ export const useChangeColorBy = (geometryType: "node" | "link") => {
         name: "map.colorBy.changed",
         type: geometryType,
         subtype: property,
+        property,
       });
 
       if (property === "none") {
@@ -96,9 +87,6 @@ export const useChangeColorBy = (geometryType: "node" | "link") => {
         !isSimulationProperty(property) || !!simulationResults;
       if (!canApplySymbology) return;
 
-      const preference: RangeColorPreference | undefined =
-        isPersistMapPreferencesOn ? symbologyPreferences[property] : undefined;
-
       setIsWorking(true);
       try {
         const sortedData = await fetchSortedData(property);
@@ -106,11 +94,11 @@ export const useChangeColorBy = (geometryType: "node" | "link") => {
 
         if (geometryType === "node") {
           switchNodeSymbologyTo(property, () =>
-            symbologyBuilders[property](units, sortedData, preference),
+            symbologyBuilders[property](units, sortedData),
           );
         } else {
           switchLinkSymbologyTo(property, () =>
-            symbologyBuilders[property](units, sortedData, preference),
+            symbologyBuilders[property](units, sortedData),
           );
         }
       } finally {
@@ -121,8 +109,6 @@ export const useChangeColorBy = (geometryType: "node" | "link") => {
       userTracking,
       geometryType,
       simulationResults,
-      isPersistMapPreferencesOn,
-      symbologyPreferences,
       units,
       switchNodeSymbologyTo,
       switchLinkSymbologyTo,

@@ -160,10 +160,9 @@ describe("Map Styling Editor", () => {
     );
     await user.keyboard("{Escape}");
     await user.click(screen.getByRole("combobox", { name: /node color by/i }));
-    expect(screen.getByRole("option", { name: /pressure/i })).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
+    expect(
+      screen.getByRole("option", { name: /^pressure \(/i }),
+    ).toHaveAttribute("aria-disabled", "true");
   });
 
   describe("layers", () => {
@@ -283,7 +282,7 @@ describe("Map Styling Editor", () => {
       await userEvent.click(
         screen.getByRole("button", { name: /add custom/i }),
       );
-      expect(screen.getAllByText(/upgrade/i)).toHaveLength(3);
+      expect(screen.getAllByText(/upgrade/i)).toHaveLength(4);
     });
 
     it("can add custom XYZ layer when not in free", async () => {

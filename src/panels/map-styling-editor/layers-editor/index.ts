@@ -1,1 +1,1 @@
-export { AddLayer, LayersEditor } from "./layers-editor";
+export { LayersEditor, AddLayer } from "./layers-editor";

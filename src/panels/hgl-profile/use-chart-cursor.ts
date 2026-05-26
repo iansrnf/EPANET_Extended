@@ -1,0 +1,253 @@
+"use client";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import throttle from "lodash/throttle";
+import { ProfileLink, ProfilePoint, TerrainPoint } from "./chart-data";
+import { coordinatesAtLength, PathSegment } from "./path-position";
+import {
+  findLinkAt,
+  getTooltipContent,
+  VisibleTooltipContent,
+} from "./tooltip-data";
+import { isNearMainPlotLine, pickSldSnap, SNAP_PIXEL_THRESHOLD } from "./snap";
+import type { SldVisibility } from "./sld/visibility";
+
+export { SNAP_PIXEL_THRESHOLD };
+
+export type ChartCursorState = {
+  px: number;
+  py: number;
+  cursorX: number;
+  content: VisibleTooltipContent;
+} | null;
+
+export type HoverMarker = {
+  coordinates: [number, number];
+  nodeType?: ProfilePoint["nodeType"];
+  linkType?: ProfileLink["type"];
+};
+
+interface UseChartCursorParams {
+  containerRef: RefObject<HTMLDivElement | null>;
+  chartRef: RefObject<any>;
+  points: ProfilePoint[];
+  links: ProfileLink[];
+  terrain: TerrainPoint[] | null;
+  pathSegments: PathSegment[];
+  setHoverHighlight: (marker: HoverMarker | null) => void;
+  allowEstimates: boolean;
+  sldVisibility: SldVisibility;
+}
+
+export function useChartCursor({
+  containerRef,
+  chartRef,
+  points,
+  links,
+  terrain,
+  pathSegments,
+  setHoverHighlight,
+  allowEstimates,
+  sldVisibility,
+}: UseChartCursorParams): ChartCursorState {
+  const [cursorState, setCursorState] = useState<ChartCursorState>(null);
+
+  const depsRef = useRef({
+    points,
+    links,
+    terrain,
+    pathSegments,
+    setHoverHighlight,
+    allowEstimates,
+    sldVisibility,
+  });
+  depsRef.current = {
+    points,
+    links,
+    terrain,
+    pathSegments,
+    setHoverHighlight,
+    allowEstimates,
+    sldVisibility,
+  };
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const scheduleHover = throttle(
+      (marker: HoverMarker | null) => {
+        depsRef.current.setHoverHighlight(marker);
+      },
+      100,
+      { leading: false, trailing: true },
+    );
+
+    const getActiveZone = (chart: any) => {
+      /* eslint-disable @typescript-eslint/no-unsafe-call,
+         @typescript-eslint/no-unsafe-member-access,
+         @typescript-eslint/no-unsafe-assignment,
+         @typescript-eslint/no-unsafe-return */
+      const model = chart.getModel?.();
+      const stripRect = model
+        ?.getComponent?.("grid", 1)
+        ?.coordinateSystem?.getRect?.();
+      const mainRect = model
+        ?.getComponent?.("grid", 0)
+        ?.coordinateSystem?.getRect?.();
+      if (!stripRect || !mainRect) return null;
+      return {
+        x0: mainRect.x as number,
+        x1: (mainRect.x + mainRect.width) as number,
+        y0: stripRect.y as number,
+        y1: (mainRect.y + mainRect.height) as number,
+      };
+      /* eslint-enable */
+    };
+
+    const handleMove = (e: MouseEvent) => {
+      const chart = chartRef.current;
+      if (!chart) return;
+      const rect = el.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      /* eslint-disable @typescript-eslint/no-unsafe-call,
+         @typescript-eslint/no-unsafe-member-access,
+         @typescript-eslint/no-unsafe-assignment */
+      const zone = getActiveZone(chart);
+      if (
+        !zone ||
+        px < zone.x0 ||
+        px > zone.x1 ||
+        py < zone.y0 ||
+        py > zone.y1
+      ) {
+        chart.dispatchAction({
+          type: "updateAxisPointer",
+          currTrigger: "leave",
+        });
+        chart.getZr().setCursorStyle("default");
+        setCursorState(null);
+        scheduleHover(null);
+        return;
+      }
+      const result =
+        chart.convertFromPixel({ gridIndex: 0 }, [px, py]) ??
+        chart.convertFromPixel({ seriesIndex: 0 }, [px, py]);
+      const cursorX = Array.isArray(result) ? (result[0] as number) : NaN;
+      if (Number.isNaN(cursorX)) {
+        chart.dispatchAction({
+          type: "updateAxisPointer",
+          currTrigger: "leave",
+        });
+        chart.getZr().setCursorStyle("default");
+        setCursorState(null);
+        scheduleHover(null);
+        return;
+      }
+
+      const deps = depsRef.current;
+      const snap = pickSldSnap(
+        chart,
+        deps.points,
+        deps.links,
+        px,
+        deps.sldVisibility,
+      );
+
+      const effectivePixelX = snap?.pixelX ?? px;
+      chart.dispatchAction({
+        type: "updateAxisPointer",
+        currTrigger: "mousemove",
+        x: effectivePixelX,
+        y: py,
+      });
+      /* eslint-enable */
+
+      /* eslint-disable @typescript-eslint/no-unsafe-call,
+         @typescript-eslint/no-unsafe-member-access,
+         @typescript-eslint/no-unsafe-assignment */
+      const inSldGrid = chart.containPixel({ gridIndex: 1 }, [px, py]);
+      const inMainGrid = chart.containPixel({ gridIndex: 0 }, [px, py]);
+
+      let cursorStyle: "pointer" | "grab" | "default" = "default";
+      if (snap !== null) {
+        cursorStyle = "pointer";
+      } else if (inSldGrid) {
+        cursorStyle =
+          findLinkAt(cursorX, deps.links) !== null ? "pointer" : "grab";
+      } else if (inMainGrid) {
+        cursorStyle = isNearMainPlotLine(
+          chart,
+          cursorX,
+          py,
+          deps.points,
+          SNAP_PIXEL_THRESHOLD,
+        )
+          ? "pointer"
+          : "grab";
+      }
+      chart.getZr().setCursorStyle(cursorStyle);
+      /* eslint-enable */
+
+      let marker: HoverMarker | null = null;
+      if (snap?.kind === "node") {
+        marker = {
+          coordinates: deps.points[snap.index].coordinates,
+          nodeType: deps.points[snap.index].nodeType,
+        };
+      } else if (snap?.kind === "link") {
+        const coordinates = coordinatesAtLength(
+          deps.pathSegments,
+          snap.link.midLength,
+        );
+        if (coordinates) marker = { coordinates, linkType: snap.link.type };
+      } else {
+        const coordinates = coordinatesAtLength(deps.pathSegments, cursorX);
+        if (coordinates) marker = { coordinates };
+      }
+      scheduleHover(marker);
+
+      const content = getTooltipContent(
+        cursorX,
+        snap,
+        deps.points,
+        deps.links,
+        deps.terrain,
+        deps.allowEstimates,
+      );
+      if (content.kind === "hidden") {
+        setCursorState(null);
+        return;
+      }
+      setCursorState({ px, py, cursorX: effectivePixelX, content });
+    };
+
+    const handleLeave = () => {
+      const chart = chartRef.current;
+      if (chart) {
+        /* eslint-disable @typescript-eslint/no-unsafe-call,
+           @typescript-eslint/no-unsafe-member-access */
+        chart.dispatchAction({
+          type: "updateAxisPointer",
+          currTrigger: "leave",
+        });
+        chart.getZr().setCursorStyle("default");
+        /* eslint-enable */
+      }
+      setCursorState(null);
+      scheduleHover(null);
+    };
+
+    el.addEventListener("mousemove", handleMove);
+    el.addEventListener("mouseleave", handleLeave);
+    return () => {
+      el.removeEventListener("mousemove", handleMove);
+      el.removeEventListener("mouseleave", handleLeave);
+      scheduleHover.cancel();
+      depsRef.current.setHoverHighlight(null);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return cursorState;
+}

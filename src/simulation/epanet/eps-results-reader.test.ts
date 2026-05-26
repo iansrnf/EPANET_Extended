@@ -6,10 +6,11 @@ import { runSimulation as workerRunSimulation } from "./worker";
 import { runSimulation } from "./main";
 import { lib } from "src/lib/worker";
 import { Mock } from "vitest";
-import { EPSResultsReader } from "./eps-results-reader";
+import { EPSResultsReader, TimeSeries } from "./eps-results-reader";
 import { SimulationMetadata } from "./simulation-metadata";
 import { InMemoryStorage } from "src/infra/storage";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
+import { patchEpanetLoader } from "src/__helpers__/epanet-loader";
 
 vi.mock("src/lib/worker", () => ({
   lib: {
@@ -18,6 +19,8 @@ vi.mock("src/lib/worker", () => ({
 }));
 
 describe("EPSResultsReader", () => {
+  beforeAll(() => patchEpanetLoader());
+
   beforeEach(() => {
     (lib.runSimulation as unknown as Mock).mockImplementation(
       workerRunSimulation,
@@ -307,7 +310,7 @@ describe("EPSResultsReader", () => {
       expect(pipe?.headloss).toBeCloseTo(pipe?.unitHeadloss ?? 0, 5);
     });
 
-    it("reads pump results with headloss and status", async () => {
+    it("reads pump results with head and status", async () => {
       const IDS = { R1: 1, J1: 2, PUMP1: 3 } as const;
       const hydraulicModel = HydraulicModelBuilder.with()
         .aReservoir(IDS.R1, { head: 50 })
@@ -335,7 +338,7 @@ describe("EPSResultsReader", () => {
       expect(pump).not.toBeNull();
       expect(pump?.type).toEqual("pump");
       expect(pump?.flow).toBeGreaterThanOrEqual(0);
-      expect(pump?.headloss).toBeCloseTo(-1);
+      expect(pump?.head).toBeGreaterThan(0);
       expect(pump?.status).toMatch(/on|off/);
       // statusWarning should be null or one of the warning types
       expect([null, "cannot-deliver-head", "cannot-deliver-flow"]).toContain(
@@ -1407,6 +1410,483 @@ describe("EPSResultsReader", () => {
       const reader = new EPSResultsReader(storage);
 
       expect(() => reader.qualityType).toThrow(/not initialized/i);
+    });
+  });
+
+  describe("getHeadRangesForNodes", () => {
+    it("returns per-node min/max head matching the head time series", async () => {
+      const IDS = { R1: 1, T1: 2, J1: 3, P1: 4, P2: 5 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, { head: 120 })
+        .aTank(IDS.T1, {
+          elevation: 100,
+          initialLevel: 15,
+          minLevel: 5,
+          maxLevel: 25,
+          diameter: 120,
+        })
+        .aJunction(IDS.J1)
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 10 }])
+        .aPipe(IDS.P1, { startNodeId: IDS.R1, endNodeId: IDS.T1 })
+        .aPipe(IDS.P2, { startNodeId: IDS.T1, endNodeId: IDS.J1 })
+        .build();
+      const simulationSettings = SimulationSettingsBuilder.with()
+        .timing({ duration: 7200, hydraulicTimestep: 3600 })
+        .build();
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings,
+      });
+
+      const testAppId = "test-head-ranges-bulk";
+      await runSimulation(inp, testAppId);
+
+      const storage = new InMemoryStorage(testAppId);
+      const reader = new EPSResultsReader(storage);
+      await reader.initialize();
+
+      const cases = [
+        { nodeId: IDS.R1, type: "reservoir" as const },
+        { nodeId: IDS.T1, type: "tank" as const },
+        { nodeId: IDS.J1, type: "junction" as const },
+      ];
+      const bulk = reader.getHeadRangesForNodes(cases.map((c) => c.nodeId));
+
+      expect(bulk.length).toBe(cases.length);
+      for (let i = 0; i < cases.length; i++) {
+        const { nodeId, type } = cases[i];
+        const series =
+          type === "reservoir"
+            ? await reader.getTimeSeries(nodeId, "reservoir", "head")
+            : type === "tank"
+              ? await reader.getTimeSeries(nodeId, "tank", "head")
+              : await reader.getTimeSeries(nodeId, "junction", "head");
+
+        expect(series).not.toBeNull();
+        const expectedMin = Math.min(...series!.values);
+        const expectedMax = Math.max(...series!.values);
+
+        const [min, max] = bulk[i];
+        expect(min).toBeCloseTo(expectedMin, 3);
+        expect(max).toBeCloseTo(expectedMax, 3);
+      }
+    });
+
+    it("returns equal min and max for a steady-state (single-timestep) run", async () => {
+      const IDS = { R1: 1, J1: 2, P1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, { head: 100 })
+        .aJunction(IDS.J1)
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 10 }])
+        .aPipe(IDS.P1, { startNodeId: IDS.R1, endNodeId: IDS.J1 })
+        .build();
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
+
+      const testAppId = "test-head-ranges-steady";
+      await runSimulation(inp, testAppId);
+
+      const storage = new InMemoryStorage(testAppId);
+      const reader = new EPSResultsReader(storage);
+      await reader.initialize();
+
+      const bulk = reader.getHeadRangesForNodes([IDS.J1]);
+      const [min, max] = bulk[0];
+      expect(min).toBeCloseTo(max, 6);
+    });
+
+    it("returns [Infinity, -Infinity] for unknown node ids while preserving order", async () => {
+      const IDS = { R1: 1, J1: 2, P1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, { head: 100 })
+        .aJunction(IDS.J1)
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 10 }])
+        .aPipe(IDS.P1, { startNodeId: IDS.R1, endNodeId: IDS.J1 })
+        .build();
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
+
+      const testAppId = "test-head-ranges-bulk-mixed";
+      await runSimulation(inp, testAppId);
+
+      const storage = new InMemoryStorage(testAppId);
+      const reader = new EPSResultsReader(storage);
+      await reader.initialize();
+
+      const bulk = reader.getHeadRangesForNodes([IDS.J1, 999]);
+      expect(bulk.length).toBe(2);
+      expect(bulk[0][0]).toBeLessThanOrEqual(bulk[0][1]);
+      expect(bulk[1]).toEqual([Infinity, -Infinity]);
+    });
+
+    it("returns an empty array for an empty input", async () => {
+      const IDS = { R1: 1, J1: 2, P1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, { head: 100 })
+        .aJunction(IDS.J1)
+        .aPipe(IDS.P1, { startNodeId: IDS.R1, endNodeId: IDS.J1 })
+        .build();
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
+
+      const testAppId = "test-head-ranges-bulk-empty";
+      await runSimulation(inp, testAppId);
+
+      const storage = new InMemoryStorage(testAppId);
+      const reader = new EPSResultsReader(storage);
+      await reader.initialize();
+
+      const bulk = reader.getHeadRangesForNodes([]);
+      expect(bulk.length).toBe(0);
+    });
+
+    it("returns [Infinity, -Infinity] entries when reader is not initialized", () => {
+      const storage = new InMemoryStorage(
+        "test-head-ranges-bulk-uninitialized",
+      );
+      const reader = new EPSResultsReader(storage);
+
+      const bulk = reader.getHeadRangesForNodes([1, 2]);
+      expect(bulk).toEqual([
+        [Infinity, -Infinity],
+        [Infinity, -Infinity],
+      ]);
+    });
+
+    it("reads node_stats.bin during initialize() and makes no storage calls in getHeadRangesForNodes", async () => {
+      const IDS = { R1: 1, T1: 2, J1: 3, P1: 4, P2: 5 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, { head: 120 })
+        .aTank(IDS.T1, {
+          elevation: 100,
+          initialLevel: 15,
+          minLevel: 5,
+          maxLevel: 25,
+          diameter: 120,
+        })
+        .aJunction(IDS.J1)
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 10 }])
+        .aPipe(IDS.P1, { startNodeId: IDS.R1, endNodeId: IDS.T1 })
+        .aPipe(IDS.P2, { startNodeId: IDS.T1, endNodeId: IDS.J1 })
+        .build();
+      const simulationSettings = SimulationSettingsBuilder.with()
+        .timing({ duration: 7200, hydraulicTimestep: 3600 })
+        .build();
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings,
+      });
+
+      const testAppId = "test-head-ranges-bulk-readcount";
+      await runSimulation(inp, testAppId);
+
+      const storage = new InMemoryStorage(testAppId);
+      const getFileSpy = vi.spyOn(storage, "getFile");
+      const reader = new EPSResultsReader(storage);
+      await reader.initialize();
+
+      // node_stats.bin is loaded once during initialize()
+      const nodeStatsOpens = getFileSpy.mock.calls.filter(
+        ([key]) => key === "node_stats.bin",
+      );
+      expect(nodeStatsOpens.length).toBe(1);
+
+      // getHeadRangesForNodes reads from in-memory data — no further storage calls
+      getFileSpy.mockClear();
+      reader.getHeadRangesForNodes([IDS.R1, IDS.T1, IDS.J1]);
+      expect(getFileSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("iterateTimeSeries", () => {
+    it("does not call onResult when not initialized", async () => {
+      const storage = new InMemoryStorage("test-its-uninitialized");
+      const reader = new EPSResultsReader(storage);
+      const onResult = vi.fn();
+
+      await reader.iterateTimeSeries(new Map(), ["pressure"], onResult);
+
+      expect(onResult).not.toHaveBeenCalled();
+    });
+
+    it("calls onResult once per property per asset", async () => {
+      const IDS = { R1: 1, J1: 2, P1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, { head: 100 })
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 10 }])
+        .aPipe(IDS.P1, { startNodeId: IDS.R1, endNodeId: IDS.J1 })
+        .build();
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
+
+      const testAppId = "test-its-call-count";
+      await runSimulation(inp, testAppId);
+
+      const storage = new InMemoryStorage(testAppId);
+      const reader = new EPSResultsReader(storage);
+      await reader.initialize();
+
+      const calls: Array<{ metric: string; assetId: number }> = [];
+      await reader.iterateTimeSeries(
+        hydraulicModel.assets,
+        ["pressure", "flow"],
+        async (metric, asset) => {
+          calls.push({ metric, assetId: asset.id });
+          return Promise.resolve();
+        },
+      );
+
+      // 3 assets × 2 properties = 6 calls
+      expect(calls).toHaveLength(6);
+      expect(calls.filter((c) => c.metric === "pressure")).toHaveLength(3);
+      expect(calls.filter((c) => c.metric === "flow")).toHaveLength(3);
+    });
+
+    it("node property values match getResultsForTimestep", async () => {
+      const IDS = { R1: 1, J1: 2, P1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, { head: 100 })
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 10 }])
+        .aPipe(IDS.P1, { startNodeId: IDS.R1, endNodeId: IDS.J1 })
+        .build();
+      const simulationSettings = SimulationSettingsBuilder.with()
+        .timing({ duration: 7200, hydraulicTimestep: 3600 })
+        .build();
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings,
+      });
+
+      const testAppId = "test-its-node-values";
+      await runSimulation(inp, testAppId);
+
+      const storage = new InMemoryStorage(testAppId);
+      const reader = new EPSResultsReader(storage);
+      await reader.initialize();
+
+      const seriesMap = new Map<string, TimeSeries | null>();
+      await reader.iterateTimeSeries(
+        hydraulicModel.assets,
+        ["pressure", "head", "demand"],
+        async (metric, asset, ts) => {
+          if (asset.id === IDS.J1) seriesMap.set(metric, ts);
+          return Promise.resolve();
+        },
+      );
+
+      for (let t = 0; t < reader.timestepCount; t++) {
+        const resultsReader = await reader.getResultsForTimestep(t);
+        const junction = resultsReader.getJunction(IDS.J1)!;
+
+        expect(seriesMap.get("pressure")!.values[t]).toBeCloseTo(
+          junction.pressure,
+          5,
+        );
+        expect(seriesMap.get("head")!.values[t]).toBeCloseTo(junction.head, 5);
+        expect(seriesMap.get("demand")!.values[t]).toBeCloseTo(
+          junction.demand,
+          5,
+        );
+      }
+    });
+
+    it("link property values match getResultsForTimestep", async () => {
+      const IDS = { R1: 1, J1: 2, P1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, { head: 100 })
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 10 }])
+        .aPipe(IDS.P1, { startNodeId: IDS.R1, endNodeId: IDS.J1 })
+        .build();
+      const simulationSettings = SimulationSettingsBuilder.with()
+        .timing({ duration: 7200, hydraulicTimestep: 3600 })
+        .build();
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings,
+      });
+
+      const testAppId = "test-its-link-values";
+      await runSimulation(inp, testAppId);
+
+      const storage = new InMemoryStorage(testAppId);
+      const reader = new EPSResultsReader(storage);
+      await reader.initialize();
+
+      const seriesMap = new Map<string, TimeSeries | null>();
+      await reader.iterateTimeSeries(
+        hydraulicModel.assets,
+        ["flow", "velocity"],
+        async (metric, asset, ts) => {
+          if (asset.id === IDS.P1) seriesMap.set(metric, ts);
+          return Promise.resolve();
+        },
+      );
+
+      for (let t = 0; t < reader.timestepCount; t++) {
+        const resultsReader = await reader.getResultsForTimestep(t);
+        const pipe = resultsReader.getPipe(IDS.P1)!;
+
+        expect(seriesMap.get("flow")!.values[t]).toBeCloseTo(pipe.flow, 5);
+        expect(seriesMap.get("velocity")!.values[t]).toBeCloseTo(
+          pipe.velocity,
+          5,
+        );
+      }
+    });
+
+    it("pump status values match getResultsForTimestep", async () => {
+      const IDS = { R1: 1, J1: 2, PUMP1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, { head: 50 })
+        .aJunction(IDS.J1, { elevation: 0 })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 10 }])
+        .aPump(IDS.PUMP1, { startNodeId: IDS.R1, endNodeId: IDS.J1 })
+        .aPumpCurve({ id: IDS.PUMP1, points: [{ x: 20, y: 40 }] })
+        .build();
+      const simulationSettings = SimulationSettingsBuilder.with()
+        .timing({ duration: 7200, hydraulicTimestep: 3600 })
+        .build();
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings,
+      });
+
+      const testAppId = "test-its-pump-status";
+      await runSimulation(inp, testAppId);
+
+      const storage = new InMemoryStorage(testAppId);
+      const reader = new EPSResultsReader(storage);
+      await reader.initialize();
+
+      let pumpStatusTs: TimeSeries | null = null;
+      await reader.iterateTimeSeries(
+        hydraulicModel.assets,
+        ["status"],
+        async (metric, asset, ts) => {
+          if (asset.id === IDS.PUMP1) pumpStatusTs = ts;
+          return Promise.resolve();
+        },
+      );
+
+      expect(pumpStatusTs).not.toBeNull();
+      expect(pumpStatusTs!.values).toBeInstanceOf(Float32Array);
+      expect(pumpStatusTs!.intervalsCount).toBe(reader.timestepCount);
+
+      for (let t = 0; t < reader.timestepCount; t++) {
+        const resultsReader = await reader.getResultsForTimestep(t);
+        const pump = resultsReader.getPump(IDS.PUMP1)!;
+        expect(pumpStatusTs!.values[t] >= 3).toBe(pump.status === "on");
+      }
+    });
+
+    it("yields null for a node asset when property has no node mapping", async () => {
+      const IDS = { R1: 1, J1: 2, P1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, { head: 100 })
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 10 }])
+        .aPipe(IDS.P1, { startNodeId: IDS.R1, endNodeId: IDS.J1 })
+        .build();
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
+
+      const testAppId = "test-its-node-null-property";
+      await runSimulation(inp, testAppId);
+
+      const storage = new InMemoryStorage(testAppId);
+      const reader = new EPSResultsReader(storage);
+      await reader.initialize();
+
+      let junctionFlowTs: TimeSeries | null | undefined = undefined;
+      await reader.iterateTimeSeries(
+        hydraulicModel.assets,
+        ["flow"], // "flow" is not in NODE_RESULTS_PROPERTY_INDEX
+        async (metric, asset, ts) => {
+          if (asset.id === IDS.J1) junctionFlowTs = ts;
+          return Promise.resolve();
+        },
+      );
+
+      expect(junctionFlowTs).toBeNull();
+    });
+
+    it("yields null for a link asset when property has no link mapping", async () => {
+      const IDS = { R1: 1, J1: 2, P1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, { head: 100 })
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 10 }])
+        .aPipe(IDS.P1, { startNodeId: IDS.R1, endNodeId: IDS.J1 })
+        .build();
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
+
+      const testAppId = "test-its-link-null-property";
+      await runSimulation(inp, testAppId);
+
+      const storage = new InMemoryStorage(testAppId);
+      const reader = new EPSResultsReader(storage);
+      await reader.initialize();
+
+      let pipePressureTs: TimeSeries | null | undefined = undefined;
+      await reader.iterateTimeSeries(
+        hydraulicModel.assets,
+        ["pressure"], // "pressure" is not in LINK_RESULTS_PROPERTY_INDEX
+        async (metric, asset, ts) => {
+          if (asset.id === IDS.P1) pipePressureTs = ts;
+          return Promise.resolve();
+        },
+      );
+
+      expect(pipePressureTs).toBeNull();
+    });
+
+    it("throws when signal is aborted", async () => {
+      const IDS = { R1: 1, J1: 2, P1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aReservoir(IDS.R1, { head: 100 })
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunctionDemand(IDS.J1, [{ baseDemand: 10 }])
+        .aPipe(IDS.P1, { startNodeId: IDS.R1, endNodeId: IDS.J1 })
+        .build();
+      const inp = buildInp(hydraulicModel, {
+        units: presets.LPS.units,
+        simulationSettings: defaultSimulationSettings,
+      });
+
+      const testAppId = "test-its-abort";
+      await runSimulation(inp, testAppId);
+
+      const storage = new InMemoryStorage(testAppId);
+      const reader = new EPSResultsReader(storage);
+      await reader.initialize();
+
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(
+        reader.iterateTimeSeries(
+          hydraulicModel.assets,
+          ["pressure"],
+          vi.fn(),
+          controller.signal,
+        ),
+      ).rejects.toThrow();
     });
   });
 });

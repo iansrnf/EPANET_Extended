@@ -1,6 +1,4 @@
 import { atom, useAtom } from "jotai";
-import { atomWithStorage } from "jotai/utils";
-import { useEffect } from "react";
 import { PersistenceMetadataMemory } from "src/lib/persistence/ipersistence";
 import { SYMBOLIZATION_NONE } from "src/types";
 import {
@@ -13,12 +11,7 @@ import {
   SupportedProperty,
   nullSymbologySpec,
 } from "src/map/symbology/symbology-types";
-import {
-  type ColorRuleConfig,
-  type RangeMode,
-  getColors,
-} from "src/map/symbology/range-color-rule";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { type ColorRuleConfig } from "src/map/symbology/range-color-rule";
 
 export type { SymbologySpec };
 
@@ -75,6 +68,18 @@ export const defaultPropertyColorConfigs: PropertyColorConfigMap = {
     reversedRamp: false,
     numIntervals: 5,
   },
+  minPressure: {
+    rampName: "Temps",
+    mode: "prettyBreaks",
+    reversedRamp: false,
+    numIntervals: 5,
+  },
+  maxPressure: {
+    rampName: "Temps",
+    mode: "prettyBreaks",
+    reversedRamp: false,
+    numIntervals: 5,
+  },
   actualDemand: {
     rampName: "Emrld",
     mode: "prettyBreaks",
@@ -114,43 +119,18 @@ export const propertyColorConfigAtom = atom<PropertyColorConfigMap>(
 type SymbologiesMap = Map<SupportedProperty, NodeSymbology | LinkSymbology>;
 export const savedSymbologiesAtom = atom<SymbologiesMap>(new Map());
 
-export type RangeColorPreference = {
-  rampName: string;
-  mode: RangeMode;
-  numIntervals: number;
-  reversedRamp: boolean;
-  customColors?: string[];
-};
-
-type SymbologyColorPreferences = Partial<
-  Record<SupportedProperty, RangeColorPreference>
->;
-
-export const defaultSymbologyColorPreferences: SymbologyColorPreferences = {};
-
-export const symbologyColorPreferencesAtom =
-  atomWithStorage<SymbologyColorPreferences>(
-    "symbology-color-preferences",
-    defaultSymbologyColorPreferences,
-  );
-
 export const nodeSymbologyAtom = atom<NodeSymbology>(nullSymbologySpec.node);
 export const linkSymbologyAtom = atom<LinkSymbology>(nullSymbologySpec.link);
+
 const customerPointsSymbologyAtom = atom<CustomerPointsSymbology>(
   nullSymbologySpec.customerPoints,
 );
 
-const customerPointsSymbologyPreferenceAtom =
-  atomWithStorage<CustomerPointsSymbology>(
-    "customer-points-symbology",
-    nullSymbologySpec.customerPoints,
-  );
-
 /**
  * Write-only atom: clears the active node/link symbology when its color rule
  * references the given property, and removes the entry from the saved
- * symbologies map. Useful when a property becomes unavailable after a
- * simulation.
+ * symbologies map. Useful when a property becomes unavailable (e.g. running a
+ * simulation without water age after the user had styled by "waterAge").
  */
 export const clearSymbologyForPropertyAtom = atom(
   null,
@@ -199,30 +179,6 @@ export const useSymbologyState = () => {
   const [customerPointsSymbology, setCustomerPointsSymbology] = useAtom(
     customerPointsSymbologyAtom,
   );
-  const [customerPointsPreference, setCustomerPointPreference] = useAtom(
-    customerPointsSymbologyPreferenceAtom,
-  );
-  const [symbologyPreferences, setSymbologyPreferences] = useAtom(
-    symbologyColorPreferencesAtom,
-  );
-
-  const isPersistOn = useFeatureFlag("FLAG_RESTORE_MAP_PREFERENCES");
-  const effectiveCustomerPointsSymbology = isPersistOn
-    ? customerPointsPreference
-    : customerPointsSymbology;
-
-  useEffect(() => {
-    if (!isPersistOn) return;
-    if (customerPointsSymbology === customerPointsPreference) return;
-
-    setCustomerPointsSymbology(customerPointsPreference);
-  }, [
-    customerPointsPreference,
-    customerPointsSymbology,
-    isPersistOn,
-    setCustomerPointsSymbology,
-  ]);
-
   const switchNodeSymbologyTo = (
     property: SupportedProperty | null,
     initializeFn: () => NodeSymbology,
@@ -236,15 +192,15 @@ export const useSymbologyState = () => {
       return;
     }
 
-    let nextNodeSymbology;
+    let newNodeSymbology: NodeSymbology;
     if (savedSymbologies.has(property)) {
-      nextNodeSymbology = savedSymbologies.get(property);
+      newNodeSymbology = savedSymbologies.get(property) as NodeSymbology;
     } else {
-      nextNodeSymbology = initializeFn();
-      updateNodeSymbology(nextNodeSymbology);
+      newNodeSymbology = initializeFn();
+      updateNodeSymbology(newNodeSymbology);
     }
     setNodesActive({
-      ...(nextNodeSymbology as NodeSymbology),
+      ...newNodeSymbology,
       defaults: nodeSymbology.defaults,
       labelRule: nodeSymbology.labelRule,
     });
@@ -263,49 +219,17 @@ export const useSymbologyState = () => {
       return;
     }
 
-    let nextLinkSymbology;
+    let newLinkSymbology: LinkSymbology;
     if (savedSymbologies.has(property)) {
-      nextLinkSymbology = savedSymbologies.get(property);
+      newLinkSymbology = savedSymbologies.get(property) as LinkSymbology;
     } else {
-      nextLinkSymbology = initializeFn();
-      updateLinkSymbology(nextLinkSymbology);
+      newLinkSymbology = initializeFn();
+      updateLinkSymbology(newLinkSymbology);
     }
     setLinksActive({
-      ...(nextLinkSymbology as LinkSymbology),
+      ...newLinkSymbology,
       defaults: linkSymbology.defaults,
       labelRule: linkSymbology.labelRule,
-    });
-  };
-
-  const savePreference = (colorRule: {
-    property: string;
-    rampName: string;
-    mode: RangeMode;
-    colors: string[];
-    reversedRamp?: boolean;
-  }) => {
-    if (!isPersistOn) return;
-
-    const property = colorRule.property as SupportedProperty;
-    const numIntervals = colorRule.colors.length;
-    const rampColors = getColors(
-      colorRule.rampName,
-      numIntervals,
-      Boolean(colorRule.reversedRamp),
-    );
-    const hasCustomColors =
-      colorRule.colors.length !== rampColors.length ||
-      colorRule.colors.some((c, i) => c !== rampColors[i]);
-
-    setSymbologyPreferences({
-      ...symbologyPreferences,
-      [property]: {
-        rampName: colorRule.rampName,
-        mode: colorRule.mode === "manual" ? "prettyBreaks" : colorRule.mode,
-        numIntervals,
-        reversedRamp: Boolean(colorRule.reversedRamp),
-        ...(hasCustomColors ? { customColors: colorRule.colors } : {}),
-      },
     });
   };
 
@@ -319,7 +243,6 @@ export const useSymbologyState = () => {
       newNodeSymbology,
     );
     setSavedAnalyises(symbologiesMap);
-    savePreference(newNodeSymbology.colorRule);
   };
 
   const updateLinkSymbology = (newLinkSymbology: LinkSymbology) => {
@@ -332,16 +255,12 @@ export const useSymbologyState = () => {
       newLinkSymbology,
     );
     setSavedAnalyises(symbologiesMap);
-    savePreference(newLinkSymbology.colorRule);
   };
 
   const updateCustomerPointsSymbology = (
     newCustomerPointsSymbology: CustomerPointsSymbology,
   ) => {
     setCustomerPointsSymbology(newCustomerPointsSymbology);
-    if (isPersistOn) {
-      setCustomerPointPreference(newCustomerPointsSymbology);
-    }
   };
 
   const updateNodeDefaultColor = (color: string) => {
@@ -361,8 +280,7 @@ export const useSymbologyState = () => {
   return {
     linkSymbology,
     nodeSymbology,
-    customerPointsSymbology: effectiveCustomerPointsSymbology,
-    symbologyPreferences,
+    customerPointsSymbology,
     switchNodeSymbologyTo,
     switchLinkSymbologyTo,
     updateNodeSymbology,

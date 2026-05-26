@@ -7,10 +7,12 @@ import {
   buildOrphanAssets,
   encodeData,
 } from "./data";
+import { topologyTransferables } from "src/hydraulic-model/topology/types";
+import { assetIndexTransferables } from "src/hydraulic-model/asset-index";
 import { findOrphanAssets } from "./find-orphan-assets";
 import type { OrphanAssetsWorkerAPI } from "./worker-api";
 import { BufferType } from "src/lib/buffers";
-import { canUseWorker } from "src/infra/worker";
+import { canUseWorker, enrichWorkerError } from "src/infra/worker";
 
 export const runCheck = async (
   hydraulicModel: HydraulicModel,
@@ -56,7 +58,14 @@ const runWithWorker = async (
 
   try {
     const data = encodeData(model, bufferType);
-    return await workerAPI.findOrphanAssets(data);
+    return await workerAPI.findOrphanAssets(
+      Comlink.transfer(data, [
+        ...topologyTransferables(data.topologyBuffers),
+        ...assetIndexTransferables(data.assetIndexBuffers),
+      ]),
+    );
+  } catch (e) {
+    throw enrichWorkerError("orphan-assets", e);
   } finally {
     signal?.removeEventListener("abort", abortHandler);
     worker.terminate();

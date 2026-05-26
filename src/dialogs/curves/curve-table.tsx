@@ -6,11 +6,12 @@ import {
   useImperativeHandle,
 } from "react";
 import {
-  floatColumn,
   DataGrid,
   type DataGridRef,
+  type GridColumn,
   type GridSelection,
   type RowAction,
+  floatColumn,
 } from "src/components/data-grid";
 import {
   CurvePoint,
@@ -179,7 +180,7 @@ export const CurveTable = forwardRef<DataGridRef, CurveTableProps>(
       ],
     );
 
-    const columns = useMemo(
+    const columns: GridColumn<CurveRow>[] = useMemo(
       () => [
         floatColumn("x", {
           header: xHeader,
@@ -223,22 +224,30 @@ export const CurveTable = forwardRef<DataGridRef, CurveTableProps>(
       [onChange],
     );
 
-    return (
-      <DataGrid<CurveRow>
-        ref={gridRef}
-        data={rowData}
-        columns={columns}
-        onChange={handleChange}
-        createRow={createRow}
-        rowActions={rowActions}
-        addRowLabel={translate("addPoint")}
-        gutterColumn
-        onSelectionChange={onSelectionChange}
-        variant="spreadsheet"
-        readOnly={readOnly}
-        cellHasWarning={cellHasWarning}
-        autoAddNewRows
-      />
+    const handleDelete = useCallback(
+      (rowsToDelete: CurveRow[]) => {
+        const toRemove = new Set(rowsToDelete);
+        handleChange(rowData.filter((row) => !toRemove.has(row)));
+      },
+      [handleChange, rowData],
     );
+
+    const sharedProps = {
+      data: rowData,
+      columns,
+      onChange: handleChange,
+      onDelete: handleDelete,
+      createRow,
+      rowActions,
+      addRowLabel: translate("addPoint"),
+      gutterColumn: "numbered" as const,
+      onSelectionChange,
+      variant: "spreadsheet" as const,
+      readOnly,
+      cellHasWarning,
+      autoAddNewRows: true,
+    };
+
+    return <DataGrid<CurveRow> ref={gridRef} {...sharedProps} />;
   },
 );

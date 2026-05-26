@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { notify } from "src/components/notifications";
+import { notify } from "./notifications";
 import { useTranslate } from "src/hooks/use-translate";
 import { CheckIcon } from "src/icons";
 

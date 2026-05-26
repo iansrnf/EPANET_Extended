@@ -11,9 +11,7 @@ import { useNewProject } from "./create-new-project";
 import { aFileInfo, setInitialState } from "src/__helpers__/state";
 import { CommandContainer } from "./__helpers__/command-container";
 
-const aMoment = (name: string) => {
-  return { note: name };
-};
+const aMoment = (name: string) => ({ note: name });
 
 describe("create new project", () => {
   it("allows to choose the unit system", async () => {

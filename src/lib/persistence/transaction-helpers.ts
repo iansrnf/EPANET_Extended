@@ -8,8 +8,9 @@ import {
   updateHydraulicModelAssets,
   applyMomentToModel,
 } from "src/hydraulic-model";
+import { CustomerPoints } from "src/hydraulic-model/customer-points";
 import { type Data, dataAtom } from "src/state/data";
-import { baseModelAtom, stagingModelAtom } from "src/state/hydraulic-model";
+import { stagingModelAtom, baseModelAtom } from "src/state/hydraulic-model";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import { worktreeAtom } from "src/state/scenarios";
 import { type MomentPointer } from "src/state/map";
@@ -85,13 +86,11 @@ export function applyMoment(
   const updatedCustomerPoints =
     (forwardMoment.putCustomerPoints || []).length > 0 ||
     (forwardMoment.deleteCustomerPoints || []).length > 0
-      ? new Map(hydraulicModel.customerPoints)
+      ? new CustomerPoints(
+          [...hydraulicModel.customerPoints].sort(([a], [b]) => a - b),
+        )
       : hydraulicModel.customerPoints;
-  const updatedPressureLoggers =
-    (forwardMoment.putPressureLoggers || []).length > 0 ||
-    (forwardMoment.deletePressureLoggers || []).length > 0
-      ? new Map(hydraulicModel.pressureLoggers)
-      : hydraulicModel.pressureLoggers;
+
   const updatedCurves =
     forwardMoment.putCurves && forwardMoment.putCurves.size > 0
       ? new Map(hydraulicModel.curves)
@@ -101,7 +100,6 @@ export function applyMoment(
     ...updatedHydraulicModel,
     version: stateId,
     customerPoints: updatedCustomerPoints,
-    pressureLoggers: updatedPressureLoggers,
     curves: updatedCurves,
   });
   set(dataAtom, {

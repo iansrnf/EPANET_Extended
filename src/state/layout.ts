@@ -21,6 +21,7 @@ export const MAX_SPLIT = 640;
 export interface Splits {
   layout: PanelLayout;
   bottom: number | string;
+  bottomOpen: boolean;
   rightOpen: boolean;
   right: number;
   leftOpen: boolean;
@@ -31,15 +32,14 @@ export type PanelLayout = "AUTO" | "FLOATING" | "VERTICAL";
 
 export const defaultSplits: Splits = {
   layout: "AUTO",
-  bottom: "50%",
+  bottom: 300,
+  bottomOpen: false,
   rightOpen: true,
   right: 320,
   leftOpen: false,
   left: 300,
 };
 export const splitsAtom = atom<Splits>(defaultSplits);
-
-export const showPanelBottomAtom = atom<boolean>(true);
 
 export enum TabOption {
   Asset = "Asset",

@@ -2,7 +2,13 @@ import { createStore } from "jotai";
 import { HydraulicModelBuilder } from "./hydraulic-model-builder";
 import { MomentLog } from "src/lib/persistence/moment-log";
 import { dataAtom, nullData } from "src/state/data";
-import { FileInfo, inpFileInfoAtom } from "src/state/file-system";
+import {
+  FileInfo,
+  inpFileInfoAtom,
+  recentFilesStoreAtom,
+} from "src/state/file-system";
+import { RecentFilesStore } from "src/lib/recent-files";
+import { InMemoryKeyValueStore } from "src/infra/storage";
 import { stagingModelAtom } from "src/state/hydraulic-model";
 import { layerConfigAtom } from "src/state/map";
 import { modeAtom } from "src/state/mode";
@@ -22,17 +28,18 @@ import { ExportOptions } from "src/types/export";
 import { ILayerConfig, LayerConfigMap } from "src/types";
 import type { Sel } from "src/selection/types";
 import { nanoid } from "nanoid";
-import { LinkSymbology, NodeSymbology } from "src/map/symbology";
+import {
+  LinkSymbology,
+  NodeSymbology,
+  nullSymbologySpec,
+} from "src/map/symbology";
 import type { SimulationSettings } from "src/simulation/simulation-settings";
 import {
   RangeColorRule,
   nullRangeColorRule,
 } from "src/map/symbology/range-color-rule";
 import { linkSymbologyAtom, nodeSymbologyAtom } from "src/state/map-symbology";
-import {
-  LabelRule,
-  nullSymbologySpec,
-} from "src/map/symbology/symbology-types";
+import { LabelRule } from "src/map/symbology/symbology-types";
 import { Locale } from "src/infra/i18n/locale";
 import { localeAtom } from "src/state/locale";
 import { branchStateAtom } from "src/state/branch-state";
@@ -74,6 +81,10 @@ export const setInitialState = (
     simulationSettings,
   } = args;
   const simulationStepWasExplicit = "simulationStep" in args;
+  const recentFilesKv = new InMemoryKeyValueStore();
+  recentFilesKv.defineStore("recent-files", "id");
+  store.set(recentFilesStoreAtom, new RecentFilesStore(recentFilesKv));
+
   store.set(stagingModelAtom, hydraulicModel);
   store.set(dataAtom, {
     ...nullData,
@@ -106,6 +117,8 @@ export const setInitialState = (
           epsResultsReader: {
             timestepCount: 1,
             getResultsForTimestep: () => Promise.resolve(simulationResults),
+            getHeadRangesForNodes: (ids: unknown[]) =>
+              ids.map(() => [Infinity, -Infinity] as [number, number]),
           },
         } as unknown as SimulationState)
       : simulation;
@@ -206,9 +219,9 @@ export const aNodeSymbology = ({
 }): NodeSymbology => {
   const colorRule = aRangeColorRule(partialColorRule);
   return {
+    ...nullSymbologySpec.node,
     colorRule,
     labelRule,
-    defaults: nullSymbologySpec.node.defaults,
   };
 };
 
@@ -221,9 +234,9 @@ export const aLinkSymbology = ({
 }): LinkSymbology => {
   const colorRule = aRangeColorRule({ property: "flow", ...partialColorRule });
   return {
+    ...nullSymbologySpec.link,
     colorRule,
     labelRule,
-    defaults: nullSymbologySpec.link.defaults,
   };
 };
 
@@ -286,6 +299,8 @@ export type SimulationData = {
       pressure: number;
       head: number;
       demand: number;
+      minPressure: number;
+      maxPressure: number;
       waterAge: number | null;
       waterTrace: number | null;
       chemicalConcentration: number | null;
@@ -295,7 +310,7 @@ export type SimulationData = {
     number,
     Partial<{
       flow: number;
-      headloss: number;
+      head: number;
       status: "on" | "off";
       statusWarning: "cannot-deliver-flow" | "cannot-deliver-head" | null;
       waterAge: number | null;
@@ -324,6 +339,8 @@ export type SimulationData = {
       netFlow: number;
       level: number;
       volume: number;
+      minPressure: number;
+      maxPressure: number;
       waterAge: number | null;
       waterTrace: number | null;
       chemicalConcentration: number | null;
@@ -335,6 +352,8 @@ export type SimulationData = {
       pressure: number;
       head: number;
       netFlow: number;
+      minPressure: number;
+      maxPressure: number;
       waterAge: number | null;
       waterTrace: number | null;
       chemicalConcentration: number | null;
@@ -363,11 +382,14 @@ export const createMockResultsReader = (
   getJunction: (id) => {
     const sim = data.junctions?.[id];
     if (!sim) return null;
+    const pressure = sim.pressure ?? 0;
     return {
       type: "junction",
-      pressure: sim.pressure ?? 0,
+      pressure,
       head: sim.head ?? 0,
       demand: sim.demand ?? 0,
+      minPressure: sim.minPressure ?? pressure,
+      maxPressure: sim.maxPressure ?? pressure,
       waterAge: sim.waterAge ?? null,
       waterTrace: sim.waterTrace ?? null,
       chemicalConcentration: sim.chemicalConcentration ?? null,
@@ -379,7 +401,7 @@ export const createMockResultsReader = (
     return {
       type: "pump",
       flow: sim.flow ?? 0,
-      headloss: sim.headloss ?? 0,
+      head: sim.head ?? 0,
       status: sim.status ?? "on",
       statusWarning: sim.statusWarning ?? null,
       waterAge: sim.waterAge ?? null,
@@ -405,13 +427,16 @@ export const createMockResultsReader = (
   getTank: (id) => {
     const sim = data.tanks?.[id];
     if (!sim) return null;
+    const pressure = sim.pressure ?? 0;
     return {
       type: "tank",
-      pressure: sim.pressure ?? 0,
+      pressure,
       head: sim.head ?? 0,
       netFlow: sim.netFlow ?? 0,
       level: sim.level ?? 0,
       volume: sim.volume ?? 0,
+      minPressure: sim.minPressure ?? pressure,
+      maxPressure: sim.maxPressure ?? pressure,
       waterAge: sim.waterAge ?? null,
       waterTrace: sim.waterTrace ?? null,
       chemicalConcentration: sim.chemicalConcentration ?? null,
@@ -420,11 +445,14 @@ export const createMockResultsReader = (
   getReservoir: (id) => {
     const sim = data.reservoirs?.[id];
     if (!sim) return null;
+    const pressure = sim.pressure ?? 0;
     return {
       type: "reservoir",
-      pressure: sim.pressure ?? 0,
+      pressure,
       head: sim.head ?? 0,
       netFlow: sim.netFlow ?? 0,
+      minPressure: sim.minPressure ?? pressure,
+      maxPressure: sim.maxPressure ?? pressure,
       waterAge: sim.waterAge ?? null,
       waterTrace: sim.waterTrace ?? null,
       chemicalConcentration: sim.chemicalConcentration ?? null,

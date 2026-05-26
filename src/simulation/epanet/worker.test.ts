@@ -11,6 +11,7 @@ import {
 } from "./worker";
 import { SimulationMetadata } from "./simulation-metadata";
 import { Mock } from "vitest";
+import { patchEpanetLoader } from "src/__helpers__/epanet-loader";
 
 vi.mock("src/lib/worker", () => ({
   lib: {
@@ -19,6 +20,8 @@ vi.mock("src/lib/worker", () => ({
 }));
 
 describe("EPS simulation", () => {
+  beforeAll(() => patchEpanetLoader());
+
   beforeEach(() => {
     (lib.runSimulation as unknown as Mock).mockImplementation(
       workerRunSimulation,
@@ -134,32 +137,6 @@ describe("EPS simulation", () => {
     expect(status).toEqual("failure");
     expect(report).toContain("Error 234");
     expect(report).toContain("4"); // Reference to disconnected node
-  });
-
-  it("runs with new EPANET engine when useNewEngine is set", async () => {
-    const IDS = { R1: 1, J1: 2, P1: 3 } as const;
-    const hydraulicModel = HydraulicModelBuilder.with()
-      .aReservoir(IDS.R1)
-      .aJunction(IDS.J1)
-      .aPipe(IDS.P1, { startNodeId: IDS.R1, endNodeId: IDS.J1 })
-      .build();
-    const inp = buildInp(hydraulicModel, {
-      units: presets.LPS.units,
-      simulationSettings: defaultSimulationSettings,
-    });
-
-    const { status, metadata } = await runSimulation(
-      inp,
-      "test-new-engine",
-      undefined,
-      { useNewEngine: true },
-    );
-    const simulationMetadata = new SimulationMetadata(metadata);
-
-    expect(status).toEqual("success");
-    expect(simulationMetadata.reportingStepsCount).toEqual(1);
-    expect(simulationMetadata.nodeCount).toEqual(2);
-    expect(simulationMetadata.linkCount).toEqual(1);
   });
 
   it("runs quality analysis and sets quality type in metadata when runQuality flag is set", async () => {

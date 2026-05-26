@@ -1,6 +1,7 @@
 import * as DD from "@radix-ui/react-dropdown-menu";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { useAtomValue, useSetAtom } from "jotai";
+import { isPlayingAtom } from "src/state/simulation-playback";
 
 import {
   ChevronDownIcon,
@@ -24,7 +25,7 @@ import {
   StyledItem,
   StyledTooltipArrow,
   TContent,
-} from "src/components/elements";
+} from "../elements";
 
 export const ScenarioSwitcher = () => {
   const translate = useTranslate();
@@ -40,6 +41,8 @@ export const ScenarioSwitcher = () => {
     deleteScenarioById,
     renameScenarioById,
   } = useScenarioOperations();
+
+  const isPlaying = useAtomValue(isPlayingAtom);
 
   const activeBranchId = worktree.activeBranchId;
   const isMainActive = activeBranchId === worktree.mainId;
@@ -130,7 +133,7 @@ export const ScenarioSwitcher = () => {
 
   return (
     <Tooltip.Root delayDuration={200}>
-      <div className="w-44 h-10 group bn flex items-stretch py-1 focus:outline-none">
+      <div className="w-44 h-10 group bn flex items-stretch py-1 focus:outline-hidden">
         <DD.Root
           onOpenChange={(open) => {
             if (open) {
@@ -139,8 +142,12 @@ export const ScenarioSwitcher = () => {
           }}
         >
           <Tooltip.Trigger asChild>
-            <DD.Trigger asChild>
-              <Button variant="quiet" className="w-full justify-between">
+            <DD.Trigger asChild disabled={isPlaying}>
+              <Button
+                variant="quiet"
+                className="w-full justify-between"
+                disabled={isPlaying}
+              >
                 <div className="flex items-center gap-1">
                   {isMainActive ? (
                     <MainModelIcon size="sm" />
@@ -182,7 +189,7 @@ export const ScenarioSwitcher = () => {
                     <DD.Root>
                       <DD.Trigger asChild>
                         <button
-                          className="opacity-0 group-hover/scenario:opacity-100 data-[state=open]:opacity-100 p-1 rounded hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-500 dark:text-gray-400"
+                          className="opacity-0 group-hover/scenario:opacity-100 data-[state=open]:opacity-100 p-1 rounded-sm hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-500 dark:text-gray-400"
                           onClick={(e) => e.stopPropagation()}
                         >
                           <MoreActionsIcon size="sm" />

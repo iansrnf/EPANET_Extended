@@ -5,6 +5,7 @@ import type {
   FeatureMap,
   FolderMap,
 } from "src/types";
+import type { Map as MapboxMap } from "mapbox-gl";
 import { bufferPoint } from "src/lib/geometry";
 import { decodeId } from "src/lib/id";
 import sortBy from "lodash/sortBy";
@@ -15,9 +16,6 @@ import { DECK_SYNTHETIC_ID } from "src/lib/constants";
 import { clickableLayers } from "src/map/layers/layer";
 
 type MouseOrTouchEvent = mapboxgl.MapMouseEvent | mapboxgl.MapTouchEvent;
-type QueryRenderedFeaturesOptions = {
-  layers?: string[];
-};
 
 export function wrappedFeaturesFromMapFeatures(
   clickedFeatures: mapboxgl.MapboxGeoJSONFeature[],
@@ -57,7 +55,7 @@ export function newPolygonFromClickEvent(e: MouseOrTouchEvent): Polygon {
   };
 }
 
-const QRF_OPTIONS: QueryRenderedFeaturesOptions = {
+const QRF_OPTIONS: Parameters<MapboxMap["queryRenderedFeatures"]>[1] = {
   layers: clickableLayers,
 };
 

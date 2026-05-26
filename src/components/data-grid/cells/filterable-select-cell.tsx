@@ -9,16 +9,23 @@ import React, {
 import * as Popover from "@radix-ui/react-popover";
 import clsx from "clsx";
 import { CheckIcon, ChevronDownIcon } from "src/icons";
+import type { ColumnDef, RowData } from "@tanstack/react-table";
 import { CellProps, GridColumn } from "../types";
 
-export type FilterableSelectOption<T extends string | number = string> = {
+export type FilterableSelectOption<
+  T extends string | number | boolean = string,
+> = {
   value: T;
   label: string;
+  enabled?: boolean;
 };
 
-type FilterableSelectCellProps<T extends string | number = string | number> = {
+type FilterableSelectCellProps<
+  T extends string | number | boolean = string | number | boolean,
+> = {
   options: FilterableSelectOption<T>[];
   placeholder: string;
+  emptyOptionLabel?: string;
   minOptionsForSearch?: number;
 };
 
@@ -34,9 +41,9 @@ const LIST_NAVIGATION_KEYS = [
 ];
 
 function filterOptions(
-  options: FilterableSelectOption<string | number>[],
+  options: FilterableSelectOption<string | number | boolean>[],
   query: string,
-): FilterableSelectOption<string | number>[] {
+): FilterableSelectOption<string | number | boolean>[] {
   if (!query.trim()) {
     return options;
   }
@@ -45,38 +52,56 @@ function filterOptions(
 }
 
 function findMatchingIndex(
-  options: FilterableSelectOption<string | number>[],
+  options: FilterableSelectOption<string | number | boolean>[],
   query: string,
 ): number {
   const char = query.toLowerCase();
-  const matchIndex = options.findIndex((opt) =>
-    opt.label.toLowerCase().startsWith(char),
+  return options.findIndex(
+    (opt) => opt.enabled !== false && opt.label.toLowerCase().startsWith(char),
   );
-
-  return matchIndex;
 }
 
 function calculateNextListIndex(
   key: string,
   prev: number,
   total: number,
+  hasEmptyOption = false,
 ): number | null {
+  const first = hasEmptyOption ? 0 : 1;
   switch (key) {
     case "ArrowDown":
-      return prev < 0 ? 0 : Math.min(prev + 1, total - 1);
+      return prev < 1 ? 1 : Math.min(prev + 1, total);
     case "ArrowUp":
-      return prev <= 0 ? total - 1 : prev - 1;
+      if (prev <= 1) return hasEmptyOption ? 0 : total;
+      return prev - 1;
     case "PageDown":
-      return Math.min(prev < 0 ? PAGE_SIZE - 1 : prev + PAGE_SIZE, total - 1);
+      return Math.min(prev < 1 ? PAGE_SIZE : prev + PAGE_SIZE, total);
     case "PageUp":
-      return Math.max(prev - PAGE_SIZE, 0);
+      return Math.max(prev - PAGE_SIZE, first);
     case "Home":
-      return 0;
+      return first;
     case "End":
-      return total - 1;
+      return total;
     default:
       return null;
   }
+}
+
+function skipDisabled(
+  options: FilterableSelectOption<string | number | boolean>[],
+  index: number,
+  direction: 1 | -1,
+  hasEmptyOption: boolean,
+): number {
+  const first = hasEmptyOption ? 0 : 1;
+  const last = options.length;
+  let i = index;
+  while (i >= first && i <= last) {
+    if (i === 0) return 0;
+    if (options[i - 1]?.enabled !== false) return i;
+    i += direction;
+  }
+  return index;
 }
 
 export function FilterableSelectCell({
@@ -89,9 +114,10 @@ export function FilterableSelectCell({
   readOnly,
   options,
   placeholder,
+  emptyOptionLabel,
   minOptionsForSearch = 8,
-}: CellProps<string | number | null> &
-  FilterableSelectCellProps<string | number>) {
+}: CellProps<string | number | boolean | null> &
+  FilterableSelectCellProps<string | number | boolean>) {
   const isOpen = !!editMode;
   const showSearch = options.length >= minOptionsForSearch;
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -103,9 +129,11 @@ export function FilterableSelectCell({
     [options, value],
   );
 
-  const [activeIndex, setActiveIndex] = useState<number>(() =>
-    options.findIndex((opt) => opt.value === value),
-  );
+  const [activeIndex, setActiveIndex] = useState<number>(() => {
+    if (emptyOptionLabel && value === null) return 0;
+    const i = options.findIndex((opt) => opt.value === value);
+    return i >= 0 ? i + 1 : 1;
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [mode, setMode] = useState<"search" | "navigation">("search");
 
@@ -129,23 +157,35 @@ export function FilterableSelectCell({
       } else {
         // Reset when closing
         setSearchQuery("");
-        const selectedIndex = options.findIndex((opt) => opt.value === value);
-        setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+        if (emptyOptionLabel && value === null) {
+          setActiveIndex(0);
+        } else {
+          const i = options.findIndex((opt) => opt.value === value);
+          setActiveIndex(i >= 0 ? i + 1 : 1);
+        }
         setMode("search");
       }
     },
-    [isOpen, showSearch, options, value],
+    [isOpen, showSearch, options, value, emptyOptionLabel],
   );
 
   const commit = useCallback(() => {
-    if (filteredOptions[activeIndex]) {
-      onChange(filteredOptions[activeIndex].value);
+    if (activeIndex === 0 && emptyOptionLabel) {
+      onChange(null);
+    } else {
+      const active = filteredOptions[activeIndex - 1];
+      if (active && active.enabled !== false) {
+        onChange(active.value);
+      } else {
+        return;
+      }
     }
     onClose();
-  }, [filteredOptions, activeIndex, onChange, onClose]);
+  }, [filteredOptions, activeIndex, emptyOptionLabel, onChange, onClose]);
 
   const handleOptionClick = useCallback(
-    (option: FilterableSelectOption<string | number>) => {
+    (option: FilterableSelectOption<string | number | boolean>) => {
+      if (option.enabled === false) return;
       onChange(option.value);
       onClose();
     },
@@ -155,7 +195,7 @@ export function FilterableSelectCell({
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setSearchQuery(e.target.value);
-      setActiveIndex(0); // Highlight first match
+      setActiveIndex(1); // Highlight first match
       setMode("search");
     },
     [],
@@ -168,12 +208,27 @@ export function FilterableSelectCell({
       if (LIST_NAVIGATION_KEYS.includes(e.key)) {
         e.preventDefault();
         e.stopPropagation();
-        if (filteredOptions.length > 0) {
+        if (
+          filteredOptions.length > 0 ||
+          (emptyOptionLabel && e.key === "ArrowDown")
+        ) {
           setMode("navigation");
           setActiveIndex((prev) => {
-            return (
-              calculateNextListIndex(e.key, prev, filteredOptions.length) ??
-              prev
+            const next = calculateNextListIndex(
+              e.key,
+              prev,
+              filteredOptions.length,
+              !!emptyOptionLabel,
+            );
+            if (next === null) return prev;
+            const direction = ["ArrowDown", "PageDown", "End"].includes(e.key)
+              ? 1
+              : -1;
+            return skipDisabled(
+              filteredOptions,
+              next,
+              direction,
+              !!emptyOptionLabel,
             );
           });
         }
@@ -225,12 +280,19 @@ export function FilterableSelectCell({
           e.preventDefault();
           const matchIndex = findMatchingIndex(filteredOptions, e.key);
           if (matchIndex >= 0) {
-            setActiveIndex(matchIndex);
+            setActiveIndex(matchIndex + 1);
           }
         }
       }
     },
-    [filteredOptions, isNavigating, showSearch, commit, onClose],
+    [
+      filteredOptions,
+      isNavigating,
+      showSearch,
+      emptyOptionLabel,
+      commit,
+      onClose,
+    ],
   );
 
   const handleTriggerKeyDown = useCallback(
@@ -263,7 +325,7 @@ export function FilterableSelectCell({
             opt.label.toLowerCase().startsWith(char),
           );
           if (matchIndex >= 0) {
-            setActiveIndex(matchIndex);
+            setActiveIndex(matchIndex + 1);
           }
         }
         onOpen();
@@ -283,8 +345,18 @@ export function FilterableSelectCell({
 
   if (readOnly) {
     return (
-      <div className="w-full h-full flex items-center pl-2 text-sm text-gray-700">
-        <span className="truncate">{selectedOption?.label ?? ""}</span>
+      <div className="w-full h-full pl-2 flex items-center justify-between gap-1 text-sm bg-gray-50">
+        <span
+          className={clsx(
+            "truncate",
+            !selectedOption ? "text-gray-400" : "text-gray-700",
+          )}
+        >
+          {selectedOption?.label ?? placeholder}
+        </span>
+        <div className="pl-1 text-gray-400">
+          <ChevronDownIcon />
+        </div>
       </div>
     );
   }
@@ -307,7 +379,7 @@ export function FilterableSelectCell({
             type="button"
             tabIndex={-1}
             onKeyDown={handleTriggerKeyDown}
-            className="w-full h-full pl-2 flex items-center justify-between gap-1 text-sm text-gray-700 bg-transparent border-none outline-none text-left min-w-0"
+            className="w-full h-full pl-2 flex items-center justify-between gap-1 text-sm text-gray-700 bg-transparent border-none outline-hidden text-left min-w-0"
           >
             <span
               className={clsx("truncate", !selectedOption && "text-gray-400")}
@@ -343,7 +415,7 @@ export function FilterableSelectCell({
               ref={listContainerRef}
               tabIndex={showSearch ? -1 : 0}
               onKeyDown={handlePopoverKeyDown}
-              className="outline-none"
+              className="outline-hidden"
             >
               {showSearch && (
                 <div className="p-2 border-b border-gray-200">
@@ -353,9 +425,24 @@ export function FilterableSelectCell({
                     value={searchQuery}
                     onChange={handleSearchChange}
                     placeholder="Search..."
-                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-sm outline-hidden focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
                   />
                 </div>
+              )}
+              {emptyOptionLabel && (
+                <EmptyOption
+                  label={emptyOptionLabel}
+                  isActive={activeIndex === 0}
+                  isSelected={value === null}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={() => {
+                    onChange(null);
+                    onClose();
+                  }}
+                />
               )}
               <OptionsList
                 options={filteredOptions}
@@ -372,10 +459,10 @@ export function FilterableSelectCell({
 }
 
 type OptionsListProps = {
-  options: FilterableSelectOption<string | number>[];
+  options: FilterableSelectOption<string | number | boolean>[];
   activeIndex: number;
-  selected: string | number | null;
-  onSelect: (option: FilterableSelectOption<string | number>) => void;
+  selected: string | number | boolean | null;
+  onSelect: (option: FilterableSelectOption<string | number | boolean>) => void;
 };
 
 const OptionsList: FunctionComponent<OptionsListProps> = ({
@@ -390,12 +477,14 @@ const OptionsList: FunctionComponent<OptionsListProps> = ({
     function keepActiveItemVisible() {
       if (!listRef.current) return;
 
-      if (activeIndex < 0) {
+      if (activeIndex < 1) {
         listRef.current.scrollTop = 0;
         return;
       }
 
-      const activeItem = listRef.current.children[activeIndex] as HTMLElement;
+      const activeItem = listRef.current.children[
+        activeIndex - 1
+      ] as HTMLElement;
       activeItem?.scrollIntoView({ block: "nearest" });
     },
     [activeIndex],
@@ -415,13 +504,13 @@ const OptionsList: FunctionComponent<OptionsListProps> = ({
       ref={listRef}
       tabIndex={-1}
       role="listbox"
-      className="outline-none max-h-56 overflow-auto p-1"
+      className="outline-hidden max-h-56 overflow-auto p-1"
     >
       {options.map((option, index) => (
         <Option
-          key={option.value}
+          key={String(option.value)}
           option={option}
-          isActive={index === activeIndex}
+          isActive={index + 1 === activeIndex}
           isSelected={option.value === selected}
           onMouseDown={preventFocusOnListItem}
           onClick={onSelect}
@@ -432,11 +521,11 @@ const OptionsList: FunctionComponent<OptionsListProps> = ({
 };
 
 type OptionProps = {
-  option: FilterableSelectOption<string | number>;
+  option: FilterableSelectOption<string | number | boolean>;
   isActive: boolean;
   isSelected: boolean;
   onMouseDown: (e: React.MouseEvent) => void;
-  onClick: (option: FilterableSelectOption<string | number>) => void;
+  onClick: (option: FilterableSelectOption<string | number | boolean>) => void;
 };
 
 const Option: FunctionComponent<OptionProps> = ({
@@ -446,59 +535,136 @@ const Option: FunctionComponent<OptionProps> = ({
   onMouseDown,
   onClick,
 }) => {
+  const isDisabled = option.enabled === false;
   return (
     <li
       role="option"
       aria-selected={isSelected}
+      aria-disabled={isDisabled}
       className={clsx(
-        "flex items-center justify-between gap-4 px-2 py-2 cursor-pointer text-gray-700 rounded",
-        isActive && "bg-purple-300/40",
-        !isActive && "hover:bg-gray-100",
+        "flex items-center justify-between gap-4 px-2 py-2 rounded-sm",
+        isDisabled
+          ? "cursor-default text-gray-400"
+          : "cursor-pointer text-gray-700",
+        !isDisabled && isActive && "bg-purple-300/40",
+        !isDisabled && !isActive && "hover:bg-gray-100",
       )}
-      onMouseDown={onMouseDown}
-      onClick={() => onClick(option)}
+      onMouseDown={isDisabled ? undefined : onMouseDown}
+      onClick={isDisabled ? undefined : () => onClick(option)}
     >
       <span>{option.label}</span>
-      {isSelected && <CheckIcon className="text-purple-700 flex-shrink-0" />}
+      {isSelected && <CheckIcon className="text-purple-700 shrink-0" />}
     </li>
   );
 };
 
-export function filterableSelectColumn<T extends string | number = string>(
-  accessorKey: string,
+type EmptyOptionProps = {
+  label: string;
+  isActive: boolean;
+  isSelected: boolean;
+  onMouseDown: (e: React.MouseEvent) => void;
+  onClick: () => void;
+};
+
+const EmptyOption: FunctionComponent<EmptyOptionProps> = ({
+  label,
+  isActive,
+  isSelected,
+  onMouseDown,
+  onClick,
+}) => {
+  return (
+    <div className="p-1">
+      <div
+        role="option"
+        aria-selected={isSelected}
+        className={clsx(
+          "flex items-center justify-between gap-4 px-2 py-2 cursor-pointer text-gray-400 italic rounded-sm border-b border-gray-100",
+          isActive && "bg-purple-300/40",
+          !isActive && "hover:bg-gray-100",
+        )}
+        onMouseDown={onMouseDown}
+        onClick={onClick}
+      >
+        <span>{label}</span>
+        {isSelected && <CheckIcon className="text-purple-700 shrink-0" />}
+      </div>
+    </div>
+  );
+};
+
+export function filterableSelectColumn<
+  T extends string | number | boolean = string,
+  TData extends RowData = RowData,
+>(
+  accessorKey: Extract<keyof TData, string> & string,
   options: {
     header: string;
     size?: number;
     options: FilterableSelectOption<T>[];
     placeholder?: string;
+    emptyOptionLabel?: string;
     deleteValue?: T | null;
     minOptionsForSearch?: number;
+    isReadOnly?: boolean | ((rowIndex: number) => boolean);
   },
-): GridColumn {
-  return {
+): GridColumn<TData> {
+  const isEmpty = options.options.length === 0;
+  const resolveReadOnly = (rowIndex: number) =>
+    typeof options.isReadOnly === "function"
+      ? options.isReadOnly(rowIndex)
+      : (options.isReadOnly ?? false);
+
+  const column: ColumnDef<TData, T | null> = {
     accessorKey,
     header: options.header,
     size: options.size,
-    cellComponent: (props: CellProps<string | number | null>) => (
-      <FilterableSelectCell
-        {...props}
-        options={options.options as FilterableSelectOption<string | number>[]}
-        placeholder={options.placeholder ?? ""}
-        minOptionsForSearch={options.minOptionsForSearch}
-      />
-    ),
-    copyValue: (v) => {
-      const match = options.options.find((opt) => opt.value === v);
-      return match?.label ?? "";
+    sortingFn: (rowA, rowB, columnId) => {
+      const aVal = rowA.getValue(columnId);
+      const bVal = rowB.getValue(columnId);
+      const aLabel =
+        options.options.find((o) => o.value === aVal)?.label ??
+        String(aVal ?? "");
+      const bLabel =
+        options.options.find((o) => o.value === bVal)?.label ??
+        String(bVal ?? "");
+      return aLabel.localeCompare(bLabel);
     },
-    pasteValue: (v) => {
-      const match = options.options.find(
-        (opt) =>
-          String(opt.value) === v ||
-          opt.label.toLowerCase() === v.toLowerCase(),
-      );
-      return match ? match.value : null;
+    meta: {
+      autoSizeExtraWidth: 32, // Account for chevron + padding
+      placeholder: options.placeholder,
+      copyValue: (v) => {
+        const match = options.options.find((opt) => opt.value === v);
+        return match?.label ?? "";
+      },
+      pasteValue: (v) => {
+        const match = options.options.find(
+          (opt) =>
+            opt.enabled !== false &&
+            (String(opt.value) === v ||
+              opt.label.toLowerCase() === v.toLowerCase()),
+        );
+        return match ? match.value : null;
+      },
+      deleteValue: options.deleteValue ?? null,
+      isReadOnly: isEmpty ? true : options.isReadOnly,
+      cellComponent: (props: CellProps<T | null>) => (
+        <FilterableSelectCell
+          {...(props as CellProps<string | number | boolean | null>)}
+          readOnly={
+            isEmpty || props.readOnly || resolveReadOnly(props.rowIndex)
+          }
+          options={
+            options.options as FilterableSelectOption<
+              string | number | boolean
+            >[]
+          }
+          placeholder={options.placeholder ?? ""}
+          emptyOptionLabel={options.emptyOptionLabel}
+          minOptionsForSearch={options.minOptionsForSearch}
+        />
+      ),
     },
-    deleteValue: options.deleteValue ?? null,
   };
+  return column as GridColumn<TData>;
 }

@@ -15,7 +15,8 @@ import { buildInp } from "src/simulation/build-inp";
 import { useTranslate } from "src/hooks/use-translate";
 import type { fileSave as fileSaveType } from "browser-fs-access";
 import { useAtomValue, useSetAtom } from "jotai";
-import { notifyPromiseState } from "src/components/notifications";
+import { notify } from "src/components/notifications";
+import { SpinnerIcon, SuccessIcon, WarningIcon } from "src/icons";
 import { useUserTracking } from "src/infra/user-tracking";
 import { worktreeAtom } from "src/state/scenarios";
 import { useRecentFiles } from "src/hooks/use-recent-files";
@@ -31,6 +32,8 @@ type FileAccess = {
 
 export const saveShortcut = "ctrl+s";
 export const saveAsShortcut = "ctrl+shift+s";
+
+const exportInpToastId = "export-inp";
 
 export const useSaveInp = ({
   getFsAccess = getDefaultFsAccess,
@@ -51,7 +54,7 @@ export const useSaveInp = ({
         { source, isSaveAs = false }: { source: string; isSaveAs?: boolean },
       ) {
         userTracking.capture({
-          name: "model.saved",
+          name: isOurFileOn ? "inp.exported" : "model.saved",
           source,
           isSaveAs,
         });
@@ -122,19 +125,37 @@ export const useSaveInp = ({
           }
         };
 
+        notify({
+          variant: "default",
+          title: translate("generatingInp"),
+          Icon: SpinnerIcon,
+          id: exportInpToastId,
+          size: "sm",
+          dismissable: false,
+          duration: Infinity,
+        });
         try {
-          const savePromise = asyncSave();
-          await notifyPromiseState(savePromise, {
-            loading: translate("saving"),
-            success: translate("saved"),
-            error: translate("saveCanceled"),
+          await asyncSave();
+          notify({
+            variant: "success",
+            title: translate("exportedAsInp"),
+            Icon: SuccessIcon,
+            id: exportInpToastId,
+            size: "sm",
           });
           return true;
-        } catch (error) {
+        } catch {
+          notify({
+            variant: "warning",
+            title: translate("exportInpCanceled"),
+            Icon: WarningIcon,
+            id: exportInpToastId,
+            size: "sm",
+          });
           return false;
         }
       },
-      [userTracking, getFsAccess, addRecent, translate, map],
+      [userTracking, getFsAccess, addRecent, translate, map, isOurFileOn],
     ),
   );
 

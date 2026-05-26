@@ -8,33 +8,40 @@ import {
   buildCheckoutUrl,
   useCheckout,
 } from "src/hooks/use-checkout";
+import { type UpgradeSource, getSourceFeature } from "src/state/dialog";
 
 export const CheckoutButton = ({
   variant = "primary",
   plan,
   paymentType,
+  source,
   children,
 }: {
   plan: Plan;
   paymentType: PaymentType;
   variant?: "primary" | "quiet" | "default";
+  source?: UpgradeSource;
   children: ReactNode;
 }) => {
   const { startCheckout } = useCheckout();
   const userTracking = useUserTracking();
   const { isSignedIn } = useAuth();
 
+  const captureCheckoutStarted = () => {
+    userTracking.capture({
+      name: "checkout.started",
+      plan,
+      paymentType,
+      source: source?.kind,
+      sourceFeature: getSourceFeature(source),
+    });
+  };
+
   if (!isSignedIn) {
     return (
       <SignInButton forceRedirectUrl={buildCheckoutUrl(plan, paymentType)}>
         <Button
-          onClick={() => {
-            userTracking.capture({
-              name: "checkout.started",
-              plan,
-              paymentType,
-            });
-          }}
+          onClick={captureCheckoutStarted}
           variant={variant}
           size="full-width"
         >
@@ -46,7 +53,10 @@ export const CheckoutButton = ({
 
   return (
     <Button
-      onClick={() => startCheckout(plan, paymentType)}
+      onClick={() => {
+        captureCheckoutStarted();
+        void startCheckout(plan, paymentType);
+      }}
       variant={variant}
       size="full-width"
     >

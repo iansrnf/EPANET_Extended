@@ -39,6 +39,7 @@ export const replaceNode: ModelOperation<InputData> = (
     oldElevation,
     oldIsActive,
   );
+
   const connectedLinkIds = topology.getLinks(oldNodeId);
   const updatedLinks: LinkAsset[] = [];
   const updatedCustomerPoints = new CustomerPoints();

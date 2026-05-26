@@ -390,7 +390,10 @@ describe("EPSResultsReader (unit tests)", () => {
         pumpCount: 0,
         timestepCount: 1,
         qualityType: QualityTypeCode.Age,
-        nodeResults: [[0, 0, 100, 110, 50, 60, expectedAge1, expectedAge2]],
+        nodeResults: [
+          // demands (2), heads (2), pressures (2), qualities (2)
+          [0, 0, 100, 110, 50, 60, expectedAge1, expectedAge2],
+        ],
       });
 
       const storage = new InMemoryStorage("test-water-age");
@@ -438,7 +441,7 @@ describe("EPSResultsReader (unit tests)", () => {
         pumpCount: 0,
         timestepCount: 1,
         qualityType: QualityTypeCode.Chemical,
-        nodeResults: [[0, 100, 50, 1.5]],
+        nodeResults: [[0, 100, 50, 1.5]], // quality = chemical concentration
       });
 
       const storage = new InMemoryStorage("test-water-age-chemical");
@@ -457,6 +460,7 @@ describe("EPSResultsReader (unit tests)", () => {
       const nodeCount = 2;
       const expectedPipeAge = 8.75;
 
+      // Link results: 8 floats per link [flow, velocity, headloss, avgQuality, status, setting, reactionRate, friction]
       const fixture = createFixture({
         nodeCount,
         linkCount: 1,
@@ -505,7 +509,7 @@ describe("EPSResultsReader (unit tests)", () => {
     });
 
     it("returns waterAge for tanks and reservoirs when quality type is AGE", async () => {
-      const nodeCount = 3;
+      const nodeCount = 3; // 1 junction + 1 reservoir + 1 tank
       const resAndTankCount = 2;
 
       const fixture = createFixture({
@@ -515,7 +519,10 @@ describe("EPSResultsReader (unit tests)", () => {
         pumpCount: 0,
         timestepCount: 1,
         qualityType: QualityTypeCode.Age,
-        nodeResults: [[0, 0, 0, 100, 110, 115, 50, 60, 70, 5.0, 3.0, 8.0]],
+        nodeResults: [
+          // demands (3), heads (3), pressures (3), qualities (3)
+          [0, 0, 0, 100, 110, 115, 50, 60, 70, 5.0, 3.0, 8.0],
+        ],
         tankVolumes: [[0, 1000]],
       });
 
@@ -527,6 +534,7 @@ describe("EPSResultsReader (unit tests)", () => {
       await reader.initialize(fixture.metadata, fixture.simulationIds);
 
       const resultsReader = await reader.getResultsForTimestep(0);
+      // Node 1 = junction, Node 2 = reservoir, Node 3 = tank
       const junction = resultsReader.getJunction(1);
       const reservoir = resultsReader.getReservoir(2);
       const tank = resultsReader.getTank(3);

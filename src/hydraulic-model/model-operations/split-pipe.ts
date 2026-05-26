@@ -23,18 +23,12 @@ type SplitPipeInput = {
   splits: NodeAsset[];
   lengthUnit: Unit;
   assetFactory: AssetFactory;
-  labelManager?: LabelManager;
+  labelManager: LabelManager;
 };
 
 export const splitPipe: ModelOperation<SplitPipeInput> = (
   hydraulicModel,
-  {
-    pipe,
-    splits,
-    lengthUnit,
-    assetFactory,
-    labelManager = hydraulicModel.labelManager,
-  },
+  { pipe, splits, lengthUnit, assetFactory, labelManager },
 ) => {
   if (splits.length === 0) {
     throw new Error("At least one split is required");

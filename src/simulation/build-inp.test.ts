@@ -3,34 +3,8 @@ import { SimulationSettingsBuilder } from "src/__helpers__/simulation-settings-b
 import { buildInp } from "./build-inp";
 import { presets } from "src/lib/project-settings/quantities-spec";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
-import { ProjectionConfig } from "src/lib/projections";
-import { PressureLogger } from "src/hydraulic-model/pressure-loggers";
 
 describe("build inp", () => {
-  it("writes proj4 projection headers and source coordinates", () => {
-    const projection: ProjectionConfig = {
-      type: "proj4",
-      id: "EPSG:3857",
-      name: "WGS 84 / Pseudo-Mercator",
-      code: "EPSG:3857",
-    };
-    const hydraulicModel = HydraulicModelBuilder.with()
-      .aNode(1, [1, 1])
-      .build();
-
-    const inp = buildInp(hydraulicModel, {
-      units: presets.LPS.units,
-      simulationSettings: defaultSimulationSettings,
-      geolocation: true,
-      madeBy: true,
-      projection,
-    });
-
-    expect(inp).toContain(";PROJECTION EPSG:3857");
-    expect(inp).toContain("[COORDINATES]");
-    expect(inp).toMatch(/1\t111319\.49079327357\t111325\.142866384\d+/);
-  });
-
   it("adds reservoirs", () => {
     const IDS = { R1: 1, R2: 2 };
     const hydraulicModel = HydraulicModelBuilder.with()
@@ -227,193 +201,6 @@ describe("build inp", () => {
     expect(inp).toContain("3\t1\t2\t15\t150\t1.5\t0\tCV");
   });
 
-  it("excludes pressure logger backing nodes and connected pipes from simulation", () => {
-    const IDS = {
-      LOGGER_NODE: 1,
-      NETWORK_NODE: 2,
-      LOGGER_PIPE: 3,
-      LOGGER: 100,
-    };
-    const hydraulicModel = HydraulicModelBuilder.with()
-      .aJunction(IDS.LOGGER_NODE, {
-        coordinates: [10, 20],
-        elevation: 125,
-      })
-      .aJunction(IDS.NETWORK_NODE, {
-        coordinates: [30, 40],
-        elevation: 130,
-      })
-      .aPipe(IDS.LOGGER_PIPE, {
-        startNodeId: IDS.LOGGER_NODE,
-        endNodeId: IDS.NETWORK_NODE,
-        length: 10,
-        diameter: 100,
-        roughness: 1,
-      })
-      .build();
-
-    hydraulicModel.assets
-      .get(IDS.LOGGER_NODE)
-      ?.setProperty("visibility", false);
-    hydraulicModel.pressureLoggers.set(
-      IDS.LOGGER,
-      new PressureLogger(IDS.LOGGER, [10, 20], {
-        label: "L1",
-        connection: { junctionId: IDS.LOGGER_NODE },
-      }),
-    );
-
-    const inp = buildInp(hydraulicModel, {
-      units: presets.LPS.units,
-      simulationSettings: defaultSimulationSettings,
-      geolocation: true,
-    });
-
-    expect(inp).not.toContain(
-      "[PIPES]\n;Id\tStart\tEnd\tLength\tDiameter\tRoughness\tMinorLoss\tStatus\n3\t",
-    );
-    expect(inp).not.toContain("\n1\t125");
-    expect(inp).toContain("\n2\t130");
-    expect(inp).not.toContain("\n3\t1\t2\t10\t100\t1\t0\tOpen");
-    expect(inp).not.toContain("\n1\t10\t20");
-  });
-
-  it("keeps directly connected network nodes in simulation when a logger has no hidden backing node", () => {
-    const IDS = {
-      NETWORK_NODE: 2,
-      NETWORK_NODE_2: 3,
-      NETWORK_PIPE: 4,
-      LOGGER: 100,
-    };
-    const hydraulicModel = HydraulicModelBuilder.with()
-      .aJunction(IDS.NETWORK_NODE, {
-        coordinates: [30, 40],
-        elevation: 130,
-      })
-      .aJunction(IDS.NETWORK_NODE_2, {
-        coordinates: [50, 60],
-        elevation: 135,
-      })
-      .aPipe(IDS.NETWORK_PIPE, {
-        startNodeId: IDS.NETWORK_NODE,
-        endNodeId: IDS.NETWORK_NODE_2,
-        length: 10,
-        diameter: 100,
-        roughness: 1,
-      })
-      .build();
-
-    hydraulicModel.pressureLoggers.set(
-      IDS.LOGGER,
-      new PressureLogger(IDS.LOGGER, [10, 20], {
-        label: "L1",
-        connection: { junctionId: IDS.NETWORK_NODE },
-      }),
-    );
-
-    const inp = buildInp(hydraulicModel, {
-      units: presets.LPS.units,
-      simulationSettings: defaultSimulationSettings,
-      geolocation: true,
-    });
-
-    expect(inp).toContain("\n2\t130");
-    expect(inp).toContain("\n3\t135");
-    expect(inp).toContain("\n4\t2\t3\t10\t100\t1\t0\tOpen");
-    expect(inp).toContain("\n2\t30\t40");
-  });
-
-  it("writes a quality section with initial water age values", () => {
-    const IDS = { J1: 1, T1: 2, R1: 3 };
-    const hydraulicModel = HydraulicModelBuilder.with()
-      .aJunction(IDS.J1, {
-        elevation: 10,
-        initialQuality: 2.5,
-      })
-      .aTank(IDS.T1, {
-        elevation: 20,
-        initialLevel: 5,
-        minLevel: 0,
-        maxLevel: 10,
-        diameter: 15,
-        minVolume: 0,
-        initialQuality: 4,
-      })
-      .aReservoir(IDS.R1, {
-        head: 100,
-        initialQuality: 1,
-      })
-      .build();
-
-    const simulationSettings = SimulationSettingsBuilder.with()
-      .qualitySimulationType("age")
-      .build();
-
-    const inp = buildInp(hydraulicModel, {
-      units: presets.LPS.units,
-      simulationSettings,
-      includeQuality: true,
-    });
-
-    expect(inp).toContain("[QUALITY]");
-    expect(inp).toContain("1\t2.5");
-    expect(inp).toContain("2\t4");
-    expect(inp).toContain("3\t1");
-  });
-
-  it("does not write quality rows for hidden pressure logger backing nodes", () => {
-    const IDS = {
-      LOGGER_NODE: 1,
-      NETWORK_NODE: 2,
-      LOGGER_PIPE: 3,
-      LOGGER: 100,
-    };
-    const hydraulicModel = HydraulicModelBuilder.with()
-      .aJunction(IDS.LOGGER_NODE, {
-        coordinates: [10, 20],
-        elevation: 125,
-        initialQuality: 7,
-      })
-      .aJunction(IDS.NETWORK_NODE, {
-        coordinates: [30, 40],
-        elevation: 130,
-        initialQuality: 3,
-      })
-      .aPipe(IDS.LOGGER_PIPE, {
-        startNodeId: IDS.LOGGER_NODE,
-        endNodeId: IDS.NETWORK_NODE,
-        length: 10,
-        diameter: 100,
-        roughness: 1,
-      })
-      .build();
-
-    hydraulicModel.assets
-      .get(IDS.LOGGER_NODE)
-      ?.setProperty("visibility", false);
-    hydraulicModel.pressureLoggers.set(
-      IDS.LOGGER,
-      new PressureLogger(IDS.LOGGER, [10, 20], {
-        label: "L1",
-        connection: { junctionId: IDS.LOGGER_NODE },
-      }),
-    );
-
-    const simulationSettings = SimulationSettingsBuilder.with()
-      .qualitySimulationType("age")
-      .build();
-
-    const inp = buildInp(hydraulicModel, {
-      units: presets.LPS.units,
-      simulationSettings,
-      includeQuality: true,
-    });
-
-    expect(inp).toContain("[QUALITY]");
-    expect(inp).not.toContain("\n1\t7");
-    expect(inp).toContain("\n2\t3");
-  });
-
   it("adds valves", () => {
     const IDS = { NODE1: 1, NODE2: 2, NODE3: 3, VALVE1: 4, VALVE2: 5 };
     const hydraulicModel = HydraulicModelBuilder.with()
@@ -463,7 +250,7 @@ describe("build inp", () => {
         endNodeId: IDS.NODE2,
         label: "P1",
         initialStatus: "on",
-        definitionType: "curve",
+        definitionType: "standardCurve",
         curve: [
           { x: 0, y: 60 },
           { x: 20, y: 40 },
@@ -778,7 +565,9 @@ describe("build inp", () => {
   });
 
   it("detects units based on the flow units of the model", () => {
-    const hydraulicModel = HydraulicModelBuilder.with(presets.GPM).build();
+    const hydraulicModel = HydraulicModelBuilder.with({
+      quantitiesSpec: presets.GPM,
+    }).build();
 
     const inp = buildInp(hydraulicModel, {
       units: presets.GPM.units,
@@ -1537,7 +1326,7 @@ describe("build inp", () => {
           startNodeId: IDS.J1,
           endNodeId: IDS.J2,
           label: "P1",
-          definitionType: "curve",
+          definitionType: "designPointCurve",
           curve: [{ x: 100, y: 50 }],
           isActive: false,
         })
@@ -1551,37 +1340,6 @@ describe("build inp", () => {
 
       expect(inp).toContain(";3\t1\t2\tHEAD P1\tSPEED 1");
       expect(inp).toContain(";3\tOpen");
-    });
-
-    it("comments out quality rows for inactive nodes when requested", () => {
-      const IDS = { J1: 1, J2: 2 };
-      const hydraulicModel = HydraulicModelBuilder.with()
-        .aJunction(IDS.J1, {
-          elevation: 10,
-          isActive: true,
-          initialQuality: 2,
-        })
-        .aJunction(IDS.J2, {
-          elevation: 20,
-          isActive: false,
-          initialQuality: 5,
-        })
-        .build();
-
-      const simulationSettings = SimulationSettingsBuilder.with()
-        .qualitySimulationType("age")
-        .build();
-
-      const inp = buildInp(hydraulicModel, {
-        units: presets.LPS.units,
-        simulationSettings,
-        inactiveAssets: true,
-        includeQuality: true,
-      });
-
-      expect(inp).toContain("[QUALITY]");
-      expect(inp).toContain("\n1\t2");
-      expect(inp).toContain("\n;2\t5");
     });
   });
 
@@ -2152,180 +1910,6 @@ THEN LINK {{1}} STATUS IS OPEN`,
   });
 
   describe("energy section", () => {
-    describe("quality section", () => {
-      it("includes QUALITY section with initial water age when includeQuality is true", () => {
-        const IDS = { J1: 1, J2: 2 };
-        const hydraulicModel = HydraulicModelBuilder.with()
-          .aJunction(IDS.J1, { elevation: 10, initialQuality: 5 })
-          .aJunction(IDS.J2, { elevation: 20, initialQuality: 12 })
-          .build();
-
-        const inp = buildInp(hydraulicModel, {
-          units: presets.LPS.units,
-          simulationSettings: defaultSimulationSettings,
-          includeQuality: true,
-        });
-
-        expect(inp).toContain("[QUALITY]");
-        expect(inp).toContain(`${IDS.J1}\t5`);
-        expect(inp).toContain(`${IDS.J2}\t12`);
-      });
-
-      it("omits QUALITY section when includeQuality is false", () => {
-        const IDS = { J1: 1 };
-        const hydraulicModel = HydraulicModelBuilder.with()
-          .aJunction(IDS.J1, { elevation: 10, initialQuality: 5 })
-          .build();
-
-        const inp = buildInp(hydraulicModel, {
-          units: presets.LPS.units,
-          simulationSettings: defaultSimulationSettings,
-        });
-
-        expect(inp).not.toContain("[QUALITY]");
-      });
-
-      it("omits QUALITY section when no nodes have non-zero water age", () => {
-        const IDS = { J1: 1, J2: 2 };
-        const hydraulicModel = HydraulicModelBuilder.with()
-          .aJunction(IDS.J1, { elevation: 10 })
-          .aJunction(IDS.J2, { elevation: 20 })
-          .build();
-
-        const inp = buildInp(hydraulicModel, {
-          units: presets.LPS.units,
-          simulationSettings: defaultSimulationSettings,
-          includeQuality: true,
-        });
-
-        expect(inp).not.toContain("[QUALITY]");
-      });
-
-      it("includes initial water age for tanks and reservoirs", () => {
-        const IDS = { T1: 1, R1: 2 };
-        const hydraulicModel = HydraulicModelBuilder.with()
-          .aTank(IDS.T1, { initialQuality: 8 })
-          .aReservoir(IDS.R1, { head: 100, initialQuality: 3 })
-          .build();
-
-        const inp = buildInp(hydraulicModel, {
-          units: presets.LPS.units,
-          simulationSettings: defaultSimulationSettings,
-          includeQuality: true,
-        });
-
-        expect(inp).toContain("[QUALITY]");
-        expect(inp).toContain(`${IDS.T1}\t8`);
-        expect(inp).toContain(`${IDS.R1}\t3`);
-      });
-
-      it("skips nodes with zero initial water age", () => {
-        const IDS = { J1: 1, J2: 2 };
-        const hydraulicModel = HydraulicModelBuilder.with()
-          .aJunction(IDS.J1, { elevation: 10, initialQuality: 0 })
-          .aJunction(IDS.J2, { elevation: 20, initialQuality: 7 })
-          .build();
-
-        const inp = buildInp(hydraulicModel, {
-          units: presets.LPS.units,
-          simulationSettings: defaultSimulationSettings,
-          includeQuality: true,
-        });
-
-        expect(inp).toContain("[QUALITY]");
-        expect(inp).not.toContain(`${IDS.J1}\t0`);
-        expect(inp).toContain(`${IDS.J2}\t7`);
-      });
-
-      describe("mixing section", () => {
-        it("includes MIXING section for tanks with non-default mixing model", () => {
-          const IDS = { T1: 1, T2: 2, R1: 3 };
-          const hydraulicModel = HydraulicModelBuilder.with()
-            .aTank(IDS.T1, { mixingModel: "fifo" })
-            .aTank(IDS.T2, { mixingModel: "lifo" })
-            .aReservoir(IDS.R1)
-            .build();
-
-          const inp = buildInp(hydraulicModel, {
-            units: presets.LPS.units,
-            simulationSettings: defaultSimulationSettings,
-            includeQuality: true,
-          });
-
-          expect(inp).toContain("[MIXING]");
-          expect(inp).toContain(`${IDS.T1}\tFIFO`);
-          expect(inp).toContain(`${IDS.T2}\tLIFO`);
-        });
-
-        it("includes fraction for 2COMP mixing model", () => {
-          const IDS = { T1: 1, R1: 2 };
-          const hydraulicModel = HydraulicModelBuilder.with()
-            .aTank(IDS.T1, { mixingModel: "2comp", mixingFraction: 0.3 })
-            .aReservoir(IDS.R1)
-            .build();
-
-          const inp = buildInp(hydraulicModel, {
-            units: presets.LPS.units,
-            simulationSettings: defaultSimulationSettings,
-            includeQuality: true,
-          });
-
-          expect(inp).toContain("[MIXING]");
-          expect(inp).toContain(`${IDS.T1}\t2COMP\t0.3`);
-        });
-
-        it("omits tanks with default MIXED model", () => {
-          const IDS = { T1: 1, T2: 2, R1: 3 };
-          const hydraulicModel = HydraulicModelBuilder.with()
-            .aTank(IDS.T1, { mixingModel: "mixed" })
-            .aTank(IDS.T2, { mixingModel: "fifo" })
-            .aReservoir(IDS.R1)
-            .build();
-
-          const inp = buildInp(hydraulicModel, {
-            units: presets.LPS.units,
-            simulationSettings: defaultSimulationSettings,
-            includeQuality: true,
-          });
-
-          expect(inp).toContain("[MIXING]");
-          expect(inp).not.toContain(`${IDS.T1}\tMIXED`);
-          expect(inp).toContain(`${IDS.T2}\tFIFO`);
-        });
-
-        it("omits MIXING section when all tanks use default model", () => {
-          const IDS = { T1: 1, R1: 2 };
-          const hydraulicModel = HydraulicModelBuilder.with()
-            .aTank(IDS.T1, { mixingModel: "mixed" })
-            .aReservoir(IDS.R1)
-            .build();
-
-          const inp = buildInp(hydraulicModel, {
-            units: presets.LPS.units,
-            simulationSettings: defaultSimulationSettings,
-            includeQuality: true,
-          });
-
-          expect(inp).not.toContain("[MIXING]");
-        });
-
-        it("omits MIXING section when includeQuality is false", () => {
-          const IDS = { T1: 1, R1: 2 };
-          const hydraulicModel = HydraulicModelBuilder.with()
-            .aTank(IDS.T1, { mixingModel: "fifo" })
-            .aReservoir(IDS.R1)
-            .build();
-
-          const inp = buildInp(hydraulicModel, {
-            units: presets.LPS.units,
-            simulationSettings: defaultSimulationSettings,
-          });
-
-          expect(inp).not.toContain("[MIXING]");
-        });
-      });
-    });
-
     it("includes global pattern in energy and patterns sections with usedPatterns", () => {
       const IDS = { J1: 1, PAT1: 100, PAT2: 101 };
       const hydraulicModel = HydraulicModelBuilder.with()

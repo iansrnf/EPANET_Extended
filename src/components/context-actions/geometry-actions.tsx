@@ -20,11 +20,15 @@ import {
   ReverseIcon,
   ActivateTopologyIcon,
   DeactivateTopologyIcon,
+  ChartLineIcon,
 } from "src/icons";
 import { useAtomValue } from "jotai";
 import { Mode, modeAtom } from "src/state/mode";
 import { useSetRedrawMode } from "src/commands/set-redraw-mode";
 import { useReverseLink } from "src/commands/reverse-link";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { useCustomGraph } from "src/hooks/use-custom-graph";
+import { useUserTracking } from "src/infra/user-tracking";
 
 export function useActions(
   selectedWrappedFeatures: IWrappedFeature[],
@@ -33,6 +37,7 @@ export function useActions(
   const translate = useTranslate();
   const zoomTo = useZoomTo();
   const deleteSelection = useDeleteSelection();
+  const userTracking = useUserTracking();
   const {
     changeSelectedAssetsActiveTopologyStatus: activateDeactivateAction,
     allActive,
@@ -40,6 +45,8 @@ export function useActions(
   const { mode: currentMode } = useAtomValue(modeAtom);
   const setRedrawMode = useSetRedrawMode();
   const reverseLinkAction = useReverseLink();
+  const isCustomGraphsOn = useFeatureFlag("FLAG_CUSTOM_GRAPHS");
+  const { openCustomGraph } = useCustomGraph();
 
   const onDelete = useCallback(() => {
     const eventSource = source === "context-item" ? "context-menu" : "toolbar";
@@ -60,6 +67,11 @@ export function useActions(
     applicable: true,
     label: translate("zoomTo"),
     onSelect: function doAddInnerRing() {
+      userTracking.capture({
+        name: "selection.zoomedTo",
+        source: source === "context-item" ? "map-context-menu" : "asset-panel",
+        count: selectedWrappedFeatures.length,
+      });
       return Promise.resolve(zoomTo(selectedWrappedFeatures));
     },
   };
@@ -83,6 +95,13 @@ export function useActions(
       setRedrawMode({ source: eventSource });
       return Promise.resolve();
     },
+  };
+
+  const customGraphAction = {
+    icon: <ChartLineIcon />,
+    applicable: true,
+    label: translate("customGraph.menuTitle"),
+    onSelect: openCustomGraph,
   };
 
   const reverseAction = {
@@ -112,13 +131,22 @@ export function useActions(
     },
   };
 
-  return [
-    zoomToAction,
-    reverseAction,
-    redrawAction,
-    changeActiveTopologyStatusAction,
-    deleteAssetsAction,
-  ];
+  return isCustomGraphsOn
+    ? [
+        zoomToAction,
+        reverseAction,
+        redrawAction,
+        changeActiveTopologyStatusAction,
+        customGraphAction,
+        deleteAssetsAction,
+      ]
+    : [
+        zoomToAction,
+        reverseAction,
+        redrawAction,
+        changeActiveTopologyStatusAction,
+        deleteAssetsAction,
+      ];
 }
 
 export function GeometryActions({

@@ -5,43 +5,69 @@ import {
   useImperativeHandle,
   useRef,
 } from "react";
-import { useReactTable, getCoreRowModel } from "@tanstack/react-table";
 import {
-  DataGridRef,
+  type ColumnDef,
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+} from "@tanstack/react-table";
+import {
   DataGridVariant,
-  GridColumn,
   RowAction,
   GridSelection,
+  CellContextAction,
+  GutterContextAction,
+  GridColumn,
 } from "./types";
+import { useGridEditing, useMouseSelection } from "./hooks";
 import {
-  useSelection,
-  useGridEditing,
-  useClipboard,
-  useEditMode,
-  useMouseSelection,
-} from "./hooks";
-import {
-  GridHeader,
-  Rows,
-  RowsRef,
-  ScrollableRows,
-  AddRowButton,
-} from "./shared";
+  CellEditingFeature,
+  CellRangeSelectionFeature,
+  CellRenderingFeature,
+  ClipboardFeature,
+  ColumnSizingFeature,
+  type ClipboardCopyInfo,
+  type ClipboardPasteInfo,
+  type CopySelectionOptions,
+} from "./features";
+import type { CellPosition } from "./types";
+import { InlineGrid, GridRef, VirtualGrid, AddRowButton } from "./shared";
+
+export type DataGridRef = {
+  selectCells: (options?: {
+    colIndex?: number;
+    rowIndex?: number;
+    extend?: boolean;
+  }) => void;
+  clearSelection: () => void;
+  copySelection: (options?: CopySelectionOptions) => Promise<void>;
+  selection: GridSelection | null;
+};
 
 type DataGridProps<TData extends Record<string, unknown>> = {
   data: TData[];
-  columns: GridColumn[];
+  columns: GridColumn<TData>[];
   onChange: (data: TData[]) => void;
   createRow: () => TData;
   readOnly?: boolean;
+  resizable?: boolean;
+  minColumnSizePx?: number;
   emptyState?: React.ReactNode;
   rowActions?: RowAction[];
+  cellContextActions?: CellContextAction<TData>[];
+  gutterContextActions?: GutterContextAction<TData>[];
   addRowLabel?: string;
-  gutterColumn?: boolean;
+  gutterColumn?: "hidden" | "selection" | "numbered";
   onSelectionChange?: (selection: GridSelection | null) => void;
   variant?: DataGridVariant;
   cellHasWarning?: (rowIndex: number, columnId: string) => boolean;
   autoAddNewRows?: boolean;
+  sortable?: boolean;
+  onColumnSort?: (columnId: string, direction: "asc" | "desc") => void;
+  includeHeadersOnCopy?: boolean;
+  onCopy?: (info: ClipboardCopyInfo) => void;
+  onPaste?: (info: ClipboardPasteInfo) => void;
+  onDelete?: (rowsToDelete: TData[]) => void;
 };
 
 export const DataGrid = forwardRef(function DataGrid<
@@ -53,30 +79,121 @@ export const DataGrid = forwardRef(function DataGrid<
     onChange,
     createRow,
     readOnly = false,
+    resizable = false,
+    minColumnSizePx = 50,
     emptyState,
     rowActions,
+    cellContextActions,
+    gutterContextActions,
     addRowLabel,
-    gutterColumn = false,
+    gutterColumn = "hidden",
     onSelectionChange,
     variant = "spreadsheet",
     cellHasWarning,
     autoAddNewRows = false,
+    sortable = false,
+    onColumnSort,
+    includeHeadersOnCopy = false,
+    onCopy,
+    onPaste,
+    onDelete,
   }: DataGridProps<TData>,
   ref: React.ForwardedRef<DataGridRef>,
 ) {
   const gridRef = useRef<HTMLDivElement>(null);
-  const rowsRef = useRef<RowsRef>(null);
+  const rowsRef = useRef<GridRef>(null);
   const dataRef = useRef(data);
   dataRef.current = data;
 
-  const { editMode, startEditing, stopEditing } = useEditMode();
-
-  const { activeCell, selection, clearSelection, selectCells } = useSelection({
-    rowCount: data.length,
-    colCount: columns.length,
-    stopEditing,
-    onSelectionChange,
+  const table = useReactTable<TData>({
+    data,
+    columns: columns as ColumnDef<TData>[],
+    getCoreRowModel: getCoreRowModel(),
+    _features: [
+      CellEditingFeature,
+      CellRangeSelectionFeature,
+      ClipboardFeature,
+      CellRenderingFeature,
+      ColumnSizingFeature,
+    ],
+    // Clipboard feature options
+    onDataChange: onChange,
+    createRow,
+    readOnly,
+    onDelete,
+    includeHeadersOnCopy,
+    autoExtendOnPaste: autoAddNewRows,
+    onClipboardCopy: onCopy,
+    onClipboardPaste: onPaste,
+    // Column sizing options
+    defaultColumn: {
+      minSize: minColumnSizePx,
+      size: 150,
+      maxSize: Number.MAX_SAFE_INTEGER,
+    },
+    columnResizeMode: "onChange",
+    enableColumnResizing: resizable,
+    // Data sorting options
+    getSortedRowModel: getSortedRowModel(),
+    enableSorting: sortable,
+    enableSortingRemoval: true,
+    enableMultiSort: false,
   });
+
+  const activeCell = table.getActiveCell();
+  const selection = table.getSelection();
+  const editMode = table.getEditMode();
+
+  const selectCells = useCallback(
+    (options?: { colIndex?: number; rowIndex?: number; extend?: boolean }) => {
+      const { colIndex, rowIndex, extend = false } = options ?? {};
+      const result = table.updateSelection({
+        col: colIndex,
+        row: rowIndex,
+        extend,
+      });
+      if (!result) return;
+
+      const { range, movingCorner } = result;
+      const nextActiveCell: CellPosition = {
+        col: colIndex !== undefined ? movingCorner.col : range.min.col,
+        row: rowIndex !== undefined ? movingCorner.row : range.min.row,
+      };
+
+      const prevActive = table.getActiveCell();
+      const isSingleCell =
+        range.min.col === range.max.col && range.min.row === range.max.row;
+      const activeMoved =
+        !prevActive ||
+        prevActive.col !== nextActiveCell.col ||
+        prevActive.row !== nextActiveCell.row;
+      if (activeMoved || !isSingleCell) {
+        table.stopEditing();
+      }
+
+      table.setActiveCell(nextActiveCell);
+    },
+    [table],
+  );
+
+  const clearSelection = useCallback(() => {
+    if (!table.getSelection() && !table.getActiveCell()) return;
+    table.clearSelection();
+    table.setActiveCell(null);
+    table.stopEditing();
+  }, [table]);
+
+  const lastNotifiedRef = useRef<GridSelection | null>(null);
+  useEffect(
+    function notifySelectionChange() {
+      const prev = lastNotifiedRef.current;
+      if (!isSameSelection(prev, selection)) {
+        lastNotifiedRef.current = selection;
+        onSelectionChange?.(selection);
+      }
+    },
+    [selection, onSelectionChange],
+  );
 
   const { handleCellMouseDown, handleCellMouseEnter } = useMouseSelection({
     editMode,
@@ -89,13 +206,16 @@ export const DataGrid = forwardRef(function DataGrid<
 
   const focusRow = useCallback(
     (rowIndex: number) => {
-      if (columns.length === 0) return;
-      const firstEditableCol = columns.findIndex((col) => !col.disabled);
+      const leafColumns = table.getVisibleLeafColumns();
+      if (leafColumns.length === 0) return;
+      const firstEditableCol = leafColumns.findIndex(
+        (col) => !col.isReadOnly(rowIndex),
+      );
       const colIndex = firstEditableCol !== -1 ? firstEditableCol : 0;
       gridRef.current?.focus();
       selectCells({ colIndex, rowIndex });
     },
-    [columns, selectCells],
+    [table, selectCells],
   );
 
   const handleAddRow = useCallback(() => {
@@ -106,18 +226,8 @@ export const DataGrid = forwardRef(function DataGrid<
   }, [createRow, onChange, focusRow]);
 
   const handleEditingKeyDown = useGridEditing({
-    activeCell,
-    selection,
-    editMode,
-    columns,
-    data,
-    onChange,
-    readOnly,
-    rowCount: data.length,
-    colCount: columns.length,
+    table,
     selectCells,
-    startEditing,
-    stopEditing,
     clearSelection,
     blurGrid,
     onAddRow: autoAddNewRows ? handleAddRow : undefined,
@@ -135,51 +245,48 @@ export const DataGrid = forwardRef(function DataGrid<
   );
 
   const wasEditingRef = useRef(false);
-
   useEffect(
     function refocusWhenEditingStops() {
       if (wasEditingRef.current && !editMode) {
-        gridRef.current?.focus();
+        // After exiting edit mode the grid container should reclaim
+        // keyboard focus so arrow navigation works. The only exception
+        // is when focus currently sits on a boolean cell's checkbox —
+        // checkboxes handle their own Space/Enter keys and shouldn't
+        // be re-stolen. Other focusable cell elements (text inputs,
+        // select buttons) don't have intrinsic grid-nav handling, so
+        // the grid div takes over.
+        const active = document.activeElement;
+        const isCheckbox =
+          active instanceof HTMLInputElement && active.type === "checkbox";
+        if (!isCheckbox) {
+          gridRef.current?.focus();
+        }
       }
       wasEditingRef.current = !!editMode;
     },
     [editMode],
   );
 
-  const { handleCopy, handlePaste } = useClipboard({
-    selection,
-    columns,
-    data,
-    onChange,
-    createRow,
-    readOnly,
-  });
-
   useImperativeHandle(
     ref,
     () => ({
       selectCells,
       clearSelection,
+      copySelection: table.copySelection,
       selection,
     }),
-    [selectCells, clearSelection, selection],
+    [selectCells, clearSelection, table, selection],
   );
-
-  const table = useReactTable({
-    data,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
 
   const handleCellDoubleClick = useCallback(
     (col: number) => {
-      if (readOnly) return;
-      const column = columns[col] as GridColumn | undefined;
-      if (!column?.disabled && !column?.disableKeys) {
-        startEditing("full");
+      const column = table.getVisibleLeafColumns()[col];
+      const rowIndex = table.getActiveCell()?.row ?? 0;
+      if (column && !column.isReadOnly(rowIndex)) {
+        table.startEditing("full");
       }
     },
-    [columns, readOnly, startEditing],
+    [table],
   );
 
   const handleGutterClick = useCallback(
@@ -187,6 +294,30 @@ export const DataGrid = forwardRef(function DataGrid<
       selectCells({ rowIndex: row, extend: e.shiftKey });
     },
     [selectCells],
+  );
+
+  const handleCellContextMenu = useCallback(
+    (col: number, row: number) => {
+      if (!table.isCellSelected(col, row)) {
+        selectCells({ colIndex: col, rowIndex: row });
+      }
+    },
+    [table, selectCells],
+  );
+
+  const handleGutterContextMenu = useCallback(
+    (row: number) => {
+      const rowIsFullySelected =
+        selection !== null &&
+        selection.min.col === 0 &&
+        selection.max.col === columns.length - 1 &&
+        row >= selection.min.row &&
+        row <= selection.max.row;
+      if (!rowIsFullySelected) {
+        selectCells({ rowIndex: row });
+      }
+    },
+    [selection, selectCells, columns.length],
   );
 
   const handleCellChange = useCallback(
@@ -203,14 +334,27 @@ export const DataGrid = forwardRef(function DataGrid<
     [onChange],
   );
 
-  const handleFocus = useCallback(() => {
-    if (activeCell || data.length === 0) return;
-    focusRow(0);
-  }, [activeCell, data.length, focusRow]);
+  const handleFocus = useCallback(
+    (e: React.FocusEvent) => {
+      if (activeCell || data.length === 0) return;
+      // Only treat as a tab-into-the-grid when the grid div itself receives
+      // focus. Inner-element focus (cell inputs, checkboxes) is handled by
+      // the cell's own focus management; stealing it back to row 0 would
+      // race with the click that just selected a cell.
+      if (e.target !== gridRef.current) return;
+      focusRow(0);
+    },
+    [activeCell, data.length, focusRow],
+  );
 
   const handleEmptyAreaMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      if (e.target === e.currentTarget) {
+      if (e.target !== e.currentTarget) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const onScrollbar =
+        e.clientX > rect.left + e.currentTarget.clientWidth ||
+        e.clientY > rect.top + e.currentTarget.clientHeight;
+      if (!onScrollbar) {
         clearSelection();
       }
     },
@@ -226,29 +370,41 @@ export const DataGrid = forwardRef(function DataGrid<
   const rowsProps = {
     table,
     columns,
-    rowCount: data.length,
-    activeCell,
-    selection,
-    editMode,
     onCellMouseDown: handleCellMouseDown,
     onCellMouseEnter: handleCellMouseEnter,
     onCellDoubleClick: handleCellDoubleClick,
+    onCellContextMenu: cellContextActions
+      ? (col: number, row: number) => handleCellContextMenu(col, row)
+      : undefined,
     onGutterClick: handleGutterClick,
+    onGutterContextMenu: gutterContextActions
+      ? (row: number) => handleGutterContextMenu(row)
+      : undefined,
     onCellChange: handleCellChange,
-    stopEditing,
-    startEditing,
+    onEmptyAreaMouseDown: handleEmptyAreaMouseDown,
+    onColumnHeaderClick: (col: number, e: React.MouseEvent) =>
+      selectCells({ colIndex: col, extend: e.shiftKey }),
+    onSelectAll: () => selectCells(),
+    onColumnSort,
     selectCells,
     clearSelection,
     blurGrid,
-    gutterColumn,
+    gutterColumn: gutterColumn !== "hidden",
+    showRowNumbers: gutterColumn === "numbered",
     rowActions: readOnly ? undefined : rowActions,
     readOnly,
     variant,
     cellHasWarning,
+    cellContextActions,
+    gutterContextActions,
   };
 
   return (
-    <div className={isSpreadsheet ? "flex flex-col h-full" : "flex flex-col"}>
+    <div
+      className={
+        isSpreadsheet ? "flex flex-col h-full text-sm" : "flex flex-col text-sm"
+      }
+    >
       <div
         ref={gridRef}
         role="grid"
@@ -258,32 +414,19 @@ export const DataGrid = forwardRef(function DataGrid<
         tabIndex={0}
         onKeyDown={handleKeyDown}
         onFocus={handleFocus}
-        onCopy={handleCopy}
-        onPaste={handlePaste}
+        onCopy={table.handleCopyEvent}
+        onPaste={table.handlePasteEvent}
         className={
           isSpreadsheet
-            ? "relative flex flex-col flex-1 min-h-0 outline-none"
-            : "relative flex flex-col outline-none"
+            ? "relative flex flex-col flex-1 min-h-0 outline-hidden"
+            : "relative flex flex-col outline-hidden"
         }
         data-capture-escape-key
       >
-        <GridHeader
-          table={table}
-          showGutterColumn={gutterColumn}
-          showActionsColumn={!readOnly && !!rowActions}
-          onSelectColumn={(col) => selectCells({ colIndex: col })}
-          onSelectAll={() => selectCells()}
-          variant={variant}
-        />
-
         {isSpreadsheet ? (
-          <ScrollableRows
-            ref={rowsRef}
-            {...rowsProps}
-            onEmptyAreaMouseDown={handleEmptyAreaMouseDown}
-          />
+          <VirtualGrid ref={rowsRef} {...rowsProps} />
         ) : (
-          <Rows ref={rowsRef} {...rowsProps} />
+          <InlineGrid ref={rowsRef} {...rowsProps} />
         )}
       </div>
 
@@ -301,3 +444,17 @@ export const DataGrid = forwardRef(function DataGrid<
     ref?: React.Ref<DataGridRef>;
   },
 ) => React.ReactElement;
+
+function isSameSelection(
+  a: GridSelection | null,
+  b: GridSelection | null,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.min.col === b.min.col &&
+    a.min.row === b.min.row &&
+    a.max.col === b.max.col &&
+    a.max.row === b.max.row
+  );
+}

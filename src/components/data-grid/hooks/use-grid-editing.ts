@@ -1,59 +1,31 @@
 import { useCallback } from "react";
-import { CellPosition, EditMode, GridColumn, GridSelection } from "../types";
-import { isFullRowSelected } from "./use-selection";
+import type { Table } from "@tanstack/react-table";
 
 type UseGridEditingOptions<TData extends Record<string, unknown>> = {
-  activeCell: CellPosition | null;
-  selection: GridSelection | null;
-  editMode: EditMode;
-  columns: GridColumn[];
-  data: TData[];
-  onChange: (data: TData[]) => void;
-  readOnly: boolean;
-  rowCount: number;
-  colCount: number;
+  table: Table<TData>;
   selectCells: (options?: {
     colIndex?: number;
     rowIndex?: number;
     extend?: boolean;
   }) => void;
-  startEditing: (mode: "quick" | "full") => void;
-  stopEditing: () => void;
   clearSelection: () => void;
   blurGrid: () => void;
   onAddRow?: () => void;
 };
 
 export function useGridEditing<TData extends Record<string, unknown>>({
-  activeCell,
-  selection,
-  editMode,
-  columns,
-  data,
-  onChange,
-  readOnly,
-  rowCount,
-  colCount,
+  table,
   selectCells,
-  startEditing,
-  stopEditing,
   clearSelection,
   blurGrid,
   onAddRow,
 }: UseGridEditingOptions<TData>) {
-  const handleDelete = useCallback(() => {
-    if (!selection || readOnly) return;
-
-    if (isFullRowSelected(selection, colCount)) {
-      onChange(deleteRows(data, selection));
-      return;
-    }
-
-    onChange(clearCells(data, selection, columns));
-  }, [selection, readOnly, colCount, data, columns, onChange]);
-
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      const activeCell = table.getActiveCell();
+      const editMode = table.getEditMode();
+      const colCount = table.getVisibleLeafColumns().length;
+      const rowCount = table.getRowModel().rows.length;
       const atLeftEdge = activeCell?.col === 0;
       const atRightEdge = activeCell?.col === colCount - 1;
       const isTabOut =
@@ -63,7 +35,7 @@ export function useGridEditing<TData extends Record<string, unknown>>({
       if (editMode) {
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
-          stopEditing();
+          table.stopEditing();
           if (activeCell) {
             if (activeCell.row === rowCount - 1 && onAddRow) {
               onAddRow();
@@ -75,14 +47,14 @@ export function useGridEditing<TData extends Record<string, unknown>>({
           return;
         } else if (e.key === "Tab") {
           if (isTabOut) {
-            stopEditing();
+            table.stopEditing();
             clearSelection();
             blurGrid();
             return; // Let browser handle tab
           }
 
           e.preventDefault();
-          stopEditing();
+          table.stopEditing();
           if (activeCell) {
             const newCol = e.shiftKey
               ? Math.max(0, activeCell.col - 1)
@@ -93,7 +65,7 @@ export function useGridEditing<TData extends Record<string, unknown>>({
         } else if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
-          stopEditing();
+          table.stopEditing();
           return;
         } else if (
           editMode === "quick" &&
@@ -101,7 +73,7 @@ export function useGridEditing<TData extends Record<string, unknown>>({
         ) {
           // In quick mode, commit on arrow keys (navigation handled by use-rows-navigation)
           e.preventDefault();
-          stopEditing();
+          table.stopEditing();
           return;
         }
         // In full mode, arrow keys are handled by the input (cursor movement)
@@ -113,15 +85,16 @@ export function useGridEditing<TData extends Record<string, unknown>>({
       switch (e.key) {
         case "Enter":
           e.preventDefault();
-          if (activeCell && !readOnly) {
-            const column = columns[activeCell.col];
-            if (!column?.disabled && !column?.disableKeys) {
-              startEditing("full");
+          if (activeCell) {
+            const column = table.getVisibleLeafColumns()[activeCell.col];
+            if (column && !column.isReadOnly(activeCell.row)) {
+              table.startEditing("full");
             }
           }
           break;
 
-        case "Escape":
+        case "Escape": {
+          const selection = table.getSelection();
           if (selection) {
             e.preventDefault();
             e.stopPropagation();
@@ -140,88 +113,33 @@ export function useGridEditing<TData extends Record<string, unknown>>({
             }
           }
           break;
+        }
 
         case "Delete":
         case "Backspace":
           e.preventDefault();
-          handleDelete();
+          table.deleteSelection();
           break;
 
         default:
           // Character input starts editing in quick mode
           if (
             activeCell &&
-            !readOnly &&
             e.key.length === 1 &&
             !e.ctrlKey &&
             !e.metaKey &&
             !e.altKey
           ) {
-            const column = columns[activeCell.col];
-            if (!column?.disabled && !column?.disableKeys) {
-              startEditing("quick");
+            const column = table.getVisibleLeafColumns()[activeCell.col];
+            if (column && !column.isReadOnly(activeCell.row)) {
+              table.startEditing("quick");
             }
           }
           break;
       }
     },
-    [
-      editMode,
-      activeCell,
-      selection,
-      columns,
-      rowCount,
-      colCount,
-      readOnly,
-      selectCells,
-      startEditing,
-      stopEditing,
-      clearSelection,
-      blurGrid,
-      handleDelete,
-      onAddRow,
-    ],
+    [table, selectCells, clearSelection, blurGrid, onAddRow],
   );
 
   return handleKeyDown;
-}
-
-function deleteRows<TData extends Record<string, unknown>>(
-  data: TData[],
-  selection: GridSelection,
-): TData[] {
-  const minRow = selection.min.row;
-  const maxRow = selection.max.row;
-  return [...data.slice(0, minRow), ...data.slice(maxRow + 1)];
-}
-
-function clearCells<TData extends Record<string, unknown>>(
-  data: TData[],
-  selection: GridSelection,
-  columns: GridColumn[],
-): TData[] {
-  return data.map((row, rowIndex) => {
-    if (rowIndex < selection.min.row || rowIndex > selection.max.row) {
-      return row;
-    }
-
-    const newRow = { ...row };
-    for (
-      let colIndex = selection.min.col;
-      colIndex <= selection.max.col;
-      colIndex++
-    ) {
-      const column = columns[colIndex];
-      if (column?.disabled) continue;
-
-      const accessorKey = column?.accessorKey;
-      if (!accessorKey) continue;
-
-      const deleteValue = column.deleteValue;
-      const value =
-        typeof deleteValue === "function" ? deleteValue() : deleteValue;
-      (newRow as Record<string, unknown>)[accessorKey] = value ?? null;
-    }
-    return newRow;
-  });
 }

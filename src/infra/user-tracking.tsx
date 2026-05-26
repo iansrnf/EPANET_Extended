@@ -160,6 +160,12 @@ type SelectionCleared = {
   name: "selection.cleared";
 };
 
+type SelectionZoomedTo = {
+  name: "selection.zoomedTo";
+  source: "asset-panel" | "map-context-menu";
+  count: number;
+};
+
 type AssetDeselected = {
   name: "asset.deselected";
   type: Asset["type"];
@@ -172,13 +178,13 @@ type SatelliteViewToggled = {
 
 export type AssetDeleted = {
   name: "asset.deleted";
-  source: "shortcut" | "toolbar" | "context-menu";
+  source: "shortcut" | "toolbar" | "context-menu" | "data-table";
   type: Asset["type"];
 };
 
 export type AssetsDeleted = {
   name: "assets.deleted";
-  source: "shortcut" | "toolbar" | "context-menu";
+  source: "shortcut" | "toolbar" | "context-menu" | "data-table";
   count: number;
 };
 
@@ -245,7 +251,7 @@ type SimulationExecuted = {
 type SimulationTimestepChanged = {
   name: "simulation.timestep.changed";
   timestepIndex: number;
-  source: "shortcut" | "buttons" | "dropdown" | "quick-graph" | "autoplay";
+  source: "shortcut" | "buttons" | "dropdown" | "quick-graph";
 };
 
 type SimulationPlaybackStopped = {
@@ -264,6 +270,7 @@ type SimulationPlaybackStarted = {
 type SimulationPlaybackSpeedChanged = {
   name: "simulation.playback.speedChanged";
   speed: PlaybackSpeed;
+  speedMs: number;
   isTooFast: boolean;
 };
 
@@ -282,10 +289,12 @@ export type RecentFileOpened = {
   name: "recentFile.opened";
   source: "toolbar" | "welcome";
   filename: string;
+  kind: "inp" | "project";
 };
 
 export type ImportInpCompleted = {
   name: "importInp.completed";
+  source: string;
   counts: Record<string, number>;
   headlossFormula: HeadlossFormula;
   units: EpanetUnitSystem;
@@ -299,6 +308,7 @@ export type ImportInpCompleted = {
     | "unbalancedDiff"
     | "hasInvalidPumpCurves"
     | "hasUndefinedPumpCurve"
+    | "invalidValveKinds"
     | "hasWaterAge"
     | "hasWaterChemical"
     | "hasWaterTrace"
@@ -335,6 +345,12 @@ type ModelSaved = {
   isSaveAs?: boolean;
 };
 
+type InpExported = {
+  name: "inp.exported";
+  source: string;
+  isSaveAs?: boolean;
+};
+
 type ProjectSaved = {
   name: "project.saved";
   source: string;
@@ -344,6 +360,22 @@ type ProjectSaved = {
 export type OpenProjectStarted = {
   name: "openProject.started";
   source: string;
+};
+
+export type ProjectFileOpened = {
+  name: "projectFile.opened";
+  source: string;
+  counts: Record<string, number>;
+  headlossFormula: HeadlossFormula;
+  units: EpanetUnitSystem;
+};
+
+export type ProjectFileOpenFailed = {
+  name: "projectFile.openFailed";
+  source: string;
+  reason: "tooNew" | "corrupt" | "migrationFailed" | "internal" | "exception";
+  fileVersion?: number;
+  appVersion?: number;
 };
 
 type OperationUndone = {
@@ -469,7 +501,7 @@ type RepoVisited = {
 
 type FoundersPartnerLinkVisited = {
   name: "foundersPartner.visited";
-  link: "affinityWater" | "optimatics" | "foundersPartners";
+  link: "affinityWater" | "optimatics" | "foundersPartners" | "atkinsRealis";
 };
 
 type SignInStarted = {
@@ -899,6 +931,38 @@ type CurveChanged = {
   property: "label" | "points" | "type";
 };
 
+type AssetDataExported = {
+  name: "assetData.exported";
+  format: "geojson" | "csv" | "shapefile" | "xlsx";
+  includeSimulationResults: boolean;
+  hasSelection: boolean;
+};
+
+type SimulationResultsExported = {
+  name: "simulationResults.exported";
+  format: "csv" | "xlsx";
+  properties: string[];
+  hasSelection: boolean;
+};
+
+type CustomGraphExported = {
+  name: "customGraph.exported";
+  format: "png" | "csv" | "xlsx";
+  numAssets: number;
+};
+
+type CustomGraphOpened = {
+  name: "customGraph.opened";
+  numAssets: number;
+  canUseCustomGraphs: boolean;
+};
+
+type CustomGraphPropertySelected = {
+  name: "customGraph.propertySelected";
+  property: string;
+  numAssets: number;
+};
+
 export type UserEvent =
   | AssetCreated
   | AssetRedrawed
@@ -938,8 +1002,11 @@ export type UserEvent =
   | NewModelStarted
   | NewModelCompleted
   | ModelSaved
+  | InpExported
   | ProjectSaved
   | OpenProjectStarted
+  | ProjectFileOpened
+  | ProjectFileOpenFailed
   | OperationUndone
   | OperationRedone
   | DrawingModeEnabled
@@ -948,6 +1015,7 @@ export type UserEvent =
   | SelectionNarrowedToPropertyValue
   | FullSelectionEnabled
   | SelectionCleared
+  | SelectionZoomedTo
   | InpIssuesSeen
   | InpIssuesExpanded
   | CoordinatesIssuesExpanded
@@ -1038,7 +1106,10 @@ export type UserEvent =
       processedCount: number;
       issues?: string[];
     }
-  | { name: "elevationSource.deleted"; sourceType: string }
+  | {
+      name: "elevationSource.deleted";
+      sourceType: string;
+    }
   | {
       name: "elevationSource.offsetChanged";
       sourceType: string;
@@ -1050,24 +1121,25 @@ export type UserEvent =
       sourceType: string;
       enabled: boolean;
     }
-  | { name: "elevationSource.tileDeleted" }
+  | {
+      name: "elevationSource.tileDeleted";
+    }
   | {
       name: "elevationSource.elevationUnitChanged";
       oldValue: string;
       newValue: string;
-    }
-  | {
-      name: "map.elevationOffset.changed";
-      sourceType: string;
-      oldValue: number;
-      newValue: number;
     }
   | { name: "map.labels.shown"; type: string; subtype: string }
   | { name: "map.labels.hidden"; type: string }
   | { name: "map.customerPoints.shown" }
   | { name: "map.customerPoints.hidden" }
   | { name: "map.defaultColor.changed"; type: string }
-  | { name: "map.colorBy.changed"; type: string; subtype: string }
+  | {
+      name: "map.colorBy.changed";
+      type: string;
+      subtype: string;
+      property: string;
+    }
   | { name: "map.colorRamp.changed"; rampName: string; property: string }
   | { name: "map.colorRamp.reversed"; rampName: string; property: string }
   | { name: "colorRange.rangeMode.changed"; mode: string; property: string }
@@ -1081,8 +1153,11 @@ export type UserEvent =
   | { name: "colorRange.break.appended"; property: string }
   | { name: "colorRange.break.deleted"; property: string }
   | { name: "colorRange.intervalColor.changed"; property: string }
-  | { name: "colorRange.breaks.regenerated"; property: string }
-  | { name: "colorRange.breaks.regeneratedFromAllData"; property: string }
+  | {
+      name: "colorRange.breaks.regenerated";
+      property: string;
+      mode: "default" | "step" | "all";
+    }
   | {
       name: "colorRange.rangeError.seen";
       property: string;
@@ -1105,7 +1180,13 @@ export type UserEvent =
   | { name: "customLayer.added"; type: string }
   | { name: "addCustomLayer.clicked" }
   | { name: "layerType.choosen"; type: string }
-  | { name: "checkout.started"; plan: string; paymentType: string }
+  | {
+      name: "checkout.started";
+      plan: string;
+      paymentType: string;
+      source?: string;
+      sourceFeature?: string;
+    }
   | { name: "studentLogin.clicked" }
   | { name: "planUsage.toggled" }
   | { name: "planPaymentType.toggled" }
@@ -1117,6 +1198,80 @@ export type UserEvent =
   | { name: "controls.opened"; source: string }
   | { name: "patternsLibrary.opened"; source: string }
   | { name: "assetControls.opened"; source: string }
+  | { name: "dataTables.opened"; source: string }
+  | { name: "bottomPanel.tabSwitched"; tabId: string }
+  | {
+      name: "bottomPanel.toggled";
+      open: boolean;
+      activeTabId: string | null;
+      source: "toolbar" | "shortcut";
+    }
+  | {
+      name: "dataTables.cellEdited";
+      type: Asset["type"];
+      property: string;
+      count: number;
+    }
+  | {
+      name: "dataTables.copied";
+      type: Asset["type"] | "customerPoint";
+      rows: number;
+      cols: number;
+      allRows: boolean;
+      allCols: boolean;
+      withHeaders: boolean;
+      columnIds: string[];
+    }
+  | {
+      name: "dataTables.pasted";
+      type: Asset["type"] | "customerPoint";
+      rows: number;
+      cols: number;
+      allRows: boolean;
+      allCols: boolean;
+      columnIds: string[];
+    }
+  | {
+      name: "dataTables.sorted";
+      type: Asset["type"] | "customerPoint";
+      property: string;
+      direction: "asc" | "desc";
+    }
+  | {
+      name: "dataTables.selectedInMap";
+      type: Asset["type"] | "customerPoint";
+      source: "cell-context" | "gutter-context";
+      count: number;
+    }
+  | { name: "profileView.opened"; source: string }
+  | { name: "profileView.selectionStarted"; source: string }
+  | { name: "profileView.closed"; source: string }
+  | {
+      name: "profileView.pathCreated";
+      anchorCount: number;
+      nodeCount: number;
+      linkCount: number;
+      totalLength: number;
+      hasSimulationResults: boolean;
+      simulationStatus: SimulationState["status"];
+    }
+  | {
+      name: "profileView.pathExtended";
+      anchorCount: number;
+      nodeCount: number;
+      linkCount: number;
+      totalLength: number;
+      hasSimulationResults: boolean;
+      simulationStatus: SimulationState["status"];
+    }
+  | {
+      name: "profileView.assetSelectedFromChart";
+      kind: "node" | "link";
+      assetType: Asset["type"];
+      grid: "main" | "sld";
+    }
+  | { name: "profileView.selectionCancelled"; anchorCount: number }
+  | { name: "profileView.pathBroken"; anchorCount: number }
   | {
       name: "simulationSetting.changed";
       settingName: string;
@@ -1148,9 +1303,27 @@ export type UserEvent =
   | { name: "paywall.clickedTryDemo"; feature: PaywallFeature }
   | { name: "paywall.clickedExplorePlans"; feature: PaywallFeature }
   | { name: "paywall.dismissed"; feature: PaywallFeature }
+  | { name: "priorityAccess.seen"; featureName: string }
+  | { name: "priorityAccess.clickedUpgrade"; featureName: string }
+  | { name: "priorityAccess.dismissed"; featureName: string }
   | { name: "trial.activated"; feature: PaywallFeature }
   | { name: "firstScenario.dialogEnabled" }
   | { name: "firstScenario.dialogHidden" }
+  | {
+      name: "commandBar.opened";
+      source: "shortcut" | "toolbar";
+    }
+  | {
+      name: "commandBar.closed";
+      outcome: "selected" | "dismissed";
+      query: string;
+      queryLength: number;
+      resultsCount: number;
+      selectedKind?: "asset" | "customerPoint";
+      selectedAssetType?: Asset["type"];
+      selectedFromRecents?: boolean;
+      selectedIndex?: number;
+    }
   | PatternChanged
   | PatternAdded
   | PatternDeleted
@@ -1165,7 +1338,12 @@ export type UserEvent =
   | CurvesUncategorized
   | CurveAdded
   | CurveDeleted
-  | CurveChanged;
+  | CurveChanged
+  | AssetDataExported
+  | SimulationResultsExported
+  | CustomGraphExported
+  | CustomGraphOpened
+  | CustomGraphPropertySelected;
 
 const debugPostHog = {
   capture: (...data: any[]) => {

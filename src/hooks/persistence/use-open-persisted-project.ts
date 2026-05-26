@@ -2,20 +2,37 @@ import { useCallback } from "react";
 import { useAtomCallback } from "jotai/utils";
 import type { Getter, Setter } from "jotai";
 import * as db from "src/lib/db";
-import { defaultSimulationSettings } from "src/simulation/simulation-settings";
+import type { HydraulicModel } from "src/hydraulic-model";
+import type { ProjectSettings } from "src/lib/project-settings";
+import type { FetchProjectPhase } from "src/lib/db";
 import {
   clearSimulationStorage,
   loadModel,
   resetAppState,
 } from "./use-start-new-project";
 
+export type OpenPersistedProjectPhase = FetchProjectPhase | "finalizing";
+
 type OpenPersistedProjectInput = {
   file: File;
+  onProgress?: (phase: OpenPersistedProjectPhase) => void;
 };
 
 export type OpenPersistedProjectResult =
-  | { status: "ok"; modelVersion: string }
-  | { status: "too-new"; fileVersion: number; appVersion: number };
+  | {
+      status: "ok";
+      modelVersion: string;
+      hydraulicModel: HydraulicModel;
+      projectSettings: ProjectSettings;
+    }
+  | { status: "too-new"; fileVersion: number; appVersion: number }
+  | { status: "corrupt" | "internal"; errorDetails: string }
+  | {
+      status: "migration-failed";
+      errorDetails: string;
+      fileVersion: number;
+      appVersion: number;
+    };
 
 export const useOpenPersistedProject = () => {
   const openPersistedProject = useAtomCallback(
@@ -23,28 +40,34 @@ export const useOpenPersistedProject = () => {
       async (
         _get: Getter,
         set: Setter,
-        { file }: OpenPersistedProjectInput,
+        { file, onProgress }: OpenPersistedProjectInput,
       ): Promise<OpenPersistedProjectResult> => {
         const result = await db.openProject(file);
-        if (result.status === "too-new") {
-          return {
-            status: "too-new",
-            fileVersion: result.fileVersion,
-            appVersion: result.appVersion,
-          };
+        if (result.status !== "ok" && result.status !== "migrated") {
+          return result;
         }
-        const { projectSettings, hydraulicModel, factories } =
-          await db.fetchProject();
+        const {
+          projectSettings,
+          hydraulicModel,
+          factories,
+          simulationSettings,
+        } = await db.fetchProject({ onProgress });
+        onProgress?.("finalizing");
         await clearSimulationStorage();
         resetAppState(set);
         loadModel(set, {
           hydraulicModel,
           factories,
           projectSettings,
-          simulationSettings: defaultSimulationSettings,
+          simulationSettings,
           autoElevations: projectSettings.projection.type !== "xy-grid",
         });
-        return { status: "ok", modelVersion: hydraulicModel.version };
+        return {
+          status: "ok",
+          modelVersion: hydraulicModel.version,
+          hydraulicModel,
+          projectSettings,
+        };
       },
       [],
     ),

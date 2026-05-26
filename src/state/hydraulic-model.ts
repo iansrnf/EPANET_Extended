@@ -19,7 +19,3 @@ export const patternsAtom = focusAtom(stagingModelAtom, (optic) =>
 export const customerPointsAtom = focusAtom(stagingModelAtom, (optic) =>
   optic.prop("customerPoints"),
 );
-
-export const pressureLoggersAtom = focusAtom(stagingModelAtom, (optic) =>
-  optic.prop("pressureLoggers"),
-);

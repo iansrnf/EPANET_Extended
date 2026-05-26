@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useAtomCallback } from "jotai/utils";
 import type { Getter, Setter } from "jotai";
 import * as db from "src/lib/db";
+import { captureWarning } from "src/infra/error-tracking";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import type { HydraulicModel } from "src/hydraulic-model";
 import type { ModelFactories } from "src/hydraulic-model/factories";
@@ -11,6 +12,7 @@ import { OPFSStorage } from "src/infra/storage";
 import { getAppId } from "src/infra/app-instance";
 import { MomentLog } from "src/lib/persistence/moment-log";
 import { initializeWorktree } from "src/lib/worktree";
+import { dialogAtom } from "src/state/dialog";
 import { stagingModelAtom, baseModelAtom } from "src/state/hydraulic-model";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import { projectSettingsAtom } from "src/state/project-settings";
@@ -24,8 +26,8 @@ import {
   nodeSymbologyAtom,
   linkSymbologyAtom,
   savedSymbologiesAtom,
-  symbologyColorPreferencesAtom,
-  defaultSymbologyColorPreferences,
+  propertyColorConfigAtom,
+  defaultPropertyColorConfigs,
 } from "src/state/map-symbology";
 import { nullSymbologySpec } from "src/map/symbology";
 import { modeAtom, Mode } from "src/state/mode";
@@ -40,7 +42,10 @@ import {
   sourceRebuildDurationsAtom,
   resultsFetchDurationsAtom,
 } from "src/state/performance";
-import { simulationPlaybackAtom } from "src/state/simulation-playback";
+import {
+  initialPlaybackState,
+  simulationPlaybackAtom,
+} from "src/state/simulation-playback";
 
 export type ProjectLoadInput = {
   hydraulicModel: HydraulicModel;
@@ -50,52 +55,22 @@ export type ProjectLoadInput = {
   autoElevations?: boolean;
 };
 
-export const resetAppState = (
-  set: Setter,
-  simulationSettings?: SimulationSettings,
-  autoElevations?: boolean,
-) => {
+export const resetAppState = (set: Setter) => {
   set(splitsAtom, defaultSplits);
   set(dataAtom, nullData);
   set(mapSyncMomentAtom, { pointer: -1, version: 0 });
   set(nodeSymbologyAtom, nullSymbologySpec.node);
   set(linkSymbologyAtom, nullSymbologySpec.link);
   set(savedSymbologiesAtom, new Map());
-  set(symbologyColorPreferencesAtom, defaultSymbologyColorPreferences);
+  set(propertyColorConfigAtom, defaultPropertyColorConfigs);
   set(modeAtom, { mode: Mode.NONE });
   set(ephemeralStateAtom, { type: "none" });
   set(selectionAtom, { type: "none" });
   set(pipeDrawingDefaultsAtom, {});
-  set(autoElevationsAtom, autoElevations ?? true);
-  if (simulationSettings) {
-    set(simulationSettingsAtom, simulationSettings);
-  }
+  set(autoElevationsAtom, true);
   set(sourceRebuildDurationsAtom, []);
   set(resultsFetchDurationsAtom, []);
-  set(simulationPlaybackAtom, (prev) => ({ ...prev, playingAtSpeedMs: 0 }));
-};
-
-const syncModelLabels = (
-  hydraulicModel: HydraulicModel,
-  factories: ModelFactories,
-) => {
-  hydraulicModel.assets.forEach((asset) => {
-    factories.labelManager.register(asset.label, asset.type, asset.id);
-  });
-  hydraulicModel.customerPoints.forEach((customerPoint) => {
-    factories.labelManager.register(
-      customerPoint.label,
-      "customerPoint",
-      customerPoint.id,
-    );
-  });
-  hydraulicModel.pressureLoggers.forEach((pressureLogger) => {
-    factories.labelManager.register(
-      pressureLogger.label,
-      "pressureLogger",
-      pressureLogger.id,
-    );
-  });
+  set(simulationPlaybackAtom, initialPlaybackState);
 };
 
 export const loadModel = (
@@ -109,8 +84,7 @@ export const loadModel = (
     simulationSettings,
     autoElevations,
   } = input;
-  const momentLog = new MomentLog();
-  syncModelLabels(hydraulicModel, factories);
+  const momentLog = new MomentLog(hydraulicModel.version);
 
   set(stagingModelAtom, hydraulicModel);
   set(baseModelAtom, hydraulicModel);
@@ -165,27 +139,55 @@ export const useStartNewProject = () => {
     useCallback(
       async (_get: Getter, set: Setter, input: ProjectLoadInput) => {
         await clearSimulationStorage();
-        resetAppState(set, input.simulationSettings, input.autoElevations);
         if (isOurFileOn) {
-          await db.newProject();
+          const mergedProjectSettings: ProjectSettings = {
+            ...input.projectSettings,
+            units: {
+              ...input.projectSettings.units,
+              chemicalConcentration: input.simulationSettings.qualityMassUnit,
+            },
+          };
+          await db.importProject({
+            newDb: true,
+            projectSettings: mergedProjectSettings,
+            hydraulicModel: input.hydraulicModel,
+            simulationSettings: input.simulationSettings,
+          });
         }
-        const mergedProjectSettings = loadModel(set, input);
-        if (isOurFileOn) {
-          await db.saveProjectSettings(mergedProjectSettings);
-          await db.setAllAssets(input.hydraulicModel.assets);
-          await db.setAllCustomerPoints(
-            input.hydraulicModel.customerPoints,
-            input.hydraulicModel.demands.customerPoints,
-          );
-          await db.setAllPatterns(input.hydraulicModel.patterns);
-          await db.setAllJunctionDemands(
-            input.hydraulicModel.demands.junctions,
-          );
-        }
+        resetAppState(set);
+        loadModel(set, input);
       },
       [isOurFileOn],
     ),
   );
 
   return { startNewProject };
+};
+
+export const useSeedDefaultProjectDb = () => {
+  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
+
+  return useAtomCallback(
+    useCallback(
+      (get: Getter, set: Setter) => {
+        if (!isOurFileOn) return;
+        void db
+          .importProject({
+            newDb: true,
+            projectSettings: get(projectSettingsAtom),
+            hydraulicModel: get(stagingModelAtom),
+            simulationSettings: get(simulationSettingsAtom),
+          })
+          .catch((e: unknown) => {
+            const error = e instanceof Error ? e : new Error(String(e));
+            captureWarning("Failed to seed default project db", error);
+            set(dialogAtom, {
+              type: "appLoadFailed",
+              errorMessage: error.message,
+            });
+          });
+      },
+      [isOurFileOn],
+    ),
+  );
 };

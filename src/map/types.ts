@@ -1,7 +1,7 @@
 import mapboxgl from "mapbox-gl";
 
-export type ClickEvent = mapboxgl.MapMouseEvent;
-export type MoveEvent = mapboxgl.MapboxEvent;
+export type ClickEvent = mapboxgl.MapMouseEvent & mapboxgl.EventData;
+export type MoveEvent = mapboxgl.MapboxEvent & mapboxgl.EventData;
 
 export type MapHandlers = {
   onClick: (e: ClickEvent) => void;
@@ -11,10 +11,10 @@ export type MapHandlers = {
   onMapTouchMove: (e: mapboxgl.MapTouchEvent) => void;
   onMapMouseDown: (e: mapboxgl.MapMouseEvent) => void;
   onMapTouchStart: (e: mapboxgl.MapTouchEvent) => void;
-  onMoveEnd: (e: MoveEvent) => void;
+  onMoveEnd: (e: mapboxgl.MapboxEvent & mapboxgl.EventData) => void;
   onMapTouchEnd: (e: mapboxgl.MapTouchEvent) => void;
-  onMove: (e: MoveEvent) => void;
-  onZoom: (e: mapboxgl.MapboxEvent) => void;
+  onMove: (e: mapboxgl.MapboxEvent & mapboxgl.EventData) => void;
+  onZoom: (e: mapboxgl.MapBoxZoomEvent) => void;
 };
 
 export type MapEventHandler = (event: any) => void;

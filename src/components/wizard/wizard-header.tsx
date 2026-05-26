@@ -18,9 +18,9 @@ export const WizardHeader: React.FC<WizardHeaderProps> = ({
 }) => {
   return (
     <div className="mb-2">
-      <div className="flex items-center justify-between mb-4 px-5 md:px-8 py-4 border-b border-gray-200">
+      <div className="flex items-center justify-between mb-4 px-4 py-3 border-b border-gray-200">
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-semibold text-gray-900">{title}</h1>
+          <h1 className="font-semibold text-gray-900">{title}</h1>
           {badge}
         </div>
         {onClose && (

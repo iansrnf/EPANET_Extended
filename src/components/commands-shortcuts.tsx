@@ -48,7 +48,7 @@ import {
   simulationDerivedAtom,
   simulationSettingsDerivedAtom,
 } from "src/state/derived-branch-state";
-import { useIsBranchLocked } from "src/hooks/use-is-branch-locked";
+import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
 import {
   showSimulationSettingsShortcut,
   useShowSimulationSettings,
@@ -72,6 +72,10 @@ import {
   toggleSidePanelShortcut,
   useToggleSidePanel,
 } from "src/commands/toggle-side-panel";
+import {
+  toggleBottomPanelShortcut,
+  useToggleBottomPanel,
+} from "src/commands/toggle-bottom-panel";
 import {
   useCycleSelectionMode,
   selectionModeShortcut,
@@ -120,6 +124,7 @@ export const CommandShortcuts = () => {
   const openProject = useOpenProject();
   const saveInp = useSaveInp();
   const saveProject = useSaveProject();
+  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
   const { undo, redo } = useHistoryControl();
   const userTracking = useUserTracking();
   const setDrawingMode = useDrawingMode();
@@ -135,6 +140,7 @@ export const CommandShortcuts = () => {
   const simulationSettings = useAtomValue(simulationSettingsDerivedAtom);
   const toggleNetworkReview = useToggleNetworkReview();
   const toggleSidePanel = useToggleSidePanel();
+  const toggleBottomPanel = useToggleBottomPanel();
   const cycleSelectionMode = useCycleSelectionMode();
   const cycleTraceSelectMode = useCycleTraceSelectMode();
   const { changeSelectedAssetsActiveTopologyStatus } =
@@ -142,9 +148,7 @@ export const CommandShortcuts = () => {
   const showControls = useShowControls();
   const { goToPreviousTimestep, goToNextTimestep } = useChangeTimestep();
   const { togglePlayback } = useTogglePlayback();
-  const isAnimateSimulationOn = useFeatureFlag("FLAG_ANIMATE_SIMULATION");
-  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
-  const isBranchLocked = useIsBranchLocked();
+  const isEditionBlocked = useIsEditionBlocked();
   const createScenario = useCreateScenario();
   const toggleBranch = useToggleBranch();
   const goToMain = useGoToMain();
@@ -237,7 +241,7 @@ export const CommandShortcuts = () => {
     undoShortcut,
     (e) => {
       if (e.preventDefault) e.preventDefault();
-      if (isBranchLocked) return;
+      if (isEditionBlocked) return;
 
       userTracking.capture({
         name: "operation.undone",
@@ -245,7 +249,7 @@ export const CommandShortcuts = () => {
       });
       void undo();
     },
-    [undoShortcut, undo, isBranchLocked],
+    [undoShortcut, undo, isEditionBlocked],
     "Undo",
   );
 
@@ -253,7 +257,7 @@ export const CommandShortcuts = () => {
     redoShortcut,
     (e) => {
       if (e.preventDefault) e.preventDefault();
-      if (isBranchLocked) return;
+      if (isEditionBlocked) return;
 
       userTracking.capture({
         name: "operation.redone",
@@ -261,7 +265,7 @@ export const CommandShortcuts = () => {
       });
       void redo();
     },
-    [redoShortcut, redo, isBranchLocked],
+    [redoShortcut, redo, isEditionBlocked],
     "Redo",
   );
 
@@ -269,7 +273,7 @@ export const CommandShortcuts = () => {
     redoShortcut,
     (e) => {
       if (e.preventDefault) e.preventDefault();
-      if (isBranchLocked) return;
+      if (isEditionBlocked) return;
 
       userTracking.capture({
         name: "operation.redone",
@@ -277,7 +281,7 @@ export const CommandShortcuts = () => {
       });
       void redo();
     },
-    [redoShortcut, redo, isBranchLocked],
+    [redoShortcut, redo, isEditionBlocked],
     "Redo",
   );
 
@@ -301,12 +305,12 @@ export const CommandShortcuts = () => {
     (e) => {
       if (IGNORE_ROLES.has((e.target as HTMLElement).getAttribute("role")!))
         return;
-      if (isBranchLocked) return;
+      if (isEditionBlocked) return;
 
       e.preventDefault();
       void deleteSelection({ source: "shortcut" });
     },
-    [deleteSelection, isBranchLocked],
+    [deleteSelection, isEditionBlocked],
     "DELETE",
   );
 
@@ -358,10 +362,10 @@ export const CommandShortcuts = () => {
     connectCustomersShortcut,
     (e) => {
       e.preventDefault();
-      if (isBranchLocked) return;
+      if (isEditionBlocked) return;
       connectCustomerPoints({ source: "shortcut" });
     },
-    [connectCustomerPoints, isBranchLocked],
+    [connectCustomerPoints, isEditionBlocked],
     "Connect/Reconnect customer points",
   );
 
@@ -369,10 +373,10 @@ export const CommandShortcuts = () => {
     disconnectCustomersShortcut,
     (e) => {
       e.preventDefault();
-      if (isBranchLocked) return;
+      if (isEditionBlocked) return;
       disconnectCustomerPoints({ source: "shortcut" });
     },
-    [disconnectCustomerPoints, isBranchLocked],
+    [disconnectCustomerPoints, isEditionBlocked],
     "Disconnect customer points",
   );
 
@@ -380,10 +384,10 @@ export const CommandShortcuts = () => {
     redrawModeShortcut,
     (e) => {
       e.preventDefault();
-      if (isBranchLocked) return;
+      if (isEditionBlocked) return;
       setRedrawMode({ source: "shortcut" });
     },
-    [setRedrawMode, isBranchLocked],
+    [setRedrawMode, isEditionBlocked],
     "Set redraw mode",
   );
 
@@ -391,10 +395,10 @@ export const CommandShortcuts = () => {
     reverseLinkShortcut,
     (e) => {
       e.preventDefault();
-      if (isBranchLocked) return;
+      if (isEditionBlocked) return;
       reverseLinkAction({ source: "shortcut" });
     },
-    [reverseLinkAction, isBranchLocked],
+    [reverseLinkAction, isEditionBlocked],
     "Reverse link",
   );
 
@@ -416,6 +420,16 @@ export const CommandShortcuts = () => {
     },
     [toggleSidePanel],
     "Toggle side panel",
+  );
+
+  useHotkeys(
+    toggleBottomPanelShortcut,
+    (e) => {
+      e.preventDefault();
+      toggleBottomPanel({ source: "shortcut" });
+    },
+    [toggleBottomPanel],
+    "Toggle bottom panel",
   );
 
   useHotkeys(
@@ -452,10 +466,10 @@ export const CommandShortcuts = () => {
     changeActiveTopologyShortcut,
     (e) => {
       e.preventDefault();
-      if (isBranchLocked) return;
+      if (isEditionBlocked) return;
       changeSelectedAssetsActiveTopologyStatus({ source: "shortcut" });
     },
-    [changeSelectedAssetsActiveTopologyStatus, isBranchLocked],
+    [changeSelectedAssetsActiveTopologyStatus, isEditionBlocked],
     "Activate/Deactivate assets",
   );
 
@@ -487,7 +501,6 @@ export const CommandShortcuts = () => {
     },
     [togglePlayback],
     "Play/pause simulation",
-    !isAnimateSimulationOn,
   );
 
   useHotkeys(
@@ -535,7 +548,7 @@ export const CommandShortcuts = () => {
       shortcut,
       (e) => {
         if (e.preventDefault) e.preventDefault();
-        if (isBranchLocked) return;
+        if (isEditionBlocked) return;
 
         userTracking.capture({
           name: "drawingMode.enabled",
@@ -544,7 +557,7 @@ export const CommandShortcuts = () => {
         });
         void setDrawingMode(mode as Mode);
       },
-      [shortcut, mode, setDrawingMode, isBranchLocked],
+      [shortcut, mode, setDrawingMode, isEditionBlocked],
       `Set ${mode} mode`,
     );
   }

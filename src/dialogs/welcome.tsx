@@ -2,7 +2,6 @@ import { useNewProject } from "src/commands/create-new-project";
 import { useOpenInpFromFs } from "src/commands/open-inp-from-fs";
 import { useOpenInpFromUrl } from "src/commands/open-inp-from-url";
 import { useOpenModelBuilder } from "src/commands/open-model-builder";
-import { useOpenModelBuilderApi } from "src/commands/open-model-builder-api";
 import { useOpenProject } from "src/commands/open-project";
 import { useOpenRecentFile } from "src/commands/open-recent-file";
 import { useTranslate } from "src/hooks/use-translate";
@@ -38,8 +37,9 @@ import { Message } from "../components/message";
 import { DRUMCHAPEL, WATERDOWN } from "src/demo/demo-networks";
 import optimaticsLogoUrl from "src/assets/images/logos/optimatics-logo-black.webp";
 import affinityWaterLogoUrl from "src/assets/images/logos/affinity-water-logo.svg";
+import atkinsRealisLogoUrl from "src/assets/images/logos/atkins-realis-logo.svg";
 import iteratingLogoUrl from "src/assets/images/logos/iterating-logo-muted-padded.svg";
-import type { RecentFileEntry } from "src/lib/recent-files/recent-files";
+import type { RecentFileEntry } from "src/lib/recent-files";
 import Image from "next/image";
 
 export const WelcomeDialog = () => {
@@ -48,7 +48,6 @@ export const WelcomeDialog = () => {
   const openInpFromFs = useOpenInpFromFs();
   const openProject = useOpenProject();
   const openModelBuilder = useOpenModelBuilder();
-  const openModelBuilderApi = useOpenModelBuilderApi();
   const userTracking = useUserTracking();
   const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
 
@@ -86,61 +85,56 @@ export const WelcomeDialog = () => {
                 <FileIcon />
                 {translate("startBlankProject")}
               </Button>
-              <Button
-                variant="quiet"
-                onClick={() => {
-                  if (isOurFileOn) {
-                    openProject({ source: "welcome" });
-                  } else {
-                    void openInpFromFs({ source: "welcome" });
-                  }
-                }}
-                style={{ width: "100%" }}
-              >
-                {isOurFileOn ? <FolderOpenIcon /> : <FileSpreadsheetIcon />}
-                {translate("openProject")}
-                {isOurFileOn && (
-                  <span className="ml-auto px-1.5 py-0.5 text-[10px] font-semibold uppercase bg-purple-100 text-purple-700 rounded-full">
-                    {translate("newBadge")}
-                  </span>
-                )}
-              </Button>
-              {isOurFileOn && (
-                <Button
-                  variant="quiet"
-                  onClick={() => {
-                    void openInpFromFs({ source: "welcome" });
-                  }}
-                  style={{ width: "100%", marginTop: "0.5rem" }}
-                >
-                  <FileSpreadsheetIcon />
-                  {translate("importINP")}
-                </Button>
+              {isOurFileOn ? (
+                <>
+                  <Button
+                    variant="quiet"
+                    onClick={() => {
+                      openProject({ source: "welcome" });
+                    }}
+                    style={{ width: "100%" }}
+                  >
+                    <FolderOpenIcon />
+                    {translate("openModel")}
+                  </Button>
+                  <Button
+                    variant="quiet"
+                    onClick={() => {
+                      openModelBuilder({ source: "welcome" });
+                    }}
+                    style={{ width: "100%" }}
+                    className="mt-4"
+                  >
+                    <GlobeIcon />
+                    {translate("importFromGIS")}
+                    <EarlyAccessIcon size="sm" />
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="quiet"
+                    onClick={() => {
+                      void openInpFromFs({ source: "welcome" });
+                    }}
+                    style={{ width: "100%" }}
+                  >
+                    <FileSpreadsheetIcon />
+                    {translate("openINP")}
+                  </Button>
+                  <Button
+                    variant="quiet"
+                    onClick={() => {
+                      openModelBuilder({ source: "welcome" });
+                    }}
+                    style={{ width: "100%" }}
+                  >
+                    <GlobeIcon />
+                    {translate("importFromGIS")}
+                    <EarlyAccessIcon size="sm" />
+                  </Button>
+                </>
               )}
-              <div className="flex flex-col gap-2">
-                <Button
-                  variant="quiet"
-                  onClick={() => {
-                    openModelBuilder({ source: "welcome" });
-                  }}
-                  style={{ width: "100%" }}
-                >
-                  <GlobeIcon />
-                  {translate("importFromGIS")}
-                  <EarlyAccessIcon size="sm" />
-                </Button>
-                <Button
-                  variant="quiet"
-                  onClick={() => {
-                    openModelBuilderApi({ source: "welcome" });
-                  }}
-                  style={{ width: "100%" }}
-                >
-                  <GlobeIcon />
-                  {translate("importFromGISApi")}
-                  <EarlyAccessIcon size="sm" />
-                </Button>
-              </div>
 
               <div className="mt-4 flex items-start flex-col gap-2">
                 <a
@@ -221,51 +215,14 @@ export const WelcomeDialog = () => {
 const FoundingPartners = () => {
   const translate = useTranslate();
   const userTracking = useUserTracking();
-  const isFoundingAffinityEnabled = useFeatureFlag("FLAG_AFFINITY_LOGO");
-
   return (
     <div className="bg-gray-50 rounded-lg p-4 mt-6 text-xs text-center shrink-0">
       <h3 className="text-gray-600 font-bold">
         {translate("foundersPartnerTitle")}
       </h3>
-      {isFoundingAffinityEnabled ? (
-        <div className="flex gap-2 justify-center">
-          <a
-            href="https://optimatics.com/"
-            target="_blank"
-            onClick={() => {
-              userTracking.capture({
-                name: "foundersPartner.visited",
-                link: "optimatics",
-              });
-            }}
-          >
-            <img
-              src={optimaticsLogoUrl.src}
-              className="block m-auto h-16"
-              height="64"
-            />
-          </a>
-          <a
-            href="https://www.affinitywater.co.uk/"
-            target="_blank"
-            className="pt-4"
-            onClick={() => {
-              userTracking.capture({
-                name: "foundersPartner.visited",
-                link: "affinityWater",
-              });
-            }}
-          >
-            <img
-              src={affinityWaterLogoUrl.src}
-              className="block m-auto h-4"
-              height="16"
-            />
-          </a>
-        </div>
-      ) : (
+      <div className="flex gap-4 justify-center">
         <a
+          className="flex-auto"
           href="https://optimatics.com/"
           target="_blank"
           onClick={() => {
@@ -281,7 +238,41 @@ const FoundingPartners = () => {
             height="64"
           />
         </a>
-      )}
+        <a
+          href="https://www.affinitywater.co.uk/"
+          target="_blank"
+          className="pt-4 flex-auto"
+          onClick={() => {
+            userTracking.capture({
+              name: "foundersPartner.visited",
+              link: "affinityWater",
+            });
+          }}
+        >
+          <img
+            src={affinityWaterLogoUrl.src}
+            className="block m-auto h-4"
+            height="16"
+          />
+        </a>
+        <a
+          href="https://www.atkinsrealis.com/"
+          target="_blank"
+          className="pt-3 flex-auto"
+          onClick={() => {
+            userTracking.capture({
+              name: "foundersPartner.visited",
+              link: "atkinsRealis",
+            });
+          }}
+        >
+          <img
+            src={atkinsRealisLogoUrl.src}
+            className="block m-auto h-4"
+            height="16"
+          />
+        </a>
+      </div>
       <p className="text-gray-600">
         {translate("foundersPartnerDescription")}{" "}
         <a
@@ -436,7 +427,7 @@ const RecentFileCard = ({
   onRemove: () => void;
 }) => (
   <div
-    className="group flex flex-col rounded-lg border shadow-sm cursor-pointer hover:bg-gray-50 overflow-hidden min-w-0"
+    className="group flex flex-col rounded-lg border shadow-xs cursor-pointer hover:bg-gray-50 overflow-hidden min-w-0"
     onClick={onOpen}
   >
     <div
@@ -503,7 +494,7 @@ const DemoAsRecentCard = ({ demoNetwork }: { demoNetwork: DemoModel }) => {
 
   return (
     <div
-      className="flex flex-col rounded-lg border shadow-sm cursor-pointer hover:bg-gray-50 overflow-hidden min-w-0"
+      className="flex flex-col rounded-lg border shadow-xs cursor-pointer hover:bg-gray-50 overflow-hidden min-w-0"
       onClick={handleClick}
     >
       <div
@@ -549,10 +540,10 @@ const DemoNetworkCard = ({ demoNetwork }: { demoNetwork: DemoModel }) => {
   };
   return (
     <div
-      className="flex flex-col max-w-[250px] items-center gap-x-2 bg-white shadow-md rounded-lg border cursor-pointer hover:bg-gray-400 hover:bg-opacity-10"
+      className="flex flex-col max-w-[250px] items-center gap-x-2 bg-white shadow-md rounded-lg border cursor-pointer hover:bg-gray-400/10"
       onClick={handleOpenDemoModel}
     >
-      <div className="flex-shrink-0">
+      <div className="shrink-0">
         <Image
           src={demoNetwork.thumbnailUrl}
           alt={demoNetwork.name}

@@ -1,5 +1,5 @@
 import { Feature, FeatureCollection } from "geojson";
-import type { Projection } from "src/lib/projections";
+import type { Proj4Projection } from "src/lib/projections";
 import {
   extractEPSGFromGeoJSON,
   findProjectionByCode,
@@ -29,7 +29,7 @@ type CoordinateConversion = {
 
 export function parseGeoJson(
   content: string,
-  projections?: Map<string, Projection>,
+  projections?: Map<string, Proj4Projection>,
 ): {
   features: Feature[];
   properties: Set<string>;
@@ -63,7 +63,7 @@ export function parseGeoJson(
 
 const parseGeoJsonFeatureCollection = (
   content: string,
-  projections?: Map<string, Projection>,
+  projections?: Map<string, Proj4Projection>,
 ): {
   features: Feature[];
   properties: Set<string>;
@@ -89,13 +89,6 @@ const parseGeoJsonFeatureCollection = (
         const projection = findProjectionByCode(code, projections);
         if (projection) {
           try {
-            if (!("code" in projection)) {
-              return {
-                features: [],
-                properties: new Set(),
-                error: { code: "unsupported-crs" },
-              };
-            }
             const convertedGeoJson = convertGeoJsonToWGS84(
               geoJson,
               projection.code,
@@ -167,7 +160,7 @@ const parseGeoJsonFeatureCollection = (
 
 const parseGeoJsonL = (
   content: string,
-  _projections?: Map<string, Projection>,
+  _projections?: Map<string, Proj4Projection>,
 ): {
   features: Feature[];
   properties: Set<string>;

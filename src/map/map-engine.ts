@@ -1,11 +1,12 @@
 import mapboxgl, { Style } from "mapbox-gl";
-import type { MapboxGeoJSONFeature } from "mapbox-gl";
+import type { Map as MapboxMap, MapboxGeoJSONFeature } from "mapbox-gl";
 
 import { CURSOR_DEFAULT } from "src/lib/constants";
 import type { Feature, IFeatureCollection } from "src/types";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import { LayersList } from "@deck.gl/core";
 import { DataSource } from "./data-source";
+import { precisionForZoom } from "src/lib/geometry";
 import { prepareIconsSprite } from "./icons";
 import { IconImage } from "./icons";
 import { LayerId } from "./layers";
@@ -35,16 +36,6 @@ const MAP_OPTIONS: Omit<mapboxgl.MapboxOptions, "container"> = {
   antialias: true,
   doubleClickZoom: false,
   preserveDrawingBuffer: true,
-};
-
-type PaintPropertyName = keyof mapboxgl.PaintSpecification;
-type QueryGeometry =
-  | mapboxgl.PointLike
-  | [mapboxgl.PointLike, mapboxgl.PointLike];
-type QueryRenderedFeaturesOptions = {
-  layers?: string[];
-  filter?: mapboxgl.FilterSpecification;
-  validate?: boolean;
 };
 
 const sourceUpdateTimeoutFor = (totalFeatures: number): number => {
@@ -124,7 +115,9 @@ export class MapEngine {
     map.on("touchstart", (e) => this.handlers.current.onMapTouchStart(e));
     map.on("touchmove", (e) => this.handlers.current.onMapTouchMove(e));
     map.on("touchend", (e) => this.handlers.current.onMapTouchEnd(e));
-    map.on("zoom", (e) => this.handlers.current.onZoom(e));
+    map.on("zoom", (e: mapboxgl.MapBoxZoomEvent) =>
+      this.handlers.current.onZoom(e),
+    );
 
     this.map = map;
   }
@@ -135,11 +128,7 @@ export class MapEngine {
         resolve();
       });
 
-      const forceStyleLoadEvent = {
-        diff: false,
-        localFontFamily: undefined,
-        localIdeographFontFamily: undefined,
-      };
+      const forceStyleLoadEvent = { diff: false };
       this.map.setStyle(style, forceStyleLoadEvent);
     });
   }
@@ -204,17 +193,8 @@ export class MapEngine {
     );
   }
 
-  private hasLayer(layerId: LayerId): boolean {
-    return !!(
-      this.map &&
-      (this.map as any).style &&
-      this.map.getLayer(layerId)
-    );
-  }
-
   showLayers(layerIds: LayerId[]) {
     for (const layerId of layerIds) {
-      if (!this.hasLayer(layerId)) continue;
       this.map.setLayoutProperty(layerId, "visibility", "visible");
     }
   }
@@ -225,7 +205,6 @@ export class MapEngine {
 
   hideLayers(layerIds: LayerId[]) {
     for (const layerId of layerIds) {
-      if (!this.hasLayer(layerId)) continue;
       this.map.setLayoutProperty(layerId, "visibility", "none");
     }
   }
@@ -252,19 +231,19 @@ export class MapEngine {
   }
 
   setLayerFilter(layerId: LayerId, filter: mapboxgl.Expression): void {
-    if (!this.hasLayer(layerId)) return;
+    if (!this.map || !(this.map as any).style) return;
 
     this.map.setFilter(layerId, filter);
   }
 
-  setPaintProperty(
-    layerId: LayerId,
-    name: PaintPropertyName,
-    value: mapboxgl.PaintSpecification[PaintPropertyName],
+  setLayerPaintRule(
+    layerId: string,
+    name: string,
+    rule: mapboxgl.Expression,
   ): void {
-    if (!this.hasLayer(layerId)) return;
+    if (!this.map || !(this.map as any).style) return;
 
-    this.map.setPaintProperty(layerId, name, value);
+    this.map.setPaintProperty(layerId, name, rule);
   }
 
   setOverlay(layers: LayersList) {
@@ -318,7 +297,11 @@ export class MapEngine {
     return this.map.getZoom();
   }
 
-  getBounds(): mapboxgl.LngLatBounds | null {
+  getPrecision(): number {
+    return precisionForZoom(this.getZoom());
+  }
+
+  getBounds(): mapboxgl.LngLatBounds {
     return this.map.getBounds();
   }
 
@@ -330,13 +313,13 @@ export class MapEngine {
   }
 
   queryRenderedFeatures(
-    pointOrBox: QueryGeometry,
-    options: QueryRenderedFeaturesOptions = {},
-  ): MapboxGeoJSONFeature[] {
+    pointOrBox: Parameters<MapboxMap["queryRenderedFeatures"]>[0],
+    options: Parameters<MapboxMap["queryRenderedFeatures"]>[1],
+  ) {
     const layers = options?.layers || [];
 
     const availableLayers = layers.filter(
-      (layer: string) => !!this.map.getLayer(layer),
+      (layer) => !!this.map.getLayer(layer),
     );
 
     return this.map.queryRenderedFeatures(pointOrBox, {
@@ -409,8 +392,6 @@ export class MapEngine {
     }
 
     return new Promise((resolve) => {
-      callback();
-
       const idleTimeoutMs = sourceUpdateTimeoutFor(updateSize);
       const timeout = setTimeout(() => {
         resolve();
@@ -420,6 +401,8 @@ export class MapEngine {
         clearTimeout(timeout);
         resolve();
       });
+
+      callback();
     });
   }
 }

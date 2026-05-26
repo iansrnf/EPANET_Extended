@@ -63,6 +63,21 @@ export const stubFileSaveError = () => {
   (fileSave as Mock).mockRejectedValue(new Error("Something went wrong"));
 };
 
+export const stubFileSaveAbort = () => {
+  (fileSave as Mock).mockRejectedValue(
+    new DOMException("User canceled the save dialog", "AbortError"),
+  );
+};
+
+export const stubFileSavePermissionDenied = () => {
+  (fileSave as Mock).mockRejectedValue(
+    new DOMException(
+      "Failed to execute 'createWritable' on 'FileSystemFileHandle': The request is not allowed by the user agent or the platform in the current context.",
+      "NotAllowedError",
+    ),
+  );
+};
+
 export const lastSaveCall = () => {
   const [contentBlob, options, handle] = (fileSave as Mock).mock.lastCall as [
     Blob,
@@ -110,8 +125,8 @@ export const buildFileSystemHandleMock = ({
   fileName = "mock.txt",
 }: {
   fileName?: string;
-} = {}): FileSystemFileHandle =>
-  ({
+} = {}): FileSystemFileHandle => {
+  const handle: FileSystemFileHandle = {
     name: fileName,
     kind: "file",
     getFile: vi.fn(() =>
@@ -119,4 +134,15 @@ export const buildFileSystemHandleMock = ({
         new File(["mock content"], fileName, { type: "text/plain" }),
       ),
     ),
-  }) as unknown as FileSystemFileHandle;
+    createWritable: vi.fn(() =>
+      Promise.resolve({
+        write: vi.fn(() => Promise.resolve()),
+        close: vi.fn(() => Promise.resolve()),
+      } as unknown as FileSystemWritableFileStream),
+    ),
+    isSameEntry: vi.fn((other: FileSystemFileHandle) =>
+      Promise.resolve(other === handle),
+    ),
+  } as unknown as FileSystemFileHandle;
+  return handle;
+};

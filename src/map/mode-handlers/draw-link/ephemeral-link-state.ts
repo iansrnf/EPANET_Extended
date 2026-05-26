@@ -6,7 +6,6 @@ export interface EphemeralDrawLink {
   linkType: LinkType;
   link?: LinkAsset;
   startNode?: NodeAsset;
-  startPressureLoggerId?: number;
   startPipeId?: AssetId;
   snappingCandidate: SnappingCandidate | null;
   sourceLink?: LinkAsset;

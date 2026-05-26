@@ -40,13 +40,32 @@ type LibrarySelectConfig = {
   libraryLabelKey?: string;
 };
 
+type OpenCategoryConfig = {
+  fieldType: "openCategory";
+  modelProperty: ChangeableProperty;
+  nullLabelKey?: string;
+};
+
 export type BatchEditPropertyConfig =
   | QuantityConfig
   | CategoryConfig
   | BooleanConfig
-  | LibrarySelectConfig;
+  | LibrarySelectConfig
+  | OpenCategoryConfig;
 
 export type EditableProperties = Record<string, BatchEditPropertyConfig>;
+
+export const PIPE_YEAR_EDITABLE_CONFIG: BatchEditPropertyConfig = {
+  fieldType: "quantity",
+  modelProperty: "year",
+  positiveOnly: true,
+  isNullable: true,
+};
+
+export const PIPE_MATERIAL_EDITABLE_CONFIG: BatchEditPropertyConfig = {
+  fieldType: "openCategory",
+  modelProperty: "material",
+};
 
 export const BATCH_EDITABLE_PROPERTIES: Record<
   Asset["type"],
@@ -284,4 +303,15 @@ export const BATCH_EDITABLE_PROPERTIES: Record<
       libraryLabelKey: "openPatternsLibrary",
     },
   },
+};
+
+// Parallel to BATCH_EDITABLE_PROPERTIES.pipe with material and year attached.
+// The consumer picks this version when FLAG_PIPE_ATTRIBUTES is on.
+export const PIPE_BATCH_EDITABLE_PROPERTIES_WITH_ATTRIBUTES: Record<
+  string,
+  BatchEditPropertyConfig
+> = {
+  ...BATCH_EDITABLE_PROPERTIES.pipe,
+  material: PIPE_MATERIAL_EDITABLE_CONFIG,
+  year: PIPE_YEAR_EDITABLE_CONFIG,
 };

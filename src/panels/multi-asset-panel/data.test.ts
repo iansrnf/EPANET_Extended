@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   computeMultiAssetData,
+  computeMultiAssetDataWithPipeAttributes,
   QuantityStats,
   CategoryStats,
   BooleanStats,
@@ -210,6 +211,74 @@ describe("computeMultiAssetData", () => {
     expect(diameterStat.unit).toBe("mm");
   });
 
+  it("computeMultiAssetData does not surface material or year stats", () => {
+    const IDS = { J1: 1, J2: 2, P1: 3 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1)
+      .aJunction(IDS.J2)
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        material: "PVC",
+        year: 1995,
+      })
+      .build();
+    const assets = Array.from(hydraulicModel.assets.values());
+
+    const result = computeMultiAssetData(
+      assets,
+      units,
+      formatting,
+      hydraulicModel,
+    );
+    expect(
+      result.data.pipe.modelAttributes.find((s) => s.property === "material"),
+    ).toBeUndefined();
+    expect(
+      result.data.pipe.modelAttributes.find((s) => s.property === "year"),
+    ).toBeUndefined();
+  });
+
+  it("computeMultiAssetDataWithPipeAttributes surfaces material and year stats", () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, P2: 4 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1)
+      .aJunction(IDS.J2)
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        material: "PVC",
+        year: 1995,
+      })
+      .aPipe(IDS.P2, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        material: "Steel",
+        year: 2005,
+      })
+      .build();
+    const assets = Array.from(hydraulicModel.assets.values());
+
+    const result = computeMultiAssetDataWithPipeAttributes(
+      assets,
+      units,
+      formatting,
+      hydraulicModel,
+    );
+
+    const materialStat = findCategoryStat(
+      result.data.pipe.modelAttributes,
+      "material",
+    );
+    expect(materialStat.values.get("PVC")).toHaveLength(1);
+    expect(materialStat.values.get("Steel")).toHaveLength(1);
+    const yearStat = findQuantityStat(result.data.pipe.modelAttributes, "year");
+    expect(yearStat.min).toBe(1995);
+    expect(yearStat.max).toBe(2005);
+    expect(yearStat.decimals).toBe(0);
+    expect(yearStat.unit).toBeNull();
+  });
+
   it("computes category stats for status properties", () => {
     const IDS = { J1: 1, J2: 2, J3: 3, P1: 4, P2: 5, P3: 6 } as const;
     const hydraulicModel = HydraulicModelBuilder.with()
@@ -361,7 +430,7 @@ describe("computeMultiAssetData", () => {
       .aPump(IDS.PU1, {
         startNodeId: IDS.J1,
         endNodeId: IDS.J2,
-        definitionType: "curve",
+        definitionType: "standardCurve",
         curve: [
           { x: 0, y: 40 },
           { x: 150, y: 30 },

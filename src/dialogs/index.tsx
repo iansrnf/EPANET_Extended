@@ -9,6 +9,7 @@ import { ParserIssues } from "src/import/inp";
 import { useUserTracking } from "src/infra/user-tracking";
 import { LoadingDialog } from "../components/dialog";
 import { WelcomeDialog } from "./welcome";
+import { AppLoadFailedDialog } from "./app-load-failed";
 
 const SimulationSettingsDialog = dynamic(
   () =>
@@ -22,6 +23,7 @@ const SimulationSettingsDialog = dynamic(
 
 const UpgradeDialog = dynamic<{
   onClose: () => void;
+  source?: dialogState.UpgradeSource;
 }>(() => import("src/dialogs/upgrade").then((r) => r.UpgradeDialog), {
   loading: () => <LoadingDialog />,
 });
@@ -154,6 +156,18 @@ const ProjectSavedInfoDialog = dynamic<{
   },
 );
 
+const FileFormatUpdatedDialog = dynamic<{
+  onClose: () => void;
+}>(
+  () =>
+    import("src/dialogs/file-format-updated").then(
+      (r) => r.FileFormatUpdatedDialog,
+    ),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
 const AlertScenariosNotSavedDialog = dynamic<{
   onContinue: () => void;
   onClose: () => void;
@@ -254,6 +268,18 @@ const SimulationProgressDialog = dynamic<{
   },
 );
 
+const OpenProjectProgressDialog = dynamic<{
+  modal: dialogState.OpenProjectProgressDialogState;
+}>(
+  () =>
+    import("src/dialogs/open-project-progress").then(
+      (r) => r.OpenProjectProgressDialog,
+    ),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
 const ControlsDialog = dynamic(
   () => import("src/dialogs/controls-dialog").then((r) => r.ControlsDialog),
   {
@@ -327,18 +353,6 @@ const ScenariosPaywallConnector = dynamic<{
   },
 );
 
-const ModelBuilderApiIframeDialog = dynamic<{
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/model-builder-api").then(
-      (r) => r.ModelBuilderApiDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
 const ElevationsPaywallConnector = dynamic<{
   onClose: () => void;
 }>(
@@ -399,11 +413,66 @@ const ActivatingTrialDialog = dynamic(
   },
 );
 
+const ExportAssetDataDialog = dynamic<{
+  onClose: () => void;
+}>(
+  () =>
+    import("src/dialogs/export-asset-data").then(
+      (r) => r.ExportAssetDataDialog,
+    ),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
+const ExportTimeSeriesDialog = dynamic<{
+  onClose: () => void;
+}>(
+  () =>
+    import("src/dialogs/export-simulation-results").then(
+      (r) => r.ExportSimulationResultsDialog,
+    ),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
 const FirstScenarioDialog = dynamic<{
   onConfirm: () => void;
   onClose: () => void;
 }>(
   () => import("src/dialogs/first-scenario").then((r) => r.FirstScenarioDialog),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
+const ProfileNoPathDialog = dynamic<{
+  onClose: () => void;
+}>(
+  () =>
+    import("src/dialogs/profile-no-path").then((r) => r.ProfileNoPathDialog),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
+const CustomGraphDialog = dynamic<{
+  onClose: () => void;
+}>(
+  () =>
+    import("src/dialogs/custom-graph-dialog").then((r) => r.CustomGraphDialog),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
+const PriorityAccessDialog = dynamic<{
+  featureName: string;
+  onClose: () => void;
+}>(
+  () =>
+    import("src/dialogs/priority-access").then((r) => r.PriorityAccessDialog),
   {
     loading: () => <LoadingDialog />,
   },
@@ -419,6 +488,10 @@ export const Dialogs = memo(function Dialogs() {
   const previousDialog = useRef<dialogState.DialogState>(null);
 
   if (dialog === null) return null;
+
+  if (dialog.type === "appLoadFailed") {
+    return <AppLoadFailedDialog modal={dialog} />;
+  }
 
   if (previousDialog.current !== dialog && !!dialog) {
     if (previousDialog.current?.type !== dialog.type) {
@@ -454,6 +527,12 @@ export const Dialogs = memo(function Dialogs() {
       if (dialog.type === "featurePaywall") {
         userTracking.capture({ name: "paywall.seen", feature: dialog.feature });
       }
+      if (dialog.type === "priorityAccess") {
+        userTracking.capture({
+          name: "priorityAccess.seen",
+          featureName: dialog.featureName,
+        });
+      }
     }
     previousDialog.current = dialog;
   }
@@ -476,9 +555,6 @@ export const Dialogs = memo(function Dialogs() {
   if (dialog.type === "modelBuilderIframe") {
     return <ModelBuilderIframeDialog onClose={onClose} />;
   }
-  if (dialog.type === "modelBuilderApiIframe") {
-    return <ModelBuilderApiIframeDialog onClose={onClose} />;
-  }
   if (dialog.type === "unexpectedError") {
     return <UnexpectedErrorDialog modal={dialog} onClose={onClose} />;
   }
@@ -490,6 +566,9 @@ export const Dialogs = memo(function Dialogs() {
   }
   if (dialog.type === "simulationProgress") {
     return <SimulationProgressDialog modal={dialog} />;
+  }
+  if (dialog.type === "openProjectProgress") {
+    return <OpenProjectProgressDialog modal={dialog} />;
   }
   if (dialog.type === "controls") {
     return <ControlsDialog />;
@@ -520,7 +599,7 @@ export const Dialogs = memo(function Dialogs() {
   }
 
   if (dialog.type === "upgrade") {
-    return <UpgradeDialog onClose={onClose} />;
+    return <UpgradeDialog onClose={onClose} source={dialog.source} />;
   }
 
   if (dialog.type === "featurePaywall") {
@@ -563,6 +642,27 @@ export const Dialogs = memo(function Dialogs() {
     );
   }
 
+  if (dialog.type === "exportAssetData") {
+    return <ExportAssetDataDialog onClose={onClose} />;
+  }
+
+  if (dialog.type === "exportTimeSeries") {
+    return <ExportTimeSeriesDialog onClose={onClose} />;
+  }
+
+  if (dialog.type === "customGraph") {
+    return <CustomGraphDialog onClose={onClose} />;
+  }
+
+  if (dialog.type === "priorityAccess") {
+    return (
+      <PriorityAccessDialog
+        featureName={dialog.featureName}
+        onClose={onClose}
+      />
+    );
+  }
+
   if (dialog.type === "networkProjection") {
     return (
       <NetworkProjectionDialog
@@ -598,6 +698,9 @@ export const Dialogs = memo(function Dialogs() {
         onClose={onClose}
       />
     ))
+    .with({ type: "fileFormatUpdated" }, () => (
+      <FileFormatUpdatedDialog onClose={onClose} />
+    ))
     .with({ type: "alertScenariosNotSaved" }, ({ onContinue }) => (
       <AlertScenariosNotSavedDialog onContinue={onContinue} onClose={onClose} />
     ))
@@ -620,8 +723,14 @@ export const Dialogs = memo(function Dialogs() {
       <InvalidFilesErrorDialog modal={modal} onClose={onClose} />
     ))
     .with({ type: "cheatsheet" }, () => <CheatsheetDialog />)
-    .with({ type: "inpIssues" }, ({ issues }) => (
-      <InpIssuesDialog issues={issues} onClose={onClose} />
+    .with({ type: "inpIssues" }, ({ issues, onAfterClose }) => (
+      <InpIssuesDialog
+        issues={issues}
+        onClose={() => {
+          onClose();
+          onAfterClose?.();
+        }}
+      />
     ))
     .with({ type: "inpMissingCoordinates" }, ({ issues }) => (
       <MissingCoordinatesDialog issues={issues} onClose={onClose} />
@@ -648,6 +757,9 @@ export const Dialogs = memo(function Dialogs() {
         />
       ),
     )
+    .with({ type: "profileNoPath" }, () => (
+      <ProfileNoPathDialog onClose={onClose} />
+    ))
     .exhaustive();
 
   return content;

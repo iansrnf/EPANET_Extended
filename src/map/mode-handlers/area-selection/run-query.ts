@@ -5,10 +5,14 @@ import { HydraulicModel } from "src/hydraulic-model/hydraulic-model";
 import {
   AssetsGeoIndex,
   AssetsGeoBuffers,
+  assetsGeoTransferables,
 } from "src/hydraulic-model/assets-geo";
-import { AssetIndexBuffers } from "src/hydraulic-model/asset-index";
+import {
+  AssetIndexBuffers,
+  assetIndexTransferables,
+} from "src/hydraulic-model/asset-index";
 import { queryContainedAssets } from "src/hydraulic-model/spatial-queries";
-import { canUseWorker } from "src/infra/worker";
+import { canUseWorker, enrichWorkerError } from "src/infra/worker";
 import type { SpatialQueryWorkerAPI } from "./worker-api";
 import {
   EncodedContainedAssets,
@@ -81,10 +85,18 @@ const runWithWorker = async (
 
   try {
     return await workerAPI.queryContainedAssets(
-      assetIndexBuffers,
-      assetsGeoBuffers,
+      Comlink.transfer(
+        assetIndexBuffers,
+        assetIndexTransferables(assetIndexBuffers),
+      ),
+      Comlink.transfer(
+        assetsGeoBuffers,
+        assetsGeoTransferables(assetsGeoBuffers),
+      ),
       points,
     );
+  } catch (e) {
+    throw enrichWorkerError("spatial-query", e);
   } finally {
     signal?.removeEventListener("abort", abortHandler);
     worker.terminate();

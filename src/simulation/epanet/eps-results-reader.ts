@@ -10,7 +10,12 @@ import {
   type SimulationProperty,
 } from "../results-reader";
 import { IKeyBufferStore } from "src/infra/storage";
-import { RESULTS_OUT_KEY, TANK_VOLUMES_KEY, PUMP_STATUS_KEY } from "./worker";
+import {
+  RESULTS_OUT_KEY,
+  TANK_VOLUMES_KEY,
+  PUMP_STATUS_KEY,
+  NODE_STATS_KEY,
+} from "./worker";
 import {
   SimulationMetadata,
   type SimulationIds,
@@ -21,7 +26,7 @@ import {
 } from "./simulation-metadata";
 import { withDebugInstrumentation } from "src/infra/with-instrumentation";
 import { captureError } from "src/infra/error-tracking";
-import { AssetId, AssetType } from "src/hydraulic-model";
+import { Asset, AssetId, AssetType } from "src/hydraulic-model";
 
 export type { SimulationIds } from "./simulation-metadata";
 
@@ -78,7 +83,7 @@ export type PipeProperty =
   | "chemicalConcentration";
 export type PumpProperty =
   | "flow"
-  | "headloss"
+  | "head"
   | "status"
   | "waterAge"
   | "waterTrace"
@@ -122,6 +127,36 @@ const LINK_PROPERTY_INDEX: Record<LinkProperty, number> = {
   friction: 7,
 };
 
+// Maps property strings to binary node/link property indices.
+// Properties not listed here (e.g. "level", "volume") need special handling
+// and are not covered by the contiguous-read path.
+const NODE_RESULTS_PROPERTY_INDEX: Partial<Record<string, number>> = {
+  demand: NODE_PROPERTY_INDEX.demand,
+  netFlow: NODE_PROPERTY_INDEX.demand,
+  head: NODE_PROPERTY_INDEX.head,
+  pressure: NODE_PROPERTY_INDEX.pressure,
+  quality: NODE_PROPERTY_INDEX.quality,
+  waterQuality: NODE_PROPERTY_INDEX.quality,
+  waterAge: NODE_PROPERTY_INDEX.quality,
+  waterTrace: NODE_PROPERTY_INDEX.quality,
+  chemicalConcentration: NODE_PROPERTY_INDEX.quality,
+};
+
+const LINK_RESULTS_PROPERTY_INDEX: Partial<Record<string, number>> = {
+  flow: LINK_PROPERTY_INDEX.flow,
+  velocity: LINK_PROPERTY_INDEX.velocity,
+  headloss: LINK_PROPERTY_INDEX.headloss,
+  unitHeadloss: LINK_PROPERTY_INDEX.headloss,
+  avgQuality: LINK_PROPERTY_INDEX.avgQuality,
+  status: LINK_PROPERTY_INDEX.status,
+  setting: LINK_PROPERTY_INDEX.setting,
+  reactionRate: LINK_PROPERTY_INDEX.reactionRate,
+  friction: LINK_PROPERTY_INDEX.friction,
+  waterAge: LINK_PROPERTY_INDEX.avgQuality,
+  waterTrace: LINK_PROPERTY_INDEX.avgQuality,
+  chemicalConcentration: LINK_PROPERTY_INDEX.avgQuality,
+};
+
 export interface TimeSeries {
   values: Float32Array;
   intervalsCount: number;
@@ -141,6 +176,10 @@ export class EPSResultsReader {
   private metadata: CachedMetadata | null = null;
   private pumpPositionByLinkIndex: Map<number, number> = new Map();
   private pumpEnergy: Float32Array | null = null;
+  private nodeMinHead: Float32Array | null = null;
+  private nodeMaxHead: Float32Array | null = null;
+  private nodeMinPressure: Float32Array | null = null;
+  private nodeMaxPressure: Float32Array | null = null;
 
   constructor(storage: IKeyBufferStore) {
     this.storage = storage;
@@ -155,6 +194,7 @@ export class EPSResultsReader {
       await this.readPumpEnergySection(this.metadata.simulationMetadata);
     this.pumpPositionByLinkIndex = pumpPositionByLinkIndex;
     this.pumpEnergy = pumpEnergy;
+    await this.loadNodeStats(this.metadata.simulationMetadata.nodeCount);
   }
 
   get simulationIds(): SimulationIds {
@@ -304,6 +344,14 @@ export class EPSResultsReader {
           property === "chemicalConcentration"
         )
           return this._getLinkPropertyTimeSeries(assetId, "avgQuality");
+        if (property === "head") {
+          const headloss = await this._getLinkPropertyTimeSeries(
+            assetId,
+            "headloss",
+          );
+          if (!headloss) return null;
+          return { ...headloss, values: headloss.values.map((v) => -v) };
+        }
         return this._getLinkPropertyTimeSeries(
           assetId,
           property as LinkProperty,
@@ -364,6 +412,25 @@ export class EPSResultsReader {
       FLOAT_SIZE * simMetadata.nodeCount +
       2 * FLOAT_SIZE * simMetadata.linkCount
     );
+  }
+
+  private async loadNodeStats(nodeCount: number): Promise<void> {
+    try {
+      const file = await this.storage.getFile(NODE_STATS_KEY);
+      const blockBytes = nodeCount * FLOAT_SIZE;
+      const [b0, b1, b2, b3] = await Promise.all([
+        file.slice(0, blockBytes).arrayBuffer(),
+        file.slice(blockBytes, blockBytes * 2).arrayBuffer(),
+        file.slice(blockBytes * 2, blockBytes * 3).arrayBuffer(),
+        file.slice(blockBytes * 3, blockBytes * 4).arrayBuffer(),
+      ]);
+      this.nodeMinHead = new Float32Array(b0);
+      this.nodeMaxHead = new Float32Array(b1);
+      this.nodeMinPressure = new Float32Array(b2);
+      this.nodeMaxPressure = new Float32Array(b3);
+    } catch {
+      // File absent for old/single-step simulations — ranges stay null.
+    }
   }
 
   private _buildTimeSeries(buffer: ArrayBuffer): TimeSeries {
@@ -525,6 +592,399 @@ export class EPSResultsReader {
     return this._buildTimeSeries(values);
   }
 
+  getHeadRangesForNodes(nodeIds: AssetId[]): Array<[number, number]> {
+    const empty = (): [number, number] => [Infinity, -Infinity];
+
+    if (!this.metadata || nodeIds.length === 0) {
+      return nodeIds.map(empty);
+    }
+
+    const { nodeMinHead, nodeMaxHead } = this;
+    if (!nodeMinHead || !nodeMaxHead) return nodeIds.map(empty);
+
+    const nodeIdToIndex = this.metadata.simulationIds.nodeIdToIndex;
+    return nodeIds.map((nodeId) => {
+      const nodeIndex = nodeIdToIndex.get(String(nodeId));
+      if (nodeIndex === undefined) return empty();
+      const min = nodeMinHead[nodeIndex];
+      const max = nodeMaxHead[nodeIndex];
+      if (min === undefined || max === undefined) return empty();
+      return [min, max];
+    });
+  }
+
+  async iterateTimeSeries<M extends string>(
+    assets: Map<number, Asset>,
+    properties: M[],
+    onResult: (
+      metric: M,
+      asset: Asset,
+      timeSeries: TimeSeries | null,
+    ) => Promise<void>,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!this.metadata) return;
+
+    const resultsFile = await this.storage.getFile(RESULTS_OUT_KEY);
+
+    let pumpStatusFile: File | null = null;
+    const { pumpCount } = this.metadata.simulationMetadata;
+    if (pumpCount > 0) {
+      try {
+        pumpStatusFile = await this.storage.getFile(PUMP_STATUS_KEY);
+      } catch {
+        // Pump status file unavailable
+      }
+    }
+
+    const {
+      nodeCount,
+      linkCount,
+      reportingStepsCount: T,
+    } = this.metadata.simulationMetadata;
+    const { resultsBaseOffset, timestepBlockSize } = this.metadata;
+
+    // Read the entire dynamic results section in one contiguous read.
+    // readSize = blockSize = timestepBlockSize, so no striding waste.
+    // For large simulations, _readBlockSeriesFromFile chunks at 64 MB.
+    // Layout: [T0: node_demands×N, node_heads×N, ..., link_flows×L, ...], [T1: ...], ...
+    const resultsRaw = await this._readBlockSeriesFromFile(
+      resultsFile,
+      resultsBaseOffset,
+      timestepBlockSize,
+      timestepBlockSize,
+      T,
+    );
+    const resultsFloat = new Float32Array(resultsRaw);
+    const timestepFloats = timestepBlockSize / FLOAT_SIZE;
+    const nodeDataFloats = nodeCount * NODE_RESULT_FLOATS;
+
+    // Read pump status contiguously (pumpCount floats per timestep, sequential)
+    let pumpStatusFloat: Float32Array | null = null;
+    if (
+      pumpStatusFile &&
+      pumpCount > 0 &&
+      properties.some((p) => p === "status")
+    ) {
+      const raw = await pumpStatusFile
+        .slice(0, pumpCount * T * FLOAT_SIZE)
+        .arrayBuffer();
+      pumpStatusFloat = new Float32Array(raw);
+    }
+
+    for (const property of properties) {
+      const nodePropertyIdx = NODE_RESULTS_PROPERTY_INDEX[property];
+      const linkPropertyIdx = LINK_RESULTS_PROPERTY_INDEX[property];
+
+      for (const asset of assets.values()) {
+        signal?.throwIfAborted();
+        let timeSeries: TimeSeries | null = null;
+
+        if (!asset.isLink) {
+          if (nodePropertyIdx !== undefined) {
+            const nodeIndex = this.metadata.simulationIds.nodeIdToIndex.get(
+              String(asset.id),
+            );
+            if (nodeIndex !== undefined) {
+              timeSeries = this._extractNodeTs(
+                resultsFloat,
+                nodePropertyIdx,
+                nodeIndex,
+                nodeCount,
+                T,
+                timestepFloats,
+              );
+            }
+          }
+        } else if (asset.type === "pump" && property === "status") {
+          if (pumpStatusFloat) {
+            const linkIndex = this.metadata.simulationIds.linkIdToIndex.get(
+              String(asset.id),
+            );
+            if (linkIndex !== undefined) {
+              const pumpPosition = this.pumpPositionByLinkIndex.get(linkIndex);
+              if (pumpPosition !== undefined) {
+                timeSeries = this._extractTs(
+                  pumpStatusFloat,
+                  pumpPosition,
+                  pumpCount,
+                  T,
+                );
+              }
+            }
+          }
+        } else if (linkPropertyIdx !== undefined) {
+          const linkIndex = this.metadata.simulationIds.linkIdToIndex.get(
+            String(asset.id),
+          );
+          if (linkIndex !== undefined) {
+            timeSeries = this._extractLinkTs(
+              resultsFloat,
+              linkPropertyIdx,
+              linkIndex,
+              linkCount,
+              T,
+              timestepFloats,
+              nodeDataFloats,
+            );
+          }
+        }
+
+        await onResult(property, asset, timeSeries);
+      }
+    }
+  }
+
+  private _extractNodeTs(
+    buffer: Float32Array,
+    propertyIndex: number,
+    nodeIndex: number,
+    nodeCount: number,
+    T: number,
+    timestepFloats: number,
+  ): TimeSeries {
+    const values = new Float32Array(T);
+    const base = propertyIndex * nodeCount + nodeIndex;
+    for (let t = 0; t < T; t++) {
+      values[t] = buffer[t * timestepFloats + base];
+    }
+    return this._buildTimeSeriesFromValues(values);
+  }
+
+  private _extractLinkTs(
+    buf: Float32Array,
+    propertyIndex: number,
+    linkIndex: number,
+    linkCount: number,
+    T: number,
+    timestepFloats: number,
+    nodeDataFloats: number,
+  ): TimeSeries {
+    const values = new Float32Array(T);
+    const base = nodeDataFloats + propertyIndex * linkCount + linkIndex;
+    for (let t = 0; t < T; t++) {
+      values[t] = buf[t * timestepFloats + base];
+    }
+    return this._buildTimeSeriesFromValues(values);
+  }
+
+  private _extractTs(
+    buf: Float32Array,
+    assetIndex: number,
+    assetCount: number,
+    T: number,
+  ): TimeSeries {
+    const values = new Float32Array(T);
+    for (let t = 0; t < T; t++) {
+      values[t] = buf[t * assetCount + assetIndex];
+    }
+    return this._buildTimeSeriesFromValues(values);
+  }
+
+  private _buildTimeSeriesFromValues(values: Float32Array): TimeSeries {
+    return {
+      values,
+      intervalsCount: values.length,
+      intervalSeconds: this.metadata!.simulationMetadata.reportingTimeStep,
+    };
+  }
+
+  private async _getTimeSeriesFromFile(
+    resultsFile: File,
+    pumpStatusFile: File | null,
+    assetId: AssetId,
+    assetType: AssetType,
+    property: string,
+  ): Promise<TimeSeries | null> {
+    switch (assetType) {
+      case "junction":
+      case "reservoir":
+      case "tank":
+        return this._getNodePropertyTimeSeriesFromFile(
+          resultsFile,
+          assetId,
+          property as NodeProperty,
+        );
+      case "pipe":
+      case "valve":
+        return this._getLinkPropertyTimeSeriesFromFile(
+          resultsFile,
+          assetId,
+          property as LinkProperty,
+        );
+      case "pump":
+        if (property === "status") {
+          return pumpStatusFile
+            ? this._getPumpStatusTimeSeriesFromFile(pumpStatusFile, assetId)
+            : null;
+        }
+        if (property === "head") {
+          const headloss = await this._getLinkPropertyTimeSeriesFromFile(
+            resultsFile,
+            assetId,
+            "headloss",
+          );
+          if (!headloss) return null;
+          return { ...headloss, values: headloss.values.map((v) => -v) };
+        }
+        return this._getLinkPropertyTimeSeriesFromFile(
+          resultsFile,
+          assetId,
+          property as LinkProperty,
+        );
+    }
+  }
+
+  private async _readBlockSeriesFromFile(
+    file: File,
+    baseOffset: number,
+    readSize: number,
+    blockSize: number,
+    blockCount: number,
+  ): Promise<ArrayBuffer> {
+    if (blockCount === 0) return new ArrayBuffer(0);
+
+    const MAX_BYTES_PER_CHUNK = 64 * 1024 * 1024;
+    const maxBlocksPerChunk = Math.max(
+      1,
+      Math.floor(MAX_BYTES_PER_CHUNK / blockSize),
+    );
+
+    type Chunk = { firstBlock: number; blocksInChunk: number };
+    const chunks: Chunk[] = [];
+    for (
+      let firstBlock = 0;
+      firstBlock < blockCount;
+      firstBlock += maxBlocksPerChunk
+    ) {
+      chunks.push({
+        firstBlock,
+        blocksInChunk: Math.min(maxBlocksPerChunk, blockCount - firstBlock),
+      });
+    }
+
+    const chunkBuffers = await Promise.all(
+      chunks.map(({ firstBlock, blocksInChunk }) => {
+        const chunkOffset = baseOffset + firstBlock * blockSize;
+        const chunkLength = (blocksInChunk - 1) * blockSize + readSize;
+        return file.slice(chunkOffset, chunkOffset + chunkLength).arrayBuffer();
+      }),
+    );
+
+    const result = new ArrayBuffer(readSize * blockCount);
+    const dst = new Uint8Array(result);
+    for (let c = 0; c < chunks.length; c++) {
+      const { firstBlock, blocksInChunk } = chunks[c];
+      const chunk = new Uint8Array(chunkBuffers[c]);
+      for (let i = 0; i < blocksInChunk; i++) {
+        dst.set(
+          chunk.subarray(i * blockSize, i * blockSize + readSize),
+          (firstBlock + i) * readSize,
+        );
+      }
+    }
+
+    return result;
+  }
+
+  private async _getNodePropertyTimeSeriesFromFile(
+    file: File,
+    nodeId: AssetId,
+    property: NodeProperty,
+  ): Promise<TimeSeries | null> {
+    if (!this.metadata) return null;
+
+    const nodeIndex = this.metadata.simulationIds.nodeIdToIndex.get(
+      String(nodeId),
+    );
+    if (nodeIndex === undefined) return null;
+
+    const { resultsBaseOffset, timestepBlockSize, simulationMetadata } =
+      this.metadata;
+    const propertyIndex = NODE_PROPERTY_INDEX[property];
+    const { nodeCount } = simulationMetadata;
+
+    const baseOffset =
+      resultsBaseOffset +
+      propertyIndex * nodeCount * FLOAT_SIZE +
+      nodeIndex * FLOAT_SIZE;
+
+    const values = await this._readBlockSeriesFromFile(
+      file,
+      baseOffset,
+      FLOAT_SIZE,
+      timestepBlockSize,
+      simulationMetadata.reportingStepsCount,
+    );
+    return this._buildTimeSeries(values);
+  }
+
+  private async _getLinkPropertyTimeSeriesFromFile(
+    file: File,
+    linkId: AssetId,
+    property: LinkProperty,
+  ): Promise<TimeSeries | null> {
+    if (!this.metadata) return null;
+
+    const linkIndex = this.metadata.simulationIds.linkIdToIndex.get(
+      String(linkId),
+    );
+    if (linkIndex === undefined) return null;
+
+    const { resultsBaseOffset, timestepBlockSize, simulationMetadata } =
+      this.metadata;
+    const propertyIndex = LINK_PROPERTY_INDEX[property];
+    const { nodeCount, linkCount } = simulationMetadata;
+
+    const nodeDataSize = nodeCount * NODE_RESULT_FLOATS * FLOAT_SIZE;
+    const baseOffset =
+      resultsBaseOffset +
+      nodeDataSize +
+      propertyIndex * linkCount * FLOAT_SIZE +
+      linkIndex * FLOAT_SIZE;
+
+    const values = await this._readBlockSeriesFromFile(
+      file,
+      baseOffset,
+      FLOAT_SIZE,
+      timestepBlockSize,
+      simulationMetadata.reportingStepsCount,
+    );
+    return this._buildTimeSeries(values);
+  }
+
+  private async _getPumpStatusTimeSeriesFromFile(
+    pumpStatusFile: File,
+    pumpId: AssetId,
+  ): Promise<TimeSeries | null> {
+    if (!this.metadata) return null;
+
+    const linkIndex = this.metadata.simulationIds.linkIdToIndex.get(
+      String(pumpId),
+    );
+    if (linkIndex === undefined) return null;
+
+    const { simulationMetadata } = this.metadata;
+    const { pumpCount } = simulationMetadata;
+
+    if (pumpCount === 0) return null;
+
+    const pumpPosition = this.pumpPositionByLinkIndex.get(linkIndex);
+    if (pumpPosition === undefined) return null;
+
+    const baseOffset = pumpPosition * FLOAT_SIZE;
+    const blockSize = pumpCount * FLOAT_SIZE;
+
+    const values = await this._readBlockSeriesFromFile(
+      pumpStatusFile,
+      baseOffset,
+      FLOAT_SIZE,
+      blockSize,
+      simulationMetadata.reportingStepsCount,
+    );
+    return this._buildTimeSeries(values);
+  }
+
   getResultsForTimestep = withDebugInstrumentation(
     async (timestepIndex: number): Promise<ResultsReader> => {
       if (!this.metadata) {
@@ -575,6 +1035,8 @@ export class EPSResultsReader {
         this.pumpPositionByLinkIndex,
         pumpStatuses,
         this.pumpEnergy,
+        this.nodeMinPressure,
+        this.nodeMaxPressure,
       );
     },
     { name: "SIMULATION:FETCH_STEP_FROM_STORAGE", maxDurationMs: 100 },
@@ -795,6 +1257,8 @@ class TimestepResultsReader implements ResultsReader {
   private pumpPositionByLinkIndex: Map<number, number>;
   private pumpStatuses: Float32Array | null;
   private pumpEnergy: Float32Array | null;
+  private nodeMinPressure: Float32Array | null;
+  private nodeMaxPressure: Float32Array | null;
 
   constructor(
     view: DataView,
@@ -805,6 +1269,8 @@ class TimestepResultsReader implements ResultsReader {
     pumpPositionByLinkIndex: Map<number, number>,
     pumpStatuses: Float32Array | null,
     pumpEnergy: Float32Array | null,
+    nodeMinPressure: Float32Array | null,
+    nodeMaxPressure: Float32Array | null,
   ) {
     this.view = view;
     this.simulationMetadata = simulationMetadata;
@@ -814,6 +1280,8 @@ class TimestepResultsReader implements ResultsReader {
     this.pumpPositionByLinkIndex = pumpPositionByLinkIndex;
     this.pumpStatuses = pumpStatuses;
     this.pumpEnergy = pumpEnergy;
+    this.nodeMinPressure = nodeMinPressure;
+    this.nodeMaxPressure = nodeMaxPressure;
   }
 
   getValve(valveId: number): ValveSimulation | null {
@@ -852,7 +1320,7 @@ class TimestepResultsReader implements ResultsReader {
     return {
       type: "pump",
       flow: linkData.flow,
-      headloss: linkData.headloss,
+      head: -linkData.headloss,
       status: isOn ? "on" : "off",
       statusWarning: this.mapPumpStatusWarning(statusValue),
       waterAge: qualityType === "age" ? linkData.avgQuality : null,
@@ -883,6 +1351,8 @@ class TimestepResultsReader implements ResultsReader {
       pressure: nodeData.pressure,
       head: nodeData.head,
       demand: nodeData.demand,
+      minPressure: this.nodeMinPressure?.[nodeIndex] ?? nodeData.pressure,
+      maxPressure: this.nodeMaxPressure?.[nodeIndex] ?? nodeData.pressure,
       waterAge: qualityType === "age" ? nodeData.quality : null,
       waterTrace: qualityType === "trace" ? nodeData.quality : null,
       chemicalConcentration:
@@ -943,6 +1413,8 @@ class TimestepResultsReader implements ResultsReader {
       netFlow: nodeData.demand,
       level,
       volume,
+      minPressure: this.nodeMinPressure?.[nodeIndex] ?? nodeData.pressure,
+      maxPressure: this.nodeMaxPressure?.[nodeIndex] ?? nodeData.pressure,
       waterAge: qualityType === "age" ? nodeData.quality : null,
       waterTrace: qualityType === "trace" ? nodeData.quality : null,
       chemicalConcentration:
@@ -962,6 +1434,8 @@ class TimestepResultsReader implements ResultsReader {
       pressure: nodeData.pressure,
       head: nodeData.head,
       netFlow: nodeData.demand,
+      minPressure: this.nodeMinPressure?.[nodeIndex] ?? nodeData.pressure,
+      maxPressure: this.nodeMaxPressure?.[nodeIndex] ?? nodeData.pressure,
       waterAge: qualityType === "age" ? nodeData.quality : null,
       waterTrace: qualityType === "trace" ? nodeData.quality : null,
       chemicalConcentration:
@@ -1068,6 +1542,11 @@ class TimestepResultsReader implements ResultsReader {
   }
 
   getAllValues(property: SimulationProperty): number[] {
+    if (property === "minPressure")
+      return this.nodeMinPressure ? Array.from(this.nodeMinPressure) : [];
+    if (property === "maxPressure")
+      return this.nodeMaxPressure ? Array.from(this.nodeMaxPressure) : [];
+
     const { nodeCount, linkCount } = this.simulationMetadata;
 
     const nodePropertyIndex: Partial<Record<SimulationProperty, number>> = {

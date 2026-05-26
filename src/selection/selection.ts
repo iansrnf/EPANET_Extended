@@ -3,12 +3,10 @@ import type {
   SelFolder,
   SelSingle,
   SelSingleCustomerPoint,
-  SelSinglePressureLogger,
 } from "./types";
 import type { FolderMap, IFolder, IWrappedFeature } from "src/types";
 import type { HydraulicModel, AssetsMap } from "src/hydraulic-model";
 import type { CustomerPoints } from "src/hydraulic-model/customer-points";
-import type { PressureLoggers } from "src/hydraulic-model/pressure-loggers";
 import { toggle } from "src/lib/utils";
 import { EMPTY_ARRAY } from "src/lib/constants";
 import { getFoldersInTree } from "src/lib/folder";
@@ -34,7 +32,6 @@ export const USelection = {
       case "folder":
         return selection;
       case "singleCustomerPoint":
-      case "singlePressureLogger":
         return SELECTION_NONE;
       case "multi":
       case "single": {
@@ -60,7 +57,6 @@ export const USelection = {
       case "none":
       case "folder":
       case "singleCustomerPoint":
-      case "singlePressureLogger":
         return [];
       case "single":
         return [selection.id];
@@ -87,8 +83,7 @@ export const USelection = {
     if (
       selection.type === "none" ||
       selection.type === "folder" ||
-      selection.type === "singleCustomerPoint" ||
-      selection.type === "singlePressureLogger"
+      selection.type === "singleCustomerPoint"
     ) {
       throw new Error("Given a none selection");
     }
@@ -146,8 +141,7 @@ export const USelection = {
     switch (selection.type) {
       case "none":
       case "folder":
-      case "singleCustomerPoint":
-      case "singlePressureLogger": {
+      case "singleCustomerPoint": {
         return false;
       }
       case "single": {
@@ -203,8 +197,7 @@ export const USelection = {
     switch (selection.type) {
       case "folder":
       case "none":
-      case "singleCustomerPoint":
-      case "singlePressureLogger": {
+      case "singleCustomerPoint": {
         return selection;
       }
       case "single": {
@@ -265,17 +258,10 @@ export const USelection = {
       id,
     };
   },
-  singlePressureLogger(id: number): SelSinglePressureLogger {
-    return {
-      type: "singlePressureLogger",
-      id,
-    };
-  },
   clearInvalidIds(
     selection: Sel,
     assets: AssetsMap,
     customerPoints: CustomerPoints,
-    pressureLoggers: PressureLoggers = new Map(),
   ): Sel {
     switch (selection.type) {
       case "single":
@@ -286,8 +272,6 @@ export const USelection = {
           : SELECTION_NONE;
       case "singleCustomerPoint":
         return customerPoints.has(selection.id) ? selection : SELECTION_NONE;
-      case "singlePressureLogger":
-        return pressureLoggers.has(selection.id) ? selection : SELECTION_NONE;
       case "none":
       case "folder":
         return selection;

@@ -50,7 +50,8 @@ export const quickGraphPropertyAtom =
 /**
  * Write-only atom: resets any asset type whose currently selected quick graph
  * property matches the given value back to the type's default. Useful when a
- * property becomes unavailable after a simulation.
+ * property becomes unavailable (e.g. running a simulation without water age
+ * after the user had selected "waterAge").
  */
 export const clearQuickGraphPropertyAtom = atom(
   null,

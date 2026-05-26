@@ -29,12 +29,15 @@ const nextConfig = {
       resourceQuery: /raw/,
       type: "asset/source",
     });
-    // epanet-js engines load WASM bundles through new URL() calls to the .wasm bundle or Base64 string.
-    // Webpack should not try to rewrite those URLs as file-backed assets.
+
     config.module.rules.push({
-      test: /[\\/]epanet-js[\\/]dist[\\/]engines[\\/]/,
-      parser: { url: false },
+      test: /\.wasm$/,
+      type: "asset/resource",
+      generator: {
+        filename: "static/wasm/[name].[contenthash][ext]",
+      },
     });
+
     return config;
   },
   /* eslint-disable require-await */

@@ -1,11 +1,6 @@
 import { Asset } from "./asset-types";
 
-export type LabelType =
-  | Asset["type"]
-  | "pattern"
-  | "curve"
-  | "customerPoint"
-  | "pressureLogger";
+export type LabelType = Asset["type"] | "pattern" | "curve" | "customerPoint";
 
 type LabelEntry = {
   id: number;
@@ -22,16 +17,9 @@ const labelPrefixes: Record<LabelType, string> = {
   pattern: "PAT",
   curve: "C",
   customerPoint: "CP",
-  pressureLogger: "L",
 };
 
-type LabelGroup =
-  | "pattern"
-  | "curve"
-  | "node"
-  | "link"
-  | "customerPoint"
-  | "pressureLogger";
+type LabelGroup = "pattern" | "curve" | "node" | "link" | "customerPoint";
 
 export class LabelManager {
   private indexPerType: Map<LabelType, number>;
@@ -48,6 +36,20 @@ export class LabelManager {
       counters.set(type, Math.max(existing, index));
     }
     this.indexPerType = counters;
+  }
+
+  copyTypeFrom(type: LabelType, source: LabelManager): void {
+    const sourceCounter = source.indexPerType.get(type);
+    if (sourceCounter !== undefined) {
+      this.indexPerType.set(type, sourceCounter);
+    }
+    for (const [label, entries] of source.labelToEntries) {
+      for (const entry of entries) {
+        if (entry.type === type) {
+          this.register(label, type, entry.id);
+        }
+      }
+    }
   }
 
   private normalizeLabel(label: string): string {
@@ -223,9 +225,6 @@ const isNodeType = (t: LabelType) =>
 const getLabelUniqueGroup = (type: LabelType): LabelGroup => {
   if (type === "pattern" || type === "curve" || type === "customerPoint") {
     return type;
-  }
-  if (type === "pressureLogger") {
-    return "pressureLogger";
   }
   return isNodeType(type) ? "node" : "link";
 };

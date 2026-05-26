@@ -77,6 +77,14 @@ export const momentLogDerivedAtom = atom(
   },
 );
 
+export const canUndoDerivedAtom = atom((get): boolean => {
+  return get(momentLogDerivedAtom).nextUndo() !== null;
+});
+
+export const canRedoDerivedAtom = atom((get): boolean => {
+  return get(momentLogDerivedAtom).nextRedo() !== null;
+});
+
 export const simulationDerivedAtom = atom(
   (get): SimulationState => {
     return getActiveBranchState(get)?.simulation ?? initialSimulationState;
@@ -141,10 +149,6 @@ export const patternsDerivedAtom = atom((get) => {
 
 export const customerPointsDerivedAtom = atom((get) => {
   return get(stagingModelDerivedAtom).customerPoints;
-});
-
-export const pressureLoggersDerivedAtom = atom((get) => {
-  return get(stagingModelDerivedAtom).pressureLoggers;
 });
 
 export const selectedFeaturesDerivedAtom = atom((get) => {

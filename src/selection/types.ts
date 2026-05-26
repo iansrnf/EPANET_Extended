@@ -35,11 +35,6 @@ export interface SelSingleCustomerPoint {
   id: number;
 }
 
-export interface SelSinglePressureLogger {
-  type: "singlePressureLogger";
-  id: number;
-}
-
 /**
  * This is not an abbreviation, it is named Sel
  * instead of Selection for safety: otherwise
@@ -53,5 +48,4 @@ export type Sel =
       type: "none";
     }
   | SelSingle
-  | SelSingleCustomerPoint
-  | SelSinglePressureLogger;
+  | SelSingleCustomerPoint;

@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { useAtomCallback } from "jotai/utils";
 import type { Getter, Setter } from "jotai";
 import * as db from "src/lib/db";
+import { captureError } from "src/infra/error-tracking";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import type { HydraulicModel } from "src/hydraulic-model";
 import { mapSyncMomentAtom } from "src/state/map";
@@ -14,6 +15,7 @@ import {
 import { selectionAtom } from "src/state/selection";
 import { modeAtom, Mode } from "src/state/mode";
 import { ephemeralStateAtom } from "src/state/drawing";
+import { simulationSettingsAtom } from "src/state/simulation-settings";
 import { OPFSStorage } from "src/infra/storage";
 import { getAppId } from "src/infra/app-instance";
 import { MomentLog } from "src/lib/persistence/moment-log";
@@ -37,22 +39,22 @@ const clearSimulationStorage = async () => {
   await storage.clear();
 };
 
-const loadModel = async (
+const loadModel = (
+  get: Getter,
   set: Setter,
   { hydraulicModel }: CustomerPointsImportResetInput,
   isOurFileOn: boolean,
 ) => {
-  const momentLog = new MomentLog();
+  const momentLog = new MomentLog(hydraulicModel.version);
 
   set(stagingModelDerivedAtom, hydraulicModel);
   if (isOurFileOn) {
-    await db.setAllAssets(hydraulicModel.assets);
-    await db.setAllCustomerPoints(
-      hydraulicModel.customerPoints,
-      hydraulicModel.demands.customerPoints,
-    );
-    await db.setAllPatterns(hydraulicModel.patterns);
-    await db.setAllJunctionDemands(hydraulicModel.demands.junctions);
+    void db
+      .importProject({
+        hydraulicModel,
+        simulationSettings: get(simulationSettingsAtom),
+      })
+      .catch(captureError);
   }
   set(momentLogDerivedAtom, momentLog);
 
@@ -64,13 +66,13 @@ export const useCustomerPointsImportReset = () => {
   const customerPointsImportReset = useAtomCallback(
     useCallback(
       async (
-        _get: Getter,
+        get: Getter,
         set: Setter,
         input: CustomerPointsImportResetInput,
       ) => {
         await clearSimulationStorage();
         resetAppState(set);
-        await loadModel(set, input, isOurFileOn);
+        loadModel(get, set, input, isOurFileOn);
       },
       [isOurFileOn],
     ),

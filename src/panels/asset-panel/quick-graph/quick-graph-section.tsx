@@ -10,8 +10,7 @@ import {
   stagingModelDerivedAtom,
   simulationDerivedAtom,
 } from "src/state/derived-branch-state";
-import { type SimulationState, simulationStepAtom } from "src/state/simulation";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { simulationStepAtom } from "src/state/simulation";
 import { worktreeAtom } from "src/state/scenarios";
 import {
   assetPanelFooterAtom,
@@ -27,7 +26,6 @@ import type { AssetId, Valve } from "src/hydraulic-model/asset-types";
 import { useTimeSeries } from "./use-time-series";
 import { QuickGraphChart } from "./quick-graph-chart";
 import { useChangeTimestep } from "src/commands/change-timestep";
-import clsx from "clsx";
 
 const QUICK_GRAPH_PROPERTIES: {
   [K in QuickGraphAssetType]: {
@@ -52,7 +50,7 @@ const QUICK_GRAPH_PROPERTIES: {
   ],
   pump: [
     { value: "flow", labelKey: "flow", quantityKey: "flow" },
-    { value: "headloss", labelKey: "pumpHead", quantityKey: "head" },
+    { value: "head", labelKey: "pumpHead", quantityKey: "head" },
   ],
   valve: [
     { value: "flow", labelKey: "flow", quantityKey: "flow" },
@@ -121,54 +119,6 @@ const getValveSettingQuantityKey = (valve: Valve): QuantityProperty | null => {
   return null;
 };
 
-const getPropertyDefinitions = (
-  assetType: QuickGraphAssetType,
-  simulation: SimulationState,
-  isWaterChemicalOn: boolean,
-) => {
-  const baseOptions = QUICK_GRAPH_PROPERTIES[assetType];
-  const hasCompletedSimulation =
-    "epsResultsReader" in simulation && !!simulation.epsResultsReader;
-  const qualityType = hasCompletedSimulation
-    ? simulation.epsResultsReader?.qualityType
-    : null;
-
-  if (qualityType === "age") {
-    return [
-      ...baseOptions,
-      {
-        value: "waterAge" as const,
-        labelKey: "waterAge",
-        quantityKey: "waterAge" as QuantityProperty,
-      },
-    ];
-  }
-
-  if (qualityType === "trace") {
-    return [
-      ...baseOptions,
-      {
-        value: "waterTrace" as const,
-        labelKey: "waterTrace",
-        quantityKey: "waterTrace" as QuantityProperty,
-      },
-    ];
-  }
-
-  if (qualityType === "chemical" && isWaterChemicalOn) {
-    return [
-      ...baseOptions,
-      {
-        value: "chemicalConcentration" as const,
-        labelKey: "chemicalConcentration",
-        quantityKey: "chemicalConcentration" as QuantityProperty,
-      },
-    ];
-  }
-
-  return baseOptions;
-};
-
 const QuickGraphSection = ({
   assetType,
   assetId,
@@ -176,8 +126,6 @@ const QuickGraphSection = ({
   baseData,
   isLoading,
 }: QuickGraphSectionProps) => {
-  const useAutoIndentation = useFeatureFlag("FLAG_UI_COLLAPSIBLE");
-  const isWaterChemicalOn = useFeatureFlag("FLAG_WATER_CHEMICAL");
   const translate = useTranslate();
   const translateUnit = useTranslateUnit();
   const [footerState, setFooterState] = useAtom(assetPanelFooterAtom);
@@ -195,12 +143,10 @@ const QuickGraphSection = ({
   const baseLabel = isInScenario ? translate("scenarios.main") : null;
 
   const selectedProperty = propertyByType[assetType];
-  const propertyDefinitions = useMemo(
-    () => getPropertyDefinitions(assetType, simulation, isWaterChemicalOn),
-    [assetType, simulation, isWaterChemicalOn],
-  );
   const selectedOption =
-    propertyDefinitions.find((opt) => opt.value === selectedProperty) ??
+    QUICK_GRAPH_PROPERTIES[assetType].find(
+      (opt) => opt.value === selectedProperty,
+    ) ??
     QUALITY_OPTIONS.find(
       (opt: { value: string; quantityKey: QuantityProperty }) =>
         opt.value === selectedProperty,
@@ -232,7 +178,44 @@ const QuickGraphSection = ({
   const timeStepIndex = simulationStep ?? 0;
 
   const propertyOptions = useMemo(() => {
-    return propertyDefinitions.map((opt) => {
+    const hasCompletedSimulation =
+      "epsResultsReader" in simulation && !!simulation.epsResultsReader;
+    const qualityType = hasCompletedSimulation
+      ? simulation.epsResultsReader?.qualityType
+      : null;
+
+    const baseOptions = QUICK_GRAPH_PROPERTIES[assetType];
+    const options =
+      qualityType === "age"
+        ? [
+            ...baseOptions,
+            {
+              value: "waterAge" as const,
+              labelKey: "waterAge",
+              quantityKey: "waterAge" as QuantityProperty,
+            },
+          ]
+        : qualityType === "trace"
+          ? [
+              ...baseOptions,
+              {
+                value: "waterTrace" as const,
+                labelKey: "waterTrace",
+                quantityKey: "waterTrace" as QuantityProperty,
+              },
+            ]
+          : qualityType === "chemical"
+            ? [
+                ...baseOptions,
+                {
+                  value: "chemicalConcentration" as const,
+                  labelKey: "chemicalConcentration",
+                  quantityKey: "chemicalConcentration" as QuantityProperty,
+                },
+              ]
+            : baseOptions;
+
+    return options.map((opt) => {
       const label = translate(opt.labelKey);
       let quantityKey = opt.quantityKey;
       if (assetType === "valve" && opt.value === "setting") {
@@ -248,13 +231,13 @@ const QuickGraphSection = ({
       };
     });
   }, [
-    propertyDefinitions,
     assetType,
     assetId,
     hydraulicModel,
     translate,
     translateUnit,
     units,
+    simulation,
   ]);
 
   const handlePropertyChange = useCallback(
@@ -284,7 +267,7 @@ const QuickGraphSection = ({
   const { isPinned } = footerState;
 
   const pinButton = (
-    <div className="flex h-8 my-[-0.5rem]">
+    <div className="flex h-8 -my-2">
       <Button
         variant="quiet"
         onClick={handlePinToggle}
@@ -298,12 +281,7 @@ const QuickGraphSection = ({
   );
 
   return (
-    <div
-      className={clsx(
-        "flex flex-col flex-1 min-h-0",
-        useAutoIndentation && "pl-5",
-      )}
-    >
+    <div className="flex flex-col flex-1 min-h-0 pl-5">
       <div className="flex items-center justify-between text-sm font-semibold h-8">
         {translate("quickGraph")}
         {pinButton}

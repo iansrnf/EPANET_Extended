@@ -16,7 +16,7 @@ import { Button, DDContent, StyledRadioItem } from "src/components/elements";
 import { simulationStepAtom } from "src/state/simulation";
 import { simulationDerivedAtom } from "src/state/derived-branch-state";
 import { triggerStylesFor } from "./form/selector";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import {
   useChangeTimestep,
@@ -24,10 +24,12 @@ import {
 } from "src/commands/change-timestep";
 import {
   simulationPlaybackAtom,
+  isPlayingAtom,
   maximumPlaybackSpeedAtom,
   resolveSpeedByMode,
   type PlaybackSpeed,
   autoPlaybackSpeedAtom,
+  currentSpeedWarningAtom,
 } from "src/state/simulation-playback";
 import { useTogglePlayback } from "src/commands/toggle-playback";
 import { useTranslate } from "src/hooks/use-translate";
@@ -75,35 +77,52 @@ export const TimestepSelectorUI = ({
 
   const { stopPlayback } = useTogglePlayback();
   const { goToPreviousTimestep, goToNextTimestep } = useChangeTimestep();
+  const speedWarning = useAtomValue(currentSpeedWarningAtom);
+  const isPlaying = useAtomValue(isPlayingAtom);
 
   return (
-    <div className="flex items-center gap-1 p-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-black rounded-sm shadow-sm">
-      <PlayButton />
-      <Button
-        variant="quiet/mode"
-        className="h-8"
-        aria-label={translate("previousTimestep")}
-        onClick={() => goToPreviousTimestep("buttons")}
-        disabled={!canGoPrevious}
-      >
-        <ChevronLeftIcon />
-      </Button>
-      <Button
-        variant="quiet/mode"
-        className="h-8"
-        aria-label={translate("nextTimestep")}
-        onClick={() => goToNextTimestep("buttons")}
-        disabled={!canGoNext}
-      >
-        <ChevronRightIcon />
-      </Button>
-      <TimestepDropdown
-        currentTimestepIndex={currentTimestepIndex}
-        timestepCount={timestepCount}
-        reportTimestep={reportTimestep}
-        onOpen={() => stopPlayback("dropdown")}
-        onChangeTimestep={(index) => onChangeTimestep(index, "dropdown")}
-      />
+    <div className="grid grid-cols-[min-content] gap-1">
+      <div className="flex items-center gap-1 p-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-black rounded-xs shadow-[0_2px_10px_2px_rgba(0,0,0,0.1)]">
+        <PlayButton />
+        <SpeedButton />
+        <Button
+          variant="quiet/mode"
+          className="h-8"
+          aria-label={translate("previousTimestep")}
+          onClick={() => goToPreviousTimestep("buttons")}
+          disabled={!canGoPrevious}
+        >
+          <ChevronLeftIcon />
+        </Button>
+        <Button
+          variant="quiet/mode"
+          className="h-8"
+          aria-label={translate("nextTimestep")}
+          onClick={() => goToNextTimestep("buttons")}
+          disabled={!canGoNext}
+        >
+          <ChevronRightIcon />
+        </Button>
+        <TimestepDropdown
+          currentTimestepIndex={currentTimestepIndex}
+          timestepCount={timestepCount}
+          reportTimestep={reportTimestep}
+          onOpen={() => stopPlayback("dropdown")}
+          onChangeTimestep={(index) => onChangeTimestep(index, "dropdown")}
+        />
+      </div>
+      {isPlaying && speedWarning && (
+        <div className="flex items-start gap-1.5 text-xs bg-gray-100 dark:bg-gray-900/80 px-2 py-1 rounded-xs shadow-[0_2px_10px_2px_rgba(0,0,0,0.1)]">
+          <WarningIcon className="shrink-0 mt-px text-orange-500" />
+          <span className="wrap-break-word min-w-0">
+            {translate(
+              speedWarning === "slow"
+                ? "playbackSpeedWarningSlow"
+                : "playbackSpeedWarningTooFast",
+            )}
+          </span>
+        </div>
+      )}
     </div>
   );
 };
@@ -114,76 +133,40 @@ const SPEED_OPTIONS: { translationKey: string; value: PlaybackSpeed }[] = [
   { translationKey: "playbackSpeedX4", value: "x4" },
 ];
 
-const LONG_PRESS_DURATION_MS = 500;
-
 const PlayButton = () => {
   const translate = useTranslate();
-  const { playbackSpeed, playingAtSpeedMs } = useAtomValue(
-    simulationPlaybackAtom,
+  const isPlaying = useAtomValue(isPlayingAtom);
+  const { togglePlayback } = useTogglePlayback();
+
+  return (
+    <Button
+      variant="quiet/mode"
+      className="h-8"
+      aria-label={
+        isPlaying ? translate("pausePlayback") : translate("playSimulation")
+      }
+      onClick={() => togglePlayback("buttons")}
+    >
+      {isPlaying ? <PauseIcon /> : <PlayIcon />}
+    </Button>
   );
+};
+
+const SpeedButton = () => {
+  const translate = useTranslate();
+  const { playbackSpeed } = useAtomValue(simulationPlaybackAtom);
   const maxPlaybackSpeedMs = useAtomValue(maximumPlaybackSpeedAtom);
   const autoSpeedMs = useAtomValue(autoPlaybackSpeedAtom);
-  const { togglePlayback, changePlaybackSpeed } = useTogglePlayback();
-  const isPlaying = playingAtSpeedMs !== 0;
+  const { changePlaybackSpeed } = useTogglePlayback();
+  const [isOpen, setIsOpen] = useState(false);
 
   const speedOptions = SPEED_OPTIONS.map((option) => ({
     ...option,
     warning:
-      option.value !== "auto" &&
-      resolveSpeedByMode(autoSpeedMs, option.value) < maxPlaybackSpeedMs,
+      option.value === "auto"
+        ? autoSpeedMs > 1000
+        : resolveSpeedByMode(autoSpeedMs, option.value) < maxPlaybackSpeedMs,
   }));
-
-  const [isOpen, setIsOpen] = useState(false);
-  const longPressTimerRef = useRef<number | null>(null);
-  const wasLongPressRef = useRef(false);
-
-  useEffect(() => {
-    return () => {
-      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-    };
-  }, []);
-
-  const openDropdown = useCallback(() => {
-    if (!isPlaying) setIsOpen(true);
-  }, [isPlaying]);
-
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      e.preventDefault();
-      if (e.button === 2) return;
-      wasLongPressRef.current = false;
-      longPressTimerRef.current = window.setTimeout(() => {
-        wasLongPressRef.current = true;
-        openDropdown();
-      }, LONG_PRESS_DURATION_MS);
-    },
-    [openDropdown],
-  );
-
-  const handlePointerUp = useCallback(() => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-    if (!wasLongPressRef.current && !isOpen) {
-      togglePlayback("buttons");
-    }
-  }, [isOpen, togglePlayback]);
-
-  const handlePointerLeave = useCallback(() => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  }, []);
-
-  const handleContextMenu = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      openDropdown();
-    },
-    [openDropdown],
-  );
 
   const currentSpeed =
     SPEED_OPTIONS.find((o) => o.value === playbackSpeed) ?? SPEED_OPTIONS[0];
@@ -193,29 +176,14 @@ const PlayButton = () => {
       <DD.Trigger asChild>
         <Button
           variant="quiet/mode"
-          className="relative h-8"
-          aria-label={
-            isPlaying ? translate("pausePlayback") : translate("playSimulation")
-          }
-          onPointerDown={handlePointerDown}
-          onPointerUp={handlePointerUp}
-          onPointerLeave={handlePointerLeave}
-          onContextMenu={handleContextMenu}
+          size="xxs"
+          className="h-8 px-1 rounded-sm"
+          aria-label={translate("selectPlaybackSpeed")}
         >
-          {isPlaying ? <PauseIcon /> : <PlayIcon />}
-          {!isPlaying && (
-            <span
-              className="absolute bottom-0.5 right-1 flex items-end gap-px"
-              aria-hidden="true"
-            >
-              {currentSpeed.value !== "auto" && (
-                <span className="text-[9px] leading-none text-gray-500 font-medium">
-                  {translate(currentSpeed.translationKey)}
-                </span>
-              )}
-              <span className="border-l-[6px] border-l-transparent border-b-[6px] border-b-gray-400" />
-            </span>
-          )}
+          <div className="leading-none text-center">
+            {translate(currentSpeed.translationKey)}
+          </div>
+          <ChevronDownIcon size="sm" />
         </Button>
       </DD.Trigger>
       <DD.Portal>
@@ -223,21 +191,19 @@ const PlayButton = () => {
           <DD.RadioGroup
             value={currentSpeed.value}
             onValueChange={(v) => {
-              const speed = v as PlaybackSpeed;
-              changePlaybackSpeed(speed);
+              changePlaybackSpeed(v as PlaybackSpeed);
               setIsOpen(false);
-              togglePlayback("buttons");
             }}
           >
             {speedOptions.map(({ translationKey, value, warning }) => (
               <StyledRadioItem key={value} value={value}>
-                {value === "auto"
-                  ? translate("playbackSpeedAuto", String(autoSpeedMs / 1000))
-                  : translate(translationKey)}
-                {warning && <WarningIcon className="text-amber-500" />}
-                <DD.ItemIndicator>
-                  <CheckIcon className="text-purple-700" />
-                </DD.ItemIndicator>
+                <span className="flex-1">{translate(translationKey)}</span>
+                {warning && <WarningIcon className="text-orange-500" />}
+                <span className="w-4 flex items-center justify-center">
+                  <DD.ItemIndicator>
+                    <CheckIcon className="text-purple-700" />
+                  </DD.ItemIndicator>
+                </span>
               </StyledRadioItem>
             ))}
           </DD.RadioGroup>
@@ -307,7 +273,7 @@ const TimestepDropdown = ({
         <Popover.Content
           align="end"
           sideOffset={4}
-          className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-black text-sm rounded-md shadow-md z-50 overflow-hidden min-w-[var(--radix-popover-trigger-width)]"
+          className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-black text-sm rounded-md shadow-md z-50 overflow-hidden min-w-(--radix-popover-trigger-width)"
           onKeyDown={(event) => {
             if (event.code === "Escape" || event.code === "Enter") {
               event.stopPropagation();
@@ -340,7 +306,7 @@ const TimestepDropdown = ({
                     }}
                     className={clsx(
                       "absolute left-0 right-0 flex items-center justify-between gap-4 px-2",
-                      "text-left cursor-pointer hover:bg-purple-300/40 focus:bg-purple-300/40 rounded-sm",
+                      "text-left cursor-pointer hover:bg-purple-300/40 focus:bg-purple-300/40 rounded-xs",
                     )}
                     style={{
                       height: ROW_HEIGHT,

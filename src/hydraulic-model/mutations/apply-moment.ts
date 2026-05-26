@@ -4,7 +4,6 @@ import type { AssetPatch, DemandAssignment } from "../model-operation";
 import { Asset, LinkAsset } from "../asset-types";
 import { AssetId } from "../assets-map";
 import { CustomerPoint, CustomerPointId } from "../customer-points";
-import { PressureLogger, PressureLoggerId } from "../pressure-loggers";
 import { Curves } from "../curves";
 import { Patterns } from "../patterns";
 import { isDebugOn } from "src/infra/debug-mode";
@@ -31,7 +30,6 @@ export const applyMomentToModel = (
     deleteAssets: [],
     patchAssetsAttributes: [],
     putCustomerPoints: [],
-    putPressureLoggers: [],
   };
 
   if (moment.putDemands) {
@@ -96,33 +94,6 @@ export const applyMomentToModel = (
     const deletedCp = deleteCustomerPoint(hydraulicModel, cpId, labelManager);
     if (deletedCp) {
       reverseMoment.putCustomerPoints.push(deletedCp);
-    }
-  }
-
-  for (const pressureLogger of moment.putPressureLoggers || []) {
-    const oldPressureLogger = putPressureLogger(
-      hydraulicModel,
-      pressureLogger,
-      labelManager,
-    );
-    if (oldPressureLogger) {
-      reverseMoment.putPressureLoggers.push(oldPressureLogger);
-    } else {
-      if (!reverseMoment.deletePressureLoggers) {
-        reverseMoment.deletePressureLoggers = [];
-      }
-      reverseMoment.deletePressureLoggers.push(pressureLogger.id);
-    }
-  }
-
-  for (const pressureLoggerId of moment.deletePressureLoggers || []) {
-    const deletedPressureLogger = deletePressureLogger(
-      hydraulicModel,
-      pressureLoggerId,
-      labelManager,
-    );
-    if (deletedPressureLogger) {
-      reverseMoment.putPressureLoggers.push(deletedPressureLogger);
     }
   }
 
@@ -230,41 +201,6 @@ const deleteCustomerPoint = (
   labelManager.remove(cp.label, "customerPoint", cp.id);
 
   return cp;
-};
-
-const putPressureLogger = (
-  hydraulicModel: HydraulicModel,
-  pressureLogger: PressureLogger,
-  labelManager: LabelManager,
-): PressureLogger | undefined => {
-  const oldVersion = hydraulicModel.pressureLoggers.get(pressureLogger.id);
-  if (oldVersion) {
-    labelManager.remove(oldVersion.label, "pressureLogger", oldVersion.id);
-  }
-  hydraulicModel.pressureLoggers.set(pressureLogger.id, pressureLogger);
-  labelManager.register(
-    pressureLogger.label,
-    "pressureLogger",
-    pressureLogger.id,
-  );
-  return oldVersion;
-};
-
-const deletePressureLogger = (
-  hydraulicModel: HydraulicModel,
-  id: PressureLoggerId,
-  labelManager: LabelManager,
-): PressureLogger | undefined => {
-  const pressureLogger = hydraulicModel.pressureLoggers.get(id);
-  if (!pressureLogger) return undefined;
-
-  hydraulicModel.pressureLoggers.delete(id);
-  labelManager.remove(
-    pressureLogger.label,
-    "pressureLogger",
-    pressureLogger.id,
-  );
-  return pressureLogger;
 };
 
 const putCurves = (

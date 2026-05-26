@@ -1,6 +1,4 @@
 import { atom } from "jotai";
-import { atomWithStorage, createJSONStorage } from "jotai/utils";
-import { persistLayerConfigAtom } from "./store";
 import type { SetOptional } from "type-fest";
 import type { Sel } from "src/selection/types";
 import {
@@ -20,10 +18,8 @@ import { symbologyAtom } from "src/state/map-symbology";
 import {
   momentLogDerivedAtom,
   simulationDerivedAtom,
-  stagingModelDerivedAtom,
   simulationResultsDerivedAtom,
   customerPointsDerivedAtom,
-  pressureLoggersDerivedAtom,
 } from "src/state/derived-branch-state";
 import { selectionAtom } from "src/state/selection";
 import {
@@ -38,15 +34,11 @@ import {
 } from "src/state/simulation";
 import { offlineAtom } from "src/state/offline";
 import { mapOverlayFeaturesAtom } from "src/state/map-overlay";
+import { highlightsAtom, type Highlight } from "src/state/highlights";
 import { USelection } from "src/selection";
 import type { AssetId } from "src/hydraulic-model";
 import type { CustomerPoints } from "src/hydraulic-model/customer-points";
-import type { PressureLoggers } from "src/hydraulic-model/pressure-loggers";
 import type { PreviewProperty } from "src/state/map-symbology";
-import {
-  loggerTelemetryAtom,
-  type LoggerTelemetryState,
-} from "./logger-telemetry";
 import type { ResultsReader } from "src/simulation/results-reader";
 
 export type MomentPointer = {
@@ -68,10 +60,6 @@ export const mapViewportAtom = atom<InitialViewport>({
   zoom: DEFAULT_ZOOM,
 });
 
-const layerConfigStorage = createJSONStorage<ILayerConfig[]>(
-  () => localStorage,
-);
-
 const defaultLayerConfigs: ILayerConfig[] = [
   {
     ...basemaps.monochrome,
@@ -84,32 +72,15 @@ const defaultLayerConfigs: ILayerConfig[] = [
   },
 ];
 
-const layerConfigArrayAtom = atomWithStorage<ILayerConfig[]>(
-  "layer-configs",
-  defaultLayerConfigs,
-  layerConfigStorage,
-);
-
-const defaultLayerConfigMap: LayerConfigMap = new Map(
-  defaultLayerConfigs.map((l) => [l.id, l]),
-);
-
-const nonPersistedLayerConfigAtom = atom<LayerConfigMap>(defaultLayerConfigMap);
+const layerConfigArrayAtom = atom<ILayerConfig[]>(defaultLayerConfigs);
 
 export const layerConfigAtom = atom(
   (get): LayerConfigMap => {
-    if (get(persistLayerConfigAtom)) {
-      const arr = get(layerConfigArrayAtom);
-      return new Map(arr.map((l) => [l.id, l]));
-    }
-    return get(nonPersistedLayerConfigAtom);
+    const arr = get(layerConfigArrayAtom);
+    return new Map(arr.map((l) => [l.id, l]));
   },
-  (get, set, newMap: LayerConfigMap) => {
-    if (get(persistLayerConfigAtom)) {
-      set(layerConfigArrayAtom, [...newMap.values()]);
-    } else {
-      set(nonPersistedLayerConfigAtom, newMap);
-    }
+  (_get, set, newMap: LayerConfigMap) => {
+    set(layerConfigArrayAtom, [...newMap.values()]);
   },
 );
 
@@ -133,7 +104,6 @@ export type StylesConfig = {
 };
 
 export type MapState = {
-  modelVersion: string;
   momentLogId: string;
   momentLogPointer: number;
   syncMomentPointer: number;
@@ -149,14 +119,12 @@ export type MapState = {
   movedAssetIds: Set<AssetId>;
   isOffline: boolean;
   customerPoints: CustomerPoints;
-  pressureLoggers: PressureLoggers;
-  loggerTelemetry: LoggerTelemetryState;
   currentZoom: number;
   mapOverlayFeatures: GeoJSON.Feature[];
+  highlights: Highlight[];
 };
 
 export const nullMapState: MapState = {
-  modelVersion: "",
   momentLogId: "",
   momentLogPointer: -1,
   syncMomentPointer: -1,
@@ -176,16 +144,9 @@ export const nullMapState: MapState = {
   movedAssetIds: new Set(),
   isOffline: false,
   customerPoints: new Map(),
-  pressureLoggers: new Map(),
-  loggerTelemetry: {
-    connectionState: "idle",
-    readingsByDeviceId: {},
-    pressureHistoryByDeviceId: {},
-    pressureSampleCountByDeviceId: {},
-    lastError: null,
-  },
   currentZoom: DEFAULT_ZOOM,
   mapOverlayFeatures: [],
+  highlights: [],
 } as const;
 
 export const stylesConfigAtom = atom<StylesConfig>((get) => {
@@ -208,22 +169,18 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
   const ephemeralState = get(ephemeralStateAtom);
   const symbology = get(symbologyAtom);
   const simulation = get(simulationDerivedAtom);
-  const hydraulicModel = get(stagingModelDerivedAtom);
-  const modelVersion = hydraulicModel.version;
   const simulationStep = get(simulationStepAtom);
   const resultsReader = get(simulationResultsDerivedAtom);
   const customerPoints = get(customerPointsDerivedAtom);
-  const pressureLoggers = get(pressureLoggersDerivedAtom);
-  const loggerTelemetry = get(loggerTelemetryAtom);
   const currentZoom = get(currentZoomAtom);
   const selectedAssetIds = new Set(USelection.toIds(selection));
 
   const movedAssetIds = get(movedAssetIdsAtom);
   const isOffline = get(offlineAtom);
   const mapOverlayFeatures = get(mapOverlayFeaturesAtom);
+  const highlights = get(highlightsAtom);
 
   return {
-    modelVersion,
     momentLogId: momentLog.id,
     momentLogPointer: momentLog.getPointer(),
     syncMomentPointer: mapSyncMoment.pointer,
@@ -239,9 +196,8 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
     movedAssetIds,
     isOffline,
     customerPoints,
-    pressureLoggers,
-    loggerTelemetry,
     currentZoom,
     mapOverlayFeatures,
+    highlights,
   };
 });

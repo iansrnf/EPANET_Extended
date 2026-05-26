@@ -3,14 +3,9 @@ import { initializeModelFactories } from "src/hydraulic-model/factories";
 import { presets } from "src/lib/project-settings/quantities-spec";
 import { WritableIdGenerator } from "./hydraulic-model-builder";
 
-export const buildTestFactories = (
-  options: {
-    idGenerator?: WritableIdGenerator;
-    labelManager?: LabelManager;
-  } = {},
-) => {
-  const idGenerator = options.idGenerator ?? new WritableIdGenerator();
-  const labelManager = options.labelManager ?? new LabelManager();
+export const buildTestFactories = () => {
+  const idGenerator = new WritableIdGenerator();
+  const labelManager = new LabelManager();
   const factories = initializeModelFactories({
     idGenerator,
     labelManager,

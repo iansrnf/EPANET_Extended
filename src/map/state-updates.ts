@@ -1,7 +1,6 @@
 import type { Sel } from "src/selection/types";
 import { useAtomValue, useSetAtom } from "jotai";
 import { type MutableRefObject, useCallback, useRef } from "react";
-import { LayersList } from "@deck.gl/core";
 import { Unit } from "src/quantity";
 import type { ModelMoment } from "src/hydraulic-model/model-operation";
 import { projectSettingsAtom } from "src/state/project-settings";
@@ -11,7 +10,6 @@ import {
   stagingModelDerivedAtom,
   momentLogDerivedAtom,
 } from "src/state/derived-branch-state";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import {
   type StylesConfig,
   type MapState,
@@ -31,12 +29,18 @@ import {
   buildIconPointsSource,
   buildOptimizedAssetsSource,
   buildEphemeralStateSource,
+  buildHighlightsSource,
   buildSelectionSource,
   FeatureSources,
 } from "./data-source";
+import type { Highlight } from "src/state/highlights";
 import mapboxgl from "mapbox-gl";
 import { Grid } from "./grid";
-import { buildBaseStyle, makeLayers } from "./build-style";
+import {
+  buildBaseStyle,
+  buildBaseStyleWithPrecision,
+  makeLayers,
+} from "./build-style";
 import { gisDataAtom } from "src/state/gis-data";
 import {
   gisLayerFill,
@@ -51,11 +55,13 @@ import { captureError } from "src/infra/error-tracking";
 import { withDebugInstrumentation } from "src/infra/with-instrumentation";
 import { USelection } from "src/selection";
 import { SymbologySpec } from "src/state/map-symbology";
+import type { NodeDefaults, LinkDefaults } from "src/map/symbology";
 import {
   FormattingSpec,
   UnitsSpec,
 } from "src/lib/project-settings/quantities-spec";
 import { useTranslate } from "src/hooks/use-translate";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import {
   CustomerPointsOverlay,
@@ -68,17 +74,14 @@ import {
 } from "./overlays/customer-points";
 import { CustomerPoints } from "src/hydraulic-model/customer-points";
 import {
-  PressureLoggersOverlay,
-  buildPressureLoggersOverlay,
-  buildPressureLoggersSelectionOverlay,
-  updatePressureLoggersOverlayVisibility,
-} from "./overlays/pressure-loggers";
-import { PressureLoggers } from "src/hydraulic-model/pressure-loggers";
-import { junctionsSymbologyFilterExpression } from "./layers/junctions";
+  junctionsSymbologyFilterExpression,
+  junctionFillColorExpression,
+  junctionStrokeColorExpression,
+} from "./layers/junctions";
 import {
-  buildPipeFlowAnimationOverlay,
-  PipeFlowAnimationOverlay,
-} from "./overlays/pipe-flow-animation";
+  pipeLinkColorExpression,
+  pipeArrowColorExpression,
+} from "./layers/pipes";
 
 const SELECTION_LAYERS: LayerId[] = [
   "selected-pipes",
@@ -89,20 +92,14 @@ const SELECTION_LAYERS: LayerId[] = [
   "selected-icons",
 ];
 
-const PIPE_FLOW_PULSE_LAYERS: LayerId[] = [
-  "main-features-pipe-flow-pulse",
-  "delta-features-pipe-flow-pulse",
-  "selected-pipe-flow-pulse",
-];
-
 const getAssetIdsInMoments = (moments: ModelMoment[]): Set<AssetId> => {
   const assetIds = new Set<AssetId>();
   moments.forEach((moment) => {
-    (moment.deleteAssets ?? []).forEach((assetId) => {
+    (moment.deleteAssets || []).forEach((assetId) => {
       assetIds.add(assetId);
     });
-    (moment.putAssets ?? []).forEach((asset) => assetIds.add(asset.id));
-    (moment.patchAssetsAttributes ?? []).forEach((patch) =>
+    (moment.putAssets || []).forEach((asset) => assetIds.add(asset.id));
+    (moment.patchAssetsAttributes || []).forEach((patch) =>
       assetIds.add(patch.id),
     );
   });
@@ -121,18 +118,17 @@ const detectChanges = (
   hasNewEphemeralState: boolean;
   hasEphemeralStateReset: boolean;
   hasNewSimulation: boolean;
-  hasNewSymbology: boolean;
+  hasNewSymbologyRules: boolean;
+  hasNewCustomerPointsSymbology: boolean;
+  hasNewDefaultColors: boolean;
   hasNewCustomerPoints: boolean;
-  hasNewPressureLoggers: boolean;
-  hasNewPressureLoggerTelemetry: boolean;
   hasNewZoom: boolean;
   hasSyncMomentChanged: boolean;
-  hasNewModelVersion: boolean;
   hasNewResults: boolean;
   hasNewMapOverlay: boolean;
+  hasNewHighlights: boolean;
 } => {
   return {
-    hasNewModelVersion: state.modelVersion !== prev.modelVersion,
     hasNewImport: state.momentLogId !== prev.momentLogId,
     hasNewEditions: state.momentLogPointer !== prev.momentLogPointer,
     hasNewStyles:
@@ -147,20 +143,26 @@ const detectChanges = (
     hasNewSimulation:
       state.simulation !== prev.simulation ||
       state.simulationStep !== prev.simulationStep,
-    hasNewSymbology: state.symbology !== prev.symbology,
+    hasNewSymbologyRules:
+      state.symbology.node.colorRule !== prev.symbology.node.colorRule ||
+      state.symbology.node.labelRule !== prev.symbology.node.labelRule ||
+      state.symbology.link.colorRule !== prev.symbology.link.colorRule ||
+      state.symbology.link.labelRule !== prev.symbology.link.labelRule,
+    hasNewCustomerPointsSymbology:
+      state.symbology.customerPoints !== prev.symbology.customerPoints,
+    hasNewDefaultColors:
+      state.symbology.node.defaults !== prev.symbology.node.defaults ||
+      state.symbology.link.defaults !== prev.symbology.link.defaults,
     hasNewCustomerPoints: state.customerPoints !== prev.customerPoints,
-    hasNewPressureLoggers: state.pressureLoggers !== prev.pressureLoggers,
-    hasNewPressureLoggerTelemetry:
-      state.loggerTelemetry !== prev.loggerTelemetry,
     hasNewZoom: state.currentZoom !== prev.currentZoom,
     hasSyncMomentChanged: state.syncMomentVersion !== prev.syncMomentVersion,
     hasNewResults: state.resultsReader !== prev.resultsReader,
     hasNewMapOverlay: state.mapOverlayFeatures !== prev.mapOverlayFeatures,
+    hasNewHighlights: state.highlights !== prev.highlights,
   };
 };
 
 export const useMapStateUpdates = (map: MapEngine | null) => {
-  const isCustomGisLayersOn = useFeatureFlag("FLAG_CUSTOM_GIS_LAYERS");
   const momentLog = useAtomValue(momentLogDerivedAtom);
   const setMapSyncMoment = useSetAtom(mapSyncMomentAtom);
   const mapState = useAtomValue(mapStateDerivedAtom);
@@ -177,28 +179,16 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
   const lastHiddenFeatures = useRef<Set<AssetId>>(new Set([]));
   const previousMapStateRef = useRef<MapState>(nullMapState);
   const customerPointsOverlayRef = useRef<CustomerPointsOverlay>([]);
-  const pressureLoggersOverlayRef = useRef<PressureLoggersOverlay>([]);
   const selectionDeckLayersRef = useRef<CustomerPointsOverlay>([]);
-  const pressureLoggerSelectionOverlayRef = useRef<PressureLoggersOverlay>([]);
   const ephemeralDeckLayersRef = useRef<CustomerPointsOverlay>([]);
-  const pipeFlowOverlayRef = useRef<PipeFlowAnimationOverlay>([]);
-  const baseDeckLayersRef = useRef<LayersList>([]);
-  const pipeFlowAnimationFrameRef = useRef<number | null>(null);
-  const pipeFlowAnimationContextRef = useRef<{
-    assets: AssetsMap;
-    simulationResults: ResultsReader | null;
-  }>({
-    assets,
-    simulationResults: mapState.resultsReader,
-  });
   const gridRef = useRef<Grid | null>(null);
   const scaleControlRef = useRef<mapboxgl.ScaleControl | null>(null);
   const translate = useTranslate();
   const translateUnit = useTranslateUnit();
+  const withPrecision = useFeatureFlag("FLAG_DRAWING_PRECISION");
 
   const doUpdates = useCallback(() => {
     if (!map) return;
-    const resultsReader = mapState.resultsReader;
 
     if (mapState === previousMapStateRef.current) return;
 
@@ -213,16 +203,16 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
       hasNewSelection,
       hasNewEphemeralState,
       hasEphemeralStateReset,
-      hasNewSymbology,
+      hasNewSymbologyRules,
+      hasNewCustomerPointsSymbology,
+      hasNewDefaultColors,
       hasNewSimulation,
       hasNewCustomerPoints,
-      hasNewPressureLoggers,
-      hasNewPressureLoggerTelemetry,
       hasNewZoom,
       hasSyncMomentChanged,
-      hasNewModelVersion,
       hasNewResults,
       hasNewMapOverlay,
+      hasNewHighlights,
     } = changes;
 
     const selectionSize = USelection.toIds(mapState.selection).length;
@@ -232,7 +222,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
       hasNewImport ||
       hasNewEditions ||
       hasNewStyles ||
-      hasNewSymbology ||
+      hasNewSymbologyRules ||
       (hasNewSimulation && mapState.simulation.status !== "running") ||
       hasNewResults ||
       (hasNewSelection && hasLargeSelection);
@@ -244,44 +234,42 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
     setTimeout(async () => {
       try {
         const resultsUpdateStartedAt =
-          (hasNewResults || hasNewSymbology) && !document.hidden
+          (hasNewResults || hasNewSymbologyRules) && !document.hidden
             ? performance.now()
             : null;
 
         if (hasNewStyles) {
           map.suspendOverlayStyleReactions();
           resetMapState(map);
-          await buildBaseStyleAndSetOnMap(
+          const buildAndSetStyle = withPrecision
+            ? buildBaseStyleWithPrecisionAndSetOnMap
+            : buildBaseStyleAndSetOnMap;
+          await buildAndSetStyle(map, mapState.stylesConfig, translate);
+          addGisLayersToMap(map, mapState.stylesConfig, gisData);
+          addEditingLayersToMap(
             map,
             mapState.stylesConfig,
-            translate,
+            mapState.symbology.node.defaults,
+            mapState.symbology.link.defaults,
           );
-          if (isCustomGisLayersOn) {
-            addGisLayersToMap(map, mapState.stylesConfig, gisData);
-          }
-          addEditingLayersToMap(map, mapState.stylesConfig);
           await map.addIcons();
           map.resumeOverlayStyleReactions();
           toggleAnalysisLayers(map, mapState.symbology);
         }
 
-        syncPipeFlowPulseAnimation({
-          map,
-          assets,
-          simulationResults:
-            mapState.simulation.status !== "running" ? resultsReader : null,
-          pipeFlowOverlayRef,
-          baseDeckLayersRef,
-          pipeFlowAnimationFrameRef,
-          pipeFlowAnimationContextRef,
-        });
+        if (hasNewDefaultColors && !hasNewStyles) {
+          updateDefaultMapColors(
+            map,
+            mapState.symbology.node.defaults.color,
+            mapState.symbology.link.defaults.color,
+          );
+        }
 
         if (
           hasSyncMomentChanged ||
-          hasNewModelVersion ||
           hasNewImport ||
           hasNewStyles ||
-          hasNewSymbology ||
+          hasNewSymbologyRules ||
           (hasNewSimulation && mapState.simulation.status !== "running") ||
           hasNewResults
         ) {
@@ -311,7 +299,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           });
         }
 
-        if (hasNewEditions && !hasSyncMomentChanged && !hasNewModelVersion) {
+        if (hasNewEditions && !hasSyncMomentChanged) {
           const { editedAssetIds } = await syncSourcesWithEdits(
             map,
             momentLog,
@@ -330,7 +318,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           hasNewImport ||
           hasNewEditions ||
           hasNewStyles ||
-          hasNewSymbology ||
+          hasNewSymbologyRules ||
           hasNewSelection ||
           (hasNewSimulation && mapState.simulation.status !== "running") ||
           hasNewResults
@@ -350,10 +338,6 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
               appendSourceRebuildDuration(duration);
             }
           }
-        }
-
-        if (hasNewMapOverlay) {
-          await updateMapOverlaySource(map, mapState.mapOverlayFeatures);
         }
 
         const movingCustomerPointId =
@@ -387,23 +371,9 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         }
 
         if (
-          hasNewImport ||
-          hasNewEditions ||
-          hasNewStyles ||
-          hasNewPressureLoggers ||
-          hasNewPressureLoggerTelemetry
-        ) {
-          pressureLoggersOverlayRef.current = buildPressureLoggersOverlay(
-            hydraulicModel.pressureLoggers,
-            mapState.currentZoom,
-            mapState.loggerTelemetry.readingsByDeviceId,
-          );
-        }
-
-        if (
           hasNewZoom ||
           hasNewSelection ||
-          hasNewSymbology ||
+          hasNewSymbologyRules ||
           hasEphemeralStateReset
         ) {
           customerPointsOverlayRef.current =
@@ -421,18 +391,6 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           ephemeralDeckLayersRef.current =
             updateCustomerPointsOverlayVisibility(
               ephemeralDeckLayersRef.current,
-              mapState.currentZoom,
-            );
-
-          pressureLoggersOverlayRef.current =
-            updatePressureLoggersOverlayVisibility(
-              pressureLoggersOverlayRef.current,
-              mapState.currentZoom,
-            );
-
-          pressureLoggerSelectionOverlayRef.current =
-            updatePressureLoggersOverlayVisibility(
-              pressureLoggerSelectionOverlayRef.current,
               mapState.currentZoom,
             );
         }
@@ -454,15 +412,6 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             );
         }
 
-        if (hasNewSelection || hasNewPressureLoggers) {
-          pressureLoggerSelectionOverlayRef.current =
-            buildSelectionOverlayForPressureLoggers(
-              mapState.selection,
-              hydraulicModel.pressureLoggers,
-              mapState.currentZoom,
-            );
-        }
-
         if (hasNewEphemeralState) {
           updateEditionsVisibility(
             map,
@@ -475,6 +424,17 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             mapState.ephemeralState,
             assets,
           );
+        }
+
+        if (hasNewMapOverlay) {
+          await updateMapOverlaySource(map, mapState.mapOverlayFeatures);
+        }
+
+        const hasAssetHighlights = mapState.highlights.some(
+          (h) => h.type === "asset",
+        );
+        if (hasNewHighlights || (hasAssetHighlights && hasNewEditions)) {
+          await updateHighlightsSource(map, mapState.highlights, assets);
         }
 
         if (
@@ -501,7 +461,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         }
 
         if (
-          (hasNewSymbology && !hasNewStyles) ||
+          (hasNewSymbologyRules && !hasNewStyles) ||
           hasNewSelection ||
           hasNewEditions
         ) {
@@ -509,15 +469,12 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         }
 
         if (
-          hasNewImport ||
           hasNewStyles ||
-          hasNewSymbology ||
+          hasNewCustomerPointsSymbology ||
           hasNewZoom ||
           hasNewSelection ||
           hasNewEphemeralState ||
           hasNewCustomerPoints ||
-          hasNewPressureLoggers ||
-          hasNewPressureLoggerTelemetry ||
           hasNewEditions
         ) {
           const shouldHideCustomerPointsOverlay =
@@ -541,16 +498,13 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             ...(shouldHideCustomerPointsOverlay || !isCustomerPointsVisible
               ? []
               : customerPointsOverlayRef.current),
-            ...pressureLoggersOverlayRef.current,
             ...(shouldHideSelectionDuringMove ||
             shouldHideCustomerPointSelection
               ? []
               : selectionDeckLayersRef.current),
-            ...pressureLoggerSelectionOverlayRef.current,
             ...ephemeralDeckLayersRef.current,
           ];
-          baseDeckLayersRef.current = combinedOverlay;
-          map.setOverlay([...combinedOverlay, ...pipeFlowOverlayRef.current]);
+          map.setOverlay(combinedOverlay);
         }
 
         setMapLoading(false);
@@ -572,11 +526,11 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
     translate,
     gisData,
     translateUnit,
-    hydraulicModel,
+    hydraulicModel.customerPoints,
+    hydraulicModel.assets,
     isGridOn,
     isGridPreview,
-    pipeFlowAnimationFrameRef,
-    isCustomGisLayersOn,
+    withPrecision,
   ]);
 
   doUpdates();
@@ -590,6 +544,7 @@ const resetMapState = withDebugInstrumentation(
   { name: "MAP_STATE:RESET_SOURCES", maxDurationMs: 100 },
 );
 
+// LEGACY: remove once FLAG_DRAWING_PRECISION is permanently on.
 const buildBaseStyleAndSetOnMap = withDebugInstrumentation(
   async (
     map: MapEngine,
@@ -603,6 +558,24 @@ const buildBaseStyleAndSetOnMap = withDebugInstrumentation(
     await map.setStyle(style);
   },
   { name: "MAP_STATE:BUILD_BASE_STYLE", maxDurationMs: 1000 },
+);
+
+const buildBaseStyleWithPrecisionAndSetOnMap = withDebugInstrumentation(
+  async (
+    map: MapEngine,
+    styles: StylesConfig,
+    translate: (key: string) => string,
+  ) => {
+    const style = await buildBaseStyleWithPrecision({
+      layerConfigs: styles.layerConfigs,
+      translate,
+    });
+    await map.setStyle(style);
+  },
+  {
+    name: "MAP_STATE:BUILD_BASE_STYLE",
+    maxDurationMs: 1000,
+  },
 );
 
 const toggleAnalysisLayers = withDebugInstrumentation(
@@ -873,6 +846,7 @@ function addGisLayersToMap(
       gisLayerCircle(
         sourceId,
         layerConfig.color,
+        layerConfig.lineWidth,
         layerConfig.opacity,
         layerConfig.visibility,
       ),
@@ -883,16 +857,24 @@ function addGisLayersToMap(
         layerConfig.color,
         layerConfig.opacity,
         layerConfig.labelVisibility,
+        layerConfig.labelProperty,
       ),
     );
   }
 }
 
 const addEditingLayersToMap = withDebugInstrumentation(
-  (map: MapEngine, stylesConfig: StylesConfig) => {
+  (
+    map: MapEngine,
+    stylesConfig: StylesConfig,
+    nodeDefaults: NodeDefaults,
+    linkDefaults: LinkDefaults,
+  ) => {
     const layers = makeLayers({
       symbology: stylesConfig.symbology,
       previewProperty: stylesConfig.previewProperty,
+      nodeDefaults,
+      linkDefaults,
     });
 
     for (const layer of layers) {
@@ -900,6 +882,51 @@ const addEditingLayersToMap = withDebugInstrumentation(
     }
   },
   { name: "MAP_STATE:ADD_EDITING_LAYERS", maxDurationMs: 100 },
+);
+
+const updateDefaultMapColors = withDebugInstrumentation(
+  (map: MapEngine, nodeColor: string, linkColor: string) => {
+    const junctionLayers = [
+      "main-features-junctions",
+      "delta-features-junctions",
+      "main-features-junction-results",
+      "delta-features-junction-results",
+    ];
+    for (const layerId of junctionLayers) {
+      map.setLayerPaintRule(
+        layerId,
+        "circle-color",
+        junctionFillColorExpression(nodeColor),
+      );
+      map.setLayerPaintRule(
+        layerId,
+        "circle-stroke-color",
+        junctionStrokeColorExpression(nodeColor),
+      );
+    }
+
+    const pipeLayers = ["main-features-pipes", "delta-features-pipes"];
+    for (const layerId of pipeLayers) {
+      map.setLayerPaintRule(
+        layerId,
+        "line-color",
+        pipeLinkColorExpression(linkColor),
+      );
+    }
+
+    const arrowLayers = [
+      "main-features-pipe-arrows",
+      "delta-features-pipe-arrows",
+    ];
+    for (const layerId of arrowLayers) {
+      map.setLayerPaintRule(
+        layerId,
+        "icon-color",
+        pipeArrowColorExpression(linkColor),
+      );
+    }
+  },
+  { name: "MAP_STATE:UPDATE_DEFAULT_MAP_COLORS", maxDurationMs: 100 },
 );
 
 const updateEphemeralStateSource = withDebugInstrumentation(
@@ -925,6 +952,15 @@ const updateMapOverlaySource = async (
     "map-overlay",
     features as unknown as import("src/types").Feature[],
   );
+};
+
+const updateHighlightsSource = async (
+  map: MapEngine,
+  highlights: Highlight[],
+  assets: AssetsMap,
+): Promise<void> => {
+  const features = buildHighlightsSource(highlights, assets);
+  await map.setSource("highlights", features);
 };
 
 const buildCustomerPointsEphemeralOverlay = (
@@ -974,19 +1010,6 @@ const buildSelectionOverlayForCustomerPoints = (
   return [];
 };
 
-const buildSelectionOverlayForPressureLoggers = (
-  selection: Sel,
-  pressureLoggers: PressureLoggers,
-  zoom: number,
-): PressureLoggersOverlay => {
-  if (selection.type !== "singlePressureLogger") return [];
-
-  const pressureLogger = pressureLoggers.get(selection.id);
-  if (!pressureLogger) return [];
-
-  return buildPressureLoggersSelectionOverlay([pressureLogger], zoom);
-};
-
 function updateGrid({
   map,
   isGridOn,
@@ -1026,87 +1049,3 @@ function updateGrid({
     scaleControlRef.current = null;
   }
 }
-
-const syncPipeFlowPulseAnimation = ({
-  map,
-  assets,
-  simulationResults,
-  pipeFlowOverlayRef,
-  baseDeckLayersRef,
-  pipeFlowAnimationFrameRef,
-  pipeFlowAnimationContextRef,
-}: {
-  map: MapEngine;
-  assets: AssetsMap;
-  simulationResults?: ResultsReader | null;
-  pipeFlowOverlayRef: MutableRefObject<PipeFlowAnimationOverlay>;
-  baseDeckLayersRef: MutableRefObject<LayersList>;
-  pipeFlowAnimationFrameRef: MutableRefObject<number | null>;
-  pipeFlowAnimationContextRef: MutableRefObject<{
-    assets: AssetsMap;
-    simulationResults: ResultsReader | null;
-  }>;
-}) => {
-  pipeFlowAnimationContextRef.current = {
-    assets,
-    simulationResults: simulationResults ?? null,
-  };
-
-  const hasSimulationResults = !!simulationResults;
-
-  if (!hasSimulationResults) {
-    stopPipeFlowPulseAnimation(pipeFlowAnimationFrameRef);
-    pipeFlowOverlayRef.current = [];
-    map.setOverlay(baseDeckLayersRef.current);
-    map.hideLayers(PIPE_FLOW_PULSE_LAYERS);
-    return;
-  }
-
-  map.hideLayers(PIPE_FLOW_PULSE_LAYERS);
-
-  const renderOverlay = (phase: number) => {
-    const {
-      assets: currentAssets,
-      simulationResults: currentSimulationResults,
-    } = pipeFlowAnimationContextRef.current;
-
-    if (!currentSimulationResults) {
-      pipeFlowOverlayRef.current = [];
-      map.setOverlay(baseDeckLayersRef.current);
-      return;
-    }
-
-    pipeFlowOverlayRef.current = buildPipeFlowAnimationOverlay({
-      assets: currentAssets,
-      simulationResults: currentSimulationResults,
-      phase,
-    });
-    map.setOverlay([
-      ...baseDeckLayersRef.current,
-      ...pipeFlowOverlayRef.current,
-    ]);
-  };
-
-  renderOverlay((((performance.now() * 0.00012) % 1) + 1) % 1);
-
-  if (pipeFlowAnimationFrameRef.current !== null) {
-    return;
-  }
-
-  const tick = (time: number) => {
-    const phase = (((time * 0.00012) % 1) + 1) % 1;
-    renderOverlay(phase);
-    pipeFlowAnimationFrameRef.current = window.requestAnimationFrame(tick);
-  };
-
-  pipeFlowAnimationFrameRef.current = window.requestAnimationFrame(tick);
-};
-
-const stopPipeFlowPulseAnimation = (
-  pipeFlowAnimationFrameRef: MutableRefObject<number | null>,
-) => {
-  if (pipeFlowAnimationFrameRef.current !== null) {
-    window.cancelAnimationFrame(pipeFlowAnimationFrameRef.current);
-    pipeFlowAnimationFrameRef.current = null;
-  }
-};

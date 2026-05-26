@@ -1,13 +1,11 @@
-import type { MapboxGeoJSONFeature } from "mapbox-gl";
+import type { MapboxGeoJSONFeature, Map as MapboxMap } from "mapbox-gl";
 import { Feature } from "geojson";
 import { clickableLayers } from "./layers/layer";
 
 export type MouseOrTouchEvent = mapboxgl.MapMouseEvent | mapboxgl.MapTouchEvent;
 
-type QueryOptions = {
-  layers?: string[];
-};
-const queryOptions: QueryOptions = {
+type QueryOptions = Parameters<MapboxMap["queryRenderedFeatures"]>[1];
+const queryOptions: Parameters<MapboxMap["queryRenderedFeatures"]>[1] = {
   layers: clickableLayers,
 };
 

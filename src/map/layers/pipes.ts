@@ -1,18 +1,31 @@
+import type * as mapboxgl from "mapbox-gl";
 import { LineLayer, LinePaint, SymbolLayer } from "mapbox-gl";
 import { ISymbology } from "src/types";
 import { asNumberExpression } from "src/lib/symbolization-deprecated";
 import { DataSource } from "../data-source";
 import { LayerId } from "./layer";
 import { colors } from "src/lib/constants";
+import type { LinkDefaults } from "src/map/symbology";
+
+export const pipeLinkColorExpression = (
+  defaultLinkColor: string,
+): mapboxgl.Expression => [
+  "case",
+  ["==", ["get", "isActive"], false],
+  colors.zinc400,
+  ["coalesce", ["get", "color"], defaultLinkColor],
+];
 
 export const pipesLayer = ({
   source,
   layerId,
   symbology,
+  linkDefaults,
 }: {
   source: DataSource;
   layerId: LayerId;
   symbology: ISymbology;
+  linkDefaults: LinkDefaults;
 }): LineLayer => {
   const paint = {
     "line-opacity": [
@@ -26,12 +39,7 @@ export const pipesLayer = ({
       }),
     ],
     "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.5, 16, 4],
-    "line-color": [
-      "case",
-      ["==", ["get", "isActive"], false],
-      colors.zinc400,
-      ["coalesce", ["get", "color"], symbology.defaultColor],
-    ],
+    "line-color": pipeLinkColorExpression(linkDefaults.color),
     "line-dasharray": [
       "case",
       ["==", ["get", "status"], "closed"],
@@ -48,56 +56,18 @@ export const pipesLayer = ({
   };
 };
 
-export const pipeFlowPulseLayer = ({
-  source,
-  layerId,
-}: {
-  source: DataSource;
-  layerId: LayerId;
-}): LineLayer => {
-  return {
-    id: layerId,
-    type: "line",
-    source,
-    layout: {
-      "line-cap": "round",
-      "line-join": "round",
-    },
-    filter: [
-      "all",
-      ["==", ["get", "type"], "pipe"],
-      ["==", ["get", "hasFlowPulse"], true],
-    ],
-    paint: {
-      "line-opacity": [
-        "case",
-        ["boolean", ["feature-state", "hidden"], false],
-        0,
-        [
-          "interpolate",
-          ["linear"],
-          ["coalesce", ["get", "pulseStrength"], 0],
-          0,
-          0.8,
-          1,
-          0.95,
-        ],
-      ],
-      "line-width": ["interpolate", ["linear"], ["zoom"], 12, 3.5, 16, 10],
-      "line-blur": ["interpolate", ["linear"], ["zoom"], 12, 0.75, 16, 1.75],
-      "line-gradient": buildPipeFlowPulseGradientExpression(0),
-    } as LinePaint,
-  };
-};
+export const pipeArrowColorExpression = (
+  defaultLinkColor: string,
+): mapboxgl.Expression => ["coalesce", ["get", "color"], defaultLinkColor];
 
 export const pipeArrows = ({
   source,
   layerId,
-  symbology,
+  linkDefaults,
 }: {
   source: DataSource;
   layerId: LayerId;
-  symbology: ISymbology;
+  linkDefaults: LinkDefaults;
 }): SymbolLayer => {
   return {
     id: layerId,
@@ -114,7 +84,7 @@ export const pipeArrows = ({
     },
     filter: ["all", ["==", "$type", "LineString"], ["==", "hasArrow", true]],
     paint: {
-      "icon-color": ["coalesce", ["get", "color"], symbology.defaultColor],
+      "icon-color": pipeArrowColorExpression(linkDefaults.color),
       "icon-opacity": [
         ...zoomExpression(
           [14, 15, 16, 17, 18, 19, 20],
@@ -183,59 +153,4 @@ const zoomExpression = (
     ]);
   }
   return result;
-};
-
-export const buildPipeFlowPulseGradientExpression = (
-  phase: number,
-): mapboxgl.Expression => {
-  const stops = buildPulseStops(phase).flatMap(([stop, alpha]) => [
-    stop,
-    alpha === 0
-      ? "rgba(255,255,255,0)"
-      : alpha < 0.4
-        ? "rgba(125,211,252,0.55)"
-        : alpha < 0.85
-          ? "rgba(255,255,255,0.9)"
-          : "rgba(255,255,255,1)",
-  ]);
-
-  return [
-    "let",
-    "progress",
-    [
-      "case",
-      ["<", ["coalesce", ["get", "flowDirection"], 1], 0],
-      ["-", 1, ["line-progress"]],
-      ["line-progress"],
-    ],
-    ["interpolate", ["linear"], ["var", "progress"], ...stops],
-  ] as mapboxgl.Expression;
-};
-
-const buildPulseStops = (phase: number): Array<[number, number]> => {
-  const pulseSpacing = 0.22;
-  const outerWidth = 0.07;
-  const innerWidth = 0.025;
-  const stopMap = new Map<number, number>([
-    [0, 0],
-    [1, 0],
-  ]);
-
-  for (let center = phase - 1; center <= phase + 1; center += pulseSpacing) {
-    const points: Array<[number, number]> = [
-      [center - outerWidth, 0],
-      [center - innerWidth, 0.35],
-      [center, 1],
-      [center + innerWidth, 0.35],
-      [center + outerWidth, 0],
-    ];
-
-    for (const [position, alpha] of points) {
-      if (position < 0 || position > 1) continue;
-      const rounded = Number(position.toFixed(6));
-      stopMap.set(rounded, Math.max(stopMap.get(rounded) ?? 0, alpha));
-    }
-  }
-
-  return [...stopMap.entries()].sort((a, b) => a[0] - b[0]);
 };

@@ -92,7 +92,7 @@ export const USER_DEFINED_CODE = 32767;
 export const WGS84_GEOGRAPHIC_CODES = new Set([4326, 4269]);
 
 // ---------------------------------------------------------------------------
-// ProjCoordTransGeoKey -> proj4 projection name
+// ProjCoordTransGeoKey → proj4 projection name
 // Values 1-27 from GeoTIFF spec Annex C, Table C.1
 // ---------------------------------------------------------------------------
 

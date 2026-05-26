@@ -82,10 +82,10 @@ export class Grid {
   }
 
   private updateFrame() {
-    const gridParams = calcGridParams(this.map, this.unitsPerDegree);
-    if (!gridParams) return;
-
-    const { bounds, stepUnits, fraction } = gridParams;
+    const { bounds, stepUnits, fraction } = calcGridParams(
+      this.map,
+      this.unitsPerDegree,
+    );
     const stepChanged =
       this.generatedStep !== 0 && stepUnits !== this.generatedStep;
 
@@ -221,8 +221,6 @@ export class Grid {
 
 function calcGridParams(map: mapboxgl.Map, unitsPerDegree: number) {
   const bounds = map.getBounds();
-  if (!bounds) return null;
-
   const lngSpan = Math.abs(bounds.getEast() - bounds.getWest());
   const viewWidth = lngSpan * unitsPerDegree;
   const idealStep = viewWidth / DENSITY_TARGET;

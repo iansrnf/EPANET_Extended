@@ -20,11 +20,6 @@ interface LineGraphProps {
   onPointClick?: (index: number | null) => void;
   xAxisLabel?: string;
   yAxisLabel?: string;
-  xAxisValueFormatter?: (value: number) => string;
-  yAxisValueFormatter?: (value: number) => string;
-  xAxisMin?: number;
-  showPoints?: boolean;
-  tooltipTrigger?: "item" | "axis";
 }
 
 export function LineGraph({
@@ -33,11 +28,6 @@ export function LineGraph({
   onPointClick,
   xAxisLabel,
   yAxisLabel,
-  xAxisValueFormatter,
-  yAxisValueFormatter,
-  xAxisMin,
-  showPoints = true,
-  tooltipTrigger = "item",
 }: LineGraphProps) {
   const translate = useTranslate();
   const chartRef = useRef<ReactECharts>(null);
@@ -49,7 +39,7 @@ export function LineGraph({
     const xValues = linePoints
       ? [...points.map((p) => p.x), ...linePoints.map((p) => p.x)]
       : points.map((p) => p.x);
-    const { min, max, interval } = calculateInterval(xValues, 5, xAxisMin);
+    const { min, max, interval } = calculateInterval(xValues);
     return {
       type: "value",
       min,
@@ -72,13 +62,10 @@ export function LineGraph({
         show: true,
         color: colors.gray500,
         fontSize: 12,
-        formatter: (value: number) =>
-          xAxisValueFormatter
-            ? xAxisValueFormatter(value)
-            : localizeDecimal(value, { decimals: 2 }),
+        formatter: (value: number) => localizeDecimal(value, { decimals: 2 }),
       },
     };
-  }, [linePoints, points, xAxisLabel, xAxisMin, xAxisValueFormatter]);
+  }, [points, linePoints, xAxisLabel]);
 
   const yAxis: EChartsOption["yAxis"] = useMemo(() => {
     const yValues = linePoints
@@ -106,13 +93,10 @@ export function LineGraph({
       axisLabel: {
         color: colors.gray500,
         fontSize: 12,
-        formatter: (value: number) =>
-          yAxisValueFormatter
-            ? yAxisValueFormatter(value)
-            : localizeDecimal(value, { decimals: 2 }),
+        formatter: (value: number) => localizeDecimal(value, { decimals: 2 }),
       },
     };
-  }, [linePoints, points, yAxisLabel, yAxisValueFormatter]);
+  }, [points, linePoints, yAxisLabel]);
 
   const series: EChartsOption["series"] = useMemo(() => {
     const scatterData = points.map((p) => ({
@@ -135,27 +119,26 @@ export function LineGraph({
             width: 2,
           },
           emphasis: { disabled: true },
+          tooltip: { show: false },
         });
       }
     }
 
-    if (showPoints) {
-      result.push({
-        type: "scatter",
-        data: scatterData,
-        symbol: "circle",
-        symbolSize: 8,
-        emphasis: {
-          itemStyle: {
-            color: colors.fuchsia500,
-          },
+    result.push({
+      type: "scatter",
+      data: scatterData,
+      symbol: "circle",
+      symbolSize: 8,
+      emphasis: {
+        itemStyle: {
+          color: colors.fuchsia500,
         },
-        z: 10,
-      });
-    }
+      },
+      z: 10,
+    });
 
     return result;
-  }, [points, linePoints, showPoints]);
+  }, [points, linePoints]);
 
   const option: EChartsOption = useMemo(
     () => ({
@@ -171,18 +154,7 @@ export function LineGraph({
       yAxis,
       series,
       tooltip: {
-        trigger: tooltipTrigger,
-        axisPointer:
-          tooltipTrigger === "axis"
-            ? {
-                type: "line",
-                snap: true,
-                lineStyle: {
-                  color: colors.purple300,
-                  width: 1.5,
-                },
-              }
-            : undefined,
+        trigger: "item",
         backgroundColor: "white",
         borderColor: colors.gray300,
         textStyle: {
@@ -190,31 +162,16 @@ export function LineGraph({
           fontSize: 14,
         },
         formatter: (params: unknown) => {
-          const p = Array.isArray(params)
-            ? (params[0] as { value: [number, number] })
-            : (params as { value: [number, number] });
-          const xVal = xAxisValueFormatter
-            ? xAxisValueFormatter(p.value[0])
-            : localizeDecimal(p.value[0], { decimals: 2 });
-          const yVal = yAxisValueFormatter
-            ? yAxisValueFormatter(p.value[1])
-            : localizeDecimal(p.value[1], { decimals: 2 });
+          const p = params as { value: [number, number] };
+          const xVal = localizeDecimal(p.value[0], { decimals: 2 });
+          const yVal = localizeDecimal(p.value[1], { decimals: 2 });
           const xLabel = xAxisLabel ?? "X";
           const yLabel = yAxisLabel ?? "Y";
           return `${xLabel}: ${xVal}<br/>${yLabel}: ${yVal}`;
         },
       },
     }),
-    [
-      xAxis,
-      yAxis,
-      series,
-      xAxisLabel,
-      yAxisLabel,
-      xAxisValueFormatter,
-      yAxisValueFormatter,
-      tooltipTrigger,
-    ],
+    [xAxis, yAxis, series, xAxisLabel, yAxisLabel],
   );
 
   useEffect(() => {
@@ -255,7 +212,7 @@ export function LineGraph({
     });
   }, []);
 
-  if (points.length === 0 && (!linePoints || linePoints.length === 0)) {
+  if (points.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-gray-400 text-xs">
         {translate("noDataAvailable")}
@@ -280,17 +237,12 @@ export function LineGraph({
 const calculateInterval = (
   values: number[],
   targetIntervalsCount = 5,
-  forcedMin?: number,
 ): { min: number; max: number; interval: number } => {
   if (values.length === 0) return { min: 0, max: 1, interval: 0.2 };
 
   const decimals = 2;
   const factor = Math.pow(10, decimals);
-  const computedMin = Math.min(...values, 0);
-  const minVal =
-    forcedMin !== undefined
-      ? Math.floor(Math.min(computedMin, forcedMin) * factor) / factor
-      : Math.floor(computedMin * factor) / factor;
+  const minVal = Math.floor(Math.min(...values, 0) * factor) / factor;
   const maxVal = Math.ceil(Math.max(...values, 1) * factor) / factor;
   const range = maxVal - minVal;
 
@@ -307,10 +259,7 @@ const calculateInterval = (
   );
 
   const niceInterval = Math.round(niceFactor * magnitude * factor) / factor;
-  const min =
-    forcedMin !== undefined
-      ? forcedMin
-      : Math.floor(minVal / niceInterval) * niceInterval;
+  const min = Math.floor(minVal / niceInterval) * niceInterval;
   const max = Math.ceil(maxVal / niceInterval) * niceInterval;
 
   return { min, max, interval: niceInterval };

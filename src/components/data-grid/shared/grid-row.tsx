@@ -1,32 +1,22 @@
-import { Row, Cell } from "@tanstack/react-table";
-import {
-  CellPosition,
-  DataGridVariant,
-  EditMode,
-  GridColumn,
-  GridSelection,
-  RowAction,
-} from "../types";
-import { isCellSelected, isCellActive, isSingleCellSelection } from "../hooks";
+import { Row, Cell, Table } from "@tanstack/react-table";
+import { DataGridVariant, RowAction } from "../types";
 import { GridDataCell } from "./grid-data-cell";
 import { RowGutterCell } from "./row-gutter-cell";
 import { RowActionsCell } from "./row-actions-cell";
 
-export type GridRowProps<TData> = {
+export type GridRowProps<TData extends Record<string, unknown>> = {
+  table: Table<TData>;
   row: Row<TData>;
   rowIndex: number;
-  columns: GridColumn[];
-  activeCell: CellPosition | null;
-  selection: GridSelection | null;
-  editMode: EditMode;
   onCellMouseDown: (col: number, row: number, e: React.MouseEvent) => void;
   onCellMouseEnter: (col: number, row: number) => void;
   onCellDoubleClick: (col: number) => void;
+  onCellContextMenu?: (col: number, row: number, e: React.MouseEvent) => void;
   onGutterClick: (row: number, e: React.MouseEvent) => void;
+  onGutterContextMenu?: (row: number, e: React.MouseEvent) => void;
   onCellChange: (rowIndex: number, columnId: string, value: unknown) => void;
-  stopEditing: () => void;
-  startEditing: () => void;
   gutterColumn: boolean;
+  showRowNumbers: boolean;
   gutterIsLastRow: boolean;
   cellsIsLastRow: boolean;
   rowActions?: RowAction[];
@@ -35,21 +25,19 @@ export type GridRowProps<TData> = {
   cellHasWarning?: (rowIndex: number, columnId: string) => boolean;
 };
 
-export function GridRow<TData>({
+export function GridRow<TData extends Record<string, unknown>>({
+  table,
   row,
   rowIndex,
-  columns,
-  activeCell,
-  selection,
-  editMode,
   onCellMouseDown,
   onCellMouseEnter,
   onCellDoubleClick,
+  onCellContextMenu,
   onGutterClick,
+  onGutterContextMenu,
   onCellChange,
-  stopEditing,
-  startEditing,
   gutterColumn,
+  showRowNumbers,
   gutterIsLastRow,
   cellsIsLastRow,
   rowActions,
@@ -57,59 +45,43 @@ export function GridRow<TData>({
   variant,
   cellHasWarning,
 }: GridRowProps<TData>) {
+  const cells = row.getVisibleCells();
+
   return (
     <>
       {gutterColumn && (
         <RowGutterCell
           rowIndex={rowIndex}
           onClick={(e) => onGutterClick(rowIndex, e)}
+          onContextMenu={(e) => onGutterContextMenu?.(rowIndex, e)}
           variant={variant}
           isLastRow={gutterIsLastRow}
+          showRowNumbers={showRowNumbers}
+          isRowSelected={row.isFullySelected()}
         />
       )}
 
-      {row.getVisibleCells().map((cell: Cell<TData, unknown>, colIndex) => {
-        const column = columns[colIndex];
-        const accessorKey = column.accessorKey;
-        const isSelected = isCellSelected(selection, colIndex, rowIndex);
-        const isActive = isCellActive(activeCell, colIndex, rowIndex);
-        const isCurrentIteractiveCell =
-          isActive && isSingleCellSelection(selection);
-
+      {cells.map((cell: Cell<TData, unknown>, colIndex) => {
+        const accessorKey = cell.column.id;
         return (
           <GridDataCell
             key={cell.id}
             cell={cell}
-            colIndex={colIndex}
-            rowIndex={rowIndex}
-            isSelected={isSelected}
-            isActive={isActive}
-            editMode={isCurrentIteractiveCell ? editMode : false}
-            isInteractive={isCurrentIteractiveCell}
-            readOnly={readOnly || !!column.disabled}
-            selectionEdge={
-              isSelected && selection
-                ? {
-                    top: rowIndex === selection.min.row,
-                    bottom: rowIndex === selection.max.row,
-                    left: colIndex === selection.min.col,
-                    right: colIndex === selection.max.col,
-                  }
-                : undefined
-            }
+            readOnly={cell.column.isReadOnly(rowIndex)}
             onMouseDown={(e) => onCellMouseDown(colIndex, rowIndex, e)}
             onMouseEnter={() => onCellMouseEnter(colIndex, rowIndex)}
             onDoubleClick={() => onCellDoubleClick(colIndex)}
-            onBlur={stopEditing}
-            onStartEditing={startEditing}
+            onContextMenu={(e) => onCellContextMenu?.(colIndex, rowIndex, e)}
+            onBlur={table.stopEditing}
+            onStartEditing={table.startEditing}
             onChange={
               accessorKey
-                ? (value) => onCellChange(rowIndex, accessorKey, value)
+                ? (value) => onCellChange(row.index, accessorKey, value)
                 : undefined
             }
-            CellComponent={column.cellComponent}
             variant={variant}
             isLastRow={cellsIsLastRow}
+            isLastCol={colIndex === cells.length - 1}
             hasWarning={
               accessorKey
                 ? (cellHasWarning?.(rowIndex, accessorKey) ?? false)

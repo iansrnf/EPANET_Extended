@@ -20,14 +20,17 @@ import {
   CircleSlash2,
   CircleX,
   Copy,
+  ClipboardPaste,
   Crosshair,
   Download,
   EllipsisVertical,
   Eye,
   EyeOff,
   File,
+  FileBox,
   FileCode,
   FilePlus,
+  FilePlus2,
   FileSpreadsheet,
   FileText,
   Folder,
@@ -55,6 +58,7 @@ import {
   Menu,
   MousePointer2,
   MousePointerClick,
+  PanelBottom,
   PanelLeft,
   PanelRight,
   Pause,
@@ -72,12 +76,15 @@ import {
   RouteOff,
   Save,
   SaveAll,
+  ScanText,
   Search,
   Settings,
   SquareDashed,
+  SquareDashedMousePointer,
   SquareStack,
   Star,
   Sun,
+  Table,
   TextCursorInput,
   Timer,
   Trash,
@@ -92,6 +99,7 @@ import {
   X,
   CirclePause,
   Zap,
+  ChartLine,
 } from "lucide-react";
 
 export const iconSizes = {
@@ -137,6 +145,9 @@ export const ErrorIcon = icon(CircleX);
 export const StopSimulationIcon = icon(CirclePause);
 export const UserIcon = icon(User);
 export const RefreshIcon = icon(RefreshCw);
+export const SpinnerIcon: React.FC<IconProps> = (props) => (
+  <RefreshIcon {...props} className={`${props.className ?? ""} animate-spin`} />
+);
 export const PencilIcon = icon(Pencil);
 export const RedrawIcon = icon(PencilLine);
 export const ArrowRightIcon = icon(ArrowRight);
@@ -145,9 +156,7 @@ export const ChevronRightIcon = icon(ChevronRight);
 export const ChevronDownIcon = icon(ChevronDown);
 export const ChevronLeftIcon = icon(ChevronLeft);
 export const ChevronsLeftIcon = icon(ChevronsLeft);
-export const PauseIcon = icon(Pause);
 export const CloseIcon = icon(X);
-export const PlayIcon = icon(Play);
 export const UploadIcon = icon(Upload);
 export const DownloadIcon = icon(Download);
 export const EarlyAccessIcon = icon(Star);
@@ -156,8 +165,10 @@ export const CheckIcon = icon(Check);
 export const KeyboardIcon = icon(Keyboard);
 export const FileIcon = icon(File);
 export const FileAddIcon = icon(FilePlus);
+export const FilePlusCornerIcon = icon(FilePlus2);
 export const FileTextIcon = icon(FileText);
 export const FileSpreadsheetIcon = icon(FileSpreadsheet);
+export const FileBoxIcon = icon(FileBox);
 export const FolderIcon = icon(Folder);
 export const FolderOpenIcon = icon(FolderOpen);
 export const DeleteIcon = icon(Trash);
@@ -183,8 +194,11 @@ export const CustomerPointIcon = icon(House);
 export const ImportCustomerPointsIcon = icon(HousePlus);
 export const UnavailableIcon = icon(CircleSlash2);
 export const MultipleAssetsIcon = icon(SquareStack);
+export const PanelBottomIcon = icon(PanelBottom);
 export const PanelLeftIcon = icon(PanelLeft);
 export const PanelRightIcon = icon(PanelRight);
+export const PauseIcon = icon(Pause);
+export const PlayIcon = icon(Play);
 export const MultipleValuesIcon = icon(SquareStack);
 export const JunctionIcon = icon(Circle);
 export const ReservoirIcon = icon(Triangle);
@@ -218,6 +232,11 @@ export const ControlsIcon = icon(FileCode);
 export const PatternsIcon = icon(ChartColumn);
 export const RenameIcon = icon(TextCursorInput);
 export const DuplicateIcon = icon(Copy);
+export const CopyIcon = icon(Copy);
+export const ClipboardPasteIcon = icon(ClipboardPaste);
+export const TableIcon = icon(Table);
+export const SelectPathIcon = icon(SquareDashedMousePointer);
+export const ChartLineIcon = icon(ChartLine);
 
 export const ReverseIcon: React.FC<IconProps> = ({
   size: rawSize = "md",
@@ -234,6 +253,21 @@ export const ReverseIcon: React.FC<IconProps> = ({
   );
 };
 
+export const AnalysisToolsIcon: React.FC<IconProps> = ({
+  size: rawSize = "md",
+  ...props
+}) => {
+  const pixels = getPixels(rawSize);
+
+  return (
+    <ScanText
+      size={pixels}
+      {...props}
+      style={{ transform: "rotate(-90deg)", ...props.style }}
+    />
+  );
+};
+
 export { CustomUnsavedChangesIcon as UnsavedChangesIcon } from "./custom-icons/unsaved-changes-icon";
 export { CustomGithubIcon as GithubIcon } from "./custom-icons/github-icon";
 export { CustomPipeIcon as PipeIcon } from "./custom-icons/pipe-icon";
@@ -243,6 +277,7 @@ export { CustomTypeOffIcon as TypeOffIcon } from "./custom-icons/type-off-icon";
 export { CustomValveIcon as ValveIcon } from "./custom-icons/valve-icon";
 export { CustomPipesCrossingIcon as PipesCrossinIcon } from "./custom-icons/pipes-crossing-icon";
 export { CustomProximityCheckIcon as ProximityCheckIcon } from "./custom-icons/proximity-check-icon";
+export { CustomPanelBottomActive as PanelBottomActiveIcon } from "./custom-icons/panel-bottom-active";
 export { CustomPanelLeftActive as PanelLeftActiveIcon } from "./custom-icons/panel-left-active";
 export { CustomPanelRightActive as PanelRightActiveIcon } from "./custom-icons/panel-right-active";
 export { CustomPolygonalSelection as PolygonalSelectionIcon } from "./custom-icons/polygonal-selection";
@@ -254,4 +289,4 @@ export { CustomUpstreamTraceIcon as UpstreamTraceIcon } from "./custom-icons/tra
 export { CustomDownstreamTraceIcon as DownstreamTraceIcon } from "./custom-icons/trace-downstream-icon";
 export { CustomBoundaryTraceIcon as BoundaryTraceIcon } from "./custom-icons/trace-boundary-icon";
 export { CustomCurveLibraryIcon as CurveLibraryIcon } from "./custom-icons/curve-library-icon";
-export { CustomPressureLoggerIcon as PressureLoggerIcon } from "./custom-icons/pressure-logger-icon";
+export { CustomHglProfileIcon as HglProfileIcon } from "./custom-icons/hgl-profile-icon";

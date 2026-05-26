@@ -25,7 +25,6 @@ import {
 import {
   tankDiameterFor,
   tankDiameterFromArea,
-  tankMixingModels,
   tankVolumeCurveRange,
   tankVolumeFor,
 } from "src/hydraulic-model/asset-types/tank";
@@ -38,12 +37,10 @@ import { getMinorLossUnit } from "src/lib/project-settings";
 import { useTranslate } from "src/hooks/use-translate";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
 import { useUserTracking } from "src/infra/user-tracking";
-import {
-  stagingModelDerivedAtom,
-  simulationSettingsDerivedAtom,
-} from "src/state/derived-branch-state";
+import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import { projectSettingsAtom } from "src/state/project-settings";
+import { simulationSettingsDerivedAtom } from "src/state/derived-branch-state";
 import {
   changeProperty,
   changeProperties,
@@ -64,11 +61,11 @@ import {
   pipeStatuses,
 } from "src/hydraulic-model/asset-types/pipe";
 import { PumpStatus, pumpStatuses } from "src/hydraulic-model/asset-types/pump";
+import { tankMixingModels } from "src/hydraulic-model/asset-types/tank";
 import {
   ValveKind,
   ValveStatus,
   valveKinds,
-  valveCurveTypeFrom,
 } from "src/hydraulic-model/asset-types/valve";
 import {
   AssetEditorContent,
@@ -79,8 +76,10 @@ import {
   SwitchRow,
   ConnectedCustomersRow,
   SectionWrapper,
+  IntegerRow,
   type TankDefinitionMode,
 } from "./ui-components";
+import { PipeMaterialRow } from "./pipe-material-row";
 import {
   NestedSection,
   BlockComparisonField,
@@ -104,14 +103,15 @@ import { NumericTable } from "src/components/form/numeric-table";
 import { useShowPatternsLibrary } from "src/commands/show-patterns-library";
 import { useShowPumpLibrary } from "src/commands/show-pump-library";
 import { PatternId } from "src/hydraulic-model/patterns";
+import { CurveId, Curves, ICurve } from "src/hydraulic-model/curves";
 import {
-  CurveId,
-  Curves,
-  ICurve,
-  getCurveBounds,
-} from "src/hydraulic-model/curves";
+  tankVolumeCurveChanges,
+  chemicalSourceTypeChanges,
+  valveKindChanges,
+} from "src/hydraulic-model/model-operations";
 import { useShowCurveLibrary } from "src/commands/show-curve-library";
 import { Unit } from "src/quantity";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 
 type OnPropertyChange = <P extends ChangeableProperty>(
   name: P,
@@ -399,7 +399,6 @@ const JunctionEditor = ({
   const simPressure = junctionSimulation?.pressure ?? null;
   const simHead = junctionSimulation?.head ?? null;
   const simDemand = junctionSimulation?.demand ?? null;
-  const simWaterAge = junctionSimulation?.waterAge ?? null;
 
   const customerPoints = useMemo(() => {
     return getActiveCustomerPoints(
@@ -433,11 +432,7 @@ const JunctionEditor = ({
   );
 
   const activeTopologyComparison = getComparison("isActive", junction.isActive);
-  const hasModelAttributesChanges = [
-    "elevation",
-    "emitterCoefficient",
-    "initialQuality",
-  ].some(
+  const hasModelAttributesChanges = ["elevation", "emitterCoefficient"].some(
     (property) =>
       getComparison(property, junction.getProperty(property)).hasChanged,
   );
@@ -581,6 +576,18 @@ const JunctionEditor = ({
           readOnly={true}
         />
         <QuantityRow
+          name="minPressure"
+          value={junctionSimulation?.minPressure ?? null}
+          unit={units.pressure}
+          readOnly={true}
+        />
+        <QuantityRow
+          name="maxPressure"
+          value={junctionSimulation?.maxPressure ?? null}
+          unit={units.pressure}
+          readOnly={true}
+        />
+        <QuantityRow
           name="head"
           value={simHead}
           unit={units.head}
@@ -592,10 +599,10 @@ const JunctionEditor = ({
           unit={units.actualDemand}
           readOnly={true}
         />
-        {simWaterAge != null && (
+        {junctionSimulation?.waterAge != null && (
           <QuantityRow
             name="waterAge"
-            value={simWaterAge}
+            value={junctionSimulation.waterAge}
             unit={units.waterAge}
             readOnly={true}
           />
@@ -652,6 +659,7 @@ const PipeEditor = ({
 }) => {
   const translate = useTranslate();
   const simulationSettings = useAtomValue(simulationSettingsDerivedAtom);
+  const pipeAttributesOn = useFeatureFlag("FLAG_PIPE_ATTRIBUTES");
   const { footer } = useQuickGraph(pipe.id, "pipe");
   const {
     getComparison,
@@ -666,7 +674,6 @@ const PipeEditor = ({
   const simVelocity = pipeSimulation?.velocity ?? null;
   const simUnitHeadloss = pipeSimulation?.unitHeadloss ?? null;
   const simHeadloss = pipeSimulation?.headloss ?? null;
-  const simWaterAge = pipeSimulation?.waterAge ?? null;
   const simulationStatusText = translate(
     pipeStatusLabel(pipeSimulation ?? null),
   );
@@ -716,13 +723,20 @@ const PipeEditor = ({
   };
 
   const activeTopologyComparison = getComparison("isActive", pipe.isActive);
-  const hasModelAttributesChanges = [
-    "initialStatus",
-    "diameter",
-    "length",
-    "roughness",
-    "minorLoss",
-  ].some((p) => getComparison(p, pipe.getProperty(p)).hasChanged);
+  const modelAttributeProperties = pipeAttributesOn
+    ? [
+        "initialStatus",
+        "diameter",
+        "length",
+        "roughness",
+        "minorLoss",
+        "material",
+        "year",
+      ]
+    : ["initialStatus", "diameter", "length", "roughness", "minorLoss"];
+  const hasModelAttributesChanges = modelAttributeProperties.some(
+    (p) => getComparison(p, pipe.getProperty(p)).hasChanged,
+  );
   const hasDemandChanges =
     getCustomerCountComparison(customerCount).hasChanged ||
     getCustomerDemandComparison(totalDemand).hasChanged;
@@ -738,14 +752,8 @@ const PipeEditor = ({
       key={pipe.id}
     >
       <SectionWrapper title={translate("connections")} section="connections">
-        <TextRow
-          name="startNode"
-          value={getEndpointLabel(hydraulicModel, startNode)}
-        />
-        <TextRow
-          name="endNode"
-          value={getEndpointLabel(hydraulicModel, endNode)}
-        />
+        <TextRow name="startNode" value={startNode ? startNode.label : ""} />
+        <TextRow name="endNode" value={endNode ? endNode.label : ""} />
       </SectionWrapper>
       <SectionWrapper
         title={translate("activeTopology")}
@@ -794,6 +802,26 @@ const PipeEditor = ({
           onChange={onPropertyChange}
           readOnly={readonly}
         />
+        {pipeAttributesOn && (
+          <PipeMaterialRow
+            pipe={pipe}
+            hydraulicModel={hydraulicModel}
+            comparison={getComparison("material", pipe.material ?? null)}
+            onChange={onPropertyChange}
+            readOnly={readonly}
+          />
+        )}
+        {pipeAttributesOn && (
+          <IntegerRow
+            name="year"
+            displayName={translate("yearOfInstallation")}
+            value={pipe.year ?? null}
+            positiveOnly={true}
+            comparison={getComparison("year", pipe.year ?? null)}
+            onChange={onPropertyChange}
+            readOnly={readonly}
+          />
+        )}
         <QuantityRow
           name="roughness"
           value={pipe.roughness}
@@ -901,10 +929,10 @@ const PipeEditor = ({
           readOnly={true}
         />
         <TextRow name="actualStatus" value={simulationStatusText} />
-        {simWaterAge != null && (
+        {pipeSimulation?.waterAge != null && (
           <QuantityRow
             name="waterAge"
-            value={simWaterAge}
+            value={pipeSimulation.waterAge}
             unit={units.waterAge}
             readOnly={true}
           />
@@ -958,7 +986,6 @@ const ReservoirEditor = ({
   const simPressure = reservoirSimulation?.pressure ?? null;
   const simHead = reservoirSimulation?.head ?? null;
   const simNetFlow = reservoirSimulation?.netFlow ?? null;
-  const simWaterAge = reservoirSimulation?.waterAge ?? null;
 
   const activeTopologyComparison = getComparison(
     "isActive",
@@ -967,7 +994,6 @@ const ReservoirEditor = ({
   const hasModelAttributesChanges =
     getComparison("elevation", reservoir.elevation).hasChanged ||
     getComparison("head", reservoir.head).hasChanged ||
-    getComparison("initialQuality", reservoir.initialQuality).hasChanged ||
     getPatternComparison(
       "headPatternId",
       reservoir.headPatternId,
@@ -1054,6 +1080,18 @@ const ReservoirEditor = ({
           readOnly={true}
         />
         <QuantityRow
+          name="minPressure"
+          value={reservoirSimulation?.minPressure ?? null}
+          unit={units.pressure}
+          readOnly={true}
+        />
+        <QuantityRow
+          name="maxPressure"
+          value={reservoirSimulation?.maxPressure ?? null}
+          unit={units.pressure}
+          readOnly={true}
+        />
+        <QuantityRow
           name="head"
           value={simHead}
           unit={units.head}
@@ -1065,10 +1103,10 @@ const ReservoirEditor = ({
           unit={units.netFlow}
           readOnly={true}
         />
-        {simWaterAge != null && (
+        {reservoirSimulation?.waterAge != null && (
           <QuantityRow
             name="waterAge"
-            value={simWaterAge}
+            value={reservoirSimulation.waterAge}
             unit={units.waterAge}
             readOnly={true}
           />
@@ -1120,9 +1158,9 @@ const TankEditor = ({
 
   const mixingModelOptions = useMemo(
     () =>
-      tankMixingModels.map((mixingModel) => ({
-        label: translate(`tank.${mixingModel}`),
-        value: mixingModel,
+      tankMixingModels.map((m) => ({
+        label: translate(`tank.${m}`),
+        value: m,
       })),
     [translate],
   );
@@ -1132,7 +1170,6 @@ const TankEditor = ({
   const simNetFlow = tankSimulation?.netFlow ?? null;
   const simLevel = tankSimulation?.level ?? null;
   const simVolume = tankSimulation?.volume ?? null;
-  const simWaterAge = tankSimulation?.waterAge ?? null;
 
   const activeTopologyComparison = getComparison("isActive", tank.isActive);
   const hasModelAttributesChanges =
@@ -1144,7 +1181,6 @@ const TankEditor = ({
       "diameter",
       "minVolume",
       "overflow",
-      "initialQuality",
     ].some((p) => getComparison(p, tank.getProperty(p)).hasChanged) ||
     getCurveComparison(
       "volumeCurveId",
@@ -1254,7 +1290,6 @@ const TankEditor = ({
           name="mixingModel"
           selected={tank.mixingModel}
           options={mixingModelOptions}
-          comparison={getComparison("mixingModel", tank.mixingModel)}
           onChange={onPropertyChange}
           readOnly={readonly}
         />
@@ -1263,8 +1298,7 @@ const TankEditor = ({
             <QuantityRow
               name="mixingFraction"
               value={tank.mixingFraction}
-              unit={units.mixingFraction}
-              comparison={getComparison("mixingFraction", tank.mixingFraction)}
+              unit={null}
               onChange={onPropertyChange}
               positiveOnly={true}
               readOnly={readonly}
@@ -1279,6 +1313,18 @@ const TankEditor = ({
         <QuantityRow
           name="pressure"
           value={simPressure}
+          unit={units.pressure}
+          readOnly={true}
+        />
+        <QuantityRow
+          name="minPressure"
+          value={tankSimulation?.minPressure ?? null}
+          unit={units.pressure}
+          readOnly={true}
+        />
+        <QuantityRow
+          name="maxPressure"
+          value={tankSimulation?.maxPressure ?? null}
           unit={units.pressure}
           readOnly={true}
         />
@@ -1306,10 +1352,10 @@ const TankEditor = ({
           unit={units.netFlow}
           readOnly={true}
         />
-        {simWaterAge != null && (
+        {tankSimulation?.waterAge != null && (
           <QuantityRow
             name="waterAge"
-            value={simWaterAge}
+            value={tankSimulation.waterAge}
             unit={units.waterAge}
             readOnly={true}
           />
@@ -1488,20 +1534,8 @@ const TankDefinitionField = ({
 
   const handleCurveChange = useCallback(
     (_name: string, newValue: CurveId | null) => {
-      if (newValue === null) return;
-      const curve = curves.get(newValue);
-      if (!curve || !curve.points.length) return;
-      const bounds = getCurveBounds(curves, newValue);
-      if (!bounds) return;
-      onBatchPropertyChange([
-        { property: "volumeCurveId", value: newValue },
-        { property: "minLevel", value: curve.points[0].x },
-        {
-          property: "maxLevel",
-          value: curve.points[curve.points.length - 1].x,
-        },
-        { property: "minVolume", value: curve.points[0].y },
-      ]);
+      const changes = tankVolumeCurveChanges(curves, newValue);
+      if (changes) onBatchPropertyChange(changes);
     },
     [curves, onBatchPropertyChange],
   );
@@ -1830,7 +1864,6 @@ const ValveEditor = ({
   const simFlow = valveSimulation?.flow ?? null;
   const simVelocity = valveSimulation?.velocity ?? null;
   const simHeadloss = valveSimulation?.headloss ?? null;
-  const simWaterAge = valveSimulation?.waterAge ?? null;
   const statusText = translate(valveStatusLabel(valveSimulation ?? null));
 
   const statusOptions = useMemo(() => {
@@ -1865,11 +1898,7 @@ const ValveEditor = ({
     newValue: ValveKind,
     oldValue: ValveKind,
   ) => {
-    const changes: PropertyChange[] = [{ property: "kind", value: newValue }];
-    if (valveCurveTypeFrom(newValue) !== valveCurveTypeFrom(oldValue)) {
-      changes.push({ property: "curveId", value: undefined });
-    }
-    onBatchPropertyChange(changes);
+    onBatchPropertyChange(valveKindChanges(newValue, oldValue));
   };
 
   const handleStatusChange = (
@@ -1906,14 +1935,8 @@ const ValveEditor = ({
       key={valve.id}
     >
       <SectionWrapper title={translate("connections")} section="connections">
-        <TextRow
-          name="startNode"
-          value={getEndpointLabel(hydraulicModel, startNode)}
-        />
-        <TextRow
-          name="endNode"
-          value={getEndpointLabel(hydraulicModel, endNode)}
-        />
+        <TextRow name="startNode" value={startNode ? startNode.label : ""} />
+        <TextRow name="endNode" value={endNode ? endNode.label : ""} />
       </SectionWrapper>
       <SectionWrapper
         title={translate("activeTopology")}
@@ -2020,10 +2043,10 @@ const ValveEditor = ({
           readOnly={true}
         />
         <TextRow name="status" value={statusText} />
-        {simWaterAge != null && (
+        {valveSimulation?.waterAge != null && (
           <QuantityRow
             name="waterAge"
-            value={simWaterAge}
+            value={valveSimulation.waterAge}
             unit={units.waterAge}
             readOnly={true}
           />
@@ -2093,8 +2116,7 @@ const PumpEditor = ({
   const pumpEnergy = simulation?.getPumpEnergy(pump.id) ?? null;
 
   const simFlow = pumpSimulation?.flow ?? null;
-  const simHead = pumpSimulation ? -pumpSimulation.headloss : null;
-  const simWaterAge = pumpSimulation?.waterAge ?? null;
+  const simHead = pumpSimulation?.head ?? null;
   const statusText = translate(pumpStatusLabel(pumpSimulation ?? null));
 
   const statusOptions = useMemo(() => {
@@ -2148,14 +2170,8 @@ const PumpEditor = ({
       key={pump.id}
     >
       <SectionWrapper title={translate("connections")} section="connections">
-        <TextRow
-          name="startNode"
-          value={getEndpointLabel(hydraulicModel, startNode)}
-        />
-        <TextRow
-          name="endNode"
-          value={getEndpointLabel(hydraulicModel, endNode)}
-        />
+        <TextRow name="startNode" value={startNode ? startNode.label : ""} />
+        <TextRow name="endNode" value={endNode ? endNode.label : ""} />
       </SectionWrapper>
       <SectionWrapper
         title={translate("activeTopology")}
@@ -2219,6 +2235,7 @@ const PumpEditor = ({
         <PumpEfficiencyCurveField
           pump={pump}
           curves={hydraulicModel.curves}
+          globalEfficiency={simulationSettings.energyGlobalEfficiency}
           onChange={onPropertyChange}
           readOnly={readonly}
         />
@@ -2258,10 +2275,10 @@ const PumpEditor = ({
           readOnly={true}
         />
         <TextRow name="status" value={statusText} />
-        {simWaterAge != null && (
+        {pumpSimulation?.waterAge != null && (
           <QuantityRow
             name="waterAge"
-            value={simWaterAge}
+            value={pumpSimulation.waterAge}
             unit={units.waterAge}
             readOnly={true}
           />
@@ -2337,19 +2354,6 @@ const PumpEditor = ({
 const pipeStatusLabel = (sim: Pick<PipeSimulation, "status"> | null) => {
   if (!sim) return "notAvailable";
   return "pipe." + sim.status;
-};
-
-const getEndpointLabel = (
-  hydraulicModel: HydraulicModel,
-  node: NodeAsset | null,
-): string => {
-  if (!node) return "";
-
-  const pressureLogger = Array.from(
-    hydraulicModel.pressureLoggers.values(),
-  ).find((logger) => logger.connection?.junctionId === node.id);
-
-  return pressureLogger?.label ?? node.label;
 };
 
 const pumpStatusLabel = (
@@ -2517,11 +2521,13 @@ const VariableSpeedField = ({
 const PumpEfficiencyCurveField = ({
   pump,
   curves,
+  globalEfficiency,
   onChange,
   readOnly = false,
 }: {
   pump: Pump;
   curves: Curves;
+  globalEfficiency: number;
   onChange: OnPropertyChange;
   readOnly?: boolean;
 }) => {
@@ -2584,7 +2590,10 @@ const PumpEfficiencyCurveField = ({
           })
         }
         selected={pump.efficiencyCurveId ?? null}
-        emptyOptionLabel={translate("none")}
+        emptyOptionLabel={translate(
+          "constantPercent",
+          localizeDecimal(globalEfficiency),
+        )}
         onChange={handleOnChange}
         readOnly={readOnly}
       />
@@ -2715,19 +2724,11 @@ const ChemicalSourceEditor = ({
         placeholder={translate("none")}
         listClassName="first:italic"
         onChange={(_name, value) => {
-          if (value === "none") {
-            onBatchPropertyChange([
-              { property: "chemicalSourceType", value: undefined },
-              { property: "chemicalSourceStrength", value: undefined },
-              { property: "chemicalSourcePatternId", value: undefined },
-            ]);
-          } else {
-            onPropertyChange(
-              "chemicalSourceType",
-              value as ChemicalSourceType,
-              typedNode.chemicalSourceType,
-            );
-          }
+          onBatchPropertyChange(
+            chemicalSourceTypeChanges(
+              value === "none" ? null : (value as ChemicalSourceType),
+            ),
+          );
         }}
         readOnly={readOnly}
       />
@@ -2843,8 +2844,9 @@ const PumpEnergyPricePatternField = ({
           })
         }
         selected={pump.energyPricePatternId ?? null}
-        emptyOptionLabel={translate("constant")}
+        emptyOptionLabel={placeholder}
         placeholder={placeholder}
+        excludeId={globalPatternId ?? undefined}
         onChange={handleChange}
         readOnly={readOnly}
       />

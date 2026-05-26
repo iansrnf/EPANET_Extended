@@ -1,5 +1,5 @@
 import { useTranslate } from "src/hooks/use-translate";
-import MenuAction from "src/components/menu-action";
+import MenuAction, { DisabledMenuAction } from "src/components/menu-action";
 import {
   FileTextIcon,
   UndoIcon,
@@ -9,18 +9,27 @@ import {
   SaveAllIcon,
   RunSimulationIcon,
   ImportCustomerPointsIcon,
+  PanelBottomIcon,
+  PanelBottomActiveIcon,
   PanelLeftIcon,
   PanelLeftActiveIcon,
   PanelRightActiveIcon,
   PanelRightIcon,
   SearchIcon,
+  TableIcon,
+  HglProfileIcon,
 } from "src/icons";
 import Modes from "./modes";
 import { useAtomValue, useSetAtom } from "jotai";
 import { splitsAtom } from "src/state/layout";
 import { commandBarOpenAtom } from "src/state/command-bar";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { usePermissions } from "src/hooks/use-permissions";
+import { useShowPriorityAccessDialog } from "src/hooks/use-priority-access";
+import { opfsAvailableAtom } from "src/state/opfs";
 import {
+  canRedoDerivedAtom,
+  canUndoDerivedAtom,
   simulationDerivedAtom,
   simulationSettingsDerivedAtom,
 } from "src/state/derived-branch-state";
@@ -45,6 +54,10 @@ import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { useImportCustomerPoints } from "src/commands/import-customer-points";
 import { FileDropdown } from "./file-dropdown";
 import { OperationalDataDropdown } from "./operational-data-dropdown";
+import { Mode, modeAtom } from "src/state/mode";
+import { useShowDataTables } from "src/commands/show-data-tables";
+import { useShowHglProfile } from "src/commands/show-hgl-profile";
+import { useStartProfileSelection } from "src/commands/start-profile-selection";
 import {
   toggleNetworkReviewShortcut,
   useToggleNetworkReview,
@@ -53,6 +66,10 @@ import {
   toggleSidePanelShortcut,
   useToggleSidePanel,
 } from "src/commands/toggle-side-panel";
+import {
+  toggleBottomPanelShortcut,
+  useToggleBottomPanel,
+} from "src/commands/toggle-bottom-panel";
 
 export const Toolbar = ({
   readonly = false,
@@ -69,12 +86,22 @@ export const Toolbar = ({
   const showSimulationSettings = useShowSimulationSettings();
   const showReport = useShowReport();
   const importCustomerPoints = useImportCustomerPoints();
+  const showDataTables = useShowDataTables();
+  const showHglProfile = useShowHglProfile();
+  const startProfileSelection = useStartProfileSelection();
   const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
+  const isHglProfileOn = useFeatureFlag("FLAG_PROFILE_VIEW");
+  const { canUseHglProfile } = usePermissions();
+  const showPriorityAccess = useShowPriorityAccessDialog();
+  const isOPFSAvailable = useAtomValue(opfsAvailableAtom);
+  const { mode: currentMode } = useAtomValue(modeAtom);
 
   const { undo, redo } = useHistoryControl();
 
   const simulation = useAtomValue(simulationDerivedAtom);
   const simulationSettings = useAtomValue(simulationSettingsDerivedAtom);
+  const canUndo = useAtomValue(canUndoDerivedAtom);
+  const canRedo = useAtomValue(canRedoDerivedAtom);
   const isMdOrLarger = useBreakpoint("md");
   const isSmOrLarger = useBreakpoint("sm");
 
@@ -85,7 +112,7 @@ export const Toolbar = ({
     >
       <div className="flex flex-row items-center justify-start">
         <FileDropdown />
-        {
+        {isSmOrLarger && (
           <>
             <MenuAction
               label={translate("save")}
@@ -101,32 +128,30 @@ export const Toolbar = ({
             >
               <SaveIcon />
             </MenuAction>
+            {!isOurFileOn && (
+              <MenuAction
+                label={translate("saveAs")}
+                role="button"
+                onClick={() => {
+                  void saveInp({ source: "toolbar", isSaveAs: true });
+                }}
+                readOnlyHotkey={saveAsShortcut}
+              >
+                <SaveAllIcon />
+              </MenuAction>
+            )}
             <MenuAction
-              label={translate("saveAs")}
+              label={translate("importCustomerPoints.label")}
               role="button"
               onClick={() => {
-                if (isOurFileOn) {
-                  void saveProject({ source: "toolbar", isSaveAs: true });
-                } else {
-                  void saveInp({ source: "toolbar", isSaveAs: true });
-                }
+                void importCustomerPoints({ source: "toolbar" });
               }}
-              readOnlyHotkey={saveAsShortcut}
+              disabled={customerAllocationDisabled}
             >
-              <SaveAllIcon />
+              <ImportCustomerPointsIcon />
             </MenuAction>
           </>
-        }
-        <MenuAction
-          label={translate("importCustomerPoints.label")}
-          role="button"
-          onClick={() => {
-            void importCustomerPoints({ source: "toolbar" });
-          }}
-          disabled={customerAllocationDisabled}
-        >
-          <ImportCustomerPointsIcon />
-        </MenuAction>
+        )}
         <Divider />
         {isMdOrLarger && (
           <>
@@ -142,7 +167,7 @@ export const Toolbar = ({
                 void undo();
               }}
               readOnlyHotkey={"ctrl+z"}
-              disabled={readonly}
+              disabled={readonly || !canUndo}
             >
               <UndoIcon />
             </MenuAction>
@@ -157,31 +182,44 @@ export const Toolbar = ({
                 void redo();
               }}
               readOnlyHotkey={"ctrl+y"}
-              disabled={readonly}
+              disabled={readonly || !canRedo}
             >
               <RedoIcon />
             </MenuAction>
             <Divider />
           </>
         )}
-        <Modes disabled={readonly} />
-        <Divider />
-        <MenuAction
-          label={translate("simulate")}
-          role="button"
-          onClick={() => {
-            userTracking.capture({
-              name: "simulation.executed",
-              source: "toolbar",
-              qualityType: simulationSettings.qualitySimulationType,
-            });
-            void runSimulation();
-          }}
-          expanded={true}
-          readOnlyHotkey={runSimulationShortcut}
-        >
-          <RunSimulationIcon className="stroke-yellow-600" />
-        </MenuAction>
+        {isSmOrLarger && (
+          <>
+            <Modes disabled={readonly} />
+            <Divider />
+          </>
+        )}
+        {!isOPFSAvailable ? (
+          <DisabledMenuAction
+            label={translate("simulate")}
+            reason={translate("simulateUnavailablePrivateBrowsing")}
+          >
+            <RunSimulationIcon className="stroke-yellow-600" />
+          </DisabledMenuAction>
+        ) : (
+          <MenuAction
+            label={translate("simulate")}
+            role="button"
+            onClick={() => {
+              userTracking.capture({
+                name: "simulation.executed",
+                source: "toolbar",
+                qualityType: simulationSettings.qualitySimulationType,
+              });
+              void runSimulation();
+            }}
+            expanded={true}
+            readOnlyHotkey={runSimulationShortcut}
+          >
+            <RunSimulationIcon className="stroke-yellow-600" />
+          </MenuAction>
+        )}
         <MenuAction
           label={translate("simulationSettings.title")}
           role="button"
@@ -203,6 +241,34 @@ export const Toolbar = ({
         </MenuAction>
         <Divider />
         <OperationalDataDropdown />
+        {isHglProfileOn && (
+          <MenuAction
+            label={translate("dataTables.title")}
+            role="button"
+            onClick={() => showDataTables({ source: "toolbar" })}
+          >
+            <TableIcon />
+          </MenuAction>
+        )}
+        {isHglProfileOn && (
+          <MenuAction
+            label={translate("hglProfile.toolbar")}
+            role="button"
+            selected={currentMode === Mode.HGL_PROFILE}
+            onClick={() => {
+              if (!canUseHglProfile) {
+                showPriorityAccess({
+                  featureName: translate("hglProfile.toolbar"),
+                });
+                return;
+              }
+              showHglProfile({ source: "toolbar" });
+              startProfileSelection({ source: "toolbar" });
+            }}
+          >
+            <HglProfileIcon />
+          </MenuAction>
+        )}
       </div>
       <div className="flex flex-row items-center justify-end gap-2">
         <CommandBarButton />
@@ -218,16 +284,20 @@ const Divider = () => {
 
 const CommandBarButton = () => {
   const translate = useTranslate();
-  const isAssetSearchOn = useFeatureFlag("FLAG_ASSET_SEARCH");
   const setOpen = useSetAtom(commandBarOpenAtom);
-
-  if (!isAssetSearchOn) return null;
+  const userTracking = useUserTracking();
 
   return (
     <MenuAction
       label={translate("assetSearch.placeholder")}
       role="button"
-      onClick={() => setOpen(true)}
+      onClick={() => {
+        userTracking.capture({
+          name: "commandBar.opened",
+          source: "toolbar",
+        });
+        setOpen(true);
+      }}
       readOnlyHotkey="ctrl+k"
     >
       <SearchIcon />
@@ -237,13 +307,22 @@ const CommandBarButton = () => {
 
 const LayoutActions = () => {
   const translate = useTranslate();
-  const { leftOpen, rightOpen } = useAtomValue(splitsAtom);
+  const splits = useAtomValue(splitsAtom);
   const toggleNetworkReview = useToggleNetworkReview();
+  const toggleBottomPanel = useToggleBottomPanel();
   const toggleSidePanel = useToggleSidePanel();
 
-  const leftPanelIcon = leftOpen ? <PanelLeftActiveIcon /> : <PanelLeftIcon />;
-
-  const rightPanelIcon = rightOpen ? (
+  const leftPanelIcon = splits.leftOpen ? (
+    <PanelLeftActiveIcon />
+  ) : (
+    <PanelLeftIcon />
+  );
+  const bottomPanelIcon = splits.bottomOpen ? (
+    <PanelBottomActiveIcon />
+  ) : (
+    <PanelBottomIcon />
+  );
+  const rightPanelIcon = splits.rightOpen ? (
     <PanelRightActiveIcon />
   ) : (
     <PanelRightIcon />
@@ -261,6 +340,18 @@ const LayoutActions = () => {
       >
         {leftPanelIcon}
       </MenuAction>
+
+      <MenuAction
+        label={translate("toggleBottomPanel")}
+        role="button"
+        onClick={() => {
+          toggleBottomPanel({ source: "toolbar" });
+        }}
+        readOnlyHotkey={toggleBottomPanelShortcut}
+      >
+        {bottomPanelIcon}
+      </MenuAction>
+
       <MenuAction
         label={translate("toggleSidePanel")}
         role="button"

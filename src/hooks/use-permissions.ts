@@ -1,14 +1,16 @@
 import { useMemo } from "react";
 import { useAuth } from "src/hooks/use-auth";
+import { useOrganization } from "src/hooks/use-organization";
 import { useEffectivePlan } from "src/hooks/use-effective-plan";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { useOrganization } from "src/hooks/use-organization";
 import { Plan, isTrialActive } from "src/lib/account-plans";
 
 export type Permissions = {
   canAddCustomLayers: boolean;
   canUseScenarios: boolean;
   canUseElevations: boolean;
+  canUseHglProfile: boolean;
+  canUseCustomGraphs: boolean;
   canUpgrade: boolean;
   canManageOrganization: boolean;
 };
@@ -20,10 +22,14 @@ export const resolvePermissions = (
 ): Permissions => {
   const hasPaidAccess =
     ["pro", "education", "personal", "teams"].includes(plan) || trialActive;
+  const hasEarlyAccess =
+    ["pro", "personal", "teams"].includes(plan) || trialActive;
   return {
     canAddCustomLayers: hasPaidAccess,
     canUseScenarios: hasPaidAccess,
     canUseElevations: hasPaidAccess,
+    canUseHglProfile: hasEarlyAccess,
+    canUseCustomGraphs: hasEarlyAccess,
     canUpgrade: plan === "free",
     canManageOrganization: isOrgAdmin,
   };
@@ -33,11 +39,10 @@ export const usePermissions = (): Permissions => {
   const { user } = useAuth();
   const effectivePlan = useEffectivePlan();
   const isActivateTrialOn = useFeatureFlag("FLAG_ACTIVATE_TRIAL");
-  const isOrgsOn = useFeatureFlag("FLAG_ORGS");
   const trialActive = isActivateTrialOn && isTrialActive(user);
   const org = useOrganization();
   const membership = "membership" in org ? org.membership : null;
-  const isOrgAdmin = isOrgsOn && membership?.role === "org:admin";
+  const isOrgAdmin = membership?.role === "org:admin";
   return useMemo(
     () => resolvePermissions(effectivePlan, trialActive, isOrgAdmin),
     [effectivePlan, trialActive, isOrgAdmin],

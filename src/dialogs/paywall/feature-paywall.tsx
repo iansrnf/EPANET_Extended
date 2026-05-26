@@ -10,8 +10,8 @@ import { ChevronLeftIcon, RefreshIcon, SuccessIcon } from "src/icons";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { SignInButton as ClerkSignInButton } from "@clerk/nextjs";
 import { useAuth } from "src/hooks/use-auth";
+import { SignInButton as ClerkSignInButton } from "@clerk/nextjs";
 import { buildAfterSignupUrl } from "src/hooks/use-early-access";
 import { notify } from "src/components/notifications";
 
@@ -71,7 +71,10 @@ export const FeaturePaywall = ({
       name: "paywall.clickedChoosePlan",
       feature: config.feature,
     });
-    setDialog({ type: "upgrade" });
+    setDialog({
+      type: "upgrade",
+      source: { kind: "paywall", feature: config.feature },
+    });
   };
 
   const handlePersonalCheckout = () => {
@@ -127,8 +130,8 @@ export const FeaturePaywall = ({
       isOpen={true}
       onClose={handleClose}
     >
-      <div className="grid grid-cols-1 gap-8 p-4 md:grid-cols-[3fr_2fr]">
-        <div className="relative aspect-square overflow-hidden rounded-lg border border-gray-200 bg-gray-100 shadow-md dark:bg-gray-800">
+      <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-8 p-4">
+        <div className="relative aspect-square bg-gray-100 dark:bg-gray-800 border border-gray-200 rounded-lg shadow-md overflow-hidden">
           <VideoPlayer
             src={config.videoSrc}
             captions={captions}
@@ -220,10 +223,10 @@ export const FeaturePaywall = ({
           ) : showPlans ? (
             <>
               <button
-                className="flex items-center gap-1 pb-2 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 pb-2"
                 onClick={() => setShowPlans(false)}
               >
-                <ChevronLeftIcon className="h-4 w-4" />
+                <ChevronLeftIcon className="w-4 h-4" />
                 {translate("back")}
               </button>
               <div className="flex flex-col gap-5">

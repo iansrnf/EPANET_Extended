@@ -1,57 +1,45 @@
 import { Cell } from "@tanstack/react-table";
 import clsx from "clsx";
-import { DataGridVariant, EditMode, GridColumn } from "../types";
+import { DataGridVariant } from "../types";
 
-export type SelectionEdge = {
-  top: boolean;
-  bottom: boolean;
-  left: boolean;
-  right: boolean;
-};
-
-type GridDataCellProps<T> = {
-  cell: Cell<T, unknown>;
-  colIndex: number;
-  rowIndex: number;
-  isSelected: boolean;
-  isActive: boolean;
-  editMode: EditMode;
-  isInteractive: boolean;
+type GridDataCellProps<TData extends Record<string, unknown>> = {
+  cell: Cell<TData, unknown>;
   readOnly: boolean;
-  selectionEdge?: SelectionEdge;
   onMouseDown: (e: React.MouseEvent) => void;
   onMouseEnter: () => void;
   onDoubleClick: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
   onChange?: (value: unknown) => void;
   onBlur: () => void;
   onStartEditing: () => void;
-  CellComponent: GridColumn["cellComponent"];
   variant: DataGridVariant;
   isLastRow: boolean;
+  isLastCol: boolean;
   hasWarning?: boolean;
 };
 
-export function GridDataCell<T>({
+export function GridDataCell<TData extends Record<string, unknown>>({
   cell,
-  colIndex,
-  rowIndex,
-  isSelected,
-  isActive,
-  editMode,
-  isInteractive,
   readOnly,
-  selectionEdge,
   onMouseDown,
   onMouseEnter,
   onDoubleClick,
+  onContextMenu,
   onBlur,
   onStartEditing,
   onChange,
-  CellComponent,
   variant,
   isLastRow,
+  isLastCol,
   hasWarning,
-}: GridDataCellProps<T>) {
+}: GridDataCellProps<TData>) {
+  const colIndex = cell.column.getIndex();
+  const isSelected = cell.isSelected();
+  const isActive = cell.isActive();
+  const isInteractive = cell.isInteractive();
+  const editMode = cell.getEditMode();
+  const selectionEdge = cell.getSelectionEdge();
+  const CellComponent = cell.column.getCellComponent();
   return (
     <div
       key={cell.id}
@@ -59,31 +47,36 @@ export function GridDataCell<T>({
       aria-colindex={colIndex + 1}
       aria-selected={isSelected}
       className={clsx(
-        "relative h-8 grow select-none border cursor-cell",
+        "relative h-8 shrink-0 select-none border cursor-cell",
+        { grow: !cell.column.getCanResize() },
         hasWarning
           ? "bg-orange-50"
-          : isActive
-            ? "bg-white"
-            : isSelected
-              ? "bg-purple-300/10"
-              : readOnly
-                ? "bg-gray-50"
+          : readOnly
+            ? "bg-gray-50"
+            : isActive
+              ? "bg-white"
+              : isSelected
+                ? "bg-purple-300/10"
                 : "bg-white",
-        { "z-[1]": selectionEdge },
+        { "z-1": selectionEdge },
         selectionEdge?.left
           ? "border-l-purple-500"
           : variant === "spreadsheet"
             ? "border-l-gray-200"
             : "border-l-transparent",
-        selectionEdge?.right ? "border-r-purple-500" : "border-r-transparent",
+        selectionEdge?.right
+          ? "border-r-purple-500"
+          : isLastCol && cell.column.getCanResize()
+            ? "border-r-gray-200"
+            : "border-r-transparent",
         selectionEdge?.top
           ? "border-t-purple-500"
-          : variant === "rows" && rowIndex === 0
+          : variant === "inline" && cell.row.getVisualIndex() === 0
             ? "border-t-gray-200"
             : "border-t-transparent",
         selectionEdge?.bottom
           ? "border-b-purple-500"
-          : variant === "rows" || (variant === "spreadsheet" && !isLastRow)
+          : variant === "inline" || (variant === "spreadsheet" && !isLastRow)
             ? "border-b-gray-200"
             : "border-b-transparent",
       )}
@@ -94,12 +87,13 @@ export function GridDataCell<T>({
       onMouseDown={onMouseDown}
       onMouseEnter={onMouseEnter}
       onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
     >
       {CellComponent ? (
         <CellComponent
           value={cell.getValue()}
-          rowIndex={rowIndex}
-          columnIndex={colIndex}
+          rowIndex={cell.row.index}
+          columnIndex={cell.column.getIndex()}
           isActive={isActive && isInteractive}
           editMode={isActive && isInteractive ? editMode : false}
           readOnly={readOnly}

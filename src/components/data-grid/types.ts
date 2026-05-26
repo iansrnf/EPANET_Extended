@@ -1,3 +1,10 @@
+import type { ColumnDef, RowData } from "@tanstack/react-table";
+
+export type GridColumn<TData extends RowData = RowData> = ColumnDef<
+  TData,
+  unknown
+>;
+
 export type CellPosition = { col: number; row: number };
 
 export type GridSelection = {
@@ -14,6 +21,24 @@ export type RowAction = {
   disabled?: (rowIndex: number) => boolean;
 };
 
+export type ContextActionVariant = "default" | "destructive";
+
+export type CellContextAction<TData = unknown> = {
+  label: string;
+  icon: React.ReactNode;
+  onSelect: (selection: GridSelection, sortedRows: TData[]) => void;
+  disabled?: (selection: GridSelection) => boolean;
+  variant?: ContextActionVariant;
+};
+
+export type GutterContextAction<TData = unknown> = {
+  label: string;
+  icon: React.ReactNode;
+  onSelect: (selection: GridSelection, sortedRows: TData[]) => void;
+  disabled?: (rowIndex: number) => boolean;
+  variant?: ContextActionVariant;
+};
+
 export type CellProps<TValue = unknown> = {
   value: TValue;
   rowIndex: number;
@@ -26,36 +51,4 @@ export type CellProps<TValue = unknown> = {
   startEditing: (mode?: "quick" | "full") => void;
 };
 
-export type GridColumn = {
-  // Required
-  accessorKey: string;
-  header: string;
-
-  // Layout
-  size?: number;
-
-  // Cell rendering
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  cellComponent?: React.ComponentType<CellProps<any>>;
-
-  // Copy/paste/delete behavior
-  copyValue?: (value: unknown) => string;
-  pasteValue?: (value: string) => unknown;
-  deleteValue?: unknown;
-
-  // Column behavior
-  disabled?: boolean;
-  disableKeys?: boolean;
-};
-
-export type DataGridRef = {
-  selectCells: (options?: {
-    colIndex?: number;
-    rowIndex?: number;
-    extend?: boolean;
-  }) => void;
-  clearSelection: () => void;
-  selection: GridSelection | null;
-};
-
-export type DataGridVariant = "spreadsheet" | "rows";
+export type DataGridVariant = "spreadsheet" | "inline";

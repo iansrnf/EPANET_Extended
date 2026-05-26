@@ -1,13 +1,10 @@
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
-import type {
-  ProjectionConfig,
-  Proj4Projection,
-  XYGridProjection,
-} from "src/lib/projections";
-import { presets } from "src/lib/project-settings/quantities-spec";
-import { buildInp } from "src/simulation/build-inp";
-import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import { parseInp } from "./parse-inp";
+import { buildInp } from "src/simulation/build-inp";
+import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { presets } from "src/lib/project-settings/quantities-spec";
+import { defaultSimulationSettings } from "src/simulation/simulation-settings";
+import { WGS84 } from "src/lib/projections";
+import type { Proj4Projection, XYGridProjection } from "src/lib/projections";
 
 const IDS = { J1: 1, J2: 2, P1: 3 } as const;
 
@@ -18,7 +15,9 @@ const buildTestModel = () =>
     .aPipe(IDS.P1, { startNodeId: IDS.J1, endNodeId: IDS.J2 })
     .build();
 
-const buildOptions = (projection: ProjectionConfig) => ({
+const buildOptions = (
+  projection: Parameters<typeof buildInp>[1]["projection"],
+) => ({
   simulationSettings: defaultSimulationSettings,
   units: presets.LPS.units,
   headlossFormula: "H-W" as const,
@@ -67,7 +66,7 @@ describe("projection round-trip through INP header", () => {
 
   it("round-trips wgs84 with no projection header", () => {
     const model = buildTestModel();
-    const inp = buildInp(model, buildOptions({ type: "wgs84" }));
+    const inp = buildInp(model, buildOptions(WGS84));
     const result = parseInp(inp);
 
     expect(result.isMadeByApp).toBe(true);

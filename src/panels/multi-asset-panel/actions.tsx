@@ -12,10 +12,14 @@ import {
   ZoomToIcon,
   ActivateTopologyIcon,
   DeactivateTopologyIcon,
+  ChartLineIcon,
 } from "src/icons";
 import { selectedFeaturesDerivedAtom } from "src/state/derived-branch-state";
 import { ActionButton, Action } from "src/components/action-button";
-import { useIsBranchLocked } from "src/hooks/use-is-branch-locked";
+import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { useCustomGraph } from "src/hooks/use-custom-graph";
+import { useUserTracking } from "src/infra/user-tracking";
 
 export function useMultiAssetActions(readonly = false): Action[] {
   const translate = useTranslate();
@@ -24,6 +28,9 @@ export function useMultiAssetActions(readonly = false): Action[] {
   const { changeSelectedAssetsActiveTopologyStatus, allActive } =
     useChangeSelectedAssetsActiveTopologyStatus();
   const selectedWrappedFeatures = useAtomValue(selectedFeaturesDerivedAtom);
+  const isCustomGraphsOn = useFeatureFlag("FLAG_CUSTOM_GRAPHS");
+  const { openCustomGraph } = useCustomGraph();
+  const userTracking = useUserTracking();
 
   const onDelete = useCallback(() => {
     deleteSelection({ source: "toolbar" });
@@ -34,6 +41,13 @@ export function useMultiAssetActions(readonly = false): Action[] {
     changeSelectedAssetsActiveTopologyStatus({ source: "toolbar" });
     return Promise.resolve();
   }, [changeSelectedAssetsActiveTopologyStatus]);
+
+  const customGraphAction = {
+    icon: <ChartLineIcon />,
+    applicable: true,
+    label: translate("customGraph.menuTitle"),
+    onSelect: openCustomGraph,
+  };
 
   const deleteAssetsAction = {
     label: translate("delete"),
@@ -49,6 +63,11 @@ export function useMultiAssetActions(readonly = false): Action[] {
     applicable: true,
     label: translate("zoomTo"),
     onSelect: function doZoomTo() {
+      userTracking.capture({
+        name: "selection.zoomedTo",
+        source: "asset-panel",
+        count: selectedWrappedFeatures.length,
+      });
       return Promise.resolve(zoomTo(selectedWrappedFeatures));
     },
   };
@@ -64,12 +83,19 @@ export function useMultiAssetActions(readonly = false): Action[] {
     onSelect: onChangeActiveTopology,
   };
 
-  return [zoomToAction, changeActiveTopologyActionItem, deleteAssetsAction];
+  return isCustomGraphsOn
+    ? [
+        zoomToAction,
+        changeActiveTopologyActionItem,
+        customGraphAction,
+        deleteAssetsAction,
+      ]
+    : [zoomToAction, changeActiveTopologyActionItem, deleteAssetsAction];
 }
 
 export function MultiAssetActions() {
-  const isBranchLocked = useIsBranchLocked();
-  const actions = useMultiAssetActions(isBranchLocked);
+  const isEditionBlocked = useIsEditionBlocked();
+  const actions = useMultiAssetActions(isEditionBlocked);
 
   return (
     <div className="flex gap-1">

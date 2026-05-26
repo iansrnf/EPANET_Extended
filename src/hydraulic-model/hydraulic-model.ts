@@ -3,7 +3,6 @@ import { AssetsMap } from "./assets-map";
 import { nanoid } from "nanoid";
 
 import { ConsecutiveIdsGenerator, IdGenerator } from "src/lib/id-generator";
-import { LabelManager } from "./label-manager";
 import { Demands, createEmptyDemands } from "./demands";
 import { CustomerPoints, initializeCustomerPoints } from "./customer-points";
 import { CustomerPointsLookup } from "./customer-points-lookup";
@@ -11,20 +10,16 @@ import { AssetIndex } from "./asset-index";
 import { Asset } from "./asset-types";
 import { Curves } from "./curves";
 import { Controls, createEmptyControls } from "./controls";
-import { deepClonePatterns, Patterns } from "./patterns";
-import { PressureLoggers, initializePressureLoggers } from "./pressure-loggers";
-import type { Demand } from "./demands";
+import { Patterns } from "./patterns";
 
 export type HydraulicModel = {
   version: string;
   assets: AssetsMap;
   customerPoints: CustomerPoints;
   customerPointsLookup: CustomerPointsLookup;
-  pressureLoggers: PressureLoggers;
   topology: Topology;
   assetIndex: AssetIndex;
   demands: Demands;
-  labelManager: LabelManager;
   curves: Curves;
   patterns: Patterns;
   controls: Controls;
@@ -36,24 +31,24 @@ export const initializeHydraulicModel = ({
   demands = createEmptyDemands(),
   controls = createEmptyControls(),
   idGenerator,
-  labelManager = new LabelManager(),
   assets,
   topology,
   assetIndex,
   customerPoints,
   customerPointsLookup,
   patterns,
+  curves,
 }: {
   demands?: Demands;
   controls?: Controls;
   idGenerator?: IdGenerator;
-  labelManager?: LabelManager;
   assets?: AssetsMap;
   topology?: Topology;
   assetIndex?: AssetIndex;
   customerPoints?: CustomerPoints;
   customerPointsLookup?: CustomerPointsLookup;
   patterns?: Patterns;
+  curves?: Curves;
 } = {}): HydraulicModel => {
   const assetIdGenerator = idGenerator ?? new ConsecutiveIdsGenerator();
   const resolvedAssets = assets ?? new Map();
@@ -62,12 +57,10 @@ export const initializeHydraulicModel = ({
     assets: resolvedAssets,
     customerPoints: customerPoints ?? initializeCustomerPoints(),
     customerPointsLookup: customerPointsLookup ?? new CustomerPointsLookup(),
-    pressureLoggers: initializePressureLoggers(),
     topology: topology ?? new Topology(),
     assetIndex: assetIndex ?? new AssetIndex(assetIdGenerator, resolvedAssets),
     demands,
-    labelManager,
-    curves: new Map(),
+    curves: curves ?? new Map(),
     patterns: patterns ?? new Map(),
     controls,
   };
@@ -81,29 +74,15 @@ export const copyModel = (source: HydraulicModel): HydraulicModel => {
     assets,
     customerPoints: new Map(source.customerPoints),
     customerPointsLookup: source.customerPointsLookup.copy(),
-    pressureLoggers: new Map(source.pressureLoggers),
     topology: source.topology.copy(),
     assetIndex: source.assetIndex.copy(assets),
     demands: {
-      junctions: new Map(
-        Array.from(source.demands.junctions, ([id, demands]) => [
-          id,
-          demands.map((demand: Demand) => ({ ...demand })),
-        ]),
-      ),
-      customerPoints: new Map(
-        Array.from(source.demands.customerPoints, ([id, demands]) => [
-          id,
-          demands.map((demand: Demand) => ({ ...demand })),
-        ]),
-      ),
+      junctions: new Map(source.demands.junctions),
+      customerPoints: new Map(source.demands.customerPoints),
     },
     curves: new Map(source.curves),
-    patterns: deepClonePatterns(source.patterns),
-    controls: {
-      rules: [...source.controls.rules],
-      simple: [...source.controls.simple],
-    },
+    patterns: new Map(source.patterns),
+    controls: { ...source.controls },
   };
 };
 

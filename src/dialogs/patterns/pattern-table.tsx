@@ -6,12 +6,13 @@ import {
   useImperativeHandle,
 } from "react";
 import {
-  floatColumn,
   DataGrid,
-  textReadonlyColumn,
   type DataGridRef,
+  type GridColumn,
   type GridSelection,
   type RowAction,
+  floatColumn,
+  textColumn,
 } from "src/components/data-grid";
 import { PatternMultipliers } from "src/hydraulic-model";
 import { useTranslate } from "src/hooks/use-translate";
@@ -175,11 +176,12 @@ export const PatternTable = forwardRef<DataGridRef, PatternTableProps>(
       ],
     );
 
-    const columns = useMemo(
+    const columns: GridColumn<PatternRow>[] = useMemo(
       () => [
-        textReadonlyColumn("timestep", {
+        textColumn("timestep", {
           header: translate("timestep"),
           size: 82,
+          isReadOnly: true,
         }),
         floatColumn("multiplier", {
           header: translate("multiplier"),
@@ -210,21 +212,32 @@ export const PatternTable = forwardRef<DataGridRef, PatternTableProps>(
       [onChange, recalculateTimesteps],
     );
 
+    const handleDelete = useCallback(
+      (rowsToDelete: PatternRow[]) => {
+        const toRemove = new Set(rowsToDelete);
+        handleChange(rowData.filter((row) => !toRemove.has(row)));
+      },
+      [handleChange, rowData],
+    );
+
+    const sharedProps = {
+      data: rowData,
+      columns,
+      onChange: handleChange,
+      onDelete: handleDelete,
+      createRow,
+      rowActions,
+      addRowLabel: translate("addTimestep"),
+      gutterColumn: "numbered" as const,
+      onSelectionChange,
+      variant: "spreadsheet" as const,
+      readOnly,
+      autoAddNewRows: true,
+    };
+
     return (
       <div ref={containerRef} className="h-full">
-        <DataGrid<PatternRow>
-          ref={gridRef}
-          data={rowData}
-          columns={columns}
-          onChange={handleChange}
-          createRow={createRow}
-          rowActions={rowActions}
-          addRowLabel={translate("addTimestep")}
-          gutterColumn
-          onSelectionChange={onSelectionChange}
-          variant="spreadsheet"
-          readOnly={readOnly}
-        />
+        <DataGrid<PatternRow> ref={gridRef} {...sharedProps} />
       </div>
     );
   },

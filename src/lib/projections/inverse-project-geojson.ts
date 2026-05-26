@@ -1,10 +1,10 @@
 import type { FeatureCollection, Feature } from "geojson";
-import type { Projection, ProjectionConfig } from "./projection";
+import type { Projection } from "./projection";
 import { createProjectionMapper } from "./projection-mapper";
 
 export const inverseProjectGeoJson = (
   geoJson: FeatureCollection,
-  projection: Projection | ProjectionConfig,
+  projection: Projection,
 ): FeatureCollection => {
   const mapper = createProjectionMapper(projection);
 

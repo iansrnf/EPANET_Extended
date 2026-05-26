@@ -14,12 +14,12 @@ import { Mode, modeAtom } from "src/state/mode";
 import { localizeKeybinding } from "src/infra/i18n";
 import { useTranslate } from "src/hooks/use-translate";
 import { symbologyAtom } from "src/state/map-symbology";
-import { useIsBranchLocked } from "src/hooks/use-is-branch-locked";
+import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
 import { PropsWithChildren } from "react";
 
 export const tipLike = `
     bg-white dark:bg-gray-900
-    rounded-sm
+    rounded-xs
     shadow-[0_2px_10px_2px_rgba(0,0,0,0.1)]
     ring-1 ring-gray-200 dark:ring-gray-700
     content-layout z-10`;
@@ -95,7 +95,7 @@ export function Hints() {
   const symbology = useAtomValue(symbologyAtom);
   const ephemeralState = useAtomValue(ephemeralStateAtom);
   const show = useBreakpoint("lg");
-  const isBranchLocked = useIsBranchLocked();
+  const isEditionBlocked = useIsEditionBlocked();
 
   if (!show || !!dialogState) {
     return null;
@@ -144,7 +144,7 @@ export function Hints() {
           }
         }
       }
-      if (selection.type === "single" && !isBranchLocked) {
+      if (selection.type === "single" && !isEditionBlocked) {
         const asset = hydraulicModel.assets.get(selection.id);
         if (asset && asset.isNode) {
           return (
@@ -156,7 +156,7 @@ export function Hints() {
           );
         }
       }
-      if (selection.type === "singleCustomerPoint" && !isBranchLocked) {
+      if (selection.type === "singleCustomerPoint" && !isEditionBlocked) {
         return (
           <Hint
             hintId={"DRAG_CUSTOMER_POINT"}
@@ -289,14 +289,6 @@ export function Hints() {
         />
       );
     }
-    case Mode.DRAW_PRESSURE_LOGGER: {
-      return (
-        <Hint
-          hintId={"DRAW_PRESSURE_LOGGER"}
-          text={translate("pressureLogger")}
-        />
-      );
-    }
     case Mode.SELECT_RECTANGULAR: {
       if (ephemeralState.type === "areaSelect" && ephemeralState.isDrawing) {
         return (
@@ -412,6 +404,22 @@ export function Hints() {
         <Hint
           hintId={"TRACE_DOWNSTREAM"}
           text={translate("traceSelection.downstreamHint")}
+        />
+      );
+    }
+    case Mode.HGL_PROFILE: {
+      const hasStart =
+        ephemeralState.type === "hglProfile" &&
+        (ephemeralState.anchorIds?.length ?? 0) > 0;
+      return hasStart ? (
+        <Hint
+          hintId={"HGL_PROFILE_SELECT_END"}
+          text={translate("hglProfile.selectEnd")}
+        />
+      ) : (
+        <Hint
+          hintId={"HGL_PROFILE_SELECT_START"}
+          text={translate("hglProfile.selectStart")}
         />
       );
     }

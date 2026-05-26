@@ -38,6 +38,6 @@ export function mapboxStaticURL(
         .replace("{z}", "0");
     }
     default:
-      throw new Error("Not implemented");
+      throw new Error('Not implemented')
   }
 }

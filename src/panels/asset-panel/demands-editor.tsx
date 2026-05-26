@@ -1,10 +1,10 @@
 import { useMemo, useCallback, useState, useRef, useEffect } from "react";
 import {
   DataGrid,
-  DataGridRef,
+  type DataGridRef,
   floatColumn,
   filterableSelectColumn,
-  GridColumn,
+  type GridColumn,
 } from "src/components/data-grid";
 import { Button } from "src/components/elements";
 import { Patterns, PatternId } from "src/hydraulic-model";
@@ -196,7 +196,7 @@ export const DemandCategoriesEditor = ({
     ],
   );
 
-  const columns: GridColumn[] = useMemo(
+  const columns: GridColumn<DemandCategoryRow>[] = useMemo(
     () => [
       floatColumn("baseDemand", {
         header: translate("demand"),
@@ -250,6 +250,14 @@ export const DemandCategoriesEditor = ({
     [onDemandsChange, demands],
   );
 
+  const handleDelete = useCallback(
+    (rowsToDelete: DemandCategoryRow[]) => {
+      const toRemove = new Set(rowsToDelete);
+      handleChange(rowData.filter((row) => !toRemove.has(row)));
+    },
+    [handleChange, rowData],
+  );
+
   if (demands.length === 0 && !showEmptyGrid) {
     if (readOnly) {
       return null;
@@ -268,28 +276,30 @@ export const DemandCategoriesEditor = ({
     );
   }
 
+  const sharedProps = {
+    data: rowData,
+    columns,
+    onChange: handleChange,
+    onDelete: handleDelete,
+    createRow,
+    rowActions,
+    addRowLabel: translate("addDemandCategory"),
+    variant: "inline" as const,
+    gutterColumn: "numbered" as const,
+    readOnly,
+  };
+
   return (
     <BlockComparisonField hasChanged={comparison?.hasChanged ?? false}>
       <div ref={containerRef} className="flex flex-col gap-2">
         <label
-          className="text-sm text-gray-500 w-full flex-shrink-0"
+          className="text-sm text-gray-500 w-full shrink-0"
           aria-label={`label: ${translate("demandCategories")}`}
         >
           {translate("demandCategories")}
         </label>
         <NestedSection className="pb-2" indentation={0}>
-          <DataGrid<DemandCategoryRow>
-            ref={gridRef}
-            data={rowData}
-            columns={columns}
-            onChange={handleChange}
-            createRow={createRow}
-            rowActions={rowActions}
-            addRowLabel={translate("addDemandCategory")}
-            variant="rows"
-            gutterColumn
-            readOnly={readOnly}
-          />
+          <DataGrid<DemandCategoryRow> ref={gridRef} {...sharedProps} />
         </NestedSection>
       </div>
     </BlockComparisonField>

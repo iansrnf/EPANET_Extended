@@ -2,8 +2,10 @@ import { Feature, Position } from "src/types";
 import { Asset, NodeAsset, LinkAsset } from "src/hydraulic-model/asset-types";
 import { AssetsMap } from "src/hydraulic-model";
 import {
+  DraftPath,
   EphemeralEditingState,
   EphemeralConnectCustomerPoints,
+  EphemeralHglProfile,
 } from "src/state/drawing";
 import { Mode } from "src/state/mode";
 import { EphemeralMoveAssets } from "../mode-handlers/none/move-state";
@@ -16,31 +18,138 @@ export const buildEphemeralStateSource = (
   ephemeralState: EphemeralEditingState,
   assets: AssetsMap,
 ): Feature[] => {
+  const draftPathFeatures =
+    "path" in ephemeralState && ephemeralState.path
+      ? buildDraftPathFeatures(ephemeralState.path, assets)
+      : [];
+
   if (ephemeralState.type == "drawLink") {
-    return buildDrawLinkSourceData(ephemeralState, assets);
+    return [
+      ...draftPathFeatures,
+      ...buildDrawLinkSourceData(ephemeralState, assets),
+    ];
   }
 
   if (ephemeralState.type === "drawNode") {
-    return buildDrawNodeSourceData(ephemeralState, assets);
+    return [
+      ...draftPathFeatures,
+      ...buildDrawNodeSourceData(ephemeralState, assets),
+    ];
   }
 
   if (ephemeralState.type === "moveAssets") {
-    return buildMoveAssetsSourceData(ephemeralState, assets);
+    return [
+      ...draftPathFeatures,
+      ...buildMoveAssetsSourceData(ephemeralState, assets),
+    ];
   }
 
   if (ephemeralState.type === "connectCustomerPoints") {
-    return buildConnectCustomerPointsSourceData(ephemeralState, assets);
+    return [
+      ...draftPathFeatures,
+      ...buildConnectCustomerPointsSourceData(ephemeralState, assets),
+    ];
   }
 
   if (ephemeralState.type === "moveCustomerPoint") {
-    return [];
+    return draftPathFeatures;
   }
 
   if (ephemeralState.type === "areaSelect") {
-    return buildAreaSelectionSourceData(ephemeralState);
+    return [
+      ...draftPathFeatures,
+      ...buildAreaSelectionSourceData(ephemeralState),
+    ];
   }
 
-  return [];
+  if (ephemeralState.type === "hglProfile") {
+    return [
+      ...draftPathFeatures,
+      ...buildHglProfileSourceData(ephemeralState, assets),
+    ];
+  }
+
+  return draftPathFeatures;
+};
+
+const buildDraftPathFeatures = (
+  path: DraftPath,
+  assets: AssetsMap,
+): Feature[] => {
+  const features: Feature[] = [];
+
+  const endpointNodeIds = new Set<number>();
+  if (path.nodeIds.length > 0) {
+    endpointNodeIds.add(path.nodeIds[0]);
+    endpointNodeIds.add(path.nodeIds[path.nodeIds.length - 1]);
+  }
+
+  for (const nodeId of endpointNodeIds) {
+    const asset = assets.get(nodeId);
+    if (!asset || asset.isLink) continue;
+    const node = asset as NodeAsset;
+    const properties: any = { halo: true };
+    if (node.type === "tank" || node.type === "reservoir") {
+      properties.icon = `${node.type}-highlight`;
+      properties.draftPath = true;
+    }
+    features.push({
+      type: "Feature",
+      id: `draft-path-node-${nodeId}`,
+      properties,
+      geometry: {
+        type: "Point",
+        coordinates: node.coordinates,
+      },
+    });
+  }
+
+  for (const linkId of path.linkIds) {
+    const asset = assets.get(linkId);
+    if (!asset || !asset.isLink) continue;
+    const link = asset as LinkAsset;
+    features.push({
+      type: "Feature",
+      id: `draft-path-link-${linkId}`,
+      properties: { draftPath: true },
+      geometry: {
+        type: "LineString",
+        coordinates: link.coordinates,
+      },
+    });
+  }
+
+  return features;
+};
+
+const assetIconProps = (asset: Asset) => {
+  if (asset.isLink || asset.type === "junction") return {};
+  return { icon: `${asset.type}-highlight` };
+};
+
+const buildHglProfileSourceData = (
+  state: EphemeralHglProfile,
+  assets: AssetsMap,
+): Feature[] => {
+  const features: Feature[] = [];
+  const ids = new Set<number>();
+  if (state.hoveredNodeId !== undefined) ids.add(state.hoveredNodeId);
+  if (state.anchorIds) {
+    for (const id of state.anchorIds) ids.add(id);
+  }
+
+  for (const id of ids) {
+    const asset = assets.get(id);
+    if (!asset || asset.isLink) continue;
+    features.push({
+      ...asset.feature,
+      properties: {
+        ...asset.feature.properties,
+        ...assetIconProps(asset),
+      },
+    } as Feature);
+  }
+  return features;
 };
 
 const buildMoveAssetsSourceData = (
@@ -49,18 +158,12 @@ const buildMoveAssetsSourceData = (
 ) => {
   const features: Feature[] = [];
 
-  const iconProps = (asset: Asset) => {
-    if (asset.isLink || asset.type === "junction") return {};
-
-    return { icon: `${asset.type}-highlight` };
-  };
-
   for (const asset of ephemeralState.targetAssets) {
     features.push({
       ...asset.feature,
       properties: {
         draft: true,
-        ...iconProps(asset),
+        ...assetIconProps(asset),
       } as any,
     });
   }
@@ -123,9 +226,8 @@ const buildDrawLinkSourceData = (
 ): Feature[] => {
   const features: Feature[] = [];
 
-  const iconProps = (type: Asset["type"] | "pressureLogger") => {
-    if (type === "junction" || type === "pipe" || type === "pressureLogger")
-      return {};
+  const iconProps = (type: Asset["type"]) => {
+    if (type === "junction" || type === "pipe") return {};
 
     return { icon: `${type}-highlight` };
   };

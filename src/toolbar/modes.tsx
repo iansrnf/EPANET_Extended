@@ -19,7 +19,6 @@ import {
   ValveIcon,
   PipeIcon,
   CustomerPointIcon,
-  PressureLoggerIcon,
 } from "src/icons";
 
 export type DrawingModeOption = {
@@ -64,11 +63,6 @@ export const DRAWING_MODE_OPTIONS: readonly DrawingModeOption[] = [
     hotkey: "8",
     Icon: () => <CustomerPointIcon />,
   },
-  {
-    mode: Mode.DRAW_PRESSURE_LOGGER,
-    hotkey: "9",
-    Icon: () => <PressureLoggerIcon />,
-  },
 ] as const;
 
 export default memo(function Modes({
@@ -80,6 +74,7 @@ export default memo(function Modes({
   const setDrawingMode = useDrawingMode();
   const userTracking = useUserTracking();
   const translate = useTranslate();
+  const isMdOrLarger = useBreakpoint("md");
   const isLgOrLarger = useBreakpoint("lg");
 
   return (
@@ -103,7 +98,7 @@ export default memo(function Modes({
       </MenuAction>
       <SelectionTool />
       <TraceTool />
-      {isLgOrLarger ? (
+      {!isMdOrLarger ? null : isLgOrLarger ? (
         DRAWING_MODE_OPTIONS.map(({ mode, hotkey, Icon }) => {
           const modeInfo = MODE_INFO[mode];
 

@@ -7,6 +7,8 @@ import {
   ChevronRightIcon,
   FileIcon,
   FileAddIcon,
+  FileBoxIcon,
+  FilePlusCornerIcon,
   FileSpreadsheetIcon,
   FolderIcon,
   FolderOpenIcon,
@@ -17,6 +19,7 @@ import {
   DownloadIcon,
   SaveIcon,
   SaveAllIcon,
+  FileTextIcon,
 } from "src/icons";
 import { useSetAtom } from "jotai";
 import { dialogAtom } from "src/state/dialog";
@@ -27,8 +30,8 @@ import { useSaveInp } from "src/commands/save-inp";
 import { useSaveProject } from "src/commands/save-project";
 import { useShowWelcome } from "src/commands/show-welcome";
 import { useOpenModelBuilder } from "src/commands/open-model-builder";
-import { useOpenModelBuilderApi } from "src/commands/open-model-builder-api";
 import { useOpenRecentFile } from "src/commands/open-recent-file";
+import { projectExtension } from "src/commands/save-project";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
 import { useRecentFiles } from "src/hooks/use-recent-files";
@@ -50,17 +53,16 @@ export const FileDropdown = () => {
   const openProject = useOpenProject();
   const showWelcome = useShowWelcome();
   const openModelBuilder = useOpenModelBuilder();
-  const openModelBuilderApi = useOpenModelBuilderApi();
-  const saveInp = useSaveInp();
   const saveProject = useSaveProject();
-  const setDialogState = useSetAtom(dialogAtom);
   const userTracking = useUserTracking();
   const translate = useTranslate();
   const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
+  const isExportAssetDataOn = useFeatureFlag("FLAG_EXPORT_ASSET_DATA");
+  const isExportTimeSeriesOn = useFeatureFlag("FLAG_EXPORT_TIME_SERIES");
 
   return (
     <Tooltip.Root delayDuration={200}>
-      <div className="h-10 w-12 group bn flex items-stretch py-1 focus:outline-none">
+      <div className="h-10 w-12 group bn flex items-stretch py-1 focus:outline-hidden">
         <DD.Root>
           <Tooltip.Trigger asChild>
             <DD.Trigger asChild>
@@ -76,31 +78,37 @@ export const FileDropdown = () => {
               side="bottom"
               onCloseAutoFocus={(e) => e.preventDefault()}
             >
-              <StyledItem
-                onSelect={() => {
-                  userTracking.capture({
-                    name: "newModel.started",
-                    source: "toolbar",
-                  });
-                  void createNewProject({ source: "toolbar" });
-                }}
-              >
-                <FileIcon />
-                {translate("startBlankProject")}
-              </StyledItem>
+              {isOurFileOn && <NewProjectSubmenu />}
 
-              <StyledItem
-                onSelect={() => {
-                  userTracking.capture({
-                    name: "examples.opened",
-                    source: "toolbar",
-                  });
-                  showWelcome({ source: "toolbar" });
-                }}
-              >
-                <NewFromExampleIcon />
-                {translate("startFromExample")}
-              </StyledItem>
+              {!isOurFileOn && (
+                <StyledItem
+                  onSelect={() => {
+                    userTracking.capture({
+                      name: "newModel.started",
+                      source: "toolbar",
+                    });
+                    void createNewProject({ source: "toolbar" });
+                  }}
+                >
+                  <FileIcon />
+                  {translate("startBlankProject")}
+                </StyledItem>
+              )}
+
+              {!isOurFileOn && (
+                <StyledItem
+                  onSelect={() => {
+                    userTracking.capture({
+                      name: "examples.opened",
+                      source: "toolbar",
+                    });
+                    showWelcome({ source: "toolbar" });
+                  }}
+                >
+                  <NewFromExampleIcon />
+                  {translate("startFromExample")}
+                </StyledItem>
+              )}
 
               {isOurFileOn && <DDSeparator />}
 
@@ -111,10 +119,7 @@ export const FileDropdown = () => {
                   }}
                 >
                   <FolderOpenIcon />
-                  {translate("openProject")}
-                  <span className="ml-auto px-1.5 py-0.5 text-[10px] font-semibold uppercase bg-purple-100 text-purple-700 rounded-full">
-                    {translate("newBadge")}
-                  </span>
+                  {translate("openFile")}
                 </StyledItem>
               )}
 
@@ -144,60 +149,40 @@ export const FileDropdown = () => {
 
               {isOurFileOn && <DDSeparator />}
 
-              <StyledItem
-                onSelect={() => {
-                  userTracking.capture({
-                    name: "openInp.started",
-                    source: "toolbar",
-                  });
-                  void openInpFromFs({ source: "toolbar" });
-                }}
-              >
-                <FileSpreadsheetIcon />
-                {isOurFileOn ? translate("importINP") : translate("openINP")}
-              </StyledItem>
-
-              <StyledItem
-                onSelect={() => {
-                  openModelBuilder({ source: "toolbar" });
-                }}
-              >
-                <GlobeIcon />
-                {translate("importFromGIS")}
-                <EarlyAccessIcon size="sm" />
-              </StyledItem>
-
-              <StyledItem
-                onSelect={() => {
-                  openModelBuilderApi({ source: "toolbar" });
-                }}
-              >
-                <GlobeIcon />
-                {translate("importFromGISApi")}
-                <EarlyAccessIcon size="sm" />
-              </StyledItem>
-
-              {isOurFileOn && <DDSeparator />}
-
-              {isOurFileOn && (
+              {!isOurFileOn && (
                 <StyledItem
                   onSelect={() => {
-                    setDialogState({
-                      type: "alertExportInp",
-                      onSaveProject: () => {
-                        void saveProject({ source: "toolbar" });
-                      },
-                      onExportAnyway: () => {
-                        void saveInp({ source: "toolbar", isSaveAs: true });
-                      },
+                    userTracking.capture({
+                      name: "openInp.started",
+                      source: "toolbar",
                     });
+                    void openInpFromFs({ source: "toolbar" });
                   }}
                 >
-                  <DownloadIcon />
-                  {translate("exportINP")}
+                  <FileSpreadsheetIcon />
+                  {translate("openINP")}
                 </StyledItem>
               )}
 
+              {!isOurFileOn && (
+                <StyledItem
+                  onSelect={() => {
+                    openModelBuilder({ source: "toolbar" });
+                  }}
+                >
+                  <GlobeIcon />
+                  {translate("importFromGIS")}
+                  <EarlyAccessIcon size="sm" />
+                </StyledItem>
+              )}
+
+              {(isOurFileOn || isExportAssetDataOn || isExportTimeSeriesOn) && (
+                <ExportSubmenu
+                  isExportAssetDataOn={isExportAssetDataOn}
+                  isExportTimeSeriesOn={isExportTimeSeriesOn}
+                  isOurFileOn={isOurFileOn}
+                />
+              )}
               <RecentFilesMenu isOurFileOn={isOurFileOn} />
             </DDContent>
           </DD.Portal>
@@ -208,6 +193,130 @@ export const FileDropdown = () => {
         {isOurFileOn ? translate("file") : translate("createNew")}
       </TContent>
     </Tooltip.Root>
+  );
+};
+
+const NewProjectSubmenu = () => {
+  const createNewProject = useNewProject();
+  const openModelBuilder = useOpenModelBuilder();
+  const openInpFromFs = useOpenInpFromFs();
+  const userTracking = useUserTracking();
+  const translate = useTranslate();
+
+  return (
+    <DD.Sub>
+      <DDSubTriggerItem>
+        <FilePlusCornerIcon />
+        {translate("newProject")}
+        <ChevronRightIcon size="sm" className="ml-auto" />
+      </DDSubTriggerItem>
+      <DD.Portal>
+        <DDSubContent sideOffset={4} alignOffset={-4}>
+          <StyledItem
+            onSelect={() => {
+              userTracking.capture({
+                name: "newModel.started",
+                source: "toolbar",
+              });
+              void createNewProject({ source: "toolbar" });
+            }}
+          >
+            <FileIcon />
+            {translate("newProject.blank")}
+          </StyledItem>
+
+          <StyledItem
+            onSelect={() => {
+              openModelBuilder({ source: "toolbar" });
+            }}
+          >
+            <GlobeIcon />
+            {translate("newProject.fromGIS")}
+            <EarlyAccessIcon size="sm" />
+          </StyledItem>
+
+          <StyledItem
+            onSelect={() => {
+              userTracking.capture({
+                name: "openInp.started",
+                source: "toolbar",
+              });
+              void openInpFromFs({ source: "toolbar" });
+            }}
+          >
+            <FileSpreadsheetIcon />
+            {translate("newProject.fromEpanetInp")}
+          </StyledItem>
+        </DDSubContent>
+      </DD.Portal>
+    </DD.Sub>
+  );
+};
+
+const ExportSubmenu = ({
+  isExportAssetDataOn,
+  isExportTimeSeriesOn,
+  isOurFileOn,
+}: {
+  isExportAssetDataOn: boolean;
+  isExportTimeSeriesOn: boolean;
+  isOurFileOn: boolean;
+}) => {
+  const saveInp = useSaveInp();
+  const saveProject = useSaveProject();
+  const setDialogState = useSetAtom(dialogAtom);
+  const translate = useTranslate();
+
+  return (
+    <DD.Sub>
+      <DDSubTriggerItem>
+        <DownloadIcon />
+        {translate("export")}
+        <ChevronRightIcon size="sm" className="ml-auto" />
+      </DDSubTriggerItem>
+      <DD.Portal>
+        <DDSubContent sideOffset={4} alignOffset={-4}>
+          {isOurFileOn && (
+            <StyledItem
+              onSelect={() => {
+                setDialogState({
+                  type: "alertExportInp",
+                  onSaveProject: () => {
+                    void saveProject({ source: "toolbar" });
+                  },
+                  onExportAnyway: () => {
+                    void saveInp({ source: "toolbar", isSaveAs: true });
+                  },
+                });
+              }}
+            >
+              <FileSpreadsheetIcon />
+              {translate("export.epanetInp")}
+            </StyledItem>
+          )}
+          {isExportAssetDataOn && (
+            <StyledItem
+              onSelect={() => {
+                setDialogState({ type: "exportAssetData" });
+              }}
+            >
+              <FileTextIcon />
+              {translate("export.assetData")}
+            </StyledItem>
+          )}
+          {isExportTimeSeriesOn && (
+            <StyledItem
+              onSelect={() => {
+                setDialogState({ type: "exportTimeSeries" });
+              }}
+            >
+              <FileTextIcon />
+              {translate("export.simulationResults")}
+            </StyledItem>
+          )}
+        </DDSubContent>
+      </DD.Portal>
+    </DD.Sub>
   );
 };
 
@@ -231,15 +340,20 @@ const RecentFilesMenu = ({ isOurFileOn }: { isOurFileOn: boolean }) => {
         </DDSubTriggerItem>
         <DD.Portal>
           <DDSubContent sideOffset={4} alignOffset={-4}>
-            {recentFiles.map((entry) => (
-              <StyledItem
-                key={entry.id}
-                onSelect={() => openRecentFile(entry, "toolbar")}
-              >
-                <FileSpreadsheetIcon />
-                {entry.name}
-              </StyledItem>
-            ))}
+            {recentFiles.map((entry) => {
+              const isProject = entry.name
+                .toLowerCase()
+                .endsWith(projectExtension);
+              return (
+                <StyledItem
+                  key={entry.id}
+                  onSelect={() => openRecentFile(entry, "toolbar")}
+                >
+                  {isProject ? <FileBoxIcon /> : <FileSpreadsheetIcon />}
+                  {entry.name}
+                </StyledItem>
+              );
+            })}
           </DDSubContent>
         </DD.Portal>
       </DD.Sub>

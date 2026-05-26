@@ -113,7 +113,6 @@ export const buildModel = (
   const hydraulicModel = initializeHydraulicModel({
     demands: createEmptyDemands(),
     idGenerator,
-    labelManager,
   });
 
   const factories = initializeModelFactories({
@@ -700,7 +699,7 @@ const addPump = (
     if (curveId === undefined) {
       issues.addUndefinedPumpCurve();
       definitionProps = {
-        definitionType: "curve",
+        definitionType: "designPointCurve",
         curve: defaultCurvePoints("pump"),
       };
     } else {
@@ -1146,7 +1145,7 @@ const addCurves = (
 
       const [pumpId] = curvePumps;
       const pump = hydraulicModel.assets.get(pumpId) as Pump;
-      pump.setProperty("definitionType", "curve");
+      pump.setProperty("definitionType", curveType);
       pump.feature.properties.curve = curve.points.map((p) => ({ ...p }));
       pump.setProperty("curveId", undefined);
       labelManager.remove(curve.label, "curve", curve.id);

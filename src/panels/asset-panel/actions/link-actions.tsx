@@ -12,6 +12,7 @@ import {
   ReverseIcon,
   DeactivateTopologyIcon,
   ActivateTopologyIcon,
+  ChartLineIcon,
 } from "src/icons";
 import { Mode, modeAtom } from "src/state/mode";
 import { selectedFeaturesDerivedAtom } from "src/state/derived-branch-state";
@@ -20,6 +21,9 @@ import {
   changeActiveTopologyShortcut,
   useChangeSelectedAssetsActiveTopologyStatus,
 } from "src/commands/change-selected-assets-active-topology-status";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { useCustomGraph } from "src/hooks/use-custom-graph";
+import { useUserTracking } from "src/infra/user-tracking";
 
 export function useLinkActions(readonly = false): Action[] {
   const translate = useTranslate();
@@ -31,6 +35,9 @@ export function useLinkActions(readonly = false): Action[] {
   const selectedWrappedFeatures = useAtomValue(selectedFeaturesDerivedAtom);
   const { changeSelectedAssetsActiveTopologyStatus, allActive } =
     useChangeSelectedAssetsActiveTopologyStatus();
+  const isCustomGraphsOn = useFeatureFlag("FLAG_CUSTOM_GRAPHS");
+  const { openCustomGraph } = useCustomGraph();
+  const userTracking = useUserTracking();
 
   const onDelete = useCallback(() => {
     deleteSelection({ source: "toolbar" });
@@ -51,6 +58,11 @@ export function useLinkActions(readonly = false): Action[] {
     applicable: true,
     label: translate("zoomTo"),
     onSelect: function doZoomTo() {
+      userTracking.capture({
+        name: "selection.zoomedTo",
+        source: "asset-panel",
+        count: selectedWrappedFeatures.length,
+      });
       return Promise.resolve(zoomTo(selectedWrappedFeatures));
     },
   };
@@ -78,6 +90,13 @@ export function useLinkActions(readonly = false): Action[] {
     },
   };
 
+  const customGraphAction = {
+    icon: <ChartLineIcon />,
+    applicable: true,
+    label: translate("customGraph.menuTitle"),
+    onSelect: openCustomGraph,
+  };
+
   const onChangeActiveTopology = useCallback(() => {
     changeSelectedAssetsActiveTopologyStatus({ source: "toolbar" });
     return Promise.resolve();
@@ -94,20 +113,29 @@ export function useLinkActions(readonly = false): Action[] {
     onSelect: onChangeActiveTopology,
   };
 
-  return [
-    zoomToAction,
-    reverseAction,
-    redrawAction,
-    changeActiveTopologyActionItem,
-    deleteAssetsAction,
-  ];
+  return isCustomGraphsOn
+    ? [
+        zoomToAction,
+        reverseAction,
+        redrawAction,
+        changeActiveTopologyActionItem,
+        customGraphAction,
+        deleteAssetsAction,
+      ]
+    : [
+        zoomToAction,
+        reverseAction,
+        redrawAction,
+        changeActiveTopologyActionItem,
+        deleteAssetsAction,
+      ];
 }
 
 export function LinkActions({ readonly = false }: { readonly?: boolean }) {
   const actions = useLinkActions(readonly);
 
   return (
-    <div className="flex gap-1 h-8 my-[-0.5rem]">
+    <div className="flex gap-1 h-8 -my-2">
       {actions
         .filter((action) => action.applicable)
         .map((action, i) => (

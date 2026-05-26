@@ -57,11 +57,7 @@ import {
  * 5. Trigger test events: stripe trigger invoice.payment_failed
  */
 
-const getStripe = (): Stripe | null => {
-  const secretKey = process.env.STRIPE_SECRET_KEY;
-  if (!secretKey) return null;
-  return new Stripe(secretKey);
-};
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
 const getCustomerEmail = async (
   customerId: string | undefined | null,
@@ -69,9 +65,6 @@ const getCustomerEmail = async (
   if (!customerId) return "Unknown";
 
   try {
-    const stripe = getStripe();
-    if (!stripe) return "Unknown";
-
     const customer = await stripe.customers.retrieve(customerId);
     if (customer.deleted) return "Deleted Customer";
     return customer.email || "No email on file";
@@ -94,14 +87,6 @@ export async function POST(request: NextRequest) {
   if (!webhookSecret) {
     logger.error("Stripe webhook: STRIPE_WEBHOOK_SECRET not configured");
     return new NextResponse("Webhook secret not configured", { status: 500 });
-  }
-
-  const stripe = getStripe();
-  if (!stripe) {
-    logger.error("Stripe webhook: STRIPE_SECRET_KEY not configured");
-    return new NextResponse("Stripe secret key not configured", {
-      status: 500,
-    });
   }
 
   let event: Stripe.Event;

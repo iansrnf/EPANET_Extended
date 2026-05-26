@@ -50,6 +50,7 @@ export function gisLayerLine(
 export function gisLayerCircle(
   sourceId: string,
   color: string,
+  radius: number,
   opacity: number,
   visible: boolean,
 ): CircleLayer {
@@ -60,7 +61,7 @@ export function gisLayerCircle(
     filter: ["==", "$type", "Point"],
     paint: {
       "circle-color": color,
-      "circle-radius": 4,
+      "circle-radius": radius,
       "circle-opacity": opacity,
       "circle-stroke-color": strokeColorFor(color),
       "circle-stroke-width": 1,
@@ -77,21 +78,28 @@ export function gisLayerLabel(
   color: string,
   opacity: number,
   visible: boolean,
+  labelProperty?: string,
 ): SymbolLayer {
   return {
     id: `${sourceId}-label`,
     type: "symbol",
     source: sourceId,
-    filter: ["has", "label"],
+    filter: labelProperty ? ["has", labelProperty] : ["==", 0, 1],
     layout: {
-      "text-field": ["get", "label"],
+      "text-field": labelProperty ? ["get", labelProperty] : "",
+      "text-font": [
+        "Open Sans Bold",
+        "Arial Unicode MS Bold",
+        "Open Sans Regular",
+        "Arial Unicode MS Regular",
+      ],
       "text-size": 11,
       "text-allow-overlap": false,
       visibility: visible ? "visible" : "none",
     },
     paint: {
       "text-color": color,
-      "text-halo-color": strokeColorFor(color),
+      "text-halo-color": "#ffffff",
       "text-halo-width": 1.5,
       "text-opacity": opacity,
     },

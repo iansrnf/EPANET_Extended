@@ -1,7 +1,11 @@
 import * as Comlink from "comlink";
 
 import { HydraulicModel } from "src/hydraulic-model";
-import { ArrayBufferType, canUseWorker } from "src/infra/worker";
+import {
+  ArrayBufferType,
+  canUseWorker,
+  enrichWorkerError,
+} from "src/infra/worker";
 import {
   decodeCrossingPipes,
   EncodedCrossingPipes,
@@ -10,6 +14,7 @@ import {
 import {
   HydraulicModelBuffers,
   HydraulicModelEncoder,
+  hydraulicModelTransferables,
 } from "../hydraulic-model-buffers";
 import { findCrossingPipes } from "./find-crossing-pipes";
 import { CrossingPipesWorkerAPI } from "./worker";
@@ -63,7 +68,12 @@ const runWithWorker = async (
   signal?.addEventListener("abort", abortHandler);
 
   try {
-    return await workerAPI.findCrossingPipes(data, junctionTolerance);
+    return await workerAPI.findCrossingPipes(
+      Comlink.transfer(data, hydraulicModelTransferables(data)),
+      junctionTolerance,
+    );
+  } catch (e) {
+    throw enrichWorkerError("crossing-pipes", e);
   } finally {
     signal?.removeEventListener("abort", abortHandler);
     worker.terminate();

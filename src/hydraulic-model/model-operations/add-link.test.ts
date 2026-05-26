@@ -8,6 +8,7 @@ import { Pump, Pipe, Junction, Valve } from "../asset-types";
 import { AssetFactory } from "../factories/asset-factory";
 import { presets } from "src/lib/project-settings/quantities-spec";
 import { IdGenerator } from "src/lib/id-generator";
+import { LabelManager } from "src/hydraulic-model/label-manager";
 import { HydraulicModel } from "../hydraulic-model";
 
 class TestIdGenerator implements IdGenerator {
@@ -24,20 +25,32 @@ class TestIdGenerator implements IdGenerator {
   }
 }
 
-function createAssetFactory(hydraulicModel: HydraulicModel) {
+function createTestFactories(
+  hydraulicModel: HydraulicModel,
+  labelManager: LabelManager,
+) {
   const maxId = Math.max(0, ...hydraulicModel.assets.keys());
-  return new AssetFactory(
-    presets.LPS.defaults,
-    new TestIdGenerator(maxId),
-    hydraulicModel.labelManager,
-  );
+  return {
+    assetFactory: new AssetFactory(
+      presets.LPS.defaults,
+      new TestIdGenerator(maxId),
+      labelManager,
+    ),
+    labelManager,
+  };
 }
 
 describe("addLink", () => {
   describe("basic functionality (no pipe splitting)", () => {
     it("updates connections", () => {
-      const hydraulicModel = HydraulicModelBuilder.with().build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({
+        labelManager,
+      }).build();
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
       const startNode = assetFactory.createJunction({
         coordinates: [10, 10],
       });
@@ -56,6 +69,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -72,8 +86,14 @@ describe("addLink", () => {
     });
 
     it("removes redundant vertices", () => {
-      const hydraulicModel = HydraulicModelBuilder.with().build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({
+        labelManager,
+      }).build();
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
       const startNode = assetFactory.createJunction({
         coordinates: [10, 10],
       });
@@ -97,6 +117,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -114,8 +135,14 @@ describe("addLink", () => {
 
     it("ensures at least it has two points", () => {
       const epsilon = 1e-10;
-      const hydraulicModel = HydraulicModelBuilder.with().build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({
+        labelManager,
+      }).build();
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
       const startNode = assetFactory.createJunction({
         coordinates: [0, 1],
       });
@@ -134,6 +161,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -148,8 +176,14 @@ describe("addLink", () => {
     });
 
     it("ensures connectivity with the link endpoints", () => {
-      const hydraulicModel = HydraulicModelBuilder.with().build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({
+        labelManager,
+      }).build();
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
       const startNode = assetFactory.createJunction({
         coordinates: [10, 10],
       });
@@ -168,6 +202,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -184,8 +219,14 @@ describe("addLink", () => {
     });
 
     it("calculates pump length", () => {
-      const hydraulicModel = HydraulicModelBuilder.with().build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({
+        labelManager,
+      }).build();
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
       const startCoordinates = [-4.3760931, 55.9150083];
       const endCoordiantes = [-4.3771833, 55.9133641];
       const startNode = assetFactory.createJunction({
@@ -201,6 +242,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -212,8 +254,14 @@ describe("addLink", () => {
     });
 
     it("adds a label to the pump", () => {
-      const hydraulicModel = HydraulicModelBuilder.with().build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({
+        labelManager,
+      }).build();
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
       const startNode = assetFactory.createJunction();
       const endNode = assetFactory.createJunction();
       const link = assetFactory.createPump({
@@ -223,6 +271,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -234,8 +283,14 @@ describe("addLink", () => {
     });
 
     it("creates a default curve when adding a pump", () => {
-      const hydraulicModel = HydraulicModelBuilder.with().build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({
+        labelManager,
+      }).build();
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
       const startNode = assetFactory.createJunction({
         coordinates: [10, 10],
       });
@@ -252,6 +307,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -263,8 +319,14 @@ describe("addLink", () => {
     });
 
     it("adds a label to the nodes when missing", () => {
-      const hydraulicModel = HydraulicModelBuilder.with().build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({
+        labelManager,
+      }).build();
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
       const startNode = assetFactory.createJunction({
         label: "",
       });
@@ -278,6 +340,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -292,7 +355,8 @@ describe("addLink", () => {
   describe("pipe splitting functionality", () => {
     it("splits start pipe when startPipeId provided", () => {
       const IDS = { J1: 1, J2: 2, P1: 3 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [10, 0] })
         .aPipe(IDS.P1, {
@@ -304,7 +368,10 @@ describe("addLink", () => {
           ],
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = assetFactory.createJunction({
         coordinates: [5, 0],
@@ -322,6 +389,7 @@ describe("addLink", () => {
       const { putAssets, deleteAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link: pump,
@@ -345,7 +413,8 @@ describe("addLink", () => {
 
     it("splits end pipe when endPipeId provided", () => {
       const IDS = { J1: 1, J2: 2, P1: 3 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [10, 0] })
         .aPipe(IDS.P1, {
@@ -357,7 +426,10 @@ describe("addLink", () => {
           ],
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = assetFactory.createJunction({
         coordinates: [5, 5],
@@ -375,6 +447,7 @@ describe("addLink", () => {
       const { putAssets, deleteAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -402,7 +475,8 @@ describe("addLink", () => {
         P1: 5,
         P2: 6,
       } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [10, 0] })
         .aJunction(IDS.J3, { coordinates: [0, 10] })
@@ -424,7 +498,10 @@ describe("addLink", () => {
           ],
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = assetFactory.createJunction({
         coordinates: [5, 0],
@@ -442,6 +519,7 @@ describe("addLink", () => {
       const { putAssets, deleteAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -461,8 +539,14 @@ describe("addLink", () => {
     });
 
     it("handles no pipe splitting (backward compatibility)", () => {
-      const hydraulicModel = HydraulicModelBuilder.with().build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({
+        labelManager,
+      }).build();
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
       const startNode = assetFactory.createJunction({
         coordinates: [10, 10],
       });
@@ -480,6 +564,7 @@ describe("addLink", () => {
       const { putAssets, deleteAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -500,7 +585,8 @@ describe("addLink", () => {
         P1: 3,
         CP1: 4,
       } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [10, 0] })
         .aPipe(IDS.P1, {
@@ -512,7 +598,10 @@ describe("addLink", () => {
           ],
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const customerPoint = buildCustomerPoint(IDS.CP1, {
         coordinates: [3, 1],
@@ -543,6 +632,7 @@ describe("addLink", () => {
       const { putAssets, putCustomerPoints } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -569,7 +659,8 @@ describe("addLink", () => {
         P1: 3,
         CP1: 4,
       } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [10, 0] })
         .aPipe(IDS.P1, {
@@ -581,7 +672,10 @@ describe("addLink", () => {
           ],
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const customerPoint = buildCustomerPoint(IDS.CP1, {
         coordinates: [7, 1],
@@ -612,6 +706,7 @@ describe("addLink", () => {
       const { putAssets, putCustomerPoints } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -639,7 +734,8 @@ describe("addLink", () => {
         CP1: 7,
         CP2: 8,
       } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [10, 0] })
         .aJunction(IDS.J3, { coordinates: [0, 10] })
@@ -661,7 +757,10 @@ describe("addLink", () => {
           ],
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const customerPoint1 = buildCustomerPoint(IDS.CP1, {
         coordinates: [3, 1],
@@ -702,6 +801,7 @@ describe("addLink", () => {
       const { putAssets, putCustomerPoints } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -722,8 +822,14 @@ describe("addLink", () => {
 
     it("throws error for invalid startPipeId", () => {
       const IDS = { NONEXISTENT: 999 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with().build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({
+        labelManager,
+      }).build();
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
       const startNode = assetFactory.createJunction({
         coordinates: [5, 0],
       });
@@ -741,6 +847,7 @@ describe("addLink", () => {
         addLink(hydraulicModel, {
           lengthUnit: "m",
           assetFactory,
+          labelManager,
           startNode,
           endNode,
           link,
@@ -751,8 +858,14 @@ describe("addLink", () => {
 
     it("throws error for invalid endPipeId", () => {
       const IDS = { NONEXISTENT: 999 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with().build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({
+        labelManager,
+      }).build();
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
       const startNode = assetFactory.createJunction({
         coordinates: [5, 5],
       });
@@ -770,6 +883,7 @@ describe("addLink", () => {
         addLink(hydraulicModel, {
           lengthUnit: "m",
           assetFactory,
+          labelManager,
           startNode,
           endNode,
           link,
@@ -782,7 +896,8 @@ describe("addLink", () => {
   describe("with overlapping pipe section", () => {
     it("replaces middle pipe section when drawing overlapping pipe", () => {
       const IDS = { J1: 1, J2: 2, P1: 3 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [30, 0] })
         .aPipe(IDS.P1, {
@@ -796,7 +911,10 @@ describe("addLink", () => {
           roughness: 0.5,
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = assetFactory.createJunction({
         coordinates: [10, 0],
@@ -814,6 +932,7 @@ describe("addLink", () => {
       const { putAssets, deleteAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -840,7 +959,8 @@ describe("addLink", () => {
 
     it("replaces section when drawing valve on same pipe", () => {
       const IDS = { J1: 1, J2: 2, P1: 3 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [30, 0] })
         .aPipe(IDS.P1, {
@@ -853,7 +973,10 @@ describe("addLink", () => {
           diameter: 150,
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = assetFactory.createJunction({
         coordinates: [10, 0],
@@ -871,6 +994,7 @@ describe("addLink", () => {
       const { putAssets, deleteAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -890,7 +1014,8 @@ describe("addLink", () => {
 
     it("replaces section when drawing pump on same pipe", () => {
       const IDS = { J1: 1, J2: 2, P1: 3 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [30, 0] })
         .aPipe(IDS.P1, {
@@ -903,7 +1028,10 @@ describe("addLink", () => {
           diameter: 200,
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = assetFactory.createJunction({
         coordinates: [10, 0],
@@ -921,6 +1049,7 @@ describe("addLink", () => {
       const { putAssets, deleteAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -940,7 +1069,8 @@ describe("addLink", () => {
 
     it("falls back to standard split when new link has intermediate vertices", () => {
       const IDS = { J1: 1, J2: 2, P1: 3 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [30, 0] })
         .aPipe(IDS.P1, {
@@ -952,7 +1082,10 @@ describe("addLink", () => {
           ],
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = assetFactory.createJunction({
         coordinates: [10, 0],
@@ -971,6 +1104,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -984,7 +1118,8 @@ describe("addLink", () => {
 
     it("falls back when pipe has intermediate vertices not on new link path", () => {
       const IDS = { J1: 1, J2: 2, P1: 3 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [30, 0] })
         .aPipe(IDS.P1, {
@@ -997,7 +1132,10 @@ describe("addLink", () => {
           ],
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = assetFactory.createJunction({
         coordinates: [0, 0],
@@ -1015,6 +1153,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -1035,7 +1174,8 @@ describe("addLink", () => {
         CP2: 8,
         CP3: 9,
       } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [30, 0] })
         .aPipe(IDS.P1, {
@@ -1047,7 +1187,10 @@ describe("addLink", () => {
           ],
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const cp1 = buildCustomerPoint(IDS.CP1, {
         coordinates: [5, 1],
@@ -1087,6 +1230,7 @@ describe("addLink", () => {
       const { putAssets, putCustomerPoints } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -1118,7 +1262,8 @@ describe("addLink", () => {
         P1: 3,
         CP1: 1,
       } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [30, 0] })
         .aPipe(IDS.P1, {
@@ -1130,7 +1275,10 @@ describe("addLink", () => {
           ],
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const cp1 = buildCustomerPoint(IDS.CP1, {
         coordinates: [15, 1],
@@ -1156,6 +1304,7 @@ describe("addLink", () => {
       const { putCustomerPoints } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -1177,7 +1326,8 @@ describe("addLink", () => {
       J4: 5,
       P2: 6,
     } as const;
-    const hydraulicModel = HydraulicModelBuilder.with()
+    const labelManager = new LabelManager();
+    const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
       .aNode(IDS.J1, [0, 0])
       .aNode(IDS.J2, [20, 0])
       .aPipe(IDS.P1, {
@@ -1201,7 +1351,7 @@ describe("addLink", () => {
         ],
       })
       .build();
-    const assetFactory = createAssetFactory(hydraulicModel);
+    const { assetFactory } = createTestFactories(hydraulicModel, labelManager);
 
     const startNode = assetFactory.createJunction({
       coordinates: [10, 0],
@@ -1219,6 +1369,7 @@ describe("addLink", () => {
     const { putAssets, deleteAssets } = addLink(hydraulicModel, {
       lengthUnit: "m",
       assetFactory,
+      labelManager,
       startNode,
       endNode,
       link,
@@ -1265,7 +1416,8 @@ describe("addLink", () => {
   describe("isActive inference logic", () => {
     it("infers isActive: false when both endpoints are existing inactive nodes", () => {
       const IDS = { P1: 1, J1: 3, J2: 4 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0], isActive: false })
         .aJunction(IDS.J2, { coordinates: [10, 0], isActive: false })
         .aPipe(IDS.P1, {
@@ -1274,7 +1426,10 @@ describe("addLink", () => {
           isActive: false,
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = hydraulicModel.assets.get(IDS.J1)!.copy() as Junction;
       const endNode = hydraulicModel.assets.get(IDS.J2)!.copy() as Junction;
@@ -1289,6 +1444,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -1309,7 +1465,8 @@ describe("addLink", () => {
         P1: 5,
         P2: 6,
       } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [20, 0] })
         .aPipe(IDS.P1, {
@@ -1333,7 +1490,10 @@ describe("addLink", () => {
           isActive: false,
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = assetFactory.createJunction({
         coordinates: [10, 0],
@@ -1352,6 +1512,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -1367,7 +1528,8 @@ describe("addLink", () => {
 
     it("infers isActive: false when one endpoint is existing inactive and other is new isolated", () => {
       const IDS = { P1: 1, J1: 2, J2: 3 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0], isActive: false })
         .aJunction(IDS.J2, { coordinates: [0, 10], isActive: false })
         .aPipe(IDS.P1, {
@@ -1376,7 +1538,10 @@ describe("addLink", () => {
           isActive: false,
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = hydraulicModel.assets.get(IDS.J1)!.copy() as Junction;
       const endNode = assetFactory.createJunction({
@@ -1393,6 +1558,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -1406,7 +1572,8 @@ describe("addLink", () => {
 
     it("infers isActive: false when one endpoint is existing inactive and other splits inactive pipe", () => {
       const IDS = { J1: 1, J2: 2, J3: 3, P1: 4 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0], isActive: false })
         .aJunction(IDS.J2, { coordinates: [0, 10] })
         .aJunction(IDS.J3, { coordinates: [0, 20] })
@@ -1420,7 +1587,10 @@ describe("addLink", () => {
           isActive: false,
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = hydraulicModel.assets.get(IDS.J1)!.copy() as Junction;
       const endNode = assetFactory.createJunction({
@@ -1437,6 +1607,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -1451,7 +1622,8 @@ describe("addLink", () => {
 
     it("infers isActive: false when one endpoint splits inactive pipe and other is new isolated", () => {
       const IDS = { J1: 1, J2: 2, P1: 3 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0] })
         .aJunction(IDS.J2, { coordinates: [20, 0] })
         .aPipe(IDS.P1, {
@@ -1464,7 +1636,10 @@ describe("addLink", () => {
           isActive: false,
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = assetFactory.createJunction({
         coordinates: [10, 0],
@@ -1483,6 +1658,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -1496,8 +1672,14 @@ describe("addLink", () => {
     });
 
     it("keeps isActive: true when both endpoints are new isolated nodes (starting new network)", () => {
-      const hydraulicModel = HydraulicModelBuilder.with().build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({
+        labelManager,
+      }).build();
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = assetFactory.createJunction({
         coordinates: [0, 0],
@@ -1516,6 +1698,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -1529,12 +1712,16 @@ describe("addLink", () => {
 
     it("keeps isActive: true when one endpoint is active node with existing connections", () => {
       const IDS = { J1: 1, J2: 2, J3: 3, P1: 4, pump: 5 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J1, { coordinates: [0, 0], isActive: true })
         .aJunction(IDS.J3, { coordinates: [0, 10], isActive: true })
         .aPipe(IDS.P1, { startNodeId: IDS.J1, endNodeId: IDS.J3 })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = hydraulicModel.assets.get(IDS.J1)?.copy() as Junction;
       const endNode = assetFactory.createJunction({
@@ -1553,6 +1740,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,
@@ -1566,7 +1754,8 @@ describe("addLink", () => {
 
     it("keeps isActive: true when splitting an active pipe", () => {
       const IDS = { J1: 1, J2: 2, J3: 3, P1: 4, J4: 5, pump: 6 } as const;
-      const hydraulicModel = HydraulicModelBuilder.with()
+      const labelManager = new LabelManager();
+      const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
         .aJunction(IDS.J2, { coordinates: [0, 10] })
         .aJunction(IDS.J3, { coordinates: [0, 20] })
         .aPipe(IDS.P1, {
@@ -1579,7 +1768,10 @@ describe("addLink", () => {
           isActive: true,
         })
         .build();
-      const assetFactory = createAssetFactory(hydraulicModel);
+      const { assetFactory } = createTestFactories(
+        hydraulicModel,
+        labelManager,
+      );
 
       const startNode = assetFactory.createJunction({
         coordinates: [0, 0],
@@ -1601,6 +1793,7 @@ describe("addLink", () => {
       const { putAssets } = addLink(hydraulicModel, {
         lengthUnit: "m",
         assetFactory,
+        labelManager,
         startNode,
         endNode,
         link,

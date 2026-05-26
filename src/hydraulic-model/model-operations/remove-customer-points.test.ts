@@ -204,13 +204,17 @@ describe("removeCustomerPoints", () => {
       labelManager,
     );
 
+    // CP should be removed from model
     expect(hydraulicModel.customerPoints.has(IDS.CP1)).toBe(false);
+
+    // Reverse moment should restore the CP
     expect(reverseMoment.putCustomerPoints).toHaveLength(1);
     expect(reverseMoment.putCustomerPoints[0].id).toBe(originalCP.id);
     expect(reverseMoment.putCustomerPoints[0].coordinates).toEqual(
       originalCP.coordinates,
     );
 
+    // Reverse moment should restore demands
     expect(reverseMoment.putDemands).toBeDefined();
     expect(reverseMoment.putDemands!.assignments).toEqual(
       expect.arrayContaining([
@@ -221,6 +225,7 @@ describe("removeCustomerPoints", () => {
       ]),
     );
 
+    // Applying reverse should restore the CP
     applyMomentToModel(hydraulicModel, reverseMoment, labelManager);
     expect(hydraulicModel.customerPoints.has(IDS.CP1)).toBe(true);
     expect(hydraulicModel.customerPoints.get(IDS.CP1)!.id).toBe(IDS.CP1);

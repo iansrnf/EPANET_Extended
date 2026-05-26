@@ -1,19 +1,16 @@
-import { memo } from "react";
+import React, { memo } from "react";
 import { dialogAtom } from "src/state/dialog";
-import {
-  showPanelBottomAtom,
-  splitsAtom,
-  TabOption,
-  tabAtom,
-} from "src/state/layout";
+import { splitsAtom, TabOption, tabAtom } from "src/state/layout";
 import { useAtom, useAtomValue } from "jotai";
 import clsx from "clsx";
 
-import FeatureEditor from "src/panels/feature-editor";
+import FeatureEditor from "./feature-editor";
 import { DefaultErrorBoundary } from "src/components/elements";
 import { useTranslate } from "src/hooks/use-translate";
 import { MapStylingEditor } from "./map-styling-editor";
 import { NetworkReview } from "./network-review";
+import { BottomResizer } from "src/components/resizer";
+import { BottomZoneTabs } from "./bottom-zone/bottom-zone-tabs";
 
 function Tab({
   onClick,
@@ -31,7 +28,7 @@ function Tab({
       onClick={onClick}
       aria-selected={active}
       className={clsx(
-        "text-left text-sm py-1 px-3 focus:outline-none",
+        "text-left text-sm py-1 px-3 focus:outline-hidden",
         active
           ? "text-black dark:text-white"
           : `
@@ -110,18 +107,28 @@ export const SidePanel = memo(function SidePanelInner() {
   );
 });
 
+export const RelocatedSidePanel = memo(function RelocatedSidePanelInner() {
+  return (
+    <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-900 relative flex-auto min-h-0">
+      <Panel />
+    </div>
+  );
+});
+
 export const BottomPanel = memo(function BottomPanelInner() {
   const splits = useAtomValue(splitsAtom);
-  const showPanel = useAtomValue(showPanelBottomAtom);
-  if (!showPanel) return null;
+
+  if (!splits.bottomOpen) return null;
+
   return (
     <div
-      style={{
-        height: splits.bottom,
-      }}
-      className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-900 relative"
+      style={{ height: splits.bottom }}
+      className="relative shrink-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-900 flex flex-col"
     >
-      <Panel />
+      <BottomResizer />
+      <div className="flex-1 min-h-0 relative">
+        <BottomZoneTabs />
+      </div>
     </div>
   );
 });

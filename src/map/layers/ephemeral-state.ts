@@ -30,7 +30,12 @@ export const ephemeralJunctionHighlightLayers = ({
     type: "circle",
     source,
     layout: {},
-    filter: ["all", ["==", "$type", "Point"], ["!has", "icon"]],
+    filter: [
+      "all",
+      ["==", "$type", "Point"],
+      ["!has", "icon"],
+      ["!has", "draftPath"],
+    ],
     paint: {
       "circle-color": colors.indigo800,
       "circle-stroke-color": colors.indigo200,
@@ -95,6 +100,25 @@ export const ephemeralPipeHighlightLayer = ({
       "line-opacity": 1,
       "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1, 16, 5],
       "line-color": colors.indigo500,
+    },
+  };
+};
+
+export const ephemeralDraftPathLineLayer = ({
+  source,
+}: {
+  source: DataSource;
+}): LineLayer => {
+  return {
+    id: "ephemeral-draft-path-line",
+    type: "line",
+    source,
+    filter: ["all", ["==", "$type", "LineString"], ["has", "draftPath"]],
+    paint: {
+      "line-opacity": 0.7,
+      "line-width": ["interpolate", ["linear"], ["zoom"], 12, 6, 20, 22],
+      "line-color": colors.indigo300,
+      "line-blur": ["interpolate", ["linear"], ["zoom"], 12, 0, 20, 8],
     },
   };
 };

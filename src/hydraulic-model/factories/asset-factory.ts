@@ -32,6 +32,8 @@ export type PipeBuildData = {
   length?: number;
   bulkReactionCoeff?: number;
   wallReactionCoeff?: number;
+  material?: string;
+  year?: number;
   isActive?: boolean;
 };
 
@@ -41,7 +43,7 @@ export type PumpBuildData = {
   initialStatus?: PumpStatus;
   coordinates?: Position[];
   connections?: LinkConnections;
-  definitionType?: PumpDefintionType;
+  definitionType?: PumpDefinitionType;
   power?: number;
   curve?: CurvePoint[];
   curveId?: CurveId;
@@ -108,7 +110,7 @@ import { IdGenerator } from "src/lib/id-generator";
 import { LabelManager, LabelType } from "../label-manager";
 import { DefaultsSpec } from "src/lib/project-settings/quantities-spec";
 import {
-  PumpDefintionType,
+  PumpDefinitionType,
   PumpQuantity,
   PumpStatus,
 } from "../asset-types/pump";
@@ -120,6 +122,9 @@ import {
 } from "../asset-types/valve";
 import { CurveId, CurvePoint, defaultCurvePoints } from "../curves";
 import { PatternId } from "../patterns";
+
+const isProvided = (value: number | undefined): value is number =>
+  value !== undefined && !Number.isNaN(value);
 
 export class AssetFactory {
   private defaults: DefaultsSpec;
@@ -151,6 +156,8 @@ export class AssetFactory {
     roughness,
     bulkReactionCoeff,
     wallReactionCoeff,
+    material,
+    year,
     isActive = true,
   }: PipeBuildData = {}) {
     const internalId = id ?? this.idGenerator.newId();
@@ -165,6 +172,8 @@ export class AssetFactory {
       roughness: this.getPipeValue("roughness", roughness),
       bulkReactionCoeff,
       wallReactionCoeff,
+      material,
+      year,
       isActive,
     });
   }
@@ -210,7 +219,7 @@ export class AssetFactory {
     ],
     initialStatus = "on",
     connections = nullConnections,
-    definitionType = "curve",
+    definitionType = "designPointCurve",
     curveId,
     curve,
     power,
@@ -235,7 +244,7 @@ export class AssetFactory {
       curveId,
       curve: curve
         ? curve
-        : definitionType === "curve"
+        : definitionType === "designPointCurve"
           ? defaultCurvePoints("pump")
           : undefined,
       efficiencyCurveId,
@@ -356,30 +365,6 @@ export class AssetFactory {
     });
   }
 
-  buildPipe(data: PipeBuildData = {}) {
-    return this.createPipe(data);
-  }
-
-  buildValve(data: ValveBuildData = {}) {
-    return this.createValve(data);
-  }
-
-  buildPump(data: PumpBuildData = {}) {
-    return this.createPump(data);
-  }
-
-  buildJunction(data: JunctionBuildData = {}) {
-    return this.createJunction(data);
-  }
-
-  buildReservoir(data: ReservoirBuildData = {}) {
-    return this.createReservoir(data);
-  }
-
-  buildTank(data: TankBuildData = {}) {
-    return this.createTank(data);
-  }
-
   private resolveLabel(type: LabelType, id: number, label?: string): string {
     if (label !== undefined) {
       this.labelManager.register(label, type, id);
@@ -389,31 +374,31 @@ export class AssetFactory {
   }
 
   private getPipeValue(name: PipeQuantity, candidate?: number) {
-    if (candidate !== undefined) return candidate;
+    if (isProvided(candidate)) return candidate;
 
     return this.defaults.pipe[name] || 0;
   }
 
   private getPumpValue(name: PumpQuantity, candidate?: number) {
-    if (candidate !== undefined) return candidate;
+    if (isProvided(candidate)) return candidate;
 
     return this.defaults.pump[name] || 0;
   }
 
   private getValveValue(name: ValveQuantity, candidate?: number) {
-    if (candidate !== undefined) return candidate;
+    if (isProvided(candidate)) return candidate;
 
     return this.defaults.valve[name] || 0;
   }
 
   private getValveSetting(kind: ValveKind, candidate?: number) {
-    if (candidate !== undefined) return candidate;
+    if (isProvided(candidate)) return candidate;
 
     return this.defaults.valve["tcvSetting"] || 0;
   }
 
   private getJunctionValue(name: JunctionQuantity, candidate?: number) {
-    if (candidate !== undefined) return candidate;
+    if (isProvided(candidate)) return candidate;
 
     return this.defaults.junction[name] || 0;
   }
@@ -422,13 +407,13 @@ export class AssetFactory {
     name: ReservoirQuantity | "relativeHead",
     candidate?: number,
   ) {
-    if (candidate !== undefined) return candidate;
+    if (isProvided(candidate)) return candidate;
 
     return this.defaults.reservoir[name] || 0;
   }
 
   private getTankValue(name: TankQuantity, candidate?: number) {
-    if (candidate !== undefined) return candidate;
+    if (isProvided(candidate)) return candidate;
 
     return this.defaults.tank[name] || 0;
   }

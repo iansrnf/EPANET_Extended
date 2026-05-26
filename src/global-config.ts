@@ -20,9 +20,6 @@ export const pingUrl = process.env.NEXT_PUBLIC_PING_URL || "/ping.txt";
 export const modelBuilderUrl =
   process.env.NEXT_PUBLIC_MODEL_BUILDER_URL ||
   "https://utils.epanetjs.com/model-builder?embedded=true";
-export const modelBuilderApiUrl =
-  process.env.NEXT_PUBLIC_MODEL_BUILDER_API_URL ||
-  "https://utils.epanetjs.com/model-builder-api?embedded=true";
 export const customerPointsImportVideoUrl =
   "https://www.youtube.com/watch?v=58BFdUokcd4";
 export const customerPointsImportGuide =

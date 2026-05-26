@@ -51,6 +51,11 @@ export type MissingCoordinatesDialogState = {
 export type InpIssuesDialogState = {
   type: "inpIssues";
   issues: ParserIssues;
+  onAfterClose?: () => void;
+};
+
+export type FileFormatUpdatedDialogState = {
+  type: "fileFormatUpdated";
 };
 
 export type AlertInpOutputState = {
@@ -70,8 +75,24 @@ export type ProjectSavedInfoState = {
   onCancel?: () => void;
 };
 
+export type UpgradeSource =
+  | { kind: "priorityAccess"; featureName: string }
+  | { kind: "paywall"; feature: PaywallFeature }
+  | { kind: "menu" }
+  | { kind: "customLayers" };
+
+export const getSourceFeature = (
+  source?: UpgradeSource,
+): string | undefined => {
+  if (!source) return undefined;
+  if (source.kind === "priorityAccess") return source.featureName;
+  if (source.kind === "paywall") return source.feature;
+  return undefined;
+};
+
 export type UpgradeDialogState = {
   type: "upgrade";
+  source?: UpgradeSource;
 };
 
 export type ImportCustomerPointsWizardState = {
@@ -92,10 +113,6 @@ export type ModelBuilderIframeDialogState = {
   type: "modelBuilderIframe";
 };
 
-export type ModelBuilderApiIframeDialogState = {
-  type: "modelBuilderApiIframe";
-};
-
 export type EarlyAccessDialogState = {
   type: "earlyAccess";
   onContinue: () => void;
@@ -107,6 +124,19 @@ export type SimulationProgressDialogState = {
   currentTime: number;
   totalDuration: number;
   phase: "hydraulic" | "quality" | "finalizing";
+};
+
+export type OpenProjectPhase =
+  | "opening"
+  | "reading-assets"
+  | "reading-customer-points"
+  | "reading-settings"
+  | "building"
+  | "finalizing";
+
+export type OpenProjectProgressDialogState = {
+  type: "openProjectProgress";
+  phase: OpenProjectPhase;
 };
 
 export type PatternsLibraryDialog = {
@@ -183,6 +213,32 @@ export type ActivatingTrialDialogState = {
   type: "activatingTrial";
 };
 
+export type ExportAssetDataDialogState = {
+  type: "exportAssetData";
+};
+
+export type ExportTimeSeriesDialogState = {
+  type: "exportTimeSeries";
+};
+
+export type ProfileNoPathDialogState = {
+  type: "profileNoPath";
+};
+
+export type CustomGraphDialogState = {
+  type: "customGraph";
+};
+
+export type AppLoadFailedDialogState = {
+  type: "appLoadFailed";
+  errorMessage?: string;
+};
+
+export type PriorityAccessDialogState = {
+  type: "priorityAccess";
+  featureName: string;
+};
+
 export type DialogState =
   | InvalidFilesErrorDialogState
   | {
@@ -198,15 +254,16 @@ export type DialogState =
   | AlertInpOutputState
   | AlertExportInpState
   | ProjectSavedInfoState
+  | FileFormatUpdatedDialogState
   | MissingCoordinatesDialogState
   | UpgradeDialogState
   | ImportCustomerPointsWizardState
   | ImportCustomerPointsWarningDialogState
   | UnexpectedErrorDialogState
   | ModelBuilderIframeDialogState
-  | ModelBuilderApiIframeDialogState
   | EarlyAccessDialogState
   | SimulationProgressDialogState
+  | OpenProjectProgressDialogState
   | { type: "simulationSettings" }
   | { type: "controls" }
   | PatternsLibraryDialog
@@ -221,7 +278,13 @@ export type DialogState =
   | AlertScenariosNotSavedState
   | AlertNetworkRequiredState
   | ActivatingTrialDialogState
+  | ExportAssetDataDialogState
+  | ExportTimeSeriesDialogState
   | NetworkProjectionDialogState
+  | ProfileNoPathDialogState
+  | CustomGraphDialogState
+  | AppLoadFailedDialogState
+  | PriorityAccessDialogState
   | null;
 
 export const dialogFromUrl = (): DialogState => {

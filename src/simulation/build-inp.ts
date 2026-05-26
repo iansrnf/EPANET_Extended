@@ -28,8 +28,7 @@ import { CustomerPointsLookup } from "src/hydraulic-model/customer-points-lookup
 import { Valve, AssetId } from "src/hydraulic-model/asset-types";
 import { checksum } from "src/infra/checksum";
 import {
-  Projection,
-  ProjectionConfig,
+  type Projection,
   createProjectionMapper,
   getBackdropUnits,
 } from "src/lib/projections";
@@ -368,40 +367,7 @@ type BuildOptions = {
   usedCurves?: boolean;
   reservoirElevations?: boolean;
   includeQuality?: boolean;
-  projection?: Projection | ProjectionConfig;
-};
-
-type SimulationExclusions = {
-  nodeIds: Set<AssetId>;
-  linkIds: Set<AssetId>;
-};
-
-const isPressureLoggerBackingNode = (node: NodeAsset): boolean =>
-  node.getProperty("pressureLoggerId") !== undefined ||
-  node.getProperty("visibility") === false;
-
-const getSimulationExclusions = (
-  hydraulicModel: HydraulicModel,
-): SimulationExclusions => {
-  const nodeIds = new Set<AssetId>();
-  const linkIds = new Set<AssetId>();
-
-  for (const pressureLogger of hydraulicModel.pressureLoggers.values()) {
-    const junctionId = pressureLogger.connection?.junctionId;
-    if (junctionId === undefined) continue;
-
-    const junction = hydraulicModel.assets.get(junctionId);
-    if (!junction?.isNode) continue;
-    if (!isPressureLoggerBackingNode(junction as NodeAsset)) continue;
-
-    nodeIds.add(junctionId);
-
-    for (const linkId of hydraulicModel.topology.getLinks(junctionId)) {
-      linkIds.add(linkId);
-    }
-  }
-
-  return { nodeIds, linkIds };
+  projection?: Projection;
 };
 
 export const buildInp = withDebugInstrumentation(
@@ -555,7 +521,6 @@ export const buildInp = withDebugInstrumentation(
 
     const usedCurveIds = new Set<number>();
     const usedPatternIds = new Set<number>();
-    const excludedAssets = getSimulationExclusions(hydraulicModel);
 
     if (opts.simulationSettings.energyGlobalPatternId !== null) {
       usedPatternIds.add(opts.simulationSettings.energyGlobalPatternId);
@@ -571,21 +536,10 @@ export const buildInp = withDebugInstrumentation(
           opts.reservoirElevations,
           asset as Reservoir,
           usedPatternIds,
-          excludedAssets,
           transformCoord,
         );
-        if (
-          opts.includeQuality &&
-          !excludedAssets.nodeIds.has(asset.id) &&
-          (asset.isActive || opts.inactiveAssets)
-        ) {
-          appendInitialQuality(
-            sections,
-            idMap,
-            asset as Reservoir,
-            opts.inactiveAssets,
-            excludedAssets,
-          );
+        if (opts.includeQuality) {
+          appendInitialQuality(sections, idMap, asset as Reservoir);
           appendSource(sections, idMap, asset as Reservoir, usedPatternIds);
         }
       }
@@ -598,21 +552,10 @@ export const buildInp = withDebugInstrumentation(
           opts.inactiveAssets,
           usedCurveIds,
           asset as Tank,
-          excludedAssets,
           transformCoord,
         );
-        if (
-          opts.includeQuality &&
-          !excludedAssets.nodeIds.has(asset.id) &&
-          (asset.isActive || opts.inactiveAssets)
-        ) {
-          appendInitialQuality(
-            sections,
-            idMap,
-            asset as Tank,
-            opts.inactiveAssets,
-            excludedAssets,
-          );
+        if (opts.includeQuality) {
+          appendInitialQuality(sections, idMap, asset as Tank);
           appendMixing(sections, idMap, asset as Tank);
           appendSource(sections, idMap, asset as Tank, usedPatternIds);
           appendTankReaction(sections, idMap, asset as Tank);
@@ -631,21 +574,10 @@ export const buildInp = withDebugInstrumentation(
           hydraulicModel.assets,
           hydraulicModel.demands,
           usedPatternIds,
-          excludedAssets,
           transformCoord,
         );
-        if (
-          opts.includeQuality &&
-          !excludedAssets.nodeIds.has(asset.id) &&
-          (asset.isActive || opts.inactiveAssets)
-        ) {
-          appendInitialQuality(
-            sections,
-            idMap,
-            asset as Junction,
-            opts.inactiveAssets,
-            excludedAssets,
-          );
+        if (opts.includeQuality) {
+          appendInitialQuality(sections, idMap, asset as Junction);
           appendSource(sections, idMap, asset as Junction, usedPatternIds);
         }
       }
@@ -658,7 +590,6 @@ export const buildInp = withDebugInstrumentation(
           opts.geolocation,
           opts.inactiveAssets,
           asset as Pipe,
-          excludedAssets,
           transformCoord,
         );
         if (opts.includeQuality) {
@@ -676,7 +607,6 @@ export const buildInp = withDebugInstrumentation(
           usedCurveIds,
           usedPatternIds,
           asset as Pump,
-          excludedAssets,
           transformCoord,
         );
       }
@@ -690,7 +620,6 @@ export const buildInp = withDebugInstrumentation(
           opts.inactiveAssets,
           usedCurveIds,
           asset as Valve,
-          excludedAssets,
           transformCoord,
         );
       }
@@ -728,13 +657,7 @@ export const buildInp = withDebugInstrumentation(
       opts.usedCurves,
     );
 
-    appendControls(
-      sections,
-      hydraulicModel.controls,
-      idMap,
-      hydraulicModel,
-      excludedAssets,
-    );
+    appendControls(sections, hydraulicModel.controls, idMap, hydraulicModel);
 
     const hasControls = sections.controls.length > 1;
     const hasRules = sections.rules.length > 1;
@@ -778,17 +701,14 @@ export const buildInp = withDebugInstrumentation(
       .join("\n\n");
 
     if (opts.madeBy) {
-      const projectionId =
-        opts.projection?.type === "proj4"
-          ? opts.projection.id
-          : opts.projection?.type;
-      if (projectionId && projectionId !== "wgs84") {
-        if (opts.projection?.type === "proj4") {
-          content = `;PROJECTION_NAME ${opts.projection.name}\n` + content;
-          content = `;PROJECTION_PROJ4 ${opts.projection.code}\n` + content;
-          content = `;PROJECTION_TYPE ${opts.projection.type}\n` + content;
+      const projection = opts.projection;
+      if (projection && projection.type !== "wgs84") {
+        if (projection.type === "proj4") {
+          content = `;PROJECTION_NAME ${projection.name}\n` + content;
+          content = `;PROJECTION_PROJ4 ${projection.code}\n` + content;
+          content = `;PROJECTION_TYPE ${projection.type}\n` + content;
         }
-        content = `;PROJECTION ${projectionId}\n` + content;
+        content = `;PROJECTION ${projection.id}\n` + content;
       }
       content = `;MADE BY EPANET-JS [${checksum(content)}]\n` + content;
     }
@@ -800,17 +720,12 @@ export const buildInp = withDebugInstrumentation(
 const appendInitialQuality = (
   sections: InpSections,
   idMap: EpanetIds,
-  node: Junction | Tank | Reservoir,
-  inactiveAssets: boolean,
-  excludedAssets: SimulationExclusions,
+  node: NodeAsset,
 ) => {
-  if (excludedAssets.nodeIds.has(node.id)) return;
-  if (!node.isActive && !inactiveAssets) return;
-
-  const value = node.initialQuality;
+  const typedNode = node as Junction | Tank | Reservoir;
+  const value = typedNode.initialQuality;
   if (value !== undefined && value !== 0) {
-    const commentPrefix = !node.isActive ? ";" : "";
-    sections.quality.push(commentPrefix + `${idMap.nodeId(node)}\t${value}`);
+    sections.quality.push(`${idMap.nodeId(node)}\t${value}`);
   }
 };
 
@@ -823,13 +738,11 @@ const MIXING_MODEL_TO_INP: Record<string, string> = {
 
 const appendMixing = (sections: InpSections, idMap: EpanetIds, tank: Tank) => {
   if (tank.mixingModel === "mixed") return;
-
   const model = MIXING_MODEL_TO_INP[tank.mixingModel] ?? "MIXED";
   const row =
     tank.mixingModel === "2comp"
       ? `${idMap.nodeId(tank)}\t${model}\t${tank.mixingFraction}`
       : `${idMap.nodeId(tank)}\t${model}`;
-
   sections.mixing.push(row);
 };
 
@@ -888,13 +801,8 @@ const appendReservoir = (
   elevations: boolean,
   reservoir: Reservoir,
   usedPatternIds: Set<number>,
-  excludedAssets: SimulationExclusions,
   transformCoord: (p: Position) => Position,
 ) => {
-  if (excludedAssets.nodeIds.has(reservoir.id)) {
-    return;
-  }
-
   if (!reservoir.isActive && !inactiveAssets) {
     return;
   }
@@ -932,13 +840,8 @@ const appendTank = (
   inactiveAssets: boolean,
   usedCurveIds: Set<number>,
   tank: Tank,
-  excludedAssets: SimulationExclusions,
   transformCoord: (p: Position) => Position,
 ) => {
-  if (excludedAssets.nodeIds.has(tank.id)) {
-    return;
-  }
-
   if (!tank.isActive && !inactiveAssets) {
     return;
   }
@@ -977,13 +880,8 @@ const appendJunction = (
   assets: HydraulicModel["assets"],
   demands: Demands,
   usedPatternIds: Set<number>,
-  excludedAssets: SimulationExclusions,
   transformCoord: (p: Position) => Position,
 ) => {
-  if (excludedAssets.nodeIds.has(junction.id)) {
-    return;
-  }
-
   if (!junction.isActive && !inactiveAssets) {
     return;
   }
@@ -1067,13 +965,8 @@ const appendPipe = (
   geolocation: boolean,
   inactiveAssets: boolean,
   pipe: Pipe,
-  excludedAssets: SimulationExclusions,
   transformCoord: (p: Position) => Position,
 ) => {
-  if (excludedAssets.linkIds.has(pipe.id)) {
-    return;
-  }
-
   if (!pipe.isActive && !inactiveAssets) {
     return;
   }
@@ -1109,13 +1002,8 @@ const appendPump = (
   usedCurveIds: Set<number>,
   usedPatternIds: Set<number>,
   pump: Pump,
-  excludedAssets: SimulationExclusions,
   transformCoord: (p: Position) => Position,
 ) => {
-  if (excludedAssets.linkIds.has(pump.id)) {
-    return;
-  }
-
   if (!pump.isActive && !inactiveAssets) {
     return;
   }
@@ -1144,7 +1032,8 @@ const appendPump = (
           ].join("\t"),
       );
       break;
-    case "curve":
+    case "designPointCurve":
+    case "standardCurve":
       const localCurveId = idMap.localCurveId(pump.label);
       sections.pumps.push(
         commentPrefix +
@@ -1213,13 +1102,8 @@ const appendValve = (
   inactiveAssets: boolean,
   usedCurveIds: Set<number>,
   valve: Valve,
-  excludedAssets: SimulationExclusions,
   transformCoord: (p: Position) => Position,
 ) => {
-  if (excludedAssets.linkIds.has(valve.id)) {
-    return;
-  }
-
   if (!valve.isActive && !inactiveAssets) {
     return;
   }
@@ -1337,7 +1221,6 @@ const appendControls = (
   controls: HydraulicModel["controls"],
   idMap: EpanetIds,
   hydraulicModel: HydraulicModel,
-  excludedAssets: SimulationExclusions,
 ) => {
   const idResolver: IdResolver = (assetId: AssetId) => {
     const asset = hydraulicModel.assets.get(assetId);
@@ -1352,28 +1235,10 @@ const appendControls = (
   };
 
   for (const control of controls.simple) {
-    if (
-      control.assetReferences.some(
-        (ref) =>
-          excludedAssets.nodeIds.has(ref.assetId) ||
-          excludedAssets.linkIds.has(ref.assetId),
-      )
-    ) {
-      continue;
-    }
     sections.controls.push(formatSimpleControl(control, idResolver));
   }
 
   for (const rule of controls.rules) {
-    if (
-      rule.assetReferences.some(
-        (ref) =>
-          excludedAssets.nodeIds.has(ref.assetId) ||
-          excludedAssets.linkIds.has(ref.assetId),
-      )
-    ) {
-      continue;
-    }
     sections.rules.push(formatRuleBasedControl(rule, idResolver));
   }
 };

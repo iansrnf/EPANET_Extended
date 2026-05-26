@@ -32,7 +32,14 @@ const emptyGeoJSONSource = {
   data: emptyFeatureCollection,
   buffer: 4,
   tolerance: 0,
-  lineMetrics: true,
+} as const;
+
+const emptyGeoJSONSourceWithPrecision = {
+  type: "geojson",
+  data: emptyFeatureCollection,
+  buffer: 4,
+  tolerance: 0,
+  maxzoom: 22,
 } as const;
 
 export async function buildBaseStyle({
@@ -73,6 +80,44 @@ export async function buildBaseStyle({
   return style;
 }
 
+export async function buildBaseStyleWithPrecision({
+  layerConfigs,
+  translate,
+}: {
+  layerConfigs: LayerConfigMap;
+  translate: (key: string) => string;
+}): Promise<Style> {
+  let style = getEmptyStyle();
+  let id = 0;
+  const layers = [...layerConfigs.values()].reverse();
+  for (const layer of layers) {
+    id++;
+    switch (layer.type) {
+      case "MAPBOX": {
+        style = await addMapboxStyle(style, layer, translate);
+        break;
+      }
+      case "XYZ": {
+        style = addXYZStyle(style, layer, id);
+        break;
+      }
+      case "TILEJSON": {
+        style = await addTileJSONStyle(style, layer, id, translate);
+        break;
+      }
+      case "GEOJSON": {
+        // GIS data lives outside buildBaseStyle — sources are added after
+        // style.load via addGisLayersToMap in state-updates.ts.
+        break;
+      }
+    }
+  }
+
+  defineEmptySourcesWithPrecision(style);
+
+  return style;
+}
+
 export function defineEmptySources(style: Style) {
   style.sources["main-features"] = emptyGeoJSONSource;
   style.sources["delta-features"] = emptyGeoJSONSource;
@@ -80,17 +125,25 @@ export function defineEmptySources(style: Style) {
   style.sources["selected-features"] = emptyGeoJSONSource;
   style.sources["ephemeral"] = emptyGeoJSONSource;
   style.sources["map-overlay"] = emptyGeoJSONSource;
+  style.sources["highlights"] = emptyGeoJSONSource;
   style.sources["grid"] = emptyGeoJSONSource;
+}
+
+export function defineEmptySourcesWithPrecision(style: Style) {
+  style.sources["main-features"] = emptyGeoJSONSourceWithPrecision;
+  style.sources["delta-features"] = emptyGeoJSONSourceWithPrecision;
+  style.sources["icons"] = emptyGeoJSONSourceWithPrecision;
+  style.sources["selected-features"] = emptyGeoJSONSourceWithPrecision;
+  style.sources["ephemeral"] = emptyGeoJSONSourceWithPrecision;
+  style.sources["map-overlay"] = emptyGeoJSONSourceWithPrecision;
+  style.sources["highlights"] = emptyGeoJSONSourceWithPrecision;
+  style.sources["grid"] = emptyGeoJSONSourceWithPrecision;
 }
 
 import type { PreviewProperty } from "src/state/map-symbology";
 import type { ISymbology } from "src/types";
 import { reservoirLayers, pipesLayer, junctionsLayer } from "src/map/layers";
-import {
-  pipeArrows,
-  checkValveIcons,
-  pipeFlowPulseLayer,
-} from "src/map/layers/pipes";
+import { pipeArrows, checkValveIcons } from "src/map/layers/pipes";
 import { junctionResultsLayer } from "src/map/layers/junctions";
 import { pumpIcons, pumpLines } from "src/map/layers/pumps";
 import { valveIcons, valveLines } from "src/map/layers/valves";
@@ -104,6 +157,7 @@ import {
 } from "src/map/layers/map-overlay";
 import {
   ephemeralDraftLineLayer,
+  ephemeralDraftPathLineLayer,
   ephemeralIconHighlightLayers,
   ephemeralJunctionHighlightLayers,
   ephemeralHaloLayer,
@@ -112,10 +166,15 @@ import {
   ephemeralSelectionFillLayer,
   ephemeralSelectionOutlineLayer,
 } from "src/map/layers/ephemeral-state";
+import {
+  highlightsMarkerHaloLayer,
+  highlightsMarkerIconLayer,
+  highlightsMarkerLayer,
+  highlightsPathHaloLayer,
+} from "src/map/layers/highlights";
 import { gridMinorLayer, gridMajorLayer } from "src/map/layers/grid";
 import {
   selectedPipesLayer,
-  selectedPipeFlowPulseLayer,
   selectedPumpLinesLayer,
   selectedValveLinesLayer,
   selectedPipeArrowsLayer,
@@ -124,12 +183,12 @@ import {
   selectedIconsLayer,
 } from "src/map/layers/selection";
 import type * as mapboxgl from "mapbox-gl";
+import type { NodeDefaults, LinkDefaults } from "src/map/symbology";
 
 const DELTA_FEATURES_POINT_LABEL_LAYER_NAME = "delta-features-point-label";
 const DELTA_FEATURES_LINE_LABEL_LAYER_NAME = "delta-features-line-label";
 const DELTA_FEATURES_LINE_LAYER_NAME = "delta-features-line";
 const DELTA_FEATURES_POINT_LAYER_NAME = "delta-features-symbol";
-type SymbolLayout = NonNullable<mapboxgl.SymbolLayout>;
 
 const CONTENT_LAYER_FILTERS: {
   [key: string]: mapboxgl.Layer["filter"];
@@ -164,7 +223,7 @@ function LABEL_PAINT(
 
 function LABEL_LAYOUT(
   previewProperty: PreviewProperty,
-  placement: SymbolLayout["symbol-placement"],
+  placement: mapboxgl.SymbolLayout["symbol-placement"],
 ): mapboxgl.SymbolLayout {
   const paint: mapboxgl.SymbolLayout = {
     "text-field": ["get", previewProperty],
@@ -181,9 +240,13 @@ function LABEL_LAYOUT(
 export function makeLayers({
   symbology,
   previewProperty,
+  nodeDefaults,
+  linkDefaults,
 }: {
   symbology: ISymbology;
   previewProperty: PreviewProperty;
+  nodeDefaults: NodeDefaults;
+  linkDefaults: LinkDefaults;
 }): mapboxgl.AnyLayer[] {
   return [
     gridMinorLayer(),
@@ -192,31 +255,24 @@ export function makeLayers({
     mapOverlayOutlineLayer({ source: "map-overlay" }),
     mapOverlayLabelLayer({ source: "map-overlay" }),
     ephemeralHaloLayer({ source: "ephemeral" }),
+    ephemeralDraftPathLineLayer({ source: "ephemeral" }),
+    highlightsPathHaloLayer({ source: "highlights" }),
+    highlightsMarkerHaloLayer({ source: "highlights" }),
     pipesLayer({
       source: "main-features",
       layerId: "main-features-pipes",
       symbology,
+      linkDefaults,
     }),
     pipesLayer({
       source: "delta-features",
       layerId: "delta-features-pipes",
       symbology,
-    }),
-    pipeFlowPulseLayer({
-      source: "main-features",
-      layerId: "main-features-pipe-flow-pulse",
-    }),
-    pipeFlowPulseLayer({
-      source: "delta-features",
-      layerId: "delta-features-pipe-flow-pulse",
+      linkDefaults,
     }),
     selectedPipesLayer({
       source: "selected-features",
       layerId: "selected-pipes",
-    }),
-    selectedPipeFlowPulseLayer({
-      source: "selected-features",
-      layerId: "selected-pipe-flow-pulse",
     }),
     pumpLines({
       source: "main-features",
@@ -252,12 +308,12 @@ export function makeLayers({
     pipeArrows({
       source: "main-features",
       layerId: "main-features-pipe-arrows",
-      symbology,
+      linkDefaults,
     }),
     pipeArrows({
       source: "delta-features",
       layerId: "delta-features-pipe-arrows",
-      symbology,
+      linkDefaults,
     }),
     selectedPipeArrowsLayer({
       source: "selected-features",
@@ -267,21 +323,25 @@ export function makeLayers({
       source: "main-features",
       layerId: "main-features-junctions",
       symbology,
+      nodeDefaults,
     }),
     junctionsLayer({
       source: "delta-features",
       layerId: "delta-features-junctions",
       symbology,
+      nodeDefaults,
     }),
     junctionResultsLayer({
       source: "main-features",
       layerId: "main-features-junction-results",
       symbology,
+      nodeDefaults,
     }),
     junctionResultsLayer({
       source: "delta-features",
       layerId: "delta-features-junction-results",
       symbology,
+      nodeDefaults,
     }),
     selectedJunctionsLayer({
       source: "selected-features",
@@ -312,6 +372,8 @@ export function makeLayers({
     }),
     ephemeralJunctionHighlightLayers({ source: "ephemeral" }),
     ephemeralIconHighlightLayers({ source: "ephemeral" }),
+    highlightsMarkerIconLayer({ source: "highlights" }),
+    highlightsMarkerLayer({ source: "highlights" }),
     ...linkLabelsLayer({
       sources: ["main-features", "delta-features"],
     }),

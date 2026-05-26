@@ -19,6 +19,11 @@ describe("xy-grid-transform", () => {
       const centroid = computeCentroid([[42, 99]]);
       expect(centroid).toEqual([42, 99]);
     });
+
+    it("falls back to [0, 0] for an empty array", () => {
+      const centroid = computeCentroid([]);
+      expect(centroid).toEqual([0, 0]);
+    });
   });
 
   describe("transformPoint", () => {
@@ -46,16 +51,6 @@ describe("xy-grid-transform", () => {
       expect(restored[0]).toBeCloseTo(original[0], 2);
       expect(restored[1]).toBeCloseTo(original[1], 2);
     });
-
-    it("round-trips through inverseTransformPoint with a scale factor", () => {
-      const centroid: [number, number] = [1_000, 500];
-      const scale = 63.2;
-      const original: [number, number] = [1_010, 510];
-      const wgs84 = transformPoint(original, centroid, scale);
-      const restored = inverseTransformPoint(wgs84, centroid, scale);
-      expect(restored[0]).toBeCloseTo(original[0], 2);
-      expect(restored[1]).toBeCloseTo(original[1], 2);
-    });
   });
 
   describe("scale factor", () => {
@@ -64,6 +59,16 @@ describe("xy-grid-transform", () => {
       const scale = 63;
       const result = transformPoint([10, 0], centroid, scale);
       expect(result[0]).toBeCloseTo((10 * scale) / METERS_PER_DEGREE, 6);
+    });
+
+    it("round-trips through inverseTransformPoint", () => {
+      const centroid: [number, number] = [1_000, 500];
+      const scale = 63.2;
+      const original: [number, number] = [1_010, 510];
+      const wgs84 = transformPoint(original, centroid, scale);
+      const restored = inverseTransformPoint(wgs84, centroid, scale);
+      expect(restored[0]).toBeCloseTo(original[0], 2);
+      expect(restored[1]).toBeCloseTo(original[1], 2);
     });
   });
 });

@@ -23,14 +23,13 @@ import { getAppId } from "src/infra/app-instance";
 import { OPFSStorage } from "src/infra/storage";
 import { worktreeAtom } from "src/state/scenarios";
 import { nanoid } from "src/lib/id";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 export const runSimulationShortcut = "shift+enter";
 
 export const useRunSimulation = () => {
   const setSimulationState = useSetAtom(simulationDerivedAtom);
   const setDialogState = useSetAtom(dialogAtom);
   const setSimulationStep = useSetAtom(simulationStepAtom);
-  const isNewEngineOn = useFeatureFlag("FLAG_NEW_EPANET_ENGINE");
+
   const runSimulation = useAtomCallback(
     useCallback(
       async (
@@ -88,29 +87,14 @@ export const useRunSimulation = () => {
             : undefined;
         const previousSourceId = get(simulationSourceIdDerivedAtom);
         const runQuality = simulationSettings.qualitySimulationType !== "none";
-        const simulationResult = await runSimulationWorker(
+        const { report, status, metadata } = await runSimulationWorker(
           inp,
           appId,
           reportProgress,
-          { runQuality, useNewEngine: isNewEngineOn },
+          { runQuality },
           scenarioKey,
           runId,
-        ).catch((error: unknown) => {
-          const message = getErrorMessage(error);
-          return {
-            report: buildApplicationErrorReport(message),
-            status: "failure" as const,
-            metadata: new ArrayBuffer(0),
-            jsError: message,
-          };
-        });
-        const { metadata } = simulationResult;
-        let { report, status, jsError } = simulationResult;
-
-        const dialogStatus =
-          status === "failure" && jsError === "Simulation stopped by user"
-            ? "stopped"
-            : status;
+        );
 
         isCompleted = true;
 
@@ -119,17 +103,8 @@ export const useRunSimulation = () => {
         if (status === "success" || status === "warning") {
           const storage = new OPFSStorage(appId, scenarioKey, runId);
           epsReader = new EPSResultsReader(storage);
-          try {
-            await epsReader.initialize(metadata);
-            setSimulationStep(0);
-          } catch (error) {
-            const message = getErrorMessage(error);
-            report = appendApplicationError(report, message);
-            status = "failure";
-            jsError = message;
-            epsReader = undefined;
-            setSimulationStep(0);
-          }
+          await epsReader.initialize(metadata);
+          setSimulationStep(0);
         } else {
           setSimulationStep(0);
         }
@@ -185,7 +160,7 @@ export const useRunSimulation = () => {
 
         setDialogState({
           type: "simulationSummary",
-          status: dialogStatus,
+          status: status,
           duration,
           qualityType: epsReader?.qualityType ?? "none",
           onContinue: options?.onContinue,
@@ -193,27 +168,9 @@ export const useRunSimulation = () => {
           ignoreLabel: options?.ignoreLabel,
         });
       },
-      [setSimulationState, setDialogState, setSimulationStep, isNewEngineOn],
+      [setSimulationState, setDialogState, setSimulationStep],
     ),
   );
 
   return runSimulation;
-};
-
-const getErrorMessage = (error: unknown): string => {
-  return error instanceof Error ? error.message : String(error);
-};
-
-const buildApplicationErrorReport = (errorMessage: string): string => {
-  return `Application result processing error:
-${errorMessage}`;
-};
-
-const appendApplicationError = (
-  report: string,
-  errorMessage: string,
-): string => {
-  return `${report}
-
-${buildApplicationErrorReport(errorMessage)}`;
 };

@@ -10,6 +10,7 @@ import { useRunSimulation } from "./run-simulation";
 import { lib } from "src/lib/worker";
 import { Mock } from "vitest";
 import { runSimulation as workerRunSimulation } from "src/simulation/epanet/worker";
+import { patchEpanetLoader } from "src/__helpers__/epanet-loader";
 
 vi.mock("src/lib/worker", () => ({
   lib: {
@@ -18,6 +19,8 @@ vi.mock("src/lib/worker", () => ({
 }));
 
 describe("Run simulation", () => {
+  beforeAll(() => patchEpanetLoader());
+
   beforeEach(() => {
     wireWebWorker();
   });
@@ -59,27 +62,6 @@ describe("Run simulation", () => {
       const simulation = store.get(simulationDerivedAtom) as SimulationFinished;
       expect(simulation.status).toEqual("failure");
       expect(simulation.report).toContain("not enough");
-      expect(simulation.modelVersion).toEqual(hydraulicModel.version);
-    });
-  });
-
-  it("persists an application error report when the worker fails after launch", async () => {
-    const hydraulicModel = aSimulableModel();
-    const store = setInitialState({ hydraulicModel });
-    renderComponent({ store });
-    (lib.runSimulation as unknown as Mock).mockRejectedValueOnce(
-      new Error("worker result storage failed"),
-    );
-
-    await triggerRun();
-
-    await waitFor(() => {
-      const simulation = store.get(simulationDerivedAtom) as SimulationFinished;
-      expect(simulation.status).toEqual("failure");
-      expect(simulation.report).toContain(
-        "Application result processing error",
-      );
-      expect(simulation.report).toContain("worker result storage failed");
       expect(simulation.modelVersion).toEqual(hydraulicModel.version);
     });
   });

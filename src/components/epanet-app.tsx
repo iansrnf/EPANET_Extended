@@ -15,7 +15,12 @@ import React, {
   useState,
 } from "react";
 import { Resizer, useWindowResizeSplits } from "src/components/resizer";
-import { BottomPanel, LeftSidePanel, SidePanel } from "src/panels";
+import {
+  BottomPanel,
+  LeftSidePanel,
+  RelocatedSidePanel,
+  SidePanel,
+} from "src/panels";
 import { MapContext } from "src/map";
 import Notifications from "src/components/notifications";
 import { atom, useAtom } from "jotai";
@@ -41,6 +46,7 @@ import { Footer } from "./footer";
 import { useHydrateAtoms } from "jotai/utils";
 import { TabCloseGuard } from "./tab-close-guard";
 import { CommandShortcuts } from "./commands-shortcuts";
+import { PanelRegistrations } from "src/panels/panel-registrations";
 import { CommandBar } from "./command-bar/command-bar";
 import { SimulationPlaybackController } from "./simulation-playback-controller";
 import { useUserTracking } from "src/infra/user-tracking";
@@ -55,10 +61,9 @@ import { AppLoader } from "./app-loader";
 import { PrivacyBanner } from "./privacy-banner";
 import { usePrivacySettings } from "src/hooks/use-privacy-settings";
 import { initStorage } from "src/infra/storage";
-import { useIsBranchLocked } from "src/hooks/use-is-branch-locked";
+import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
 import { useIsCustomerAllocationDisabled } from "src/hooks/use-is-customer-allocation-disabled";
-import { useLoggerTelemetry } from "src/hooks/use-logger-telemetry";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { useSeedDefaultProjectDb } from "src/hooks/persistence/use-start-new-project";
 
 type ResolvedLayout = "HORIZONTAL" | "VERTICAL" | "FLOATING";
 
@@ -80,13 +85,22 @@ export function EpanetApp() {
   const { user, isSignedIn } = useAuth();
   const { enableAllTracking } = usePrivacySettings();
   const hasIdentifiedRef = useRef(false);
-  const isBranchLocked = useIsBranchLocked();
+
+  const isEditionBlocked = useIsEditionBlocked();
   const isCustomerAllocationDisabled = useIsCustomerAllocationDisabled();
-  useLoggerTelemetry();
+  const seedDefaultProjectDb = useSeedDefaultProjectDb();
+  const dbInitializedRef = useRef(false);
 
   useEffect(() => {
     void initStorage();
   }, []);
+
+  useEffect(() => {
+    if (dbInitializedRef.current) return;
+    if (!isReady) return;
+    dbInitializedRef.current = true;
+    seedDefaultProjectDb();
+  }, [isReady, seedDefaultProjectDb]);
 
   useEffect(() => {
     if (isSignedIn && user && !hasIdentifiedRef.current) {
@@ -153,36 +167,40 @@ export function EpanetApp() {
         <div className="h-24">
           <MenuBarPlay />
           <Toolbar
-            readonly={isBranchLocked}
+            readonly={isEditionBlocked}
             customerAllocationDisabled={isCustomerAllocationDisabled}
           />
         </div>
         <div
           className={clsx(
             layout === "VERTICAL" && "flex-col h-full",
-            "flex flex-grow relative border-t border-gray-200 dark:border-gray-900",
+            "flex grow relative border-t border-gray-200 dark:border-gray-900",
             "pb-10",
           )}
         >
           {layout === "HORIZONTAL" && <LeftSidePanel />}
-          <DndContext
-            sensors={sensor}
-            modifiers={[restrictToWindowEdges]}
-            onDragEnd={(end) => {
-              setPersistentTransform((transform) => {
-                return {
-                  x: transform.x + end.delta.x,
-                  y: transform.y + end.delta.y,
-                };
-              });
-            }}
-          >
-            <DraggableMap
-              persistentTransform={persistentTransform}
-              setMap={setMap}
-              layout={layout}
-            />
-          </DndContext>
+          <div className="flex-auto flex flex-col relative min-w-0">
+            <DndContext
+              sensors={sensor}
+              modifiers={[restrictToWindowEdges]}
+              onDragEnd={(end) => {
+                setPersistentTransform((transform) => {
+                  return {
+                    x: transform.x + end.delta.x,
+                    y: transform.y + end.delta.y,
+                  };
+                });
+              }}
+            >
+              <DraggableMap
+                persistentTransform={persistentTransform}
+                setMap={setMap}
+                layout={layout}
+              />
+            </DndContext>
+            {layout === "HORIZONTAL" && <BottomPanel />}
+            {layout === "VERTICAL" && <RelocatedSidePanel />}
+          </div>
           {layout === "HORIZONTAL" && (
             <>
               <SidePanel />
@@ -190,11 +208,11 @@ export function EpanetApp() {
               <Resizer side="right" isToggleAllowed={false} />
             </>
           )}
-          {layout === "VERTICAL" && <BottomPanel />}
         </div>
         <Drop />
         <Dialogs />
         <CommandBar />
+        <PanelRegistrations />
         <Suspense fallback={null}>
           <CommandShortcuts />
           <SimulationPlaybackController />
@@ -219,7 +237,6 @@ function DraggableMap({
   layout: ResolvedLayout;
   persistentTransform: Transform;
 }) {
-  const isAnimateSimulationOn = useFeatureFlag("FLAG_ANIMATE_SIMULATION");
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { setNodeRef, transform } = useDraggable({
     id: "map",
@@ -231,7 +248,7 @@ function DraggableMap({
     <div
       className={clsx(
         layout === "FLOATING"
-          ? "overflow-hidden absolute w-64 h-64 flex z-50 rounded border border-gray-500 shadow-lg"
+          ? "overflow-hidden absolute w-64 h-64 flex z-50 rounded-sm border border-gray-500 shadow-lg"
           : "relative flex-auto flex flex-col",
       )}
       ref={(elem) => {
@@ -253,21 +270,10 @@ function DraggableMap({
         <MapCanvas setMap={setMap} />
       </div>
       <Legends />
-      {isAnimateSimulationOn ? (
-        <div className="absolute top-3 right-3 flex flex-col gap-1 items-end">
-          <TimestepSelector />
-          <MapLoading />
-        </div>
-      ) : (
-        <>
-          <div className="absolute top-3 right-3">
-            <MapLoading />
-          </div>
-          <div className="absolute top-3 right-3">
-            <TimestepSelector />
-          </div>
-        </>
-      )}
+      <div className="absolute top-3 right-3 flex flex-col gap-1 items-end">
+        <TimestepSelector />
+        <MapLoading />
+      </div>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import {
 } from "react";
 import type { PropertyComparison } from "src/hooks/use-asset-comparison";
 import { EditableTextField } from "src/components/form/editable-text-field";
+import { TextField } from "src/components/form/text-field";
 import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import { Unit, convertTo } from "src/quantity";
@@ -14,20 +15,22 @@ import { localizeDecimal } from "src/infra/i18n/numbers";
 import { useValueDisplay } from "src/hooks/use-value-display";
 import type { QuantityProperty } from "src/lib/project-settings/quantities-spec";
 import { Selector, SelectorOption } from "src/components/form/selector";
+import { CreatableSelector } from "src/components/form/creatable-selector";
 import { NumericField } from "src/components/form/numeric-field";
 import { Checkbox } from "src/components/form/Checkbox";
 import { PipeStatus } from "src/hydraulic-model/asset-types/pipe";
-import { PumpStatus } from "src/hydraulic-model/asset-types/pump";
-import type { PumpDefinitionMode } from "./pump-definition-details";
-import type { TankMixingModel } from "src/hydraulic-model/asset-types/tank";
+import {
+  PumpDefinitionType,
+  PumpStatus,
+} from "src/hydraulic-model/asset-types/pump";
 import { ValveKind, ValveStatus } from "src/hydraulic-model/asset-types/valve";
+import type { TankMixingModel } from "src/hydraulic-model/asset-types/tank";
 import type { ChemicalSourceType } from "src/hydraulic-model/asset-types/node";
 import { PanelActions } from "./actions";
 import {
   InlineField,
   SectionList,
   CollapsibleSection,
-  Section,
 } from "src/components/form/fields";
 import {
   assetPanelSectionsExpandedAtom,
@@ -51,7 +54,6 @@ import { ephemeralStateAtom } from "src/state/drawing";
 import { assetPanelFooterAtom } from "src/state/quick-graph";
 import { MultipleValuesIcon } from "src/icons";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 
 export const AssetEditorContent = ({
   label,
@@ -71,7 +73,6 @@ export const AssetEditorContent = ({
   readOnly?: boolean;
 }) => {
   const [footerState, setFooterState] = useAtom(assetPanelFooterAtom);
-  const useAutoIndentation = useFeatureFlag("FLAG_UI_COLLAPSIBLE");
 
   const handleFooterHeightChange = useCallback(
     (height: number) => {
@@ -95,8 +96,7 @@ export const AssetEditorContent = ({
       isStickyFooter={footerState.isPinned}
       stickyFooterHeight={footerState.height}
       onStickyFooterHeightChange={handleFooterHeightChange}
-      gap={useAutoIndentation ? 1 : 3}
-      padding={useAutoIndentation ? 3 : 4}
+      padding={3}
       overflow={true}
     >
       {children}
@@ -168,30 +168,6 @@ const Header = ({
     </div>
   );
 };
-
-export const TextField = ({
-  children,
-  padding = "md",
-  className,
-}: {
-  children: React.ReactNode;
-  padding?: "sm" | "md";
-  className?: string;
-}) => (
-  <span
-    className={clsx(
-      "block w-full text-sm border border-transparent tabular-nums",
-      !className && "text-gray-700",
-      {
-        "p-1": padding === "sm",
-        "p-2": padding === "md",
-      },
-      className,
-    )}
-  >
-    {children}
-  </span>
-);
 
 export const TextRow = ({
   name,
@@ -308,6 +284,153 @@ export const QuantityRow = <P extends string>({
   );
 };
 
+export const IntegerRow = <P extends string>({
+  name,
+  value,
+  positiveOnly = false,
+  readOnly = false,
+  isNullable = true,
+  placeholder = "",
+  comparison,
+  onChange,
+  displayName,
+}: {
+  name: P;
+  value: number | null;
+  positiveOnly?: boolean;
+  isNullable?: boolean;
+  readOnly?: boolean;
+  placeholder?: string;
+  comparison?: PropertyComparison;
+  onChange?: (
+    name: P,
+    newValue: number | null,
+    oldValue: number | null,
+  ) => void;
+  displayName?: string;
+}) => {
+  const translate = useTranslate();
+  const lastChange = useRef<number>(0);
+
+  const displayValue = value === null ? "" : String(value);
+  const label = displayName ?? translate(name);
+
+  const baseDisplayValue =
+    comparison?.hasChanged && comparison.baseValue != null
+      ? String(comparison.baseValue)
+      : undefined;
+
+  const handleChange = (newValue: number, isEmpty: boolean) => {
+    lastChange.current = Date.now();
+    if (isEmpty) {
+      if (isNullable) onChange && onChange(name, null, value);
+      return;
+    }
+    if (!Number.isFinite(newValue)) return;
+    const truncated = Math.trunc(newValue);
+    if (positiveOnly && truncated <= 0) return;
+    onChange && onChange(name, truncated, value);
+  };
+
+  return (
+    <InlineField
+      name={label}
+      labelSize="md"
+      hasChanged={comparison?.hasChanged}
+      baseDisplayValue={baseDisplayValue}
+    >
+      {readOnly ? (
+        <TextField padding="md">{displayValue}</TextField>
+      ) : (
+        <NumericField
+          key={lastChange.current + displayValue}
+          label={label}
+          positiveOnly={positiveOnly}
+          isNullable={isNullable}
+          readOnly={readOnly}
+          displayValue={displayValue}
+          placeholder={placeholder}
+          onChangeValue={handleChange}
+          styleOptions={{
+            padding: "md",
+            ghostBorder: readOnly,
+            textSize: "sm",
+          }}
+        />
+      )}
+    </InlineField>
+  );
+};
+
+export const CreatableTextRow = <P extends string>({
+  name,
+  value,
+  options,
+  readOnly = false,
+  placeholder,
+  comparison,
+  onChange,
+}: {
+  name: P;
+  value: string | null;
+  options: string[];
+  readOnly?: boolean;
+  placeholder?: string;
+  comparison?: PropertyComparison;
+  onChange?: (
+    name: P,
+    newValue: string | null,
+    oldValue: string | null,
+  ) => void;
+}) => {
+  const translate = useTranslate();
+  const label = translate(name);
+  const resolvedPlaceholder = placeholder ?? translate("none");
+
+  const baseDisplayValue =
+    comparison?.hasChanged && comparison.baseValue != null
+      ? String(comparison.baseValue)
+      : undefined;
+
+  const handleChange = useCallback(
+    (newValue: string | null) => {
+      const normalized = newValue === null ? null : newValue.trim() || null;
+      const canonical =
+        normalized === null
+          ? null
+          : (options.find(
+              (o) => o.toLowerCase() === normalized.toLowerCase(),
+            ) ?? normalized);
+      if (canonical === value) return;
+      onChange && onChange(name, canonical, value);
+    },
+    [name, onChange, options, value],
+  );
+
+  return (
+    <InlineField
+      name={label}
+      labelSize="md"
+      hasChanged={comparison?.hasChanged}
+      baseDisplayValue={baseDisplayValue}
+    >
+      {readOnly ? (
+        <TextField padding="md">{value ?? ""}</TextField>
+      ) : (
+        <CreatableSelector
+          options={options}
+          selected={value}
+          onChange={handleChange}
+          placeholder={resolvedPlaceholder}
+          ariaLabel={label}
+          searchPlaceholder={translate("searchOrTypeNew")}
+          createLabel={(query) => translate("addNewValue", query)}
+        />
+      )}
+    </InlineField>
+  );
+};
+
 export type TankDefinitionMode =
   | "diameterBased"
   | "areaBased"
@@ -318,7 +441,7 @@ type SelectRowValue =
   | PipeStatus
   | ValveKind
   | ValveStatus
-  | PumpDefinitionMode
+  | PumpDefinitionType
   | PumpStatus
   | TankDefinitionMode
   | TankMixingModel
@@ -441,6 +564,7 @@ type LibrarySelectRowProps<P extends string> = {
   ) => void;
   emptyOptionLabel?: string;
   placeholder?: string;
+  excludeId?: number;
   readOnly?: boolean;
   comparison?: PropertyComparison;
 };
@@ -455,6 +579,7 @@ export function LibrarySelectRow<P extends string>({
   onChange,
   emptyOptionLabel,
   placeholder,
+  excludeId,
   readOnly,
   comparison,
 }: LibrarySelectRowProps<P>) {
@@ -467,6 +592,7 @@ export function LibrarySelectRow<P extends string>({
     const itemGroup: SelectorOption<number>[] = [];
     for (const item of collection.values()) {
       if (item.type !== filterByType) continue;
+      if (item.id === excludeId) continue;
       itemGroup.push({ value: item.id, label: item.label });
     }
     const emptyGroup: SelectorOption<number>[] = emptyOptionLabel
@@ -477,7 +603,7 @@ export function LibrarySelectRow<P extends string>({
       ? [...emptyGroup, ...itemGroup]
       : [];
     return [libraryGroup, selectableOptions];
-  }, [collection, filterByType, libraryLabel, emptyOptionLabel]);
+  }, [collection, filterByType, libraryLabel, emptyOptionLabel, excludeId]);
 
   const handleChange = useCallback(
     (_name: P, newValue: number | null, oldValue: number | null) => {
@@ -501,7 +627,9 @@ export function LibrarySelectRow<P extends string>({
       listClassName={emptyOptionLabel ? "first:italic" : ""}
       nullable={true}
       placeholder={
-        placeholder ?? emptyOptionLabel ?? `${translate("select")}...`
+        readOnly
+          ? (placeholder ?? emptyOptionLabel ?? "")
+          : (placeholder ?? emptyOptionLabel ?? `${translate("select")}...`)
       }
       onChange={handleChange}
       readOnly={readOnly}
@@ -622,7 +750,7 @@ export const ConnectedCustomersRow = ({
         <P.Trigger
           aria-label={`Connected customers: ${customerCount}`}
           onKeyDown={handleTriggerKeyDown}
-          className="text-left text-sm p-2 text-gray-700 bg-gray-100 border border-gray-300 rounded-sm hover:bg-gray-200 focus-visible:ring-inset focus-visible:ring-1 focus-visible:ring-purple-500 aria-expanded:ring-1 aria-expanded:ring-purple-500 w-full flex items-center gap-x-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:hover:bg-gray-600 tabular-nums"
+          className="text-left text-sm p-2 text-gray-700 bg-gray-100 border border-gray-300 rounded-xs hover:bg-gray-200 focus-visible:ring-inset focus-visible:ring-1 focus-visible:ring-purple-500 aria-expanded:ring-1 aria-expanded:ring-purple-500 w-full flex items-center gap-x-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:hover:bg-gray-600 tabular-nums"
         >
           <MultipleValuesIcon />
           {customerCount}
@@ -721,7 +849,7 @@ const CustomerPointsPopover = ({
         tabIndex={0}
       >
         <div
-          className="w-full relative rounded"
+          className="w-full relative rounded-sm"
           style={{
             height: `${rowVirtualizer.getTotalSize()}px`,
           }}
@@ -785,24 +913,19 @@ export const SectionWrapper = ({
   section: keyof AssetPanelSectionExpanded;
   children: React.ReactNode;
 }) => {
-  const useAutoIndentation = useFeatureFlag("FLAG_UI_COLLAPSIBLE");
   const [sections, setSections] = useAtom(assetPanelSectionsExpandedAtom);
-  if (useAutoIndentation) {
-    return (
-      <CollapsibleSection
-        title={title}
-        hasChanged={hasChanged}
-        open={sections[section]}
-        onOpenChange={(open) =>
-          setSections((prev) => ({ ...prev, [section]: open }))
-        }
-        indicatorPosition="left"
-        separator={false}
-        variant="primary"
-      >
-        {children}
-      </CollapsibleSection>
-    );
-  }
-  return <Section title={title}>{children}</Section>;
+  return (
+    <CollapsibleSection
+      title={title}
+      hasChanged={hasChanged}
+      open={sections[section]}
+      onOpenChange={(open) =>
+        setSections((prev) => ({ ...prev, [section]: open }))
+      }
+      separator={false}
+      variant="primary"
+    >
+      {children}
+    </CollapsibleSection>
+  );
 };

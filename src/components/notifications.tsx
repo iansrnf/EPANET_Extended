@@ -1,50 +1,165 @@
+"use client";
 import clsx from "clsx";
 import { CloseIcon } from "src/icons";
 import toast, { Toaster } from "react-hot-toast";
+import { Button, type B3Variant } from "src/components/elements";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 
 type NotificationVariant = "success" | "warning" | "error" | "default";
+
+type NotificationAction = {
+  label: string;
+  onClick: () => void;
+  variant?: B3Variant;
+  align?: "left" | "center" | "right" | "inline";
+};
 
 type NotificationBannerProps = {
   variant: NotificationVariant;
   title?: string;
   description?: string;
+  details?: string;
   Icon?: React.ElementType;
   className?: string;
+  action?: NotificationAction;
+  onActionClick?: () => void;
+  onDismiss?: () => void;
 };
 
 export const NotificationBanner = ({
   variant,
   title,
   description,
+  details,
   Icon,
   className,
+  action,
+  onActionClick,
+  onDismiss,
 }: NotificationBannerProps) => {
+  const isThemeTokensOn = useFeatureFlag("FLAG_THEME_TOKENS");
+  const isInlineAction = action?.align === "inline";
+  const hasTitleRowExtras = isInlineAction || !!onDismiss;
   return (
     <div
       className={clsx(
         "flex items-start p-3",
-        {
-          "bg-green-50 border-green-200": variant === "success",
-          "bg-orange-50 border-orange-200": variant === "warning",
-          "bg-red-50 border-red-200": variant === "error",
-          "bg-white borcer-gray-400": variant === "default",
-        },
+        isThemeTokensOn
+          ? {
+              "bg-success-subtle border-success": variant === "success",
+              "bg-warning-subtle border-warning": variant === "warning",
+              "bg-error-subtle border-error": variant === "error",
+              "bg-white border-gray-400": variant === "default",
+            }
+          : {
+              "bg-green-50 border-green-200": variant === "success",
+              "bg-orange-50 border-orange-200": variant === "warning",
+              "bg-red-50 border-red-200": variant === "error",
+              "bg-white border-gray-400": variant === "default",
+            },
         className,
       )}
     >
       {Icon && (
         <Icon
-          className={clsx("h-5 w-5 mr-3 flex-shrink-0", {
-            "text-green-500": variant === "success",
-            "text-red-500": variant === "error",
-            "text-orange-500": variant === "warning",
-          })}
+          className={clsx(
+            "h-5 w-5 mr-3 shrink-0",
+            isThemeTokensOn
+              ? {
+                  "text-success": variant === "success",
+                  "text-error": variant === "error",
+                  "text-warning": variant === "warning",
+                }
+              : {
+                  "text-green-500": variant === "success",
+                  "text-red-500": variant === "error",
+                  "text-orange-500": variant === "warning",
+                },
+          )}
           aria-hidden="true"
         />
       )}
-      <div className="flex flex-col flex-grow space-y-1">
-        {title && <span className="text-sm font-semibold">{title}</span>}
-        {description && <span className="text-sm">{description}</span>}
+      <div className="flex flex-col grow space-y-1 min-w-0">
+        {(title || hasTitleRowExtras) &&
+          (hasTitleRowExtras ? (
+            <div className="flex items-center gap-2">
+              {title && (
+                <span
+                  className={clsx(
+                    isThemeTokensOn ? "text-size-base" : "text-sm",
+                    "font-semibold grow min-w-0",
+                  )}
+                >
+                  {title}
+                </span>
+              )}
+              {isInlineAction && action && (
+                <Button
+                  variant={action.variant ?? "primary"}
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => {
+                    action.onClick();
+                    onActionClick?.();
+                  }}
+                >
+                  {action.label}
+                </Button>
+              )}
+              {onDismiss && (
+                <button
+                  onClick={onDismiss}
+                  className="shrink-0 p-1 rounded-md inline-flex items-center justify-center text-gray-700 hover:text-gray-500 hover:cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                >
+                  <span className="sr-only">Dismiss</span>
+                  <CloseIcon />
+                </button>
+              )}
+            </div>
+          ) : (
+            title && (
+              <span
+                className={clsx(
+                  isThemeTokensOn ? "text-size-base" : "text-sm",
+                  "font-semibold",
+                )}
+              >
+                {title}
+              </span>
+            )
+          ))}
+        {description && (
+          <span className={isThemeTokensOn ? "text-size-base" : "text-sm"}>
+            {description}
+          </span>
+        )}
+        {details && (
+          <details className={isThemeTokensOn ? "text-size-small" : "text-xs"}>
+            <summary className="cursor-pointer text-gray-600 hover:text-gray-800">
+              Show details
+            </summary>
+            <pre className="mt-1 whitespace-pre-wrap wrap-break-word font-mono text-gray-700 bg-white/60 rounded-sm p-2 max-h-40 overflow-auto">
+              {details}
+            </pre>
+          </details>
+        )}
+        {action && action.align !== "inline" && (
+          <Button
+            variant={action.variant ?? "default"}
+            size="sm"
+            className={clsx("mt-1", {
+              "self-start": !action.align || action.align === "left",
+              "self-center": action.align === "center",
+              "self-end": action.align === "right",
+            })}
+            onClick={() => {
+              action.onClick();
+              onActionClick?.();
+            }}
+          >
+            {action.label}
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -102,22 +217,26 @@ export const notify = ({
   variant = "default",
   title,
   description,
+  details,
   Icon,
   id,
   duration = 5000,
   position = "top-center",
   dismissable = true,
   size = "auto",
+  action,
 }: {
   variant?: NotificationVariant;
   title: string;
   description?: string;
+  details?: string;
   Icon?: React.ElementType;
   id?: string;
   duration?: number;
-  position?: "top-center" | "bottom-right";
+  position?: "top-center" | "bottom-right" | "bottom-center";
   dismissable?: boolean;
   size?: "auto" | "sm" | "md";
+  action?: NotificationAction;
 }) => {
   return toast.custom(
     (t) => (
@@ -139,21 +258,13 @@ export const notify = ({
           variant={variant}
           title={title}
           description={description}
+          details={details}
           Icon={Icon}
-          className={clsx(
-            "shadow-md border rounded-lg",
-            dismissable && "pr-10",
-          )}
+          action={action}
+          onActionClick={() => toast.remove(t.id)}
+          onDismiss={dismissable ? () => toast.remove(t.id) : undefined}
+          className="shadow-md border rounded-lg"
         />
-        {dismissable && (
-          <button
-            onClick={() => toast.remove(t.id)}
-            className="absolute top-3 right-3 p-1 rounded-md inline-flex items-center justify-center text-gray-700 hover:text-gray-500 hover:cursor-pointer focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
-          >
-            <span className="sr-only">Dismiss</span>
-            <CloseIcon />
-          </button>
-        )}
       </div>
     ),
     { id, duration, position },

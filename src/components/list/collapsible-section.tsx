@@ -1,7 +1,7 @@
 import * as C from "@radix-ui/react-collapsible";
 
 import { ChevronDownIcon, ChevronRightIcon } from "src/icons";
-import { Button } from "src/components/elements";
+import { Button } from "../elements";
 import { useNavigableListContext } from "./navigable-list";
 
 type CollapsibleListSectionProps = {

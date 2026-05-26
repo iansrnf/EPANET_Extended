@@ -456,7 +456,10 @@ function AddLayer({ onClose }: { onClose: () => void }) {
     });
     setOpen(false);
     onClose();
-    setDialogState({ type: "upgrade" });
+    setDialogState({
+      type: "upgrade",
+      source: { kind: "customLayers" },
+    });
   };
 
   const handleModeChange = (mode: Mode, type: string) => {
@@ -661,7 +664,7 @@ const OpacitySetting = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
         className="text-xs
           px-1 py-0.5
           border-gray-300
-          rounded-sm
+          rounded-xs
           dark:text-white
           dark:bg-transparent
         opacity-50 hover:opacity-100 focus:opacity-100

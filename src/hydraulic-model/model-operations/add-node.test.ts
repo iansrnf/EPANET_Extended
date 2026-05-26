@@ -110,18 +110,28 @@ describe("addNode", () => {
         pipeIdToSplit: IDS.P1,
       });
 
-      expect(deleteAssets).toEqual([IDS.P1]);
       expect(putAssets).toHaveLength(3);
+      expect(deleteAssets).toEqual([IDS.P1]);
 
-      const [newNode, pipe1, pipe2] = putAssets!;
-      expect(newNode.type).toBe("junction");
-      expect(newNode.coordinates).toEqual([5, 0]);
-      expect(newNode.label).toBe("J3");
+      const [junction, pipe1, pipe2] = putAssets!;
+
+      expect(junction.type).toBe("junction");
+      expect(junction.coordinates).toEqual([5, 0]);
+      expect((junction as any).elevation).toBe(50);
 
       expect(pipe1.type).toBe("pipe");
       expect(pipe2.type).toBe("pipe");
-      expect((pipe1 as any).connections).toEqual([IDS.J1, newNode.id]);
-      expect((pipe2 as any).connections).toEqual([newNode.id, IDS.J2]);
+      expect(pipe1.coordinates).toEqual([
+        [0, 0],
+        [5, 0],
+      ]);
+      expect(pipe2.coordinates).toEqual([
+        [5, 0],
+        [10, 0],
+      ]);
+
+      expect((pipe1 as any).connections).toEqual([IDS.J1, junction.id]);
+      expect((pipe2 as any).connections).toEqual([junction.id, IDS.J2]);
     });
 
     it("uses node coordinates exactly as split point", () => {
@@ -151,8 +161,13 @@ describe("addNode", () => {
         pipeIdToSplit: IDS.P1,
       });
 
-      const [newNode] = putAssets!;
-      expect(newNode.coordinates).toEqual(nodeCoordinates);
+      const [junction, pipe1, pipe2] = putAssets!;
+
+      expect(junction.coordinates).toEqual(nodeCoordinates);
+      expect(pipe1.coordinates[pipe1.coordinates.length - 1]).toEqual(
+        nodeCoordinates,
+      );
+      expect(pipe2.coordinates[0]).toEqual(nodeCoordinates);
     });
 
     it("integrates with pipe splitting operation", () => {
@@ -177,17 +192,18 @@ describe("addNode", () => {
         lengthUnit: "m",
         nodeType: "junction",
         coordinates: [5, 0],
-        elevation: 0,
         pipeIdToSplit: IDS.MainPipe,
       });
 
+      expect(putAssets).toHaveLength(3);
       expect(deleteAssets).toEqual([IDS.MainPipe]);
-      expect(putAssets!.filter((asset) => asset.type === "pipe")).toHaveLength(
-        2,
-      );
-      expect(
-        putAssets!.find((asset) => asset.type === "junction"),
-      ).toBeDefined();
+
+      const [junction, pipe1, pipe2] = putAssets!;
+      expect(junction.type).toBe("junction");
+      expect(pipe1.type).toBe("pipe");
+      expect(pipe2.type).toBe("pipe");
+      expect(pipe1.label).toBe("MainPipe");
+      expect(pipe2.label).toBe("MainPipe_1");
     });
 
     it("throws error for invalid pipe ID", () => {
@@ -206,7 +222,6 @@ describe("addNode", () => {
           lengthUnit: "m",
           nodeType: "junction",
           coordinates: [5, 0],
-          elevation: 0,
           pipeIdToSplit: NonExistentPipeId,
         }),
       ).toThrow("Invalid pipe ID: 1");
@@ -229,10 +244,9 @@ describe("addNode", () => {
           lengthUnit: "m",
           nodeType: "junction",
           coordinates: [5, 0],
-          elevation: 0,
           pipeIdToSplit: IDS.J1,
         }),
-      ).toThrow("Invalid pipe ID: 1");
+      ).toThrow(`Invalid pipe ID: ${IDS.J1}`);
     });
 
     it("maintains network connectivity with proper connections", () => {
@@ -257,13 +271,15 @@ describe("addNode", () => {
         lengthUnit: "m",
         nodeType: "junction",
         coordinates: [10, 0],
-        elevation: 0,
         pipeIdToSplit: IDS.MainPipe,
       });
 
-      const [newNode, pipe1, pipe2] = putAssets!;
-      expect((pipe1 as any).connections).toEqual([IDS.StartNode, newNode.id]);
-      expect((pipe2 as any).connections).toEqual([newNode.id, IDS.EndNode]);
+      const [newJunction, firstSegment, secondSegment] = putAssets!;
+
+      expect((firstSegment as any).connections[0]).toBe(IDS.StartNode);
+      expect((firstSegment as any).connections[1]).toBe(newJunction.id);
+      expect((secondSegment as any).connections[0]).toBe(newJunction.id);
+      expect((secondSegment as any).connections[1]).toBe(IDS.EndNode);
     });
 
     it("reconnects customer points when splitting pipe", () => {
@@ -284,12 +300,14 @@ describe("addNode", () => {
       const customerPoint = buildCustomerPoint(IDS.CP1, {
         coordinates: [3, 1],
       });
+
       customerPoint.connect({
         pipeId: IDS.P1,
         snapPoint: [3, 0],
         junctionId: IDS.J1,
       });
-      hydraulicModel.customerPoints.set(IDS.CP1, customerPoint);
+
+      hydraulicModel.customerPoints.set(customerPoint.id, customerPoint);
       hydraulicModel.customerPointsLookup.addConnection(customerPoint);
 
       const { putAssets, putCustomerPoints } = addNode(hydraulicModel, {
@@ -298,13 +316,18 @@ describe("addNode", () => {
         lengthUnit: "m",
         nodeType: "junction",
         coordinates: [5, 0],
-        elevation: 0,
         pipeIdToSplit: IDS.P1,
       });
 
       expect(putAssets).toHaveLength(3);
+      expect(putCustomerPoints).toBeDefined();
       expect(putCustomerPoints).toHaveLength(1);
-      expect(putCustomerPoints![0].connection).not.toBeNull();
+
+      const reconnectedCP = putCustomerPoints![0];
+      const [newJunction, pipe1] = putAssets!;
+
+      expect(reconnectedCP.connection?.pipeId).toBe(pipe1.id);
+      expect(reconnectedCP.connection?.junctionId).toBe(newJunction.id);
     });
 
     it("inherits isActive from pipe being split when pipe is active", () => {
@@ -329,11 +352,11 @@ describe("addNode", () => {
         lengthUnit: "m",
         nodeType: "junction",
         coordinates: [5, 0],
-        elevation: 0,
         pipeIdToSplit: IDS.P1,
       });
 
-      putAssets!.forEach((asset) => expect(asset.isActive).toBe(true));
+      const [newJunction] = putAssets!;
+      expect(newJunction.isActive).toBe(true);
     });
 
     it("inherits isActive from pipe being split when pipe is inactive", () => {
@@ -358,11 +381,11 @@ describe("addNode", () => {
         lengthUnit: "m",
         nodeType: "junction",
         coordinates: [5, 0],
-        elevation: 0,
         pipeIdToSplit: IDS.P1,
       });
 
-      putAssets!.forEach((asset) => expect(asset.isActive).toBe(false));
+      const [newJunction] = putAssets!;
+      expect(newJunction.isActive).toBe(false);
     });
   });
 
@@ -381,7 +404,6 @@ describe("addNode", () => {
           lengthUnit: "m",
           nodeType: "unsupported" as any,
           coordinates: [0, 0],
-          elevation: 0,
         }),
       ).toThrow("Unsupported node type: unsupported");
     });
@@ -413,13 +435,19 @@ describe("addNode", () => {
       lengthUnit: "m",
       nodeType: "junction",
       coordinates: [5, 0],
-      elevation: 0,
       pipeIdToSplit: IDS.P1,
     });
 
-    const pipes = putAssets!.filter((asset) => asset.type === "pipe");
-    expect(pipes).toHaveLength(2);
-    expect(pipes.some((pipe) => pipe.coordinates.length === 2)).toBe(true);
+    const [, pipe1, pipe2] = putAssets!;
+
+    expect(pipe1.coordinates).toEqual([
+      [0, 0],
+      [5, 0],
+    ]);
+    expect(pipe2.coordinates).toEqual([
+      [5, 0],
+      [10, 0],
+    ]);
   });
 
   it("handles multiple vertices correctly when adding node", () => {
@@ -437,7 +465,7 @@ describe("addNode", () => {
         coordinates: [
           [0, 0],
           [5, 0],
-          [10, 5],
+          [10, 0],
           [15, 0],
           [20, 0],
         ],
@@ -449,13 +477,23 @@ describe("addNode", () => {
       labelManager,
       lengthUnit: "m",
       nodeType: "reservoir",
-      coordinates: [10, 5],
-      elevation: 0,
+      coordinates: [10, 0],
       pipeIdToSplit: IDS.P1,
     });
 
-    const pipes = putAssets!.filter((asset) => asset.type === "pipe");
-    expect(pipes).toHaveLength(2);
+    const [reservoir, pipe1, pipe2] = putAssets!;
+
+    expect(reservoir.type).toBe("reservoir");
+    expect(pipe1.coordinates).toEqual([
+      [0, 0],
+      [5, 0],
+      [10, 0],
+    ]);
+    expect(pipe2.coordinates).toEqual([
+      [10, 0],
+      [15, 0],
+      [20, 0],
+    ]);
   });
 
   it("works with tank node type at vertex location", () => {
@@ -484,11 +522,20 @@ describe("addNode", () => {
       lengthUnit: "m",
       nodeType: "tank",
       coordinates: [5, 0],
-      elevation: 0,
+      elevation: 100,
       pipeIdToSplit: IDS.P1,
     });
 
-    const [tank] = putAssets!;
+    const [tank, pipe1, pipe2] = putAssets!;
+
     expect(tank.type).toBe("tank");
+    expect(pipe1.coordinates).toEqual([
+      [0, 0],
+      [5, 0],
+    ]);
+    expect(pipe2.coordinates).toEqual([
+      [5, 0],
+      [10, 0],
+    ]);
   });
 });

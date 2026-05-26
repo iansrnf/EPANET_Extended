@@ -150,6 +150,27 @@ describe("parse valves", () => {
     expect(v1.curveId).toBeDefined();
   });
 
+  it("defaults missing minor loss to zero", () => {
+    const valveId = "v1";
+    const inp = `
+    [JUNCTIONS]
+    j1\t10
+    j2\t10
+
+    [VALVES]
+    ${valveId}\tj1\tj2\t100\tFCV\t0.5
+
+    [COORDINATES]
+    j1\t10\t20
+    j2\t30\t40
+    `;
+
+    const { hydraulicModel } = parseInp(inp);
+
+    const valve = getByLabel(hydraulicModel.assets, valveId) as Valve;
+    expect(valve.minorLoss).toEqual(0);
+  });
+
   it("stores curveId on PCV valve", () => {
     const inp = `
     [JUNCTIONS]
@@ -173,5 +194,26 @@ describe("parse valves", () => {
     const v1 = getByLabel(hydraulicModel.assets, "v1") as Valve;
     expect(v1.kind).toEqual("pcv");
     expect(v1.curveId).toBeDefined();
+  });
+
+  it("falls back to TCV and reports an issue when valve type is invalid", () => {
+    const inp = `
+    [JUNCTIONS]
+    j1\t10
+    j2\t10
+
+    [VALVES]
+    v1\tj1\tj2\t100\tXYZ\t5\t0
+
+    [COORDINATES]
+    j1\t10\t20
+    j2\t30\t40
+    `;
+
+    const { hydraulicModel, issues } = parseInp(inp);
+
+    const v1 = getByLabel(hydraulicModel.assets, "v1") as Valve;
+    expect(v1.kind).toEqual("tcv");
+    expect(issues?.invalidValveKinds?.get("v1")).toEqual("XYZ");
   });
 });

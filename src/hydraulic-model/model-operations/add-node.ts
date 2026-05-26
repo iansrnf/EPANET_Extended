@@ -17,7 +17,7 @@ type InputData = {
   pipeIdToSplit?: AssetId;
   lengthUnit: Unit;
   assetFactory: AssetFactory;
-  labelManager?: LabelManager;
+  labelManager: LabelManager;
 };
 
 export const addNode: ModelOperation<InputData> = (
@@ -29,7 +29,7 @@ export const addNode: ModelOperation<InputData> = (
     pipeIdToSplit,
     lengthUnit,
     assetFactory,
-    labelManager = hydraulicModel.labelManager,
+    labelManager,
   },
 ) => {
   const isActive = getInheritedActiveTopologyStatus(

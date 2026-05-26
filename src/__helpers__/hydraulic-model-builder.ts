@@ -19,7 +19,6 @@ import {
   Demands,
   Patterns,
   PatternType,
-  initializePressureLoggers,
 } from "src/hydraulic-model";
 import { SimpleControl, RuleBasedControl } from "src/hydraulic-model/controls";
 import { AssetIndex } from "src/hydraulic-model/asset-index";
@@ -136,14 +135,12 @@ export class HydraulicModelBuilder {
   private controlsValue: Controls;
 
   static with(
-    options:
-      | AssetQuantitiesSpec
-      | {
-          quantitiesSpec?: AssetQuantitiesSpec;
-          labelManager?: LabelManager;
-          assetFactory?: AssetFactory;
-          idGenerator?: WritableIdGenerator;
-        } = {},
+    options: {
+      quantitiesSpec?: AssetQuantitiesSpec;
+      labelManager?: LabelManager;
+      assetFactory?: AssetFactory;
+      idGenerator?: WritableIdGenerator;
+    } = {},
   ) {
     return new HydraulicModelBuilder(options);
   }
@@ -153,25 +150,21 @@ export class HydraulicModelBuilder {
   }
 
   constructor(
-    options:
-      | AssetQuantitiesSpec
-      | {
-          quantitiesSpec?: AssetQuantitiesSpec;
-          labelManager?: LabelManager;
-          assetFactory?: AssetFactory;
-          idGenerator?: WritableIdGenerator;
-        } = {},
+    options: {
+      quantitiesSpec?: AssetQuantitiesSpec;
+      labelManager?: LabelManager;
+      assetFactory?: AssetFactory;
+      idGenerator?: WritableIdGenerator;
+    } = {},
   ) {
-    const resolvedOptions =
-      "units" in options ? { quantitiesSpec: options } : options;
-    const quantitiesSpec = resolvedOptions.quantitiesSpec ?? presets.LPS;
+    const quantitiesSpec = options.quantitiesSpec ?? presets.LPS;
     this.assets = new Map();
     this.customerPointsMap = initializeCustomerPoints();
-    this.labelManager = resolvedOptions.labelManager ?? new LabelManager();
-    this.idGenerator = resolvedOptions.idGenerator ?? new WritableIdGenerator();
+    this.labelManager = options.labelManager ?? new LabelManager();
+    this.idGenerator = options.idGenerator ?? new WritableIdGenerator();
     this.customerPointIdGenerator = new WritableIdGenerator();
     this.assetFactory =
-      resolvedOptions.assetFactory ??
+      options.assetFactory ??
       new AssetFactory(
         quantitiesSpec.defaults,
         this.idGenerator,
@@ -266,7 +259,7 @@ export class HydraulicModelBuilder {
     const { startNodeId, endNodeId, ...properties } = data;
     const startNode = this.getNodeOrCreate(startNodeId);
     const endNode = this.getNodeOrCreate(endNodeId);
-    const definitionType = properties.definitionType || "curve";
+    const definitionType = properties.definitionType || "designPointCurve";
     const curve = properties.curve || [{ x: 1, y: 1 }];
 
     const pump = this.assetFactory.createPump({
@@ -468,8 +461,6 @@ export class HydraulicModelBuilder {
       assets: this.assets,
       customerPoints: this.customerPointsMap,
       customerPointsLookup: lookup,
-      pressureLoggers: initializePressureLoggers(),
-      labelManager: this.labelManager,
       topology: this.topology,
       assetIndex,
       demands: this.demands,

@@ -8,10 +8,8 @@ export interface Caption {
   text: string;
 }
 
-interface VideoPlayerProps extends Omit<
-  React.VideoHTMLAttributes<HTMLVideoElement>,
-  "src"
-> {
+interface VideoPlayerProps
+  extends Omit<React.VideoHTMLAttributes<HTMLVideoElement>, "src"> {
   src: string;
   captions?: Caption[];
 }

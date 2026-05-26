@@ -1,5 +1,5 @@
 import { parseGeoJson } from "./parse-geojson";
-import type { Projection } from "src/lib/projections";
+import type { Proj4Projection } from "src/lib/projections";
 
 describe("parseGeoJson", () => {
   it("parses valid FeatureCollection", () => {
@@ -211,7 +211,7 @@ invalid json line
   });
 
   describe("coordinate transformation", () => {
-    const mockProjections = new Map<string, Projection>([
+    const mockProjections = new Map<string, Proj4Projection>([
       [
         "EPSG:3857",
         {

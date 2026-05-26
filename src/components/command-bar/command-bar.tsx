@@ -15,7 +15,7 @@ import { selectionAtom } from "src/state/selection";
 import { currentFileNameAtom } from "src/state/file-system";
 import { commandBarOpenAtom } from "src/state/command-bar";
 import { useHotkeys } from "src/keyboard/hotkeys";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { useUserTracking } from "src/infra/user-tracking";
 import { BBox } from "src/types";
 
 type SearchOption = {
@@ -52,8 +52,8 @@ const MAX_RESULTS = 200;
 const recentsByNetwork = new Map<string, SearchOption[]>();
 
 export const CommandBar = () => {
-  const isAssetSearchOn = useFeatureFlag("FLAG_ASSET_SEARCH");
   const [isOpen, setOpen] = useAtom(commandBarOpenAtom);
+  const userTracking = useUserTracking();
 
   useHotkeys(
     "ctrl+k",
@@ -62,14 +62,17 @@ export const CommandBar = () => {
       document.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
       );
+      userTracking.capture({
+        name: "commandBar.opened",
+        source: "shortcut",
+      });
       setOpen(true);
     },
-    [setOpen],
+    [setOpen, userTracking],
     "Open command bar",
-    !isAssetSearchOn,
   );
 
-  if (!isAssetSearchOn || !isOpen) return null;
+  if (!isOpen) return null;
 
   return <CommandBarModal onClose={() => setOpen(false)} />;
 };
@@ -82,8 +85,10 @@ const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
   const currentFileName = useAtomValue(currentFileNameAtom);
   const { selectAsset, selectCustomerPoint } = useSelection(selection);
   const zoomTo = useZoomTo();
+  const userTracking = useUserTracking();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const finalizedRef = useRef(false);
 
   const networkKey = currentFileName ?? "";
   const recentsRef = useRef(recentsByNetwork);
@@ -150,7 +155,36 @@ const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
   );
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const commit = (option: SearchOption) => {
+  const finish = (
+    outcome: "selected" | "dismissed",
+    selection?: { option: SearchOption; index: number; fromRecents: boolean },
+  ) => {
+    if (finalizedRef.current) {
+      onClose();
+      return;
+    }
+    finalizedRef.current = true;
+    userTracking.capture({
+      name: "commandBar.closed",
+      outcome,
+      query,
+      queryLength: query.length,
+      resultsCount: results.length,
+      ...(selection && {
+        selectedKind: selection.option.data.kind,
+        selectedAssetType:
+          selection.option.data.kind === "asset"
+            ? selection.option.data.type
+            : undefined,
+        selectedFromRecents: selection.fromRecents,
+        selectedIndex: selection.index,
+      }),
+    });
+    onClose();
+  };
+
+  const commit = (option: SearchOption, index: number) => {
+    const fromRecents = query.trim().length === 0;
     addRecent(option);
     if (option.data.kind === "asset") {
       selectAsset(option.data.rawId);
@@ -163,7 +197,7 @@ const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
         zoomTo(Maybe.of([lng, lat, lng, lat] as BBox), 18);
       }
     }
-    onClose();
+    finish("selected", { option, index, fromRecents });
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -176,7 +210,7 @@ const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") {
       e.preventDefault();
-      onClose();
+      finish("dismissed");
       return;
     }
     if (e.key === "ArrowDown") {
@@ -195,7 +229,7 @@ const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
     }
     if (e.key === "Enter") {
       e.preventDefault();
-      if (results[activeIndex]) commit(results[activeIndex]);
+      if (results[activeIndex]) commit(results[activeIndex], activeIndex);
     }
   };
 
@@ -227,7 +261,7 @@ const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
     >
       <div
         className="absolute inset-0 bg-black/30 dark:bg-black/50"
-        onClick={onClose}
+        onClick={() => finish("dismissed")}
       />
       <div className="relative z-10 w-[560px] max-w-[90vw] bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-600 overflow-hidden">
         <div className="flex items-center px-3 border-b border-gray-200 dark:border-gray-700">
@@ -243,7 +277,7 @@ const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             placeholder={translate("assetSearch.placeholder")}
-            className="flex-1 bg-transparent border-0 px-2 py-3 text-sm text-gray-800 dark:text-gray-100 placeholder:italic placeholder:text-gray-400 dark:placeholder:text-gray-500 outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus:border-transparent focus:shadow-none"
+            className="flex-1 bg-transparent border-0 px-2 py-3 text-sm text-gray-800 dark:text-gray-100 placeholder:italic placeholder:text-gray-400 dark:placeholder:text-gray-500 outline-hidden focus:outline-hidden focus-visible:outline-hidden focus:ring-0 focus-visible:ring-0 focus:border-transparent focus:shadow-none"
           />
         </div>
         <div
@@ -273,9 +307,9 @@ const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
                   data-index={index}
                   onMouseEnter={() => setActiveIndex(index)}
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => commit(option)}
+                  onClick={() => commit(option, index)}
                   className={clsx(
-                    "flex items-center justify-between gap-2 px-3 py-2 text-sm rounded cursor-pointer text-gray-900 dark:text-gray-100",
+                    "flex items-center justify-between gap-2 px-3 py-2 text-sm rounded-sm cursor-pointer text-gray-900 dark:text-gray-100",
                     index === activeIndex
                       ? "bg-purple-300/40"
                       : "hover:bg-gray-100 dark:hover:bg-gray-700",

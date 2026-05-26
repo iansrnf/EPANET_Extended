@@ -10,9 +10,24 @@ import { useRedrawLinkHandlers } from "./redraw-link";
 import { useAreaSelectionHandlers } from "./area-selection";
 import { useTraceSelectHandlers } from "./trace-select";
 
+const noopHandler = (e: mapboxgl.MapMouseEvent | mapboxgl.MapTouchEvent) => {
+  e.preventDefault();
+};
+
+const pressureLoggerHandlers: Handlers = {
+  click: noopHandler,
+  move: noopHandler,
+  down: noopHandler,
+  up: noopHandler,
+  double: noopHandler,
+  exit: () => undefined,
+};
+
 export function useModeHandlers(handlerContext: HandlerContext) {
+  const noneHandlers = useNoneHandlers(handlerContext);
+
   const HANDLERS: Record<Mode, Handlers> = {
-    [Mode.NONE]: useNoneHandlers(handlerContext),
+    [Mode.NONE]: noneHandlers,
     [Mode.SELECT_RECTANGULAR]: useAreaSelectionHandlers({
       ...handlerContext,
       selectionMode: "rectangular",
@@ -50,6 +65,7 @@ export function useModeHandlers(handlerContext: HandlerContext) {
       linkType: "valve",
     }),
     [Mode.DRAW_CUSTOMER_POINT]: useDrawCustomerPointHandlers(handlerContext),
+    [Mode.DRAW_PRESSURE_LOGGER]: pressureLoggerHandlers,
     [Mode.CONNECT_CUSTOMER_POINTS]:
       useConnectCustomerPointsHandlers(handlerContext),
     [Mode.REDRAW_LINK]: useRedrawLinkHandlers(handlerContext),

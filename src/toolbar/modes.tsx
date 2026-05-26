@@ -64,6 +64,11 @@ export const DRAWING_MODE_OPTIONS: readonly DrawingModeOption[] = [
     hotkey: "8",
     Icon: () => <CustomerPointIcon />,
   },
+  {
+    mode: Mode.DRAW_PRESSURE_LOGGER,
+    hotkey: "9",
+    Icon: () => <PressureLoggerIcon />,
+  },
 ] as const;
 
 export default memo(function Modes({
@@ -100,40 +105,30 @@ export default memo(function Modes({
       <SelectionTool />
       <TraceTool />
       {!isMdOrLarger ? null : isLgOrLarger ? (
-        <>
-          {DRAWING_MODE_OPTIONS.map(({ mode, hotkey, Icon }) => {
-            const modeInfo = MODE_INFO[mode];
+        DRAWING_MODE_OPTIONS.map(({ mode, hotkey, Icon }) => {
+          const modeInfo = MODE_INFO[mode];
 
-            return (
-              <MenuAction
-                role="radio"
-                key={mode}
-                selected={currentMode === mode}
-                readOnlyHotkey={hotkey}
-                label={translate(modeInfo.name)}
-                onClick={() => {
-                  userTracking.capture({
-                    name: "drawingMode.enabled",
-                    source: "toolbar",
-                    type: modeInfo.name,
-                  });
-                  void setDrawingMode(mode);
-                }}
-                disabled={disabled}
-              >
-                <Icon />
-              </MenuAction>
-            );
-          })}
-          <MenuAction
-            role="button"
-            label={translate("pressureLogger")}
-            onClick={() => undefined}
-            disabled={disabled}
-          >
-            <PressureLoggerIcon />
-          </MenuAction>
-        </>
+          return (
+            <MenuAction
+              role="radio"
+              key={mode}
+              selected={currentMode === mode}
+              readOnlyHotkey={hotkey}
+              label={translate(modeInfo.name)}
+              onClick={() => {
+                userTracking.capture({
+                  name: "drawingMode.enabled",
+                  source: "toolbar",
+                  type: modeInfo.name,
+                });
+                void setDrawingMode(mode);
+              }}
+              disabled={disabled}
+            >
+              <Icon />
+            </MenuAction>
+          );
+        })
       ) : (
         <DrawingToolDropdown disabled={disabled} />
       )}

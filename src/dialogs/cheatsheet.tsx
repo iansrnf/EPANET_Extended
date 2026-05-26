@@ -89,6 +89,7 @@ export function CheatsheetDialog() {
         { binding: "6", description: "pump" },
         { binding: "7", description: "valve" },
         { binding: "8", description: "customerPoint" as const },
+        { binding: "9", description: "pressureLogger" as const },
       ],
     },
     {

@@ -11,7 +11,8 @@ import { useSelection } from "src/selection";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
 import { useElevations } from "src/map/elevations/use-elevations";
 import { addLink } from "src/hydraulic-model/model-operations";
-import type { LinkAsset, NodeAsset } from "src/hydraulic-model";
+import type { AssetId, LinkAsset, NodeAsset } from "src/hydraulic-model";
+import { useSnapping } from "../hooks/use-snapping";
 
 export function useDrawPressureLoggerHandlers({
   hydraulicModel,
@@ -30,6 +31,7 @@ export function useDrawPressureLoggerHandlers({
   const { getClickedAsset } = useClickedAsset(map, hydraulicModel.assets);
   const getMapCoord = useGetMapCoord();
   const { fetchElevation } = useElevations(units.elevation);
+  const { findSnappingCandidate } = useSnapping(map, hydraulicModel.assets);
 
   const resetDrawing = () => {
     setEphemeralState({ type: "none" });
@@ -44,13 +46,14 @@ export function useDrawPressureLoggerHandlers({
     ) {
       return {
         startNode: ephemeralState.startNode,
+        startPipeId: ephemeralState.startPipeId,
         link: ephemeralState.link as LinkAsset,
       };
     }
     return null;
   };
 
-  const startDrawing = (startNode: NodeAsset) => {
+  const startDrawing = (startNode: NodeAsset, startPipeId?: AssetId) => {
     const pipe = assetFactory.createPipe({
       coordinates: [startNode.coordinates, startNode.coordinates],
     });
@@ -59,10 +62,16 @@ export function useDrawPressureLoggerHandlers({
       type: "drawLink",
       linkType: "pipe",
       startNode,
+      startPipeId,
       link: pipe,
       snappingCandidate: null,
     });
     setCursor("default");
+  };
+
+  const coordinatesToLngLat = (coordinates: Position) => {
+    const [lng, lat] = coordinates;
+    return { lng, lat } as mapboxgl.LngLat;
   };
 
   const updatePreview = (coordinates: Position) => {
@@ -104,6 +113,7 @@ export function useDrawPressureLoggerHandlers({
       link: linkCopy,
       startNode: drawing.startNode,
       endNode: helperJunction,
+      startPipeId: drawing.startPipeId,
       lengthUnit: units.length,
       assetFactory,
       labelManager,
@@ -131,6 +141,30 @@ export function useDrawPressureLoggerHandlers({
         return;
       }
 
+      const clickPosition = getMapCoord(e);
+      const snappingCandidate = findSnappingCandidate(e, clickPosition);
+      if (snappingCandidate) {
+        if (snappingCandidate.type === "pipe") {
+          const doAsyncStart = async () => {
+            const startNode = assetFactory.createJunction({
+              label: "",
+              coordinates: snappingCandidate.coordinates,
+              elevation: await fetchElevation(
+                coordinatesToLngLat(snappingCandidate.coordinates),
+              ),
+            });
+
+            startDrawing(startNode, snappingCandidate.id);
+          };
+
+          void doAsyncStart();
+          return;
+        }
+
+        startDrawing(snappingCandidate);
+        return;
+      }
+
       const clickedAsset = getClickedAsset(e);
       if (!clickedAsset || !clickedAsset.isNode) {
         return;
@@ -140,7 +174,12 @@ export function useDrawPressureLoggerHandlers({
     },
     move: (e) => {
       const drawing = getDrawing();
-      if (!drawing) return;
+      if (!drawing) {
+        const mouseCoord = getMapCoord(e);
+        const snappingCandidate = findSnappingCandidate(e, mouseCoord);
+        setCursor(snappingCandidate ? "pointer" : "default");
+        return;
+      }
       updatePreview(getMapCoord(e));
     },
     down: noop,

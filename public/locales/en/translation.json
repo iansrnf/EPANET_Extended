@@ -153,7 +153,7 @@
   "customer": "Customer",
   "customerPoint": "Customer point",
   "pressureLogger": "Pressure logger",
-  "pressureLoggerSelectNodeFirst": "Select Node First",
+  "pressureLoggerSelectNodeFirst": "Select Node or Pipe First",
   "pressureLoggerPlacePrompt": "Click to place logger",
   "actualDemand": "Actual demand",
   "netFlow": "Net flow",

@@ -57,6 +57,11 @@ import { supportEmail } from "src/global-config";
 import { MapHandlers } from "./types";
 import { PipeDrawingFloatingPanel } from "src/components/pipe-drawing-floating-panel";
 import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
+import type { PressureLogger } from "src/hydraulic-model/pressure-loggers";
+import {
+  loggerTelemetryAtom,
+  type LoggerTelemetryReading,
+} from "src/state/logger-telemetry";
 mapboxgl.accessToken = env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 mapboxgl.setRTLTextPlugin(
@@ -78,6 +83,11 @@ const exposeAppStateInWindow = (
 };
 
 const noop = () => null;
+type HoveredPressureLogger = {
+  logger: PressureLogger;
+  point: { x: number; y: number };
+};
+
 const debug = isDebugOn
   ? (
       e: mapboxgl.MapboxEvent<any>,
@@ -119,11 +129,14 @@ export const MapCanvas = memo(function MapCanvas({
 
   const { folderMap } = data;
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
+  const loggerTelemetry = useAtomValue(loggerTelemetryAtom);
 
   // State
   const [flatbushInstance, setFlatbushInstance] =
     useState<FlatbushLike>(EmptyIndex);
   const [contextInfo, setContextInfo] = useState<ContextInfo | null>(null);
+  const [hoveredPressureLogger, setHoveredPressureLogger] =
+    useState<HoveredPressureLogger | null>(null);
 
   const lastCursor = useRef<{
     cursorLatitude: number;
@@ -211,6 +224,35 @@ export const MapCanvas = memo(function MapCanvas({
 
   const HANDLERS = useModeHandlers(handlerContext);
 
+  const updateHoveredPressureLogger = useCallback(
+    (e: mapboxgl.MapMouseEvent | mapboxgl.MapTouchEvent) => {
+      const map = mapRef.current;
+      if (!map) return;
+
+      const pickedObjects = map.pickOverlayObjects({
+        x: e.point.x,
+        y: e.point.y,
+        radius: 10,
+      });
+
+      const pickedLogger = pickedObjects.find(
+        (pickInfo) =>
+          pickInfo.layer?.id === "pressure-loggers-layer" && pickInfo.object,
+      );
+
+      if (!pickedLogger) {
+        setHoveredPressureLogger(null);
+        return;
+      }
+
+      setHoveredPressureLogger({
+        logger: pickedLogger.object as PressureLogger,
+        point: { x: e.point.x, y: e.point.y },
+      });
+    },
+    [],
+  );
+
   const leftClick = 0;
   const newHandlers: MapHandlers = {
     onClick: (e: mapboxgl.MapMouseEvent) => {
@@ -258,6 +300,7 @@ export const MapCanvas = memo(function MapCanvas({
       debug(e, mode.mode, selection, dragTargetRef, "onMapMouseMove");
 
       HANDLERS[mode.mode].move(e);
+      updateHoveredPressureLogger(e);
       const map = mapRef.current?.map;
       if (!map) return;
       lastCursor.current = {
@@ -421,9 +464,66 @@ export const MapCanvas = memo(function MapCanvas({
       <SatelliteToggle />
       <SatelliteResolutionMessage zoom={currentZoom} />
       <PipeDrawingFloatingPanel />
+      <PressureLoggerHoverTooltip
+        hoveredPressureLogger={hoveredPressureLogger}
+        reading={
+          hoveredPressureLogger
+            ? loggerTelemetry.readingsByDeviceId[
+                hoveredPressureLogger.logger.label
+              ]
+            : undefined
+        }
+      />
     </CM.Root>
   );
 });
+
+const PressureLoggerHoverTooltip = ({
+  hoveredPressureLogger,
+  reading,
+}: {
+  hoveredPressureLogger: HoveredPressureLogger | null;
+  reading?: LoggerTelemetryReading;
+}) => {
+  if (!hoveredPressureLogger) return null;
+
+  const { logger, point } = hoveredPressureLogger;
+  const pressureText =
+    typeof reading?.psi === "number" ? `${reading.psi.toFixed(3)} psi` : "-";
+  const statusText = reading?.status ?? "no data";
+  const timestampText = reading?.timestamp
+    ? new Date(reading.timestamp).toLocaleString()
+    : "-";
+
+  return (
+    <div
+      className="pointer-events-none absolute z-30 min-w-48 rounded-md bg-gray-900/90 px-3 py-2 text-xs text-white shadow-lg"
+      style={{
+        left: point.x + 14,
+        top: point.y - 12,
+      }}
+    >
+      <div className="mb-1 flex items-center justify-between gap-4">
+        <span className="font-semibold">{logger.label}</span>
+        <span className="rounded-sm bg-white/15 px-1.5 py-0.5 uppercase">
+          {statusText}
+        </span>
+      </div>
+      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 tabular-nums">
+        <span className="text-gray-300">Pressure</span>
+        <span>{pressureText}</span>
+        <span className="text-gray-300">Battery</span>
+        <span>{reading?.batteryVoltage ?? "-"} V</span>
+        <span className="text-gray-300">External</span>
+        <span>{reading?.externalVoltage ?? "-"} V</span>
+        <span className="text-gray-300">GSM</span>
+        <span>{reading?.gsmPercent ?? "-"}%</span>
+        <span className="text-gray-300">Updated</span>
+        <span>{timestampText}</span>
+      </div>
+    </div>
+  );
+};
 
 const MapError = () => {
   const translate = useTranslate();

@@ -153,6 +153,7 @@ describe("parseLoggerTelemetryMessage", () => {
 
     state = recordLoggerTelemetryReading(state, {
       deviceId: "L1",
+      psi: undefined,
       timestamp: "2026-03-17T10:48:07",
       tempOrStatus: "28",
       batteryVoltage: "7.36",

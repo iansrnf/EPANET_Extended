@@ -185,8 +185,10 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
   const gisData = useAtomValue(gisDataAtom);
   const isGridOn = useAtomValue(showGridAtom);
   const isGridPreview = useAtomValue(gridPreviewAtom);
+  const loggerTelemetry = useAtomValue(loggerTelemetryAtom);
   const lastHiddenFeatures = useRef<Set<AssetId>>(new Set([]));
   const previousMapStateRef = useRef<MapState>(nullMapState);
+  const previousLoggerReadingsRef = useRef(loggerTelemetry.readingsByDeviceId);
   const customerPointsOverlayRef = useRef<CustomerPointsOverlay>([]);
   const pressureLoggersOverlayRef = useRef<PressureLoggersOverlay>([]);
   const selectionDeckLayersRef = useRef<CustomerPointsOverlay>([]);
@@ -197,15 +199,21 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
   const translate = useTranslate();
   const translateUnit = useTranslateUnit();
   const withPrecision = useFeatureFlag("FLAG_DRAWING_PRECISION");
-  const loggerTelemetry = useAtomValue(loggerTelemetryAtom);
 
   const doUpdates = useCallback(() => {
     if (!map) return;
 
-    if (mapState === previousMapStateRef.current) return;
+    const previousLoggerReadings = previousLoggerReadingsRef.current;
+    const hasNewLoggerReadings =
+      loggerTelemetry.readingsByDeviceId !== previousLoggerReadings;
+
+    if (mapState === previousMapStateRef.current && !hasNewLoggerReadings) {
+      return;
+    }
 
     const previousMapState = previousMapStateRef.current;
     previousMapStateRef.current = mapState;
+    previousLoggerReadingsRef.current = loggerTelemetry.readingsByDeviceId;
 
     const changes = detectChanges(mapState, previousMapState, map);
     const {
@@ -370,6 +378,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           hasNewStyles ||
           hasNewCustomerPoints ||
           hasNewPressureLoggers ||
+          hasNewLoggerReadings ||
           customerPointExclusionChanged
         ) {
           const excludedCustomerPointIds = movingCustomerPointId
@@ -516,6 +525,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           hasNewEphemeralState ||
           hasNewCustomerPoints ||
           hasNewPressureLoggers ||
+          hasNewLoggerReadings ||
           hasNewEditions
         ) {
           const shouldHideCustomerPointsOverlay =

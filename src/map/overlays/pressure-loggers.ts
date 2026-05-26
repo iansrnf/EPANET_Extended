@@ -102,23 +102,20 @@ export const buildPressureLoggersOverlay = (
       getText: (d: PressureLogger) => {
         const reading = readingsByDeviceId[d.label];
         return reading?.psi !== undefined
-          ? `${reading.psi.toFixed(2)} psi`
+          ? `${reading.psi.toFixed(3)} psi`
           : "";
       },
-      getColor: hexToArray(colors.orange800),
+      getColor: hexToArray(colors.red600),
       getSize: 12,
       sizeUnits: "pixels",
       sizeMinPixels: 10,
       sizeMaxPixels: 14,
-      getPixelOffset: [0, -22],
-      getTextAnchor: "middle",
-      getAlignmentBaseline: "bottom",
+      getPixelOffset: [14, 2],
+      getTextAnchor: "start",
+      getAlignmentBaseline: "center",
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
       fontWeight: 700,
-      background: true,
-      getBackgroundColor: [255, 255, 255, 230],
-      getBorderColor: hexToArray(colors.amber300),
-      getBorderWidth: 1,
+      background: false,
       visible: shouldShowPressureLoggerOverlay(zoom),
       pickable: false,
     }),

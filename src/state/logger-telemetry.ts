@@ -38,6 +38,14 @@ export const initialLoggerTelemetryState: LoggerTelemetryState = {
   lastError: null,
 };
 
+const removeUndefinedReadingFields = (
+  reading: LoggerTelemetryReading,
+): Partial<LoggerTelemetryReading> => {
+  return Object.fromEntries(
+    Object.entries(reading).filter(([, value]) => value !== undefined),
+  ) as Partial<LoggerTelemetryReading>;
+};
+
 export const recordLoggerTelemetryReading = (
   state: LoggerTelemetryState,
   reading: LoggerTelemetryReading,
@@ -47,7 +55,7 @@ export const recordLoggerTelemetryReading = (
     state.pressureHistoryByDeviceId[reading.deviceId] ?? [];
   const mergedReading = {
     ...existingReading,
-    ...reading,
+    ...removeUndefinedReadingFields(reading),
   };
   const hasPressureSample =
     typeof reading.psi === "number" && Number.isFinite(reading.psi);

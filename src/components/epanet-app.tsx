@@ -64,6 +64,7 @@ import { initStorage } from "src/infra/storage";
 import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
 import { useIsCustomerAllocationDisabled } from "src/hooks/use-is-customer-allocation-disabled";
 import { useSeedDefaultProjectDb } from "src/hooks/persistence/use-start-new-project";
+import { useLoggerTelemetry } from "src/hooks/use-logger-telemetry";
 
 type ResolvedLayout = "HORIZONTAL" | "VERTICAL" | "FLOATING";
 
@@ -90,6 +91,7 @@ export function EpanetApp() {
   const isCustomerAllocationDisabled = useIsCustomerAllocationDisabled();
   const seedDefaultProjectDb = useSeedDefaultProjectDb();
   const dbInitializedRef = useRef(false);
+  useLoggerTelemetry();
 
   useEffect(() => {
     void initStorage();

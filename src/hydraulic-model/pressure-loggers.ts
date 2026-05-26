@@ -1,4 +1,4 @@
-import { Position } from "geojson";
+import { Position } from "src/types";
 import { AssetId } from "./asset-types";
 
 export type PressureLoggerId = number;

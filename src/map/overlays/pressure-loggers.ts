@@ -41,7 +41,7 @@ const pressureLoggerIconUrl = asDataUrl(pressureLoggerIconSvg({}));
 export type PressureLoggersLayer = IconLayer | ScatterplotLayer | TextLayer;
 export type PressureLoggersOverlay = PressureLoggersLayer[];
 
-export const shouldShowPressureLoggerOverlay = (zoom: number) => zoom >= 12;
+export const shouldShowPressureLoggerOverlay = (_zoom: number) => true;
 
 export const updatePressureLoggersOverlayVisibility = (
   overlay: PressureLoggersOverlay,

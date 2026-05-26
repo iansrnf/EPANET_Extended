@@ -7,6 +7,7 @@ import { Curves } from "./curves";
 import { Controls } from "./controls";
 import type { AssetId } from "./assets-map";
 import { Patterns } from "./patterns";
+import { PressureLogger, PressureLoggerId } from "./pressure-loggers";
 
 type NonPatchableKeys = "type" | "connections";
 
@@ -51,6 +52,8 @@ export type OptionalMomentFields = {
   putControls?: Controls;
   putCustomerPoints?: CustomerPoint[];
   deleteCustomerPoints?: CustomerPointId[];
+  putPressureLoggers?: PressureLogger[];
+  deletePressureLoggers?: PressureLoggerId[];
   putCurves?: Curves;
   putPatterns?: Patterns;
 };
@@ -68,6 +71,7 @@ export type ReverseMoment = OptionalMomentFields & {
   putAssets: Asset[];
   patchAssetsAttributes: AssetPatch[];
   putCustomerPoints: CustomerPoint[];
+  putPressureLoggers: PressureLogger[];
 };
 
 export type ModelOperation<T> = (model: HydraulicModel, data: T) => ModelMoment;

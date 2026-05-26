@@ -671,7 +671,6 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
       const labelManager = new LabelManager();
       const hydraulicModel = initializeHydraulicModel({
         idGenerator,
-        labelManager,
       });
       const factories = initializeModelFactories({
         idGenerator,

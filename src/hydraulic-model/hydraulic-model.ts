@@ -11,6 +11,7 @@ import { Asset } from "./asset-types";
 import { Curves } from "./curves";
 import { Controls, createEmptyControls } from "./controls";
 import { Patterns } from "./patterns";
+import { PressureLoggers, initializePressureLoggers } from "./pressure-loggers";
 
 export type HydraulicModel = {
   version: string;
@@ -23,6 +24,7 @@ export type HydraulicModel = {
   curves: Curves;
   patterns: Patterns;
   controls: Controls;
+  pressureLoggers: PressureLoggers;
 };
 
 export { AssetsMap };
@@ -38,6 +40,7 @@ export const initializeHydraulicModel = ({
   customerPointsLookup,
   patterns,
   curves,
+  pressureLoggers,
 }: {
   demands?: Demands;
   controls?: Controls;
@@ -49,6 +52,7 @@ export const initializeHydraulicModel = ({
   customerPointsLookup?: CustomerPointsLookup;
   patterns?: Patterns;
   curves?: Curves;
+  pressureLoggers?: PressureLoggers;
 } = {}): HydraulicModel => {
   const assetIdGenerator = idGenerator ?? new ConsecutiveIdsGenerator();
   const resolvedAssets = assets ?? new Map();
@@ -63,6 +67,7 @@ export const initializeHydraulicModel = ({
     curves: curves ?? new Map(),
     patterns: patterns ?? new Map(),
     controls,
+    pressureLoggers: pressureLoggers ?? initializePressureLoggers(),
   };
 };
 
@@ -83,6 +88,7 @@ export const copyModel = (source: HydraulicModel): HydraulicModel => {
     curves: new Map(source.curves),
     patterns: new Map(source.patterns),
     controls: { ...source.controls },
+    pressureLoggers: new PressureLoggers(source.pressureLoggers),
   };
 };
 

@@ -20,6 +20,7 @@ import {
   simulationDerivedAtom,
   simulationResultsDerivedAtom,
   customerPointsDerivedAtom,
+  stagingModelDerivedAtom,
 } from "src/state/derived-branch-state";
 import { selectionAtom } from "src/state/selection";
 import {
@@ -38,6 +39,7 @@ import { highlightsAtom, type Highlight } from "src/state/highlights";
 import { USelection } from "src/selection";
 import type { AssetId } from "src/hydraulic-model";
 import type { CustomerPoints } from "src/hydraulic-model/customer-points";
+import type { PressureLoggers } from "src/hydraulic-model/pressure-loggers";
 import type { PreviewProperty } from "src/state/map-symbology";
 import type { ResultsReader } from "src/simulation/results-reader";
 
@@ -119,6 +121,7 @@ export type MapState = {
   movedAssetIds: Set<AssetId>;
   isOffline: boolean;
   customerPoints: CustomerPoints;
+  pressureLoggers: PressureLoggers;
   currentZoom: number;
   mapOverlayFeatures: GeoJSON.Feature[];
   highlights: Highlight[];
@@ -144,6 +147,7 @@ export const nullMapState: MapState = {
   movedAssetIds: new Set(),
   isOffline: false,
   customerPoints: new Map(),
+  pressureLoggers: new Map(),
   currentZoom: DEFAULT_ZOOM,
   mapOverlayFeatures: [],
   highlights: [],
@@ -172,6 +176,7 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
   const simulationStep = get(simulationStepAtom);
   const resultsReader = get(simulationResultsDerivedAtom);
   const customerPoints = get(customerPointsDerivedAtom);
+  const pressureLoggers = get(stagingModelDerivedAtom).pressureLoggers;
   const currentZoom = get(currentZoomAtom);
   const selectedAssetIds = new Set(USelection.toIds(selection));
 
@@ -196,6 +201,7 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
     movedAssetIds,
     isOffline,
     customerPoints,
+    pressureLoggers,
     currentZoom,
     mapOverlayFeatures,
     highlights,

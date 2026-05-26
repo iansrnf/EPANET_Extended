@@ -6,12 +6,14 @@ import {
 } from "src/hydraulic-model/label-manager";
 import { AssetFactory } from "./asset-factory";
 import { DefaultsSpec } from "src/lib/project-settings/quantities-spec";
+import { PressureLoggerFactory } from "./pressure-logger-factory";
 
 export {
   CustomerPointFactory,
   buildCustomerPointPreviewFactory,
 } from "./customer-point-factory";
 export { AssetFactory } from "./asset-factory";
+export { PressureLoggerFactory } from "./pressure-logger-factory";
 
 export type ModelFactories = {
   customerPointFactory: CustomerPointFactory;
@@ -19,6 +21,7 @@ export type ModelFactories = {
   labelManager: LabelManager;
   labelCounters: Map<LabelType, number>;
   idGenerator: IdGenerator;
+  pressureLoggerFactory: PressureLoggerFactory;
 };
 
 export const initializeModelFactories = (options: {
@@ -43,5 +46,9 @@ export const initializeModelFactories = (options: {
     labelManager: options.labelManager,
     labelCounters,
     idGenerator: options.idGenerator,
+    pressureLoggerFactory: new PressureLoggerFactory(
+      options.idGenerator,
+      options.labelManager,
+    ),
   };
 };

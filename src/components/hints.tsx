@@ -85,6 +85,16 @@ function Hint({
   );
 }
 
+function BottomMapPrompt({ text }: { text: string }) {
+  return (
+    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+      <div className="rounded-sm bg-gray-900/85 px-3 py-1.5 text-sm font-medium text-white shadow-md">
+        {text}
+      </div>
+    </div>
+  );
+}
+
 export function Hints() {
   const translate = useTranslate();
   const mode = useAtomValue(modeAtom);
@@ -195,6 +205,17 @@ export function Hints() {
           <Hint hintId={"START_PIPE"} text={translate("onboardingStartPipe")} />
         );
       }
+    }
+    case Mode.DRAW_PRESSURE_LOGGER: {
+      return (
+        <BottomMapPrompt
+          text={
+            ephemeralState.type === "drawLink" && !!ephemeralState.startNode
+              ? translate("pressureLoggerPlacePrompt")
+              : translate("pressureLoggerSelectNodeFirst")
+          }
+        />
+      );
     }
     case Mode.DRAW_PUMP: {
       if (

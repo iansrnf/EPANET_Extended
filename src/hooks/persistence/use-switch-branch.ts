@@ -47,6 +47,7 @@ function validateSelection(
     selection,
     model.assets,
     model.customerPoints,
+    model.pressureLoggers,
   );
   set(selectionAtom, { ...validatedSelection });
 }

@@ -9,6 +9,7 @@ import {
   applyMomentToModel,
 } from "src/hydraulic-model";
 import { CustomerPoints } from "src/hydraulic-model/customer-points";
+import { PressureLoggers } from "src/hydraulic-model/pressure-loggers";
 import { type Data, dataAtom } from "src/state/data";
 import { stagingModelAtom, baseModelAtom } from "src/state/hydraulic-model";
 import { modelFactoriesAtom } from "src/state/model-factories";
@@ -96,11 +97,20 @@ export function applyMoment(
       ? new Map(hydraulicModel.curves)
       : hydraulicModel.curves;
 
+  const updatedPressureLoggers =
+    (forwardMoment.putPressureLoggers || []).length > 0 ||
+    (forwardMoment.deletePressureLoggers || []).length > 0
+      ? new PressureLoggers(
+          [...hydraulicModel.pressureLoggers].sort(([a], [b]) => a - b),
+        )
+      : hydraulicModel.pressureLoggers;
+
   set(modelAtom, {
     ...updatedHydraulicModel,
     version: stateId,
     customerPoints: updatedCustomerPoints,
     curves: updatedCurves,
+    pressureLoggers: updatedPressureLoggers,
   });
   set(dataAtom, {
     selection: ctx.selection,

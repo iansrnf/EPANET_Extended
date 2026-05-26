@@ -21,12 +21,20 @@ export const CustomPressureLoggerIcon = React.forwardRef<
       strokeLinejoin="round"
       {...props}
     >
-      <path d="M12 4V2.5" />
-      <rect x="7" y="4.5" width="10" height="15" rx="2.5" />
-      <path d="M10 9.5a2 2 0 1 1 4 0" />
-      <path d="M12 9.5v2.5" />
-      <path d="M9.5 15.5h5" />
-      <circle cx="16.5" cy="17" r="1" fill="currentColor" stroke="none" />
+      <rect x="5" y="3.5" width="16" height="17" rx="2.5" />
+      <path d="M3 9v6" />
+      <path d="M3 12h2" />
+      <rect x="10" y="7" width="6" height="4.5" rx="1" />
+      <circle cx="8" cy="7.5" r="0.8" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="10.5" r="0.8" fill="currentColor" stroke="none" />
+      <circle cx="9.5" cy="15.5" r="2.4" />
+      <path d="M7.6 15.5h3.8" />
+      <circle cx="15" cy="15.5" r="2.4" />
+      <path d="M13.4 13.9l3.2 3.2" />
+      <path d="M18 6.5h1.5" />
+      <path d="M18 9.5h1.5" />
+      <path d="M18 12.5h1.5" />
+      <path d="M18 15.5h1.5" />
     </svg>
   );
 });

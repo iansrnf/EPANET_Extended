@@ -290,3 +290,4 @@ export { CustomDownstreamTraceIcon as DownstreamTraceIcon } from "./custom-icons
 export { CustomBoundaryTraceIcon as BoundaryTraceIcon } from "./custom-icons/trace-boundary-icon";
 export { CustomCurveLibraryIcon as CurveLibraryIcon } from "./custom-icons/curve-library-icon";
 export { CustomHglProfileIcon as HglProfileIcon } from "./custom-icons/hgl-profile-icon";
+export { CustomPressureLoggerIcon as PressureLoggerIcon } from "./custom-icons/pressure-logger-icon";

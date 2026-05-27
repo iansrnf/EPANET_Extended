@@ -236,6 +236,18 @@ const ModelBuilderIframeDialog = dynamic<{
   },
 );
 
+const ModelBuilderApiDialog = dynamic<{
+  onClose: () => void;
+}>(
+  () =>
+    import("src/dialogs/model-builder-api").then(
+      (r) => r.ModelBuilderApiDialog,
+    ),
+  {
+    loading: () => <LoadingDialog />,
+  },
+);
+
 const EarlyAccessDialog = dynamic<{
   onContinue: () => void;
   afterSignupDialog?: string;
@@ -554,6 +566,9 @@ export const Dialogs = memo(function Dialogs() {
   }
   if (dialog.type === "modelBuilderIframe") {
     return <ModelBuilderIframeDialog onClose={onClose} />;
+  }
+  if (dialog.type === "modelBuilderApi") {
+    return <ModelBuilderApiDialog onClose={onClose} />;
   }
   if (dialog.type === "unexpectedError") {
     return <UnexpectedErrorDialog modal={dialog} onClose={onClose} />;

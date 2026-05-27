@@ -30,6 +30,7 @@ import { useSaveInp } from "src/commands/save-inp";
 import { useSaveProject } from "src/commands/save-project";
 import { useShowWelcome } from "src/commands/show-welcome";
 import { useOpenModelBuilder } from "src/commands/open-model-builder";
+import { useOpenModelBuilderApi } from "src/commands/open-model-builder-api";
 import { useOpenRecentFile } from "src/commands/open-recent-file";
 import { projectExtension } from "src/commands/save-project";
 import { useUserTracking } from "src/infra/user-tracking";
@@ -53,6 +54,7 @@ export const FileDropdown = () => {
   const openProject = useOpenProject();
   const showWelcome = useShowWelcome();
   const openModelBuilder = useOpenModelBuilder();
+  const openModelBuilderApi = useOpenModelBuilderApi();
   const saveProject = useSaveProject();
   const userTracking = useUserTracking();
   const translate = useTranslate();
@@ -176,6 +178,18 @@ export const FileDropdown = () => {
                 </StyledItem>
               )}
 
+              {!isOurFileOn && (
+                <StyledItem
+                  onSelect={() => {
+                    openModelBuilderApi({ source: "toolbar" });
+                  }}
+                >
+                  <GlobeIcon />
+                  {translate("importFromGISApi")}
+                  <EarlyAccessIcon size="sm" />
+                </StyledItem>
+              )}
+
               {(isOurFileOn || isExportAssetDataOn || isExportTimeSeriesOn) && (
                 <ExportSubmenu
                   isExportAssetDataOn={isExportAssetDataOn}
@@ -199,6 +213,7 @@ export const FileDropdown = () => {
 const NewProjectSubmenu = () => {
   const createNewProject = useNewProject();
   const openModelBuilder = useOpenModelBuilder();
+  const openModelBuilderApi = useOpenModelBuilderApi();
   const openInpFromFs = useOpenInpFromFs();
   const userTracking = useUserTracking();
   const translate = useTranslate();
@@ -232,6 +247,16 @@ const NewProjectSubmenu = () => {
           >
             <GlobeIcon />
             {translate("newProject.fromGIS")}
+            <EarlyAccessIcon size="sm" />
+          </StyledItem>
+
+          <StyledItem
+            onSelect={() => {
+              openModelBuilderApi({ source: "toolbar" });
+            }}
+          >
+            <GlobeIcon />
+            {translate("importFromGISApi")}
             <EarlyAccessIcon size="sm" />
           </StyledItem>
 

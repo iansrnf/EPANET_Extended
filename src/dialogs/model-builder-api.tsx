@@ -1,4 +1,5 @@
 import bbox from "@turf/bbox";
+import clsx from "clsx";
 import type { FeatureCollection } from "geojson";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { LngLat, type LngLatBoundsLike } from "mapbox-gl";
@@ -20,7 +21,13 @@ import { useTranslate } from "src/hooks/use-translate";
 import { presets, Presets } from "src/lib/project-settings/quantities-spec";
 import { HeadlossFormula } from "src/hydraulic-model";
 import { headlossFormulasFullNames } from "src/hydraulic-model/asset-types/pipe";
-import { DisconnectIcon, UploadIcon, CloseIcon } from "src/icons";
+import {
+  CheckIcon,
+  ChevronRightIcon,
+  DisconnectIcon,
+  UploadIcon,
+  CloseIcon,
+} from "src/icons";
 import { MapPreview } from "./network-projection/map-preview";
 import { useMapPreview } from "./network-projection/use-map-preview";
 import {
@@ -832,114 +839,217 @@ export const ModelBuilderApiDialog = ({ onClose }: { onClose: () => void }) => {
         badge={<EarlyAccessBadge />}
       />
 
-      <WizardContent minHeight="680px">
+      <WizardContent minHeight="560px">
         {currentStep === 1 ? (
-          <div className="flex-1 grid gap-8 lg:grid-cols-[1fr_1fr] pb-6">
-            <section className="rounded-3xl border border-gray-200 bg-white p-8 md:p-10">
-              <h2 className="text-2xl font-semibold text-gray-900">
-                {translate("importFromGISApiWizard.modelSettings.title")}
-              </h2>
-
-              <div className="mt-10 flex flex-col gap-8">
-                <VerticalField
-                  name={translate(
-                    "importFromGISApiWizard.modelSettings.unitSystem",
-                  )}
+          <div className="flex-1 grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] pb-4">
+            <section className="rounded-lg border border-gray-200 bg-white p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-xl font-semibold text-gray-900">
+                    {translate("importFromGISApiWizard.modelSettings.title")}
+                  </h2>
+                  <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-600">
+                    {translate("importFromGISApiWizard.modelSettings.subtitle")}
+                  </p>
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setCurrentStep(2)}
                 >
-                  <Selector
-                    selected={unitSystem}
-                    onChange={(value) => handleUnitSystemChange(value)}
-                    options={[
+                  <UploadIcon />
+                  {translate("importFromGISApiWizard.startLoading")}
+                </Button>
+              </div>
+
+              <div className="mt-6 grid gap-5">
+                <div>
+                  <div className="mb-2 text-sm font-medium text-gray-700">
+                    {translate(
+                      "importFromGISApiWizard.modelSettings.unitSystem",
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1">
+                    {[
                       {
-                        value: "us",
+                        value: "us" as const,
                         label: translate(
                           "importFromGISApiWizard.modelSettings.unitSystemUs",
                         ),
                       },
                       {
-                        value: "metric",
+                        value: "metric" as const,
                         label: translate(
                           "importFromGISApiWizard.modelSettings.unitSystemMetric",
                         ),
                       },
-                    ]}
-                    ariaLabel={translate(
-                      "importFromGISApiWizard.modelSettings.unitSystem",
-                    )}
-                    styleOptions={{ textSize: "text-sm", paddingY: 3 }}
-                  />
-                </VerticalField>
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => handleUnitSystemChange(option.value)}
+                        className={clsx(
+                          "h-10 rounded-md px-3 text-sm font-medium transition-colors",
+                          unitSystem === option.value
+                            ? "bg-white text-purple-700 shadow-sm ring-1 ring-purple-200"
+                            : "text-gray-600 hover:bg-white/70 hover:text-gray-900",
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                <VerticalField
-                  name={translate(
-                    "importFromGISApiWizard.modelSettings.flowUnits",
-                  )}
-                >
-                  <Selector
-                    selected={flowUnit}
-                    onChange={(value) => setFlowUnit(value)}
-                    options={flowUnitOptions}
-                    ariaLabel={translate(
+                <div>
+                  <div className="mb-2 text-sm font-medium text-gray-700">
+                    {translate(
                       "importFromGISApiWizard.modelSettings.flowUnits",
                     )}
-                    styleOptions={{ textSize: "text-sm", paddingY: 3 }}
-                  />
-                </VerticalField>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {flowUnitOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setFlowUnit(option.value)}
+                        className={clsx(
+                          "h-11 rounded-lg border px-3 text-left text-sm transition-colors",
+                          flowUnit === option.value
+                            ? "border-purple-400 bg-purple-50 text-purple-800"
+                            : "border-gray-200 bg-white text-gray-700 hover:border-purple-200 hover:bg-purple-50/50",
+                        )}
+                      >
+                        <span className="block truncate">{option.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                <VerticalField
-                  name={translate(
-                    "importFromGISApiWizard.modelSettings.headlossFormula",
-                  )}
-                >
-                  <Selector
-                    selected={headlossFormula}
-                    onChange={(value) => setHeadlossFormula(value)}
-                    options={HEADLOSS_FORMULA_OPTIONS}
-                    ariaLabel={translate(
+                <div>
+                  <div className="mb-2 text-sm font-medium text-gray-700">
+                    {translate(
                       "importFromGISApiWizard.modelSettings.headlossFormula",
                     )}
-                    styleOptions={{ textSize: "text-sm", paddingY: 3 }}
-                  />
-                </VerticalField>
-              </div>
-            </section>
-
-            <section className="rounded-3xl border border-gray-200 bg-white p-8 md:p-10">
-              <h2 className="text-2xl font-semibold text-gray-900">
-                {translate("importFromGISApiWizard.tutorial.title")}
-              </h2>
-
-              <div className="mt-8 rounded-3xl border border-gray-200 bg-gray-50 p-8 min-h-[420px] flex items-center justify-center text-center">
-                <div>
-                  <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-purple-100 text-purple-700 text-3xl font-semibold">
-                    1
                   </div>
-                  <p className="mt-6 text-3xl font-semibold text-gray-900 leading-tight">
-                    {translate("importFromGISApiWizard.tutorial.stepTitle")}
-                  </p>
-                  <p className="mt-4 text-xl text-gray-600 max-w-md leading-9">
-                    {translate(
-                      "importFromGISApiWizard.tutorial.stepDescription",
-                    )}
-                  </p>
+                  <div className="grid gap-2 md:grid-cols-3">
+                    {HEADLOSS_FORMULA_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setHeadlossFormula(option.value)}
+                        className={clsx(
+                          "rounded-lg border px-3 py-3 text-left text-sm transition-colors",
+                          headlossFormula === option.value
+                            ? "border-purple-400 bg-purple-50 text-purple-800"
+                            : "border-gray-200 bg-white text-gray-700 hover:border-purple-200 hover:bg-purple-50/50",
+                        )}
+                      >
+                        <span className="block font-medium">
+                          {option.value}
+                        </span>
+                        <span className="mt-1 block text-xs text-gray-500">
+                          {option.label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-
-              <p className="mt-8 text-xl leading-9 text-gray-700">
-                {translate("importFromGISApiWizard.tutorial.description")}
-              </p>
-
-              <Button
-                variant="quiet"
-                size="sm"
-                className="mt-5 px-0 text-xl text-purple-600 hover:text-purple-700"
-                onClick={() =>
-                  window.open("https://help.epanetjs.com", "_blank")
-                }
-              >
-                {translate("importFromGISApiWizard.tutorial.link")}
-              </Button>
             </section>
+
+            <aside className="space-y-4">
+              <section className="rounded-lg border border-gray-200 bg-white p-5">
+                <h2 className="text-base font-semibold text-gray-900">
+                  {translate("importFromGISApiWizard.tutorial.title")}
+                </h2>
+                <div className="mt-4 space-y-2">
+                  {steps.map((step) => {
+                    const isActive = step.id === currentStep;
+                    const isComplete = step.id < currentStep;
+                    return (
+                      <button
+                        key={step.id}
+                        type="button"
+                        onClick={() => setCurrentStep(step.id)}
+                        className={clsx(
+                          "flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors",
+                          isActive
+                            ? "border-purple-300 bg-purple-50"
+                            : "border-gray-200 bg-white hover:border-purple-200 hover:bg-purple-50/40",
+                        )}
+                      >
+                        <span
+                          className={clsx(
+                            "grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-semibold",
+                            isComplete
+                              ? "bg-emerald-100 text-emerald-700"
+                              : isActive
+                                ? "bg-purple-600 text-white"
+                                : "bg-gray-100 text-gray-600",
+                          )}
+                        >
+                          {isComplete ? <CheckIcon size="sm" /> : step.id}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium text-gray-900">
+                            {step.label}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-gray-500">
+                            {translate(
+                              `importFromGISApiWizard.workflow.step${step.id}`,
+                            )}
+                          </span>
+                        </span>
+                        <ChevronRightIcon size="sm" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-gray-200 bg-white p-5">
+                <h3 className="text-base font-semibold text-gray-900">
+                  {translate("importFromGISApiWizard.modelSettings.summary")}
+                </h3>
+                <dl className="mt-4 space-y-3 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-gray-500">
+                      {translate(
+                        "importFromGISApiWizard.modelSettings.unitSystem",
+                      )}
+                    </dt>
+                    <dd className="font-medium text-gray-900">
+                      {unitSystem === "us"
+                        ? translate(
+                            "importFromGISApiWizard.modelSettings.unitSystemUs",
+                          )
+                        : translate(
+                            "importFromGISApiWizard.modelSettings.unitSystemMetric",
+                          )}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-gray-500">
+                      {translate(
+                        "importFromGISApiWizard.modelSettings.flowUnits",
+                      )}
+                    </dt>
+                    <dd className="font-medium text-gray-900">{flowUnit}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-gray-500">
+                      {translate(
+                        "importFromGISApiWizard.modelSettings.headlossFormula",
+                      )}
+                    </dt>
+                    <dd className="font-medium text-gray-900">
+                      {headlossFormula}
+                    </dd>
+                  </div>
+                </dl>
+              </section>
+            </aside>
           </div>
         ) : currentStep === 2 ? (
           <div className="flex-1 grid gap-6 xl:grid-cols-[0.95fr_1.9fr] pb-4">

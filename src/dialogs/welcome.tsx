@@ -2,6 +2,7 @@ import { useNewProject } from "src/commands/create-new-project";
 import { useOpenInpFromFs } from "src/commands/open-inp-from-fs";
 import { useOpenInpFromUrl } from "src/commands/open-inp-from-url";
 import { useOpenModelBuilder } from "src/commands/open-model-builder";
+import { useOpenModelBuilderApi } from "src/commands/open-model-builder-api";
 import { useOpenProject } from "src/commands/open-project";
 import { useOpenRecentFile } from "src/commands/open-recent-file";
 import { useTranslate } from "src/hooks/use-translate";
@@ -48,6 +49,7 @@ export const WelcomeDialog = () => {
   const openInpFromFs = useOpenInpFromFs();
   const openProject = useOpenProject();
   const openModelBuilder = useOpenModelBuilder();
+  const openModelBuilderApi = useOpenModelBuilderApi();
   const userTracking = useUserTracking();
   const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
 
@@ -109,6 +111,17 @@ export const WelcomeDialog = () => {
                     {translate("importFromGIS")}
                     <EarlyAccessIcon size="sm" />
                   </Button>
+                  <Button
+                    variant="quiet"
+                    onClick={() => {
+                      openModelBuilderApi({ source: "welcome" });
+                    }}
+                    style={{ width: "100%" }}
+                  >
+                    <GlobeIcon />
+                    {translate("importFromGISApi")}
+                    <EarlyAccessIcon size="sm" />
+                  </Button>
                 </>
               ) : (
                 <>
@@ -131,6 +144,17 @@ export const WelcomeDialog = () => {
                   >
                     <GlobeIcon />
                     {translate("importFromGIS")}
+                    <EarlyAccessIcon size="sm" />
+                  </Button>
+                  <Button
+                    variant="quiet"
+                    onClick={() => {
+                      openModelBuilderApi({ source: "welcome" });
+                    }}
+                    style={{ width: "100%" }}
+                  >
+                    <GlobeIcon />
+                    {translate("importFromGISApi")}
                     <EarlyAccessIcon size="sm" />
                   </Button>
                 </>

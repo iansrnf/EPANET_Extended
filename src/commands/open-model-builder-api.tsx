@@ -14,7 +14,7 @@ export const useOpenModelBuilderApi = () => {
         source: `${source}-api`,
       });
 
-      setDialogState({ type: "modelBuilderApiIframe" });
+      setDialogState({ type: "modelBuilderApi" });
     },
     [userTracking, setDialogState],
   );

@@ -224,8 +224,6 @@ export const WelcomeDialog = () => {
             )}
 
             <RecentNetworks />
-
-            <FoundingPartners />
           </div>
         </div>
         <div className="hidden sm:max-md:block mb-2">

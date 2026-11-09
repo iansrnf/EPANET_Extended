@@ -20,7 +20,7 @@ import {
   HglProfileIcon,
 } from "src/icons";
 import Modes from "./modes";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { splitsAtom } from "src/state/layout";
 import { commandBarOpenAtom } from "src/state/command-bar";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
@@ -70,6 +70,9 @@ import {
   toggleBottomPanelShortcut,
   useToggleBottomPanel,
 } from "src/commands/toggle-bottom-panel";
+import { darkThemeAtom } from "src/state/user-settings";
+import { StyledSwitch, StyledThumb, TContent } from "src/components/elements";
+import * as Tooltip from "@radix-ui/react-tooltip";
 
 export const Toolbar = ({
   readonly = false,
@@ -271,6 +274,7 @@ export const Toolbar = ({
         )}
       </div>
       <div className="flex flex-row items-center justify-end gap-2">
+        <DarkThemeToggle />
         <CommandBarButton />
         {isSmOrLarger && <LayoutActions />}
       </div>
@@ -280,6 +284,28 @@ export const Toolbar = ({
 
 const Divider = () => {
   return <div className="border-r-2 border-gray-100 h-8 mx-1"></div>;
+};
+
+const DarkThemeToggle = () => {
+  const translate = useTranslate();
+  const [darkTheme, setDarkTheme] = useAtom(darkThemeAtom);
+
+  return (
+    <Tooltip.Root delayDuration={200}>
+      <Tooltip.Trigger asChild>
+        <div className="h-10 flex items-center py-1">
+          <StyledSwitch
+            aria-label={translate("toggleDarkTheme")}
+            checked={darkTheme}
+            onCheckedChange={setDarkTheme}
+          >
+            <StyledThumb />
+          </StyledSwitch>
+        </div>
+      </Tooltip.Trigger>
+      <TContent side="bottom">{translate("toggleDarkTheme")}</TContent>
+    </Tooltip.Root>
+  );
 };
 
 const CommandBarButton = () => {

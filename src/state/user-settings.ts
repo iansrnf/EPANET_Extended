@@ -34,6 +34,7 @@ export const userSettingsAtom = atom(
 );
 
 export const hideHintsAtom = atomWithStorage<string[]>("hideHints", []);
+export const darkThemeAtom = atomWithStorage<boolean>("dark-theme", false);
 
 export const settingsFromStorage = (): UserSettings => {
   const userSettings = {

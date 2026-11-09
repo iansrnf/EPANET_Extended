@@ -23,7 +23,7 @@ import {
 } from "src/panels";
 import { MapContext } from "src/map";
 import Notifications from "src/components/notifications";
-import { atom, useAtom } from "jotai";
+import { atom, useAtom, useAtomValue } from "jotai";
 import type { WritableAtom } from "jotai";
 import { dialogAtom } from "src/state/dialog";
 import type { DialogState } from "src/state/dialog";
@@ -65,6 +65,7 @@ import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
 import { useIsCustomerAllocationDisabled } from "src/hooks/use-is-customer-allocation-disabled";
 import { useSeedDefaultProjectDb } from "src/hooks/persistence/use-start-new-project";
 import { useLoggerTelemetry } from "src/hooks/use-logger-telemetry";
+import { darkThemeAtom } from "src/state/user-settings";
 
 type ResolvedLayout = "HORIZONTAL" | "VERTICAL" | "FLOATING";
 
@@ -91,7 +92,13 @@ export function EpanetApp() {
   const isCustomerAllocationDisabled = useIsCustomerAllocationDisabled();
   const seedDefaultProjectDb = useSeedDefaultProjectDb();
   const dbInitializedRef = useRef(false);
+  const darkTheme = useAtomValue(darkThemeAtom);
   useLoggerTelemetry();
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", darkTheme);
+    document.documentElement.style.colorScheme = darkTheme ? "dark" : "light";
+  }, [darkTheme]);
 
   useEffect(() => {
     void initStorage();

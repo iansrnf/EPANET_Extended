@@ -35,7 +35,9 @@ export type IconImage = {
 };
 
 export const DEFAULT_ZOOM = 15.5;
-export const DEFAULT_CENTER: [number, number] = [-4.3800042, 55.914314];
+export const DEFAULT_CENTER: [number, number] = [
+  125.18430319999999, 6.125730067575641,
+];
 
 export const MAP_MIN_ZOOM = 0;
 export const MAP_MAX_ZOOM = 26;
@@ -378,16 +380,14 @@ export class MapEngine {
   suspendOverlayStyleReactions() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handler = (this.overlay as any)._handleStyleChange as
-      | (() => void)
-      | undefined;
+      (() => void) | undefined;
     if (handler) this.map.off("styledata", handler);
   }
 
   resumeOverlayStyleReactions() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handler = (this.overlay as any)._handleStyleChange as
-      | (() => void)
-      | undefined;
+      (() => void) | undefined;
     if (handler) {
       this.map.on("styledata", handler);
     }

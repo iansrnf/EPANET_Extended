@@ -38,7 +38,7 @@ import {
 } from "src/state/map-projection";
 import { useUserTracking } from "src/infra/user-tracking";
 import { MapContext } from "src/map/map-context";
-import { MapEngine } from "@epanet-js/map";
+import { DEFAULT_CENTER, MapEngine } from "@epanet-js/map";
 import { useContext, useRef, useCallback, useState } from "react";
 
 import NetworkUnprojectedIllustration from "./network-projection/network-unprojected";
@@ -81,7 +81,7 @@ export const CreateNew = () => {
     originalMapStateRef.current = map.getBounds();
     if (isCurrentProjectUnprojected) {
       setGridHidden(true);
-      map.map.jumpTo({ center: DEFAULT_MAP_CENTER, zoom: DEFAULT_MAP_ZOOM });
+      map.map.jumpTo({ center: DEFAULT_CENTER, zoom: DEFAULT_MAP_ZOOM });
     }
   }
 
@@ -458,7 +458,6 @@ const ProjectionSelector = ({
 
 const XY_GRID_CENTER: [number, number] = [0, 0];
 const XY_GRID_ZOOM = 15;
-const DEFAULT_MAP_CENTER: [number, number] = [-4.3800042, 55.914314];
 const DEFAULT_MAP_ZOOM = 15.5;
 
 const buildNewProjection = (option: ProjectionOption): Projection =>
@@ -479,6 +478,6 @@ const centerMapForNewProject = (
   if (projection.id === "xy-grid") {
     map.map.jumpTo({ center: XY_GRID_CENTER, zoom: XY_GRID_ZOOM });
   } else if (!location) {
-    map.map.jumpTo({ center: DEFAULT_MAP_CENTER, zoom: DEFAULT_MAP_ZOOM });
+    map.map.jumpTo({ center: DEFAULT_CENTER, zoom: DEFAULT_MAP_ZOOM });
   }
 };

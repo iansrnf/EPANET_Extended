@@ -45,6 +45,12 @@ import type { AssetId } from "src/hydraulic-model";
 import { type CustomerPoints } from "@epanet-js/hydraulic-model";
 import type { PreviewProperty } from "src/state/map-symbology";
 import type { ResultsReader } from "@epanet-js/simulation";
+import {
+  deviceLocationAtom,
+  deviceLocationViewportRequestAtom,
+  type DeviceLocation,
+  type DeviceLocationViewportRequest,
+} from "src/state/device-location";
 
 export const mapEditionsTrackerAtom = atom<MapEditionsTracker>(
   new MapEditionsTracker(),
@@ -119,6 +125,8 @@ export type MapState = {
   zoneColorAssignments: Record<number, string>;
   highlights: Highlight[];
   nodeSize: NodeSizeConfig;
+  deviceLocation: DeviceLocation | null;
+  deviceLocationViewportRequest: DeviceLocationViewportRequest | null;
 };
 
 export const nullMapState: MapState = {
@@ -144,6 +152,8 @@ export const nullMapState: MapState = {
   zoneColorAssignments: {},
   highlights: [],
   nodeSize: defaultNodeSizeConfig,
+  deviceLocation: null,
+  deviceLocationViewportRequest: null,
 } as const;
 
 export const stylesConfigAtom = atom<StylesConfig>((get) => {
@@ -186,6 +196,8 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
   const zoneColorAssignments = get(zoneColorAssignmentsAtom);
   const highlights = get(highlightsAtom);
   const nodeSize = get(nodeSizeAtom);
+  const deviceLocation = get(deviceLocationAtom);
+  const deviceLocationViewportRequest = get(deviceLocationViewportRequestAtom);
 
   return {
     editionsTracker,
@@ -206,5 +218,7 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
     zoneColorAssignments,
     highlights,
     nodeSize,
+    deviceLocation,
+    deviceLocationViewportRequest,
   };
 });

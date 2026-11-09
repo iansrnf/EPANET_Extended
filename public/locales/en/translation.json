@@ -846,6 +846,21 @@
     "mapMode": "Map mode",
     "chooseProvider": "Choose a map provider"
   },
+  "deviceLocation": {
+    "goTo": "Go to my location",
+    "locating": "Finding your location…",
+    "located": "Your location is shown on the map.",
+    "failed": "Could not find your location",
+    "retry": "Try again",
+    "dismiss": "Dismiss location message",
+    "errors": {
+      "permission-denied": "Location access is blocked. Allow location access in your browser settings, then try again.",
+      "unavailable": "Your device could not determine its location. Check your device location settings and try again.",
+      "timeout": "Finding your location took too long. Move somewhere with a clearer signal and try again.",
+      "unsupported": "This browser does not support device location. Try a browser with location support.",
+      "insecure-context": "Location requires a secure connection. Open the app using HTTPS or localhost."
+    }
+  },
   "basemapModes": {
     "roadmap": "Roadmap",
     "satellite": "Satellite",

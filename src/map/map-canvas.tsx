@@ -44,6 +44,8 @@ import { useMapStateUpdates } from "./state-updates";
 import { clickableLayers } from "./layers/layer";
 import { BasemapSelector } from "./basemap-selector";
 import { GoogleMapsAttribution } from "./google-maps-attribution";
+import { DeviceLocationControl } from "./device-location-control";
+import { deviceLocationNavigationRevisionAtom } from "src/state/device-location";
 import { useFitToExtent } from "./use-fit-to-extent";
 import { CustomMapControlClick, FIT_TO_EXTENT_CONTROL } from "@epanet-js/map";
 import { Hints } from "src/components/hints";
@@ -112,6 +114,12 @@ export const MapCanvas = memo(function MapCanvas({
   const { units } = useAtomValue(projectSettingsAtom);
   const ephemeralState = useAtomValue(ephemeralStateAtom);
   const setCurrentZoom = useSetAtom(currentZoomAtom);
+  const setLocationNavigationRevision = useSetAtom(
+    deviceLocationNavigationRevisionAtom,
+  );
+  const markMapInteraction = useCallback(() => {
+    setLocationNavigationRevision((revision) => revision + 1);
+  }, [setLocationNavigationRevision]);
 
   if (isDebugAppStateOn) exposeAppStateInWindow(selection, ephemeralState);
 
@@ -133,6 +141,7 @@ export const MapCanvas = memo(function MapCanvas({
   const cursor = useAtomValue(cursorStyleAtom);
   const isEditionBlocked = useIsEditionBlocked();
   const [initError, setInitError] = useState<boolean>(false);
+  const [mapInstance, setMapInstance] = useState<MapEngine | null>(null);
 
   // Refs
   const mapRef: React.MutableRefObject<MapEngine | null> =
@@ -149,11 +158,12 @@ export const MapCanvas = memo(function MapCanvas({
     (event: CustomMapControlClick) => {
       switch (event.name) {
         case FIT_TO_EXTENT_CONTROL:
+          markMapInteraction();
           fitToExtent(event.map);
           break;
       }
     },
-    [fitToExtent],
+    [fitToExtent, markMapInteraction],
   );
 
   useEffect(() => {
@@ -167,6 +177,7 @@ export const MapCanvas = memo(function MapCanvas({
         onControlClick,
         initialViewport: readViewport(),
       });
+      setMapInstance(mapRef.current);
       setMap(mapRef.current);
     } catch (error) {
       if (error && (error as Error).message.match(/webgl/i)) {
@@ -177,6 +188,7 @@ export const MapCanvas = memo(function MapCanvas({
     }
 
     return () => {
+      setMapInstance(null);
       setMap(null);
       if (mapRef.current && "remove" in mapRef.current) {
         mapRef.current.remove();
@@ -403,18 +415,22 @@ export const MapCanvas = memo(function MapCanvas({
 
   return (
     <CM.Root modal={false} onOpenChange={onOpenChange}>
-      <MapStateUpdates map={mapRef.current} />
+      <MapStateUpdates map={mapInstance} />
       <CM.Trigger asChild onContextMenu={onContextMenu}>
         <div
           className={clsx("w-full h-full mapboxgl-map", cursorStyle)}
           ref={mapDivRef}
           data-testid="map"
+          onPointerDownCapture={markMapInteraction}
+          onWheelCapture={markMapInteraction}
+          onKeyDownCapture={markMapInteraction}
         ></div>
       </CM.Trigger>
       <MapContextMenu contextInfo={contextInfo} />
       <Hints />
       <BasemapSelector />
-      <GoogleMapsAttribution map={mapRef.current} />
+      <GoogleMapsAttribution map={mapInstance} />
+      <DeviceLocationControl mapReady={mapInstance !== null} />
     </CM.Root>
   );
 });

@@ -63,6 +63,7 @@ class MapTestEngine {
     hasImage: vi.fn().mockReturnValue(false),
     getCanvas: vi.fn().mockReturnValue({ style: { cursor: "" } }),
     setStyle: vi.fn(),
+    easeTo: vi.fn(),
     getStyle: vi.fn().mockReturnValue({ layers: [] }),
     removeLayer: vi.fn(),
     removeSource: vi.fn(),
@@ -123,7 +124,12 @@ class MapTestEngine {
     return this.sources.get(name) || null;
   }
 
-  setStyle = vi.fn((_style: mapboxgl.Style) => Promise.resolve());
+  setStyle = vi.fn((style: mapboxgl.Style) => {
+    for (const [name, source] of Object.entries(style.sources)) {
+      if (source.type === "geojson") this.sources.set(name, { ...source });
+    }
+    return Promise.resolve();
+  });
   addIcons() {
     return Promise.resolve();
   }

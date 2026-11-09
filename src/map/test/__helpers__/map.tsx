@@ -8,6 +8,7 @@ import { PersistenceContext } from "src/lib/persistence/context";
 import { MapCanvas } from "src/map/map-canvas";
 import { stubFeaturesOn } from "src/__helpers__/feature-flags";
 import { vi } from "vitest";
+import { TooltipProvider } from "@epanet-js/ui-kit";
 
 // renderMap mounts the real MapCanvas + updater, which prepares the icon sprite
 // (loading + decoding images — which jsdom can't do). Stub it to an empty sprite.
@@ -28,11 +29,13 @@ export const renderMap = async (
     <QueryClientProvider client={new QueryClient()}>
       <JotaiProvider store={store}>
         <PersistenceContext.Provider value={persistence}>
-          <MapCanvas
-            setMap={(mapEngineInstance) => {
-              mapEngine = mapEngineInstance as unknown as MapTestEngine;
-            }}
-          />
+          <TooltipProvider>
+            <MapCanvas
+              setMap={(mapEngineInstance) => {
+                mapEngine = mapEngineInstance as unknown as MapTestEngine;
+              }}
+            />
+          </TooltipProvider>
         </PersistenceContext.Provider>
       </JotaiProvider>
     </QueryClientProvider>,

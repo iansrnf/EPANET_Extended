@@ -1,4 +1,4 @@
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom, useStore } from "jotai";
 import { type MutableRefObject, useMemo, useRef } from "react";
 import { projectSettingsAtom } from "src/state/project-settings";
 import type { EphemeralEditingState } from "src/state/drawing";
@@ -14,7 +14,17 @@ import {
   mapEditionsTrackerAtom,
   mapLoadingAtom,
   mapBackendFallbackAtom,
+  mapViewportAtom,
 } from "src/state/map";
+import {
+  deviceLocationNavigationRevisionAtom,
+  deviceLocationViewportRequestAtom,
+} from "src/state/device-location";
+import {
+  DEVICE_LOCATION_SOURCE_ID,
+  buildDeviceLocationFeatures,
+  deviceLocationLayers,
+} from "./device-location-overlay";
 import { appendSourceRebuildDurationAtom } from "src/state/performance";
 import { gridPreviewAtom, showGridAtom } from "src/state/map-projection";
 import { MapEngine } from "@epanet-js/map";
@@ -120,6 +130,8 @@ const detectChanges = (
   hasNewMapOverlay: boolean;
   hasNewHighlights: boolean;
   hasNewNodeSize: boolean;
+  hasNewDeviceLocation: boolean;
+  hasNewDeviceLocationViewportRequest: boolean;
 } => {
   return {
     hasNewImport: state.editionsTracker.id !== prev.editionsTracker.id,
@@ -171,6 +183,10 @@ const detectChanges = (
       state.zoneColorAssignments !== prev.zoneColorAssignments,
     hasNewHighlights: state.highlights !== prev.highlights,
     hasNewNodeSize: state.nodeSize !== prev.nodeSize,
+    hasNewDeviceLocation: state.deviceLocation !== prev.deviceLocation,
+    hasNewDeviceLocationViewportRequest:
+      state.deviceLocationViewportRequest !==
+      prev.deviceLocationViewportRequest,
   };
 };
 
@@ -201,6 +217,10 @@ const isHeavyUpdate = (
 };
 
 export const useMapStateUpdates = (map: MapEngine | null) => {
+  const store = useStore();
+  const setDeviceLocationViewportRequest = useSetAtom(
+    deviceLocationViewportRequestAtom,
+  );
   const setEditionsTracker = useSetAtom(mapEditionsTrackerAtom);
   const mapState = useAtomValue(mapStateDerivedAtom);
   const setMapLoading = useSetAtom(mapLoadingAtom);
@@ -301,6 +321,8 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         hasNewMapOverlay,
         hasNewHighlights,
         hasNewNodeSize,
+        hasNewDeviceLocation,
+        hasNewDeviceLocationViewportRequest,
       } = changes;
 
       const selectedIds = new Set(USelection.getAssetIds(mapState.selection));
@@ -609,6 +631,36 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         map.setOverlay(combinedOverlay);
       }
 
+      if (hasNewDeviceLocation || hasNewStyles) {
+        map.setSource(
+          DEVICE_LOCATION_SOURCE_ID,
+          buildDeviceLocationFeatures(mapState.deviceLocation),
+        );
+      }
+
+      const locationRequest = mapState.deviceLocationViewportRequest;
+      if (
+        hasNewDeviceLocationViewportRequest &&
+        locationRequest &&
+        store.get(deviceLocationViewportRequestAtom) === locationRequest
+      ) {
+        const shouldCenter =
+          !locationRequest.initial ||
+          (store.get(deviceLocationNavigationRevisionAtom) ===
+            locationRequest.navigationRevision &&
+            store.get(mapViewportAtom) === locationRequest.expectedViewport);
+        if (shouldCenter) {
+          map.map.easeTo({
+            center: locationRequest.center,
+            zoom: locationRequest.zoom,
+            duration: locationRequest.duration,
+          });
+        }
+        setDeviceLocationViewportRequest((current) =>
+          current === locationRequest ? null : current,
+        );
+      }
+
       lastAppliedMapStateRef.current = mapState;
     },
     {
@@ -781,6 +833,14 @@ const buildStyle = async (
       linkDefaults: mapState.symbology.link.defaults,
     }),
   );
+  style.sources[DEVICE_LOCATION_SOURCE_ID] = {
+    type: "geojson",
+    data: {
+      type: "FeatureCollection",
+      features: buildDeviceLocationFeatures(mapState.deviceLocation),
+    },
+  };
+  style.layers.push(...deviceLocationLayers);
   return style;
 };
 

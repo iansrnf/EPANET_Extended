@@ -1,6 +1,6 @@
 import { ILayerConfig } from "src/types";
 import { getMapboxLayerURL, getTileJSON } from "src/lib/utils";
-import mapboxgl, { RasterLayer } from "mapbox-gl";
+import mapboxgl from "mapbox-gl";
 import { notify } from "src/components/notifications";
 import { DisconnectIcon } from "src/icons";
 
@@ -54,16 +54,6 @@ export async function addMapboxStyle(
     rasterOpacity: layer.opacity,
   });
 
-  Object.entries(layer.sourceMaxZoom).forEach(([sourceName, maxZoom]) => {
-    (updatedStyle.sources[sourceName] as RasterLayer).maxzoom = maxZoom;
-    updatedStyle.layers.forEach((layer) => {
-      if ((layer as RasterLayer).source === sourceName) {
-        const paint = (layer as RasterLayer).paint || {};
-        paint["raster-resampling"] = "nearest";
-        (layer as RasterLayer).paint = paint;
-      }
-    });
-  });
   return updatedStyle;
 }
 

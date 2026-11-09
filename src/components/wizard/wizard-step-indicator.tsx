@@ -18,7 +18,7 @@ export const WizardStepIndicator: React.FC<WizardStepIndicatorProps> = ({
     <nav
       role="navigation"
       aria-label="Import wizard steps"
-      className="flex items-center space-x-4 p-4"
+      className={`flex items-center space-x-4 p-4 ${steps.length <= 3 ? "px-16" : ""}`}
     >
       {steps.map((step, index) => (
         <React.Fragment key={step.number}>
@@ -29,17 +29,17 @@ export const WizardStepIndicator: React.FC<WizardStepIndicatorProps> = ({
               aria-current={currentStep === step.number ? "step" : undefined}
               className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
                 currentStep >= step.number
-                  ? "bg-purple-500 text-white"
-                  : "bg-gray-200 text-gray-600"
+                  ? "bg-accent text-white"
+                  : "bg-track text-subtle"
               }`}
             >
               {step.number}
             </div>
             <span
-              className={`ml-2 text-sm hidden lg:inline ${
+              className={`ml-2 text-size-base hidden lg:inline ${
                 currentStep >= step.number
-                  ? "text-purple-600 font-medium"
-                  : "text-gray-500"
+                  ? "text-accent font-medium"
+                  : "text-subtle"
               }`}
             >
               {step.label}
@@ -50,7 +50,7 @@ export const WizardStepIndicator: React.FC<WizardStepIndicatorProps> = ({
             <div className="flex-1">
               <div
                 className={`h-px ${
-                  currentStep > step.number ? "bg-purple-500" : "bg-gray-300"
+                  currentStep > step.number ? "bg-accent" : "bg-gray-300"
                 }`}
               />
             </div>

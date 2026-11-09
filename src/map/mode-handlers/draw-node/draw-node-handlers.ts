@@ -4,18 +4,40 @@ import { cursorStyleAtom } from "src/state/map";
 import { modeAtom, Mode } from "src/state/mode";
 import { selectionAtom } from "src/state/selection";
 import noop from "lodash/noop";
-import { useSetAtom, useAtom, useAtomValue } from "jotai";
-import { useGetMapCoord } from "../utils";
-import { addNode, replaceNode } from "src/hydraulic-model/model-operations";
+import { useSetAtom, useAtomValue } from "jotai";
+import { useCallback, useRef } from "react";
+import { useAtomCallback } from "jotai/utils";
+import type { ChangeSet } from "@epanet-js/change-set";
+import { getMapCoord } from "../utils";
+import { addNode, replaceNode } from "@epanet-js/hydraulic-model-operations";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import throttle from "lodash/throttle";
 import { useUserTracking } from "src/infra/user-tracking";
-import { useElevations } from "../../elevations/use-elevations";
+import { useElevations } from "src/hooks/use-elevations";
 import { useSnapping } from "../hooks/use-snapping";
 import { useSelection } from "src/selection";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
+import { useFocusAssetPanel } from "src/hooks/use-focus-asset-panel";
+import { validateAsset } from "src/lib/model-attributes-validation";
+import { Asset, AssetId, HydraulicModel } from "src/hydraulic-model";
+import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
+import { captureWarning } from "src/infra/error-tracking";
 
 type NodeType = "junction" | "reservoir" | "tank";
+
+const createdNodeId = (changeSet: ChangeSet): AssetId | undefined => {
+  for (const entry of changeSet.entries()) {
+    if (
+      entry.kind === "create" &&
+      (entry.entity === "junction" ||
+        entry.entity === "reservoir" ||
+        entry.entity === "tank")
+    ) {
+      return entry.id as AssetId;
+    }
+  }
+  return undefined;
+};
 
 export function useDrawNodeHandlers({
   hydraulicModel,
@@ -24,90 +46,158 @@ export function useDrawNodeHandlers({
   units,
   readonly = false,
 }: HandlerContext & { nodeType: NodeType }): Handlers {
+  const isUpdatingRef = useRef(false);
   const setMode = useSetAtom(modeAtom);
-  const [ephemeralState, setEphemeralState] = useAtom(ephemeralStateAtom);
+  const setEphemeralState = useSetAtom(ephemeralStateAtom);
   const setCursor = useSetAtom(cursorStyleAtom);
   const selection = useAtomValue(selectionAtom);
   const { transact } = useModelTransaction();
+  const readCommittedModel = useAtomCallback(
+    useCallback((get) => get(stagingModelDerivedAtom), []),
+  );
   const userTracking = useUserTracking();
   const { assetFactory, labelManager } = useAtomValue(modelFactoriesAtom);
-  const { fetchElevation, prefetchTile } = useElevations(units.elevation);
+  const { fetchElevation, prefetchTileThrottled } = useElevations(
+    units.elevation,
+  );
   const { findSnappingCandidate } = useSnapping(map, hydraulicModel.assets);
   const { selectAsset } = useSelection(selection);
-  const getMapCoord = useGetMapCoord();
+  const focusAssetPanel = useFocusAssetPanel();
+
+  const selectAndFocusIfInvalid = (asset: Asset, model: HydraulicModel) => {
+    selectAsset(asset.id);
+    const hasIssues = validateAsset(asset, model).length > 0;
+    if (hasIssues) focusAssetPanel(true);
+  };
 
   const submitNode = (
     nodeType: NodeType,
     coordinates: [number, number],
-    elevation: number,
+    elevation: number | null,
     pipeIdToSplit?: number,
   ) => {
-    const moment = addNode(hydraulicModel, {
+    if (
+      pipeIdToSplit !== undefined &&
+      hydraulicModel.assets.get(pipeIdToSplit)?.type !== "pipe"
+    ) {
+      captureWarning("Pipe to split is no longer in the model");
+      return;
+    }
+
+    const data = {
       nodeType,
       coordinates,
       elevation,
-      pipeIdToSplit,
+      pipeIdsToSplit: pipeIdToSplit !== undefined ? [pipeIdToSplit] : undefined,
       lengthUnit: units.length,
       assetFactory,
       labelManager,
-    });
-    transact(moment);
+    };
+
+    const changeSet = transact(() => addNode(hydraulicModel, data));
+    if (!changeSet) return;
+
     userTracking.capture({ name: "asset.created", type: nodeType });
 
-    if (moment.putAssets && moment.putAssets.length > 0) {
-      const newNodeId = moment.putAssets[0].id;
-      selectAsset(newNodeId);
-    }
+    const newNodeId = createdNodeId(changeSet);
+    const committedModel = readCommittedModel();
+    const newNode =
+      newNodeId !== undefined
+        ? committedModel.assets.get(newNodeId)
+        : undefined;
+    if (newNode) selectAndFocusIfInvalid(newNode, committedModel);
   };
 
-  return {
-    click: async (e) => {
-      if (readonly) return;
+  const submitNodeReplacement = (
+    oldNodeId: number,
+    elevation: number | null,
+  ) => {
+    const data = {
+      oldNodeId,
+      newNodeType: nodeType,
+      assetFactory,
+      elevation,
+    };
 
-      const mouseCoord = getMapCoord(e);
-      const snappingCandidate = findSnappingCandidate(e, mouseCoord);
+    const changeSet = transact(() => replaceNode(hydraulicModel, data));
+    if (changeSet) {
+      userTracking.capture({
+        name: "asset.created",
+        type: nodeType,
+      });
 
-      if (snappingCandidate && snappingCandidate.type !== "pipe") {
-        const moment = replaceNode(hydraulicModel, {
-          oldNodeId: snappingCandidate.id,
-          newNodeType: nodeType,
-          assetFactory,
-        });
-        transact(moment);
-        userTracking.capture({
-          name: "asset.created",
-          type: nodeType,
-        });
+      const newNodeId = createdNodeId(changeSet);
+      const committedModel = readCommittedModel();
+      const newNode =
+        newNodeId !== undefined
+          ? committedModel.assets.get(newNodeId)
+          : undefined;
+      if (newNode) selectAndFocusIfInvalid(newNode, committedModel);
+    }
 
-        if (moment.putAssets && moment.putAssets.length > 0) {
-          const newNodeId = moment.putAssets[0].id;
-          selectAsset(newNodeId);
-        }
+    setEphemeralState({ type: "none" });
+  };
 
-        setEphemeralState({ type: "none" });
+  const startElevationFetch = () => {
+    isUpdatingRef.current = true;
+    setCursor("wait");
+  };
+
+  const finishElevationFetch = () => {
+    isUpdatingRef.current = false;
+    setCursor("default");
+  };
+
+  const handleClick: Handlers["click"] = (e) => {
+    if (readonly) return;
+    if (isUpdatingRef.current) return;
+
+    const mouseCoord = getMapCoord(e);
+    const snappingCandidate = findSnappingCandidate(e, mouseCoord);
+
+    if (snappingCandidate && snappingCandidate.type !== "pipe") {
+      const knownElevation = snappingCandidate.elevation;
+      if (knownElevation !== null) {
+        submitNodeReplacement(snappingCandidate.id, knownElevation);
         return;
       }
 
-      let clickPosition = getMapCoord(e);
-      let elevation = await fetchElevation(e.lngLat);
-      let pipeIdToSplit: number | undefined;
+      const [lng, lat] = snappingCandidate.coordinates;
+      startElevationFetch();
+      void fetchElevation({ lng, lat })
+        .then((elevation) =>
+          submitNodeReplacement(snappingCandidate.id, elevation),
+        )
+        .finally(finishElevationFetch);
+      return;
+    }
 
-      if (
-        ephemeralState.type === "drawNode" &&
-        ephemeralState.pipeSnappingPosition
-      ) {
-        clickPosition = ephemeralState.pipeSnappingPosition as [number, number];
-        pipeIdToSplit = ephemeralState.pipeId ?? undefined;
-        const [lng, lat] = clickPosition;
-        elevation = await fetchElevation({ lng, lat } as mapboxgl.LngLat);
-      }
+    const pipeToSplit = snappingCandidate;
+    const clickPosition = pipeToSplit
+      ? (pipeToSplit.coordinates as [number, number])
+      : mouseCoord;
+    const lngLatForElevation = pipeToSplit
+      ? { lng: clickPosition[0], lat: clickPosition[1] }
+      : e.lngLat;
 
-      submitNode(nodeType, clickPosition, elevation, pipeIdToSplit);
-      setEphemeralState({ type: "none" });
-    },
+    startElevationFetch();
+    void fetchElevation(lngLatForElevation)
+      .then((elevation) => {
+        submitNode(nodeType, clickPosition, elevation, pipeToSplit?.id);
+      })
+      .finally(() => {
+        setEphemeralState({ type: "none" });
+        finishElevationFetch();
+      });
+  };
+
+  return {
+    click: handleClick,
     move: throttle(
       (e) => {
-        prefetchTile(e.lngLat);
+        prefetchTileThrottled(e.lngLat);
+
+        if (isUpdatingRef.current) return;
 
         const mouseCoord = getMapCoord(e);
         const snappingCandidate = findSnappingCandidate(e, mouseCoord);

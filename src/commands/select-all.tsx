@@ -1,10 +1,13 @@
 import { useAtomValue, useSetAtom } from "jotai";
 import { useCallback } from "react";
 import { useUserTracking } from "src/infra/user-tracking";
-import { filterLockedFeatures } from "src/lib/folder";
-import { dataAtom } from "src/state/data";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { selectionAtom } from "src/state/selection";
+import {
+  customerPointsVisibleAtom,
+  zonesVisibleAtom,
+} from "src/state/map-symbology";
+import { USelection } from "src/selection";
 
 export const selectAllShortcut = "ctrl+a";
 
@@ -12,9 +15,10 @@ export const useSelectAll = () => {
   const userTracking = useUserTracking();
   const setSelection = useSetAtom(selectionAtom);
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
-  const { folderMap } = useAtomValue(dataAtom);
+  const customerPointsVisible = useAtomValue(customerPointsVisibleAtom);
+  const zonesVisible = useAtomValue(zonesVisibleAtom);
 
-  const selectAll = useCallback(
+  return useCallback(
     ({ source }: { source: "shortcut" }) => {
       userTracking.capture({
         name: "fullSelection.enabled",
@@ -22,15 +26,21 @@ export const useSelectAll = () => {
         count: hydraulicModel.assets.size,
       });
 
-      setSelection({
-        type: "multi",
-        ids: filterLockedFeatures({ hydraulicModel, folderMap }).map(
-          (f) => f.id,
-        ),
-      });
+      const assetIds = Array.from(hydraulicModel.assets.keys());
+      const customerPointIds = customerPointsVisible
+        ? Array.from(hydraulicModel.customerPoints.keys())
+        : [];
+      const zoneIds = zonesVisible
+        ? Array.from(hydraulicModel.zones.keys())
+        : [];
+      setSelection(USelection.fromIds(assetIds, customerPointIds, zoneIds));
     },
-    [userTracking, setSelection, hydraulicModel, folderMap],
+    [
+      userTracking,
+      setSelection,
+      hydraulicModel,
+      customerPointsVisible,
+      zonesVisible,
+    ],
   );
-
-  return selectAll;
 };

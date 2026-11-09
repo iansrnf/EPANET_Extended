@@ -5,7 +5,6 @@ import { useTranslate } from "src/hooks/use-translate";
 import { Trans } from "react-i18next";
 import { useUserTracking } from "src/infra/user-tracking";
 import { userSettingsAtom } from "src/state/user-settings";
-import { EarlyAccessBadge } from "../components/early-access-badge";
 
 export const FirstScenarioDialog = ({
   onConfirm,
@@ -38,8 +37,11 @@ export const FirstScenarioDialog = ({
 
   const content = (
     <>
-      <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
-        <p>{translate("scenarios.firstScenario.earlyAccess")}</p>
+      <div className="space-y-4 text-size-base text-default">
+        <p>
+          {translate("scenarios.paywall.description1")}{" "}
+          {translate("scenarios.paywall.description2")}
+        </p>
 
         <div>
           <p>{translate("scenarios.firstScenario.pleaseNote")}</p>
@@ -50,19 +52,7 @@ export const FirstScenarioDialog = ({
                 components={{ bold: <strong /> }}
               />
             </li>
-            <li>
-              <Trans
-                i18nKey="scenarios.firstScenario.bullet2"
-                components={{ bold: <strong /> }}
-              />
-            </li>
             <li>{translate("scenarios.firstScenario.bullet3")}</li>
-            <li>
-              <Trans
-                i18nKey="scenarios.firstScenario.bullet4"
-                components={{ bold: <strong /> }}
-              />
-            </li>
           </ul>
         </div>
       </div>
@@ -72,7 +62,7 @@ export const FirstScenarioDialog = ({
           checked={!userSettings.showFirstScenarioDialog}
           onChange={handleCheckboxChange}
         />
-        <span className="text-sm text-gray-600 dark:text-gray-400">
+        <span className="text-size-base text-subtle">
           {translate("scenarios.firstScenario.dontShowAgain")}
         </span>
       </div>
@@ -85,7 +75,6 @@ export const FirstScenarioDialog = ({
       size="md"
       isOpen={true}
       onClose={onClose}
-      badge={<EarlyAccessBadge />}
       footer={
         <SimpleDialogActions
           action={translate("scenarios.firstScenario.createButton")}

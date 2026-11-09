@@ -1,12 +1,30 @@
 import { Zip, ZipDeflate } from "fflate";
+import { TranslateFn } from "@epanet-js/i18n";
 import { Asset, HydraulicModel, Projection } from "src/hydraulic-model";
 import { ResultsReader } from "src/simulation";
 import { AssetExportOptions, ExportedAssetTypes } from "../types";
-import { CustomerPoint } from "src/hydraulic-model/customer-points";
-import { FILE_NAMES } from "./constants";
+import { CustomerPoint } from "@epanet-js/hydraulic-model";
+import { FILE_NAMES, ZONES_FILE_NAME } from "./constants";
 import { NUM_DECIMAL_PLACES, COORDINATE_DECIMAL_PLACES } from "../constants";
-import { createProjectionMapper } from "src/lib/projections";
+import { createProjectionMapper } from "@epanet-js/projections";
+import {
+  buildExportDefaults,
+  resolveExportValue,
+  type ExportDefaults,
+} from "./optional-field-defaults";
+import { exportableProperties } from "./excluded-fields";
+import {
+  VALVE_TARGET_NODE_FIELD,
+  valveTargetNodeLabel,
+} from "./valve-target-node";
+import {
+  buildPropertyNameResolver,
+  PropertyNameResolver,
+} from "./property-names";
 import { Position } from "geojson";
+import { exportedZones, zoneFieldKeys, zoneFieldValue } from "./zone-fields";
+
+type SheetType = ExportedAssetTypes | "zone";
 
 const MAX_ROWS = 1_048_575;
 
@@ -23,29 +41,37 @@ export const exportXlsx = async (
   handle: FileSystemFileHandle,
   hydraulicModel: HydraulicModel,
   projection: Projection,
+  translate: TranslateFn,
   options?: AssetExportOptions,
 ): Promise<void> => {
   const includeSimulationResults =
     (options?.includeSimulationResults ?? false) && !!options?.resultsReader;
-  const selectedAssets = options?.selectedAssets ?? new Set<number>();
+  const selectedAssets = options?.assetIdsFilter ?? null;
+  const selectedCustomerPoints = options?.customerPointIdFilter ?? null;
   const resultsReader = options?.resultsReader;
-
-  const hasSelection = selectedAssets.size > 0;
+  const defaults = buildExportDefaults(hydraulicModel);
   const assetTypeCounts = new Map<string, number>();
   hydraulicModel.assets.forEach((asset) => {
-    if (hasSelection && !selectedAssets.has(asset.id)) return;
+    if (selectedAssets && !selectedAssets.has(asset.id)) return;
     assetTypeCounts.set(asset.type, (assetTypeCounts.get(asset.type) ?? 0) + 1);
   });
+  const customerPointCount = selectedCustomerPoints
+    ? selectedCustomerPoints.size
+    : hydraulicModel.customerPoints.size;
 
   const activeAssetTypes = ALL_ASSET_TYPES.filter(
     (t) => (assetTypeCounts.get(t) ?? 0) > 0,
   );
-  const hasCustomerPoints = hydraulicModel.customerPoints.size > 0;
+  const hasCustomerPoints = customerPointCount > 0;
+  const zones = exportedZones(hydraulicModel, options);
+  const hasZones = zones.length > 0;
 
-  const sheetNames = [
-    ...activeAssetTypes.map((t) => FILE_NAMES[t]),
-    ...(hasCustomerPoints ? [FILE_NAMES["customerPoint"]] : []),
+  const sheetTypes: SheetType[] = [
+    ...activeAssetTypes,
+    ...(hasCustomerPoints ? (["customerPoint"] as const) : []),
+    ...(hasZones ? (["zone"] as const) : []),
   ];
+  const sheetNames = buildSheetNames(sheetTypes, translate);
 
   if (sheetNames.length === 0) return;
 
@@ -78,6 +104,10 @@ export const exportXlsx = async (
 
         const transformCoord = createProjectionMapper(projection).toSource;
         const getSimResults = buildSimulationResultsReader(resultsReader);
+        const resolvePropertyName = buildPropertyNameResolver(
+          hydraulicModel.customAttributes,
+          translate,
+        );
 
         for (const [sheetIndex, assetType] of activeAssetTypes.entries()) {
           const sheetEntry = openSheetEntry(zip, sheetIndex + 1);
@@ -86,14 +116,18 @@ export const exportXlsx = async (
 
           hydraulicModel.assets.forEach((asset) => {
             if (asset.type !== assetType) return;
-            if (hasSelection && !selectedAssets.has(asset.id)) return;
+            if (selectedAssets && !selectedAssets.has(asset.id)) return;
 
             const simValues = includeSimulationResults
               ? (getSimResults[assetType](asset) as Record<string, unknown>)
               : {};
 
             if (!headerWritten) {
-              pushRow(sheetEntry, 1, buildHeader(asset, simValues));
+              pushRow(
+                sheetEntry,
+                1,
+                buildHeader(asset, simValues, resolvePropertyName),
+              );
               headerWritten = true;
               rowCount = 1;
             }
@@ -107,7 +141,13 @@ export const exportXlsx = async (
             pushRow(
               sheetEntry,
               ++rowCount,
-              buildRow(asset, simValues, hydraulicModel, transformCoord),
+              buildRow(
+                asset,
+                simValues,
+                hydraulicModel,
+                transformCoord,
+                defaults,
+              ),
             );
           });
 
@@ -119,10 +159,18 @@ export const exportXlsx = async (
             zip,
             activeAssetTypes.length + 1,
           );
-          pushRow(customerSheetEntry, 1, CUSTOMER_POINT_HEADERS);
+          pushRow(
+            customerSheetEntry,
+            1,
+            CUSTOMER_POINT_HEADERS.map((key) =>
+              resolvePropertyName("customerPoint", key),
+            ),
+          );
           let customerRowCount = 1;
 
           hydraulicModel.customerPoints.forEach((point) => {
+            if (selectedCustomerPoints && !selectedCustomerPoints.has(point.id))
+              return;
             if (customerRowCount >= MAX_ROWS) {
               throw new Error(
                 `Sheet exceeds Excel's ${MAX_ROWS.toLocaleString()} row limit`,
@@ -138,6 +186,24 @@ export const exportXlsx = async (
           closeSheetEntry(customerSheetEntry);
         }
 
+        if (hasZones) {
+          const zoneSheetEntry = openSheetEntry(zip, sheetTypes.length);
+          const keys = zoneFieldKeys(hydraulicModel);
+          pushRow(
+            zoneSheetEntry,
+            1,
+            keys.map((key) => resolvePropertyName("zone", key)),
+          );
+          zones.forEach((zone, index) => {
+            pushRow(
+              zoneSheetEntry,
+              index + 2,
+              keys.map((key) => zoneFieldValue(zone, key)),
+            );
+          });
+          closeSheetEntry(zoneSheetEntry);
+        }
+
         zip.end();
       } catch (err) {
         reject(err);
@@ -149,6 +215,44 @@ export const exportXlsx = async (
     await stream.abort();
     throw err;
   }
+};
+
+const XLSX_SHEET_NAME_MAX_LENGTH = 31;
+const INVALID_SHEET_NAME_CHARS = /[\\/?*[\]:]/g;
+
+const SHEET_NAME_KEYS: Record<SheetType, string> = {
+  junction: "junctions",
+  reservoir: "reservoirs",
+  tank: "tanks",
+  pipe: "pipes",
+  pump: "pumps",
+  valve: "valves",
+  customerPoint: "customerPoints",
+  zone: "zones",
+};
+
+const buildSheetNames = (
+  types: SheetType[],
+  translate: TranslateFn,
+): string[] => {
+  const usedNames = new Set<string>();
+  return types.map((type) => {
+    const base =
+      translate(SHEET_NAME_KEYS[type])
+        .replace(INVALID_SHEET_NAME_CHARS, " ")
+        .trim()
+        .slice(0, XLSX_SHEET_NAME_MAX_LENGTH) ||
+      (type === "zone" ? ZONES_FILE_NAME : FILE_NAMES[type]);
+
+    let candidate = base;
+    for (let suffix = 2; usedNames.has(candidate); suffix++) {
+      const digits = ` ${suffix}`;
+      candidate =
+        base.slice(0, XLSX_SHEET_NAME_MAX_LENGTH - digits.length) + digits;
+    }
+    usedNames.add(candidate);
+    return candidate;
+  });
 };
 
 const CUSTOMER_POINT_HEADERS = [
@@ -245,8 +349,9 @@ const buildSimulationResultsReader = (resultsReader?: ResultsReader) => {
 const buildHeader = (
   asset: Asset,
   simValues: Record<string, unknown>,
+  resolvePropertyName: PropertyNameResolver,
 ): string[] => {
-  const propertyKeys = asset.listProperties();
+  const propertyKeys = exportableProperties(asset.type, asset.listProperties());
   if (asset.isNode) propertyKeys.unshift("positionX", "positionY");
 
   const simKeys = new Set(Object.keys(simValues).map((k) => `sim_${k}`));
@@ -255,13 +360,16 @@ const buildHeader = (
   const headers: string[] = [];
   for (const key of propertyKeys) {
     if (key === "connections") {
-      headers.push("startNode", "endNode");
+      headers.push(
+        resolvePropertyName(asset.type, "startNode"),
+        resolvePropertyName(asset.type, "endNode"),
+      );
     } else {
-      headers.push(key);
+      headers.push(resolvePropertyName(asset.type, key));
     }
   }
   for (const key of simKeys) {
-    headers.push(key);
+    headers.push(resolvePropertyName(asset.type, key));
   }
   return headers;
 };
@@ -271,8 +379,9 @@ const buildRow = (
   simValues: Record<string, unknown>,
   hydraulicModel: HydraulicModel,
   transformCoord: (p: Position) => Position,
+  defaults?: ExportDefaults,
 ): unknown[] => {
-  const propertyKeys = asset.listProperties();
+  const propertyKeys = exportableProperties(asset.type, asset.listProperties());
   if (asset.isNode) propertyKeys.unshift("positionX", "positionY");
 
   const simKeys = new Set(Object.keys(simValues).map((k) => `sim_${k}`));
@@ -301,8 +410,15 @@ const buildRow = (
         hydraulicModel.assets.get(startId)?.label ?? "",
         hydraulicModel.assets.get(endId)?.label ?? "",
       );
+    } else if (key === VALVE_TARGET_NODE_FIELD) {
+      row.push(valveTargetNodeLabel(hydraulicModel, asset));
     } else {
-      const value = asset.getProperty(key);
+      const value = resolveExportValue(
+        asset,
+        key,
+        asset.getProperty(key),
+        defaults,
+      );
       row.push(typeof value === "object" && value !== null ? "" : value);
     }
   }

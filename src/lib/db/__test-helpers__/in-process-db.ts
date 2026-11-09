@@ -1,13 +1,16 @@
 import { afterEach, beforeEach } from "vitest";
-import { api } from "src/lib/ejsdb/worker-api";
-import { resetWorkerForTest, setWorkerForTest } from "src/lib/ejsdb";
+import { resetWorkerForTest, setWorkerForTest } from "@epanet-js/ejsdb";
+import { api } from "@epanet-js/ejsdb/worker-api";
+import { writeQueue } from "src/lib/persistence/write-queue";
 
 export const useInProcessDb = (): void => {
   beforeEach(() => {
+    writeQueue.reset();
     setWorkerForTest(api);
   });
 
   afterEach(async () => {
+    await writeQueue.whenIdle();
     await api.closeDb();
     resetWorkerForTest();
   });

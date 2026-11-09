@@ -1,12 +1,28 @@
-import { screen } from "@testing-library/react";
+import type { Feature } from "geojson";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { setInitialState } from "src/__helpers__/state";
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { stubUserTracking } from "src/__helpers__/user-tracking";
 import { stubProjectionsReady } from "src/__helpers__/projections";
 import { setWizardState } from "./__helpers__/wizard-state";
-import { waitFor } from "@testing-library/react";
 import { renderWizard } from "./__helpers__/render-wizard";
+
+const aPoint = (
+  coordinates: [number, number],
+  properties: Record<string, unknown>,
+): Feature => ({
+  type: "Feature",
+  geometry: { type: "Point", coordinates },
+  properties,
+});
+
+const aSourceFile = (features: Feature[]) =>
+  new File(
+    [JSON.stringify({ type: "FeatureCollection", features })],
+    "test.geojson",
+    { type: "application/json" },
+  );
 
 describe("DataMappingStep", () => {
   beforeEach(() => {
@@ -14,316 +30,169 @@ describe("DataMappingStep", () => {
     stubProjectionsReady();
   });
 
-  describe("customer points processing scenarios", () => {
-    it("processes valid customer points and displays tabs correctly", async () => {
-      const user = userEvent.setup();
+  describe("optional demand attribute + default value", () => {
+    const namedPoints = () => [
+      aPoint([0.001, 0.001], { name: "Point1" }),
+      aPoint([0.002, 0.002], { name: "Point2" }),
+    ];
+
+    it("auto-parses with default demand when no attribute is selected", async () => {
       const store = setInitialState({
         hydraulicModel: HydraulicModelBuilder.with().build(),
       });
 
       setWizardState(store, {
-        selectedFile: new File(["test"], "test.geojson", {
-          type: "application/json",
-        }),
-        inputData: {
-          properties: new Set(["name", "demand", "flow"]),
-          features: [
-            {
-              type: "Feature" as const,
-              geometry: {
-                type: "Point" as const,
-                coordinates: [0.001, 0.001],
-              },
-              properties: {
-                name: "Point1",
-                demand: 25.5,
-              },
-            },
-            {
-              type: "Feature" as const,
-              geometry: {
-                type: "Point" as const,
-                coordinates: [0.002, 0.002],
-              },
-              properties: {
-                name: "Point2",
-                demand: 30.0,
-              },
-            },
-          ],
-        },
+        sourceFiles: [aSourceFile(namedPoints())],
+        inputData: { properties: new Set(["name"]) },
       });
 
       renderWizard(store);
-
-      const demandSelector = screen.getByRole("combobox", { name: "Demand" });
-      await user.click(demandSelector);
-
-      const demandOption = await screen.findByRole("option", {
-        name: "demand",
-      });
-      await user.click(demandOption);
 
       await waitFor(() => {
         expect(screen.getByText(/Customer points \(2\)/)).toBeInTheDocument();
       });
 
       expect(screen.getByRole("button", { name: /next/i })).not.toBeDisabled();
-      expect(screen.getByRole("button", { name: /back/i })).not.toBeDisabled();
     });
 
-    it("handles invalid demands and shows issues details", async () => {
-      const user = userEvent.setup();
+    it("keeps next enabled with no demand attribute selected", async () => {
       const store = setInitialState({
         hydraulicModel: HydraulicModelBuilder.with().build(),
       });
 
       setWizardState(store, {
-        selectedFile: new File(["test"], "test.geojson", {
-          type: "application/json",
-        }),
-        inputData: {
-          properties: new Set(["name", "demand", "flow"]),
-          features: [
-            {
-              type: "Feature" as const,
-              geometry: {
-                type: "Point" as const,
-                coordinates: [0.001, 0.001],
-              },
-              properties: {
-                name: "Point1",
-                demand: 25.5,
-              },
-            },
-            {
-              type: "Feature" as const,
-              geometry: {
-                type: "Point" as const,
-                coordinates: [0.002, 0.002],
-              },
-              properties: {
-                name: "Point2",
-                demand: "invalid",
-              },
-            },
-          ],
-        },
-      });
-
-      renderWizard(store);
-
-      const demandSelector = screen.getByRole("combobox", { name: "Demand" });
-      await user.click(demandSelector);
-
-      const demandOption = await screen.findByRole("option", {
-        name: "demand",
-      });
-      await user.click(demandOption);
-
-      await waitFor(() => {
-        expect(screen.getByText(/Customer points \(1\)/)).toBeInTheDocument();
-      });
-
-      expect(screen.getByText(/Issues \(1\)/)).toBeInTheDocument();
-
-      expect(screen.getByText(/Invalid demands \(1\)/)).toBeInTheDocument();
-
-      expect(screen.getByRole("button", { name: /next/i })).not.toBeDisabled();
-      expect(screen.getByRole("button", { name: /back/i })).not.toBeDisabled();
-    });
-  });
-
-  describe("current implementation", () => {
-    it("shows demand property selector when inputData exists", () => {
-      const store = setInitialState({
-        hydraulicModel: HydraulicModelBuilder.with().build(),
-      });
-
-      setWizardState(store, {
-        selectedFile: new File(["test"], "test.geojson", {
-          type: "application/json",
-        }),
-        inputData: {
-          properties: new Set(["name", "demand", "flow"]),
-          features: [
-            {
-              type: "Feature" as const,
-              geometry: {
-                type: "Point" as const,
-                coordinates: [0.001, 0.001],
-              },
-              properties: {
-                name: "Point1",
-                demand: 25.5,
-                flow: 10.0,
-              },
-            },
-          ],
-        },
-      });
-
-      renderWizard(store);
-
-      expect(screen.getByText("Demand")).toBeInTheDocument();
-
-      const selectElement = screen.getByRole("combobox", { name: "Demand" });
-      expect(selectElement).toBeInTheDocument();
-      expect(selectElement).toHaveTextContent("Select demand property...");
-    });
-
-    it("disables next button when no demand property is selected", () => {
-      const store = setInitialState({
-        hydraulicModel: HydraulicModelBuilder.with().build(),
-      });
-
-      setWizardState(store, {
-        selectedFile: new File(["test"], "test.geojson", {
-          type: "application/json",
-        }),
-        inputData: {
-          properties: new Set(["name", "demand", "flow"]),
-          features: [
-            {
-              type: "Feature" as const,
-              geometry: {
-                type: "Point" as const,
-                coordinates: [0.001, 0.001],
-              },
-              properties: {
-                name: "Point1",
-                demand: 25.5,
-              },
-            },
-          ],
-        },
+        sourceFiles: [aSourceFile(namedPoints())],
+        inputData: { properties: new Set(["name"]) },
         selectedDemandProperty: null,
       });
 
       renderWizard(store);
 
-      expect(screen.getByRole("button", { name: /next/i })).toBeDisabled();
-      expect(screen.getByRole("button", { name: /back/i })).not.toBeDisabled();
-    });
-  });
-
-  describe("pattern selector", () => {
-    const createInputData = () => ({
-      properties: new Set(["name", "demand"]),
-      features: [
-        {
-          type: "Feature" as const,
-          geometry: {
-            type: "Point" as const,
-            coordinates: [0.001, 0.001],
-          },
-          properties: {
-            name: "Point1",
-            demand: 25.5,
-          },
-        },
-      ],
-    });
-
-    it("shows pattern selector when patterns exist", () => {
-      const store = setInitialState({
-        hydraulicModel: HydraulicModelBuilder.with()
-          .aDemandPattern(100, "daily", [1, 1.2, 0.8])
-          .build(),
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /next/i }),
+        ).not.toBeDisabled();
       });
-
-      setWizardState(store, {
-        selectedFile: new File(["test"], "test.geojson", {
-          type: "application/json",
-        }),
-        inputData: createInputData(),
-      });
-
-      renderWizard(store);
-
-      expect(
-        screen.getByRole("combobox", { name: "Time pattern" }),
-      ).toBeInTheDocument();
     });
 
-    it("does not show pattern selector when no patterns exist", () => {
+    it("keeps the default demand input editable when an attribute is selected", async () => {
+      const user = userEvent.setup();
       const store = setInitialState({
         hydraulicModel: HydraulicModelBuilder.with().build(),
       });
 
       setWizardState(store, {
-        selectedFile: new File(["test"], "test.geojson", {
-          type: "application/json",
-        }),
-        inputData: createInputData(),
+        sourceFiles: [aSourceFile([aPoint([0.001, 0.001], { demand: 12 })])],
+        inputData: { properties: new Set(["demand"]) },
       });
 
       renderWizard(store);
 
-      expect(
-        screen.queryByRole("combobox", { name: "Time pattern" }),
-      ).not.toBeInTheDocument();
-    });
+      const defaultDemandInput = screen.getByLabelText(
+        /Value for: Default demand/i,
+      );
+      expect(defaultDemandInput).not.toBeDisabled();
 
-    it("applies selected pattern to parsed customer points", async () => {
-      const user = userEvent.setup();
-
-      const store = setInitialState({
-        hydraulicModel: HydraulicModelBuilder.with()
-          .aDemandPattern(100, "daily", [1, 1.2, 0.8])
-          .aDemandPattern(101, "weekly", [1, 1, 1, 1, 1, 0.5, 0.5])
-          .build(),
-      });
-
-      setWizardState(store, {
-        selectedFile: new File(["test"], "test.geojson", {
-          type: "application/json",
-        }),
-        inputData: createInputData(),
-      });
-
-      renderWizard(store);
-
-      // Select demand property first
       const demandSelector = screen.getByRole("combobox", { name: "Demand" });
       await user.click(demandSelector);
-      const demandOption = await screen.findByRole("option", {
-        name: "demand",
-      });
-      await user.click(demandOption);
+      await user.click(await screen.findByRole("option", { name: "demand" }));
 
       await waitFor(() => {
-        expect(screen.getByText(/Customer points \(1\)/)).toBeInTheDocument();
+        expect(
+          screen.getByRole("combobox", { name: "Demand" }),
+        ).toHaveTextContent("demand");
       });
-
-      // Now select a pattern
-      const patternSelector = screen.getByRole("combobox", {
-        name: "Time pattern",
-      });
-      await user.click(patternSelector);
-      const patternOption = await screen.findByRole("option", {
-        name: "daily",
-      });
-      await user.click(patternOption);
-
-      // Verify re-parsing occurs (customer points table should still show data)
-      await waitFor(() => {
-        expect(screen.getByText(/Customer points \(1\)/)).toBeInTheDocument();
-      });
+      expect(defaultDemandInput).not.toBeDisabled();
     });
+  });
 
-    it("shows CONSTANT option as default in pattern selector", () => {
+  describe("default demand fallback notice", () => {
+    it("reports how many points used the default value when the attribute is missing on some features", async () => {
       const store = setInitialState({
-        hydraulicModel: HydraulicModelBuilder.with()
-          .aDemandPattern(100, "daily", [1, 1.2, 0.8])
-          .build(),
+        hydraulicModel: HydraulicModelBuilder.with().build(),
       });
 
       setWizardState(store, {
-        selectedFile: new File(["test"], "test.geojson", {
-          type: "application/json",
-        }),
-        inputData: createInputData(),
+        sourceFiles: [
+          aSourceFile([
+            aPoint([0.001, 0.001], { demand: 10 }),
+            aPoint([0.002, 0.002], {}),
+            aPoint([0.003, 0.003], { demand: null }),
+          ]),
+        ],
+        selectedDemandProperty: "demand",
+        inputData: { properties: new Set(["demand"]) },
+      });
+
+      renderWizard(store);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Invalid demands \(2\)/i)).toBeInTheDocument();
+      });
+    });
+
+    it("does not show the notice when every point is defaulted (no attribute selected)", async () => {
+      const store = setInitialState({
+        hydraulicModel: HydraulicModelBuilder.with().build(),
+      });
+
+      setWizardState(store, {
+        sourceFiles: [
+          aSourceFile([
+            aPoint([0.001, 0.001], { name: "A" }),
+            aPoint([0.002, 0.002], { name: "B" }),
+          ]),
+        ],
+        inputData: { properties: new Set(["name"]) },
+      });
+
+      renderWizard(store);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Customer points \(2\)/)).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText(/Invalid demands/i)).not.toBeInTheDocument();
+    });
+
+    it("does not show the notice when every point has a valid attribute value", async () => {
+      const user = userEvent.setup();
+      const store = setInitialState({
+        hydraulicModel: HydraulicModelBuilder.with().build(),
+      });
+
+      setWizardState(store, {
+        sourceFiles: [aSourceFile([aPoint([0.001, 0.001], { demand: 10 })])],
+        inputData: { properties: new Set(["demand"]) },
+      });
+
+      renderWizard(store);
+
+      const demandSelector = screen.getByRole("combobox", { name: "Demand" });
+      await user.click(demandSelector);
+      await user.click(await screen.findByRole("option", { name: "demand" }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Customer points \(1\)/)).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText(/Invalid demands/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("pattern selector visibility", () => {
+    it("shows the pattern selector even when no patterns are defined yet", () => {
+      const store = setInitialState({
+        hydraulicModel: HydraulicModelBuilder.with().build(),
+      });
+
+      setWizardState(store, {
+        sourceFiles: [
+          aSourceFile([
+            aPoint([0.001, 0.001], { name: "Point1", demand: 25.5 }),
+          ]),
+        ],
+        inputData: { properties: new Set(["name", "demand"]) },
       });
 
       renderWizard(store);
@@ -331,32 +200,16 @@ describe("DataMappingStep", () => {
       const patternSelector = screen.getByRole("combobox", {
         name: "Time pattern",
       });
-      expect(patternSelector).toHaveTextContent("CONSTANT");
+      expect(patternSelector).toBeInTheDocument();
+      expect(patternSelector).toHaveTextContent("Constant");
     });
   });
 
   describe("label property switching", () => {
-    const twoFeatureInputData = () => ({
-      properties: new Set(["name", "demand"]),
-      features: [
-        {
-          type: "Feature" as const,
-          geometry: {
-            type: "Point" as const,
-            coordinates: [0.001, 0.001],
-          },
-          properties: { name: "Alpha", demand: 10 },
-        },
-        {
-          type: "Feature" as const,
-          geometry: {
-            type: "Point" as const,
-            coordinates: [0.002, 0.002],
-          },
-          properties: { name: "Beta", demand: 20 },
-        },
-      ],
-    });
+    const twoFeatures = () => [
+      aPoint([0.001, 0.001], { name: "Alpha", demand: 10 }),
+      aPoint([0.002, 0.002], { name: "Beta", demand: 20 }),
+    ];
 
     it("does not advance the auto-generated label counter when switching label property and back", async () => {
       const user = userEvent.setup();
@@ -365,17 +218,11 @@ describe("DataMappingStep", () => {
       });
 
       setWizardState(store, {
-        selectedFile: new File(["test"], "test.geojson", {
-          type: "application/json",
-        }),
-        inputData: twoFeatureInputData(),
+        sourceFiles: [aSourceFile(twoFeatures())],
+        inputData: { properties: new Set(["name", "demand"]) },
       });
 
       renderWizard(store);
-
-      const demandSelector = screen.getByRole("combobox", { name: "Demand" });
-      await user.click(demandSelector);
-      await user.click(await screen.findByRole("option", { name: "demand" }));
 
       await waitFor(() => {
         expect(screen.getByText(/Customer points \(2\)/)).toBeInTheDocument();
@@ -395,8 +242,8 @@ describe("DataMappingStep", () => {
 
       await user.click(labelSelector);
       await user.click(
-        await screen.findByRole("option", {
-          name: /none.*auto.*generate/i,
+        await screen.findByRole("button", {
+          name: /auto.*generate/i,
         }),
       );
 

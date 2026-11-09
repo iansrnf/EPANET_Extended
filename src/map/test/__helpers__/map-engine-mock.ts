@@ -1,14 +1,27 @@
 import mapboxgl from "mapbox-gl";
 import type { GeoJSONSourceRaw, PointLike } from "mapbox-gl";
-import type { MapHandlers, ClickEvent } from "../../types";
-import { DataSource } from "src/map/data-source";
+import type { MapHandlers, ClickEvent } from "@epanet-js/map";
 import { Feature } from "geojson";
 import { vi } from "vitest";
+import { act } from "react";
+
+// Run a map interaction and let the resulting work settle, all inside act():
+// the synchronous invocation, the React renders/effects it triggers, and the
+// map-sync timers (which run on setTimeout and update React state) all complete
+// within the act() boundary. This keeps handlers.current fresh for the next
+// action and prevents any state update from escaping act() and warning.
+const settle = async (invoke: () => void, ms: number = 0): Promise<void> => {
+  await act(async () => {
+    invoke();
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  });
+};
 
 type FeatureState = Record<string, string | boolean | number>;
 
 class MapTestEngine {
   handlers: React.MutableRefObject<MapHandlers>;
+  private removed = false;
   private sources: Map<string, GeoJSONSourceRaw> = new Map();
   private features: Map<string, any[]> = new Map();
   private featureStates: Map<string, Map<string, FeatureState>> = new Map();
@@ -43,6 +56,7 @@ class MapTestEngine {
     getSource: (name: string): GeoJSONSourceRaw | null =>
       this.sources.get(name) || null,
     on: vi.fn(),
+    off: vi.fn(),
     once: vi.fn(),
     addControl: vi.fn(),
     addImage: vi.fn(),
@@ -52,6 +66,8 @@ class MapTestEngine {
     getStyle: vi.fn().mockReturnValue({ layers: [] }),
     removeLayer: vi.fn(),
     removeSource: vi.fn(),
+    addLayer: vi.fn(),
+    addSource: vi.fn(),
     removeFeatureState: (
       source: { source: string; id?: string },
       key?: string,
@@ -100,20 +116,19 @@ class MapTestEngine {
       x: lngLat[0] * 100,
       y: lngLat[1] * 100,
     })),
+    getZoom: vi.fn().mockReturnValue(18),
   };
 
   getSource(name: string): GeoJSONSourceRaw | null {
     return this.sources.get(name) || null;
   }
 
-  setStyle() {
-    return Promise.resolve();
-  }
+  setStyle = vi.fn((_style: mapboxgl.Style) => Promise.resolve());
   addIcons() {
     return Promise.resolve();
   }
 
-  setSource(name: DataSource, features: Feature[]): Promise<void> {
+  setSource(name: string, features: Feature[]): void {
     const source = this.sources.get(name);
     if (source) {
       source.data = {
@@ -121,31 +136,45 @@ class MapTestEngine {
         features,
       };
     }
-
-    return Promise.resolve();
   }
+  onNextIdle(callback: (settledCleanly: boolean) => void): void {
+    callback(false);
+  }
+  flushSettleQueue() {}
   removeSource() {}
-  showFeature(sourceName: DataSource, featureId: string) {
+  showFeature(sourceName: string, featureId: string) {
     this.map.removeFeatureState(
       { source: sourceName, id: featureId },
       "hidden",
     );
   }
-  hideFeature(sourceName: DataSource, featureId: string) {
+  hideFeature(sourceName: string, featureId: string) {
     this.map.setFeatureState(
       { source: sourceName, id: featureId },
       { hidden: true },
     );
   }
+  getPrecision(): number {
+    return 7;
+  }
+  suspendOverlayStyleReactions() {}
+  resumeOverlayStyleReactions() {}
+  addLayer() {}
+  setLayerPaintRule() {}
+  setLayerFilter() {}
+  setLayerMinZoom() {}
   showLayers() {}
   hideLayers() {}
   showFeatures() {}
   hideFeatures() {}
   setOverlay() {}
   isStyleLoaded(): boolean {
-    return true;
+    return this.isAlive();
   }
-  clearFeatureState(sourceName: DataSource): void {
+  isAlive(): boolean {
+    return !this.removed;
+  }
+  clearFeatureState(sourceName: string): void {
     this.map.removeFeatureState({ source: sourceName });
   }
 
@@ -175,7 +204,9 @@ class MapTestEngine {
     return this.queryRenderedFeatures(searchBox, { layers });
   }
 
-  remove() {}
+  remove() {
+    this.removed = true;
+  }
   selectFeature(sourceName: string, featureId: string) {
     this.map.setFeatureState(
       { source: sourceName, id: featureId },
@@ -189,11 +220,11 @@ class MapTestEngine {
     );
   }
 
-  getFeatureState(source: DataSource, featureId: string): FeatureState {
+  getFeatureState(source: string, featureId: string): FeatureState {
     return this.map.getFeatureState({ source, id: featureId });
   }
 
-  isFeatureHidden(source: DataSource, featureId: string): boolean {
+  isFeatureHidden(source: string, featureId: string): boolean {
     const featureState = this.getFeatureState(source, featureId);
     return featureState.hidden === true;
   }
@@ -201,25 +232,21 @@ class MapTestEngine {
   safeResize() {}
 }
 
-vi.mock("../../map-engine", () => {
+// The app mocks its dependency: replace MapEngine (from @epanet-js/map) with the
+// test double, keeping the lib's other exports (types, controls, constants).
+vi.mock("@epanet-js/map", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@epanet-js/map")>();
   return {
+    ...actual,
     MapEngine: MapTestEngine,
-    DEFAULT_ZOOM: 15.5,
-    DEFAULT_CENTER: [-4.3800042, 55.914314],
   };
 });
 
-export const fireMapDown = (
+export const fireMapDown = async (
   map: MapTestEngine,
   clickPoint: { lng: number; lat: number },
 ): Promise<void> => {
-  fireMapDownSync(map, clickPoint);
-
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve();
-    }, 10); // Small delay to allow React state updates
-  });
+  await settle(() => fireMapDownSync(map, clickPoint), 10);
 };
 
 export const fireMapDownSync = (
@@ -237,16 +264,11 @@ export const fireMapDownSync = (
   } as unknown as mapboxgl.MapMouseEvent);
 };
 
-export const fireMapUp = (
+export const fireMapUp = async (
   map: MapTestEngine,
   clickPoint: { lng: number; lat: number },
 ): Promise<void> => {
-  fireMapUpSync(map, clickPoint);
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve();
-    }, 10); // Small delay to allow React state updates
-  });
+  await settle(() => fireMapUpSync(map, clickPoint), 10);
 };
 
 export const fireMapUpSync = (
@@ -268,58 +290,43 @@ export const fireMapClick = async (
   map: MapTestEngine,
   clickPoint: { lng: number; lat: number },
 ): Promise<void> => {
-  await fireMapDown(map, clickPoint);
-  await fireMapUp(map, clickPoint);
-
-  map.handlers.current.onClick({
-    lngLat: new mapboxgl.LngLat(clickPoint.lng, clickPoint.lat),
-    point: new mapboxgl.Point(clickPoint.lng * 100, clickPoint.lat * 100), // Mock point coordinates
-    originalEvent: new MouseEvent("click"),
-    target: map.map,
-    type: "click",
-    preventDefault: () => {},
-    defaultPrevented: false,
-  } as unknown as ClickEvent);
-
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve();
-    }, 10); // Small delay to allow React state updates
-  });
+  await settle(() => {
+    fireMapDownSync(map, clickPoint);
+    fireMapUpSync(map, clickPoint);
+    map.handlers.current.onClick({
+      lngLat: new mapboxgl.LngLat(clickPoint.lng, clickPoint.lat),
+      point: new mapboxgl.Point(clickPoint.lng * 100, clickPoint.lat * 100), // Mock point coordinates
+      originalEvent: new MouseEvent("click"),
+      target: map.map,
+      type: "click",
+      preventDefault: () => {},
+      defaultPrevented: false,
+    } as unknown as ClickEvent);
+  }, 10);
 };
 
-export const fireDoubleClick = (
+export const fireDoubleClick = async (
   map: MapTestEngine,
   clickPoint: { lng: number; lat: number },
 ): Promise<void> => {
-  map.handlers.current.onDoubleClick({
-    lngLat: new mapboxgl.LngLat(clickPoint.lng, clickPoint.lat),
-    point: new mapboxgl.Point(clickPoint.lng * 100, clickPoint.lat * 100), // Mock point coordinates
-    originalEvent: new MouseEvent("click"),
-    target: map.map,
-    type: "dblclick",
-    preventDefault: () => {},
-    defaultPrevented: false,
-  } as unknown as ClickEvent);
-
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve();
-    }, 0);
-  });
+  await settle(() => {
+    map.handlers.current.onDoubleClick({
+      lngLat: new mapboxgl.LngLat(clickPoint.lng, clickPoint.lat),
+      point: new mapboxgl.Point(clickPoint.lng * 100, clickPoint.lat * 100), // Mock point coordinates
+      originalEvent: new MouseEvent("click"),
+      target: map.map,
+      type: "dblclick",
+      preventDefault: () => {},
+      defaultPrevented: false,
+    } as unknown as ClickEvent);
+  }, 10);
 };
 
-export const fireMapMove = (
+export const fireMapMove = async (
   map: MapTestEngine,
   movePoint: { lng: number; lat: number },
 ): Promise<void> => {
-  fireMapMoveSync(map, movePoint);
-
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve();
-    }, 0);
-  });
+  await settle(() => fireMapMoveSync(map, movePoint), 0);
 };
 
 export const fireMapMoveSync = (

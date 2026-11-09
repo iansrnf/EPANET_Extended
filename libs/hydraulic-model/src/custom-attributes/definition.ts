@@ -1,0 +1,154 @@
+import {
+  CUSTOM_PROPERTY_PREFIX,
+  type CustomAttributeType,
+} from "@epanet-js/model-schema";
+import type { AssetType } from "../asset-types/types";
+
+export type CustomAttributeAssetType = AssetType | "customerPoint" | "zone";
+
+export { customAttributeTypes } from "@epanet-js/model-schema";
+export type { CustomAttributeType } from "@epanet-js/model-schema";
+
+export type CustomAttributeId = string;
+
+export type CustomAttribute = {
+  id: CustomAttributeId;
+  label: string;
+  type: CustomAttributeType;
+};
+
+export type CustomAttributesDefinition = Map<
+  CustomAttributeAssetType,
+  Map<CustomAttributeId, CustomAttribute>
+>;
+
+export const emptyCustomAttributesDefinition = (): CustomAttributesDefinition =>
+  new Map();
+
+export { CUSTOM_PROPERTY_PREFIX };
+
+export const buildCustomAttributeId = (seed: number): CustomAttributeId =>
+  `${CUSTOM_PROPERTY_PREFIX}${seed}`;
+
+export const isCustomProperty = (property: string): boolean =>
+  property.startsWith(CUSTOM_PROPERTY_PREFIX);
+
+export const getAttributes = (
+  definition: CustomAttributesDefinition,
+  assetType: CustomAttributeAssetType,
+): CustomAttribute[] => {
+  const byId = definition.get(assetType);
+  return byId ? [...byId.values()] : [];
+};
+
+export const getAttribute = (
+  definition: CustomAttributesDefinition,
+  assetType: CustomAttributeAssetType,
+  id: CustomAttributeId,
+): CustomAttribute | undefined => definition.get(assetType)?.get(id);
+
+export const getAttributeByLabel = (
+  definition: CustomAttributesDefinition,
+  assetType: CustomAttributeAssetType,
+  label: string,
+): CustomAttribute | undefined => {
+  const key = normalizeLabel(label);
+  return getAttributes(definition, assetType).find(
+    (attribute) => normalizeLabel(attribute.label) === key,
+  );
+};
+
+export const countFor = (
+  definition: CustomAttributesDefinition,
+  assetType: CustomAttributeAssetType,
+): number => definition.get(assetType)?.size ?? 0;
+
+export const setAttributes = (
+  definition: CustomAttributesDefinition,
+  assetType: CustomAttributeAssetType,
+  attributes: CustomAttribute[],
+): CustomAttributesDefinition => {
+  const next = deepCloneCustomAttributes(definition);
+  const byId = new Map<CustomAttributeId, CustomAttribute>();
+  for (const attribute of attributes) {
+    byId.set(attribute.id, attribute);
+  }
+  next.set(assetType, byId);
+  return next;
+};
+
+export const deepCloneCustomAttributes = (
+  definition: CustomAttributesDefinition,
+): CustomAttributesDefinition => {
+  const next: CustomAttributesDefinition = new Map();
+  for (const [assetType, byId] of definition) {
+    const clonedById = new Map<CustomAttributeId, CustomAttribute>();
+    for (const [id, attribute] of byId) {
+      clonedById.set(id, { ...attribute });
+    }
+    next.set(assetType, clonedById);
+  }
+  return next;
+};
+
+export const getAttributeIds = (
+  definition: CustomAttributesDefinition,
+): Set<CustomAttributeId> => {
+  const ids = new Set<CustomAttributeId>();
+  for (const byId of definition.values()) {
+    for (const id of byId.keys()) {
+      ids.add(id);
+    }
+  }
+  return ids;
+};
+
+export const totalAttributesCount = (
+  definition: CustomAttributesDefinition,
+): number => {
+  let total = 0;
+  for (const byId of definition.values()) {
+    total += byId.size;
+  }
+  return total;
+};
+
+export const MAX_LABEL_LENGTH = 64;
+
+export const normalizeLabel = (label: string): string =>
+  label.trim().toLowerCase();
+
+export const isLabelTooLong = (label: string): boolean =>
+  label.trim().length > MAX_LABEL_LENGTH;
+
+export const hasTooLongLabel = (attributes: CustomAttribute[]): boolean =>
+  attributes.some((attribute) => isLabelTooLong(attribute.label));
+
+export const duplicateLabelKeys = (
+  attributes: CustomAttribute[],
+): Set<string> => {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const { label } of attributes) {
+    const key = normalizeLabel(label);
+    if (!key) continue;
+    if (seen.has(key)) duplicates.add(key);
+    else seen.add(key);
+  }
+  return duplicates;
+};
+
+export const hasDuplicateLabel = (attributes: CustomAttribute[]): boolean =>
+  duplicateLabelKeys(attributes).size > 0;
+
+export const nextIdSeed = (definition: CustomAttributesDefinition): number => {
+  let max = 0;
+  for (const byId of definition.values()) {
+    for (const id of byId.keys()) {
+      const digits = id.replace(/\D/g, "");
+      const value = digits ? Number(digits) : 0;
+      if (Number.isFinite(value)) max = Math.max(max, value);
+    }
+  }
+  return max + 1;
+};

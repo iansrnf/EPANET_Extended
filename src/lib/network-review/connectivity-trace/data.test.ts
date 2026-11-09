@@ -1,4 +1,7 @@
-import { decodeSubNetworks, EncodedSubNetwork } from "./data";
+import {
+  decodeSubNetworks,
+  EncodedSubNetwork,
+} from "@epanet-js/network-review";
 
 const IDS = {
   J1: 1,

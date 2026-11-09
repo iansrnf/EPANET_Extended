@@ -10,8 +10,17 @@ import { diff } from "jest-diff";
 import { Maybe } from "purify-ts/Maybe";
 import { expect } from "vitest";
 import "@testing-library/jest-dom";
+import { setWorkerForTest } from "@epanet-js/ejsdb";
 import { stubUserTracking } from "src/__helpers__/user-tracking";
 import { AuthMockProvider, useAuthMock } from "src/__helpers__/auth-mock";
+import { nullDbWorker } from "src/lib/db/__test-helpers__/null-db-worker";
+import { resetTraceWorkerForTest } from "src/lib/trace/get-worker";
+import { resetConnectivityTraceWorkerForTest } from "src/lib/network-review/connectivity-trace/get-worker";
+import { resetOrphanAssetsWorkerForTest } from "src/lib/network-review/orphan-assets/get-worker";
+import { resetCustomerPointsWorkerForTest } from "src/lib/customer-points/get-worker";
+import { resetCrossingPipesWorkerForTest } from "src/lib/network-review/crossing-pipes/get-worker";
+import { resetProximityAnomaliesWorkerForTest } from "src/lib/network-review/proximity-anomalies/get-worker";
+import { resetSpatialQueryWorkerForTest } from "src/lib/spatial-query/get-worker";
 
 vi.mock("src/hooks/use-auth", () => ({
   useAuth: useAuthMock,
@@ -37,9 +46,22 @@ vi.mock("src/infra/storage", async (importOriginal) => {
   };
 });
 
-vi.stubGlobal("FileSystemFileHandle", class FileSystemFileHandle {});
+vi.stubGlobal(
+  "FileSystemFileHandle",
+  class FileSystemFileHandle {
+    createWritable() {}
+  },
+);
 
 beforeEach(async () => {
+  setWorkerForTest(nullDbWorker);
+  resetTraceWorkerForTest();
+  resetConnectivityTraceWorkerForTest();
+  resetOrphanAssetsWorkerForTest();
+  resetCustomerPointsWorkerForTest();
+  resetCrossingPipesWorkerForTest();
+  resetProximityAnomaliesWorkerForTest();
+  resetSpatialQueryWorkerForTest();
   stubUserTracking();
   // Reset shared in-memory storage between tests
   const { InMemoryStorage } = await import("src/infra/storage");
@@ -276,7 +298,24 @@ if (
     }),
   };
 
-  // Mock getBoundingClientRect for virtualizer
+  // jsdom performs no layout, so offsetWidth/offsetHeight are always 0.
+  // @tanstack/virtual-core reads them to size the scroll viewport (it used
+  // getBoundingClientRect before v3.17), which would otherwise virtualize
+  // every row away. Keep these in sync with the rect mock below.
+  Object.defineProperty(window.HTMLElement.prototype, "offsetWidth", {
+    configurable: true,
+    get: () => 300,
+  });
+  Object.defineProperty(window.HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get: () => 128,
+  });
+
+  // jsdom ships no scrolling at all, so this method is simply missing.
+  Element.prototype.scrollTo = vi.fn();
+
+  // Chart cursors, scroll-spy, the grid's scrollbar hit-test and Radix
+  // positioning all read this; jsdom would report zeros.
   Element.prototype.getBoundingClientRect = vi.fn(() => ({
     top: 0,
     left: 0,
@@ -305,14 +344,14 @@ if (
       });
     }
 
-    if (url === "/projections.json") {
+    if (url.endsWith("/projections.json")) {
       return Promise.resolve({
         ok: true,
         json: () =>
           Promise.resolve(
             JSON.parse(
               Fs.readFileSync(
-                Path.join(__dirname, "../public/projections.json"),
+                Path.join(__dirname, "projections_fixture.json"),
                 "utf8",
               ),
             ),

@@ -4,19 +4,28 @@ import { Button } from "src/components/elements";
 import { useTranslate } from "src/hooks/use-translate";
 import { useZoomTo } from "src/hooks/use-zoom-to";
 import { useUserTracking } from "src/infra/user-tracking";
+import { WarningIcon } from "src/icons";
 import {
   findConnectivityTrace,
   SubNetwork,
-} from "src/lib/network-review/connectivity-trace";
+  unsuppliedSubNetworks,
+  CheckType,
+} from "src/lib/network-review";
+import { useCachedCheck } from "src/hooks/use-review-checks";
 import { USelection, useSelection } from "src/selection";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { selectionAtom } from "src/state/selection";
+import { FixSubnetworkButton } from "./fixes/fix-subnetwork-button";
 import {
-  CheckType,
+  canDisableSubnetwork,
+  useFixSubnetwork,
+} from "./fixes/use-fix-subnetwork";
+import {
   EmptyState,
   LoadingState,
   ToolDescription,
   ToolHeader,
+  useCheckHeader,
   useLoadingStatus,
   VirtualizedIssuesList,
 } from "./common";
@@ -58,7 +67,7 @@ export const ConnectivityTrace = ({ onGoBack }: { onGoBack: () => void }) => {
       setSelectedSubnetworkId(subnetwork.subnetworkId);
 
       const allIds = [...subnetwork.nodeIds, ...subnetwork.linkIds];
-      setSelection(USelection.fromIds(allIds));
+      setSelection(USelection.fromAssetIds(allIds));
 
       if (subnetwork.bounds) {
         zoomTo(Maybe.of(subnetwork.bounds));
@@ -101,12 +110,16 @@ export const ConnectivityTrace = ({ onGoBack }: { onGoBack: () => void }) => {
     }
   }, [subnetworks, getSelectionIds]);
 
+  const headerProps = useCheckHeader(
+    CheckType.connectivityTrace,
+    subnetworks.length,
+    onGoBack,
+  );
+
   return (
     <div className="absolute inset-0 flex flex-col">
       <ToolHeader
-        checkType={CheckType.connectivityTrace}
-        onGoBack={onGoBack}
-        itemsCount={subnetworks.length}
+        {...headerProps}
         autoFocus={subnetworks.length === 0 && !isLoading}
       />
       <div className="relative grow flex flex-col">
@@ -115,7 +128,7 @@ export const ConnectivityTrace = ({ onGoBack }: { onGoBack: () => void }) => {
             {subnetworks.length > 0 ? (
               <SubNetworksList
                 subNetworks={subnetworks}
-                onClick={selectSubnetwork}
+                onSelect={selectSubnetwork}
                 selectedSubNetwork={selectedSubnetworkId}
                 onGoBack={onGoBack}
               />
@@ -138,31 +151,56 @@ export const ConnectivityTrace = ({ onGoBack }: { onGoBack: () => void }) => {
   );
 };
 
+const getSubnetworkId = (subnetwork: SubNetwork) => subnetwork.subnetworkId;
+
 const SubNetworksList = ({
   subNetworks,
-  onClick,
+  onSelect,
   selectedSubNetwork,
   onGoBack,
 }: {
   subNetworks: SubNetwork[];
-  onClick: (issue: SubNetwork | null) => void;
+  onSelect: (issue: SubNetwork | null) => void;
   selectedSubNetwork: number | null;
   onGoBack: () => void;
 }) => {
+  const { fix } = useFixSubnetwork();
+
+  const fixSubnetwork = useCallback(
+    (subnetworkId: number) => {
+      const index = subNetworks.findIndex(
+        (candidate) => candidate.subnetworkId === subnetworkId,
+      );
+      if (index === -1) return;
+
+      fix(subNetworks[index]);
+    },
+    [subNetworks, fix],
+  );
+
   return (
     <VirtualizedIssuesList
       items={subNetworks}
       selectedItemId={selectedSubNetwork}
-      onSelect={onClick}
-      getItemId={(issue) => issue.subnetworkId}
+      onSelect={onSelect}
+      getItemId={getSubnetworkId}
       renderItem={(index, subnetwork, selectedId, onClick) => (
         <SubnetworkItem
-          index={index}
+          index={index + 1}
           subnetwork={subnetwork}
           selectedId={selectedId}
           onClick={onClick}
+          showWarning={subnetwork.supplySourceCount === 0}
         />
       )}
+      renderItemAction={(subnetwork) =>
+        canDisableSubnetwork(subnetwork) ? (
+          <FixSubnetworkButton
+            onFix={() => fixSubnetwork(subnetwork.subnetworkId)}
+          />
+        ) : null
+      }
+      onItemAction={fixSubnetwork}
       checkType={CheckType.connectivityTrace}
       onGoBack={onGoBack}
     />
@@ -174,11 +212,13 @@ const SubnetworkItem = ({
   subnetwork,
   onClick,
   selectedId,
+  showWarning,
 }: {
   index: number;
   subnetwork: SubNetwork;
   onClick: (subnetwork: SubNetwork) => void;
   selectedId: number | null;
+  showWarning: boolean;
 }) => {
   const translate = useTranslate();
   const isSelected = selectedId === subnetwork.subnetworkId;
@@ -197,28 +237,33 @@ const SubnetworkItem = ({
       onClick={() => onClick(subnetwork)}
       onMouseDown={(e) => e.preventDefault()}
       variant={"quiet/list"}
-      role="button"
       aria-label={translate(
         "networkReview.connectivityTrace.issueLabel",
         String(index),
         String(subnetwork.supplySourceCount),
         String(subnetwork.linkIds.length),
       )}
-      aria-checked={isSelected}
-      aria-expanded={isSelected ? "true" : "false"}
       aria-selected={isSelected}
+      size="xxs"
       tabIndex={-1}
-      className="group w-full"
+      className="group w-full hover:bg-transparent dark:hover:bg-transparent aria-selected:bg-transparent! aria-selected:hover:bg-transparent!"
     >
-      <div className="flex flex-col items-start p-1 pr-0 text-sm w-full text-left">
+      <div className="flex flex-col items-start py-2 px-2 pr-0 text-size-base w-full text-left">
         <div className="truncate">
           {translate(
             "networkReview.connectivityTrace.subnetwork",
             String(index),
           )}
         </div>
-        <div className="text-gray-500 truncate">
-          {supplySourceText} · {pipesText}
+        <div className="text-subtle flex items-center gap-1 w-full">
+          {showWarning && (
+            <span className="shrink-0 text-orange-500 dark:text-orange-400">
+              <WarningIcon size={12} />
+            </span>
+          )}
+          <span className="truncate">
+            {supplySourceText} · {pipesText}
+          </span>
         </div>
       </div>
     </Button>
@@ -231,11 +276,21 @@ const deferToAllowRender = () =>
 const useCheckConnectivityTrace = () => {
   const [subnetworks, setSubnetworks] = useState<SubNetwork[]>([]);
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
+  const { read, write } = useCachedCheck(CheckType.connectivityTrace);
   const { startLoading, finishLoading, isLoading } = useLoadingStatus();
   const isReady = useRef(false);
 
   const checkConnectivityTrace = useCallback(
     async (signal?: AbortSignal) => {
+      const cached = read();
+      if (cached) {
+        setSubnetworks(cached);
+        finishLoading();
+        isReady.current = true;
+        return;
+      }
+
+      const modelVersion = hydraulicModel.version;
       startLoading();
       await deferToAllowRender();
 
@@ -249,6 +304,7 @@ const useCheckConnectivityTrace = () => {
         );
 
         if (!signal?.aborted) {
+          write(result, unsuppliedSubNetworks(result).length, modelVersion);
           setSubnetworks(result);
           finishLoading();
           isReady.current = true;
@@ -261,7 +317,7 @@ const useCheckConnectivityTrace = () => {
         throw error;
       }
     },
-    [hydraulicModel, startLoading, finishLoading],
+    [hydraulicModel, startLoading, finishLoading, read, write],
   );
 
   return {

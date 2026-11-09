@@ -15,7 +15,7 @@ const createAppMadeInpWithCustomerPoints = (
 
 describe("Parse customer points", () => {
   it("parses customer points when option is enabled and INP made by app", () => {
-    const IDS = { CP1: 4, CP2: 5 } as const;
+    const IDS = { CP1: 1, CP2: 2 } as const;
 
     const baseContent = `[JUNCTIONS]
 J1	10
@@ -139,7 +139,7 @@ J1	1	2
   });
 
   it("skips malformed customer point lines", () => {
-    const IDS = { CP1: 2, CP2: 3 } as const;
+    const IDS = { CP1: 1, CP2: 2 } as const;
 
     const baseContent = `[JUNCTIONS]
 J1	10
@@ -167,7 +167,7 @@ J1	1	2
   });
 
   it("integrates customer points with lookup system", () => {
-    const IDS = { CP1: 3 } as const;
+    const IDS = { CP1: 1 } as const;
 
     const baseContent = `[JUNCTIONS]
 J1	10
@@ -209,7 +209,7 @@ J1	1	2
   });
 
   it("resolves junction labels to actual junction IDs", () => {
-    const IDS = { CP1: 4 } as const;
+    const IDS = { CP1: 1 } as const;
 
     const baseContent = `[JUNCTIONS]
 Junction-A	10
@@ -271,7 +271,7 @@ Junction-B	3	4
 
 describe("Parse customer demands", () => {
   it("parses customer demands from CUSTOMERS_DEMANDS section", () => {
-    const IDS = { CP1: 3 } as const;
+    const IDS = { CP1: 1 } as const;
 
     const baseContent = `[JUNCTIONS]
 J1	10
@@ -313,7 +313,7 @@ J1	1	2
   });
 
   it("parses multiple demands per customer point", () => {
-    const IDS = { CP1: 3 } as const;
+    const IDS = { CP1: 1 } as const;
 
     const baseContent = `[JUNCTIONS]
 J1	10
@@ -360,7 +360,7 @@ J1	1	2
   });
 
   it("parses customer demands without pattern", () => {
-    const IDS = { CP1: 3 } as const;
+    const IDS = { CP1: 1 } as const;
 
     const baseContent = `[JUNCTIONS]
 J1	10
@@ -396,7 +396,7 @@ J1	1	2
   });
 
   it("falls back to baseDemand when no CUSTOMERS_DEMANDS section exists", () => {
-    const IDS = { CP1: 3 } as const;
+    const IDS = { CP1: 1 } as const;
 
     const baseContent = `[JUNCTIONS]
 J1	10
@@ -428,7 +428,7 @@ J1	1	2
   });
 
   it("results in empty demands when baseDemand is empty and no CUSTOMERS_DEMANDS exists", () => {
-    const IDS = { CP1: 3 } as const;
+    const IDS = { CP1: 1 } as const;
 
     const baseContent = `[JUNCTIONS]
 J1	10
@@ -458,7 +458,7 @@ J1	1	2
   });
 
   it("parses demands for multiple customer points", () => {
-    const IDS = { CP1: 3, CP2: 4 } as const;
+    const IDS = { CP1: 1, CP2: 2 } as const;
 
     const baseContent = `[JUNCTIONS]
 J1	10
@@ -533,7 +533,7 @@ J1	1	2
   });
 
   it("skips malformed customer demand lines", () => {
-    const IDS = { CP1: 3 } as const;
+    const IDS = { CP1: 1 } as const;
 
     const baseContent = `[JUNCTIONS]
 J1	10
@@ -565,5 +565,39 @@ J1	1	2
     const cp1Demands = hydraulicModel.demands.customerPoints.get(IDS.CP1)!;
     expect(cp1Demands).toHaveLength(1);
     expect(cp1Demands[0].baseDemand).toBe(25);
+  });
+
+  describe("label length", () => {
+    const parseLabel = (rawLabel: string, labelMaxLength?: number) => {
+      const baseContent = `[JUNCTIONS]
+J1	10
+
+[COORDINATES]
+J1	1	2
+
+[END]`;
+      const customerPointsSection = `;[CUSTOMERS]
+;Id	X-coord	Y-coord	BaseDemand
+;${rawLabel}	1.5	2.5	2.5`;
+      const validAppInp = createAppMadeInpWithCustomerPoints(
+        baseContent,
+        customerPointsSection,
+      );
+
+      const { hydraulicModel } = parseInp(validAppInp, {
+        customerPoints: true,
+        labelMaxLength,
+      });
+
+      return Array.from(hydraulicModel.customerPoints.values())[0]?.label;
+    };
+
+    it("truncates to the default customer-point limit", () => {
+      expect(parseLabel("a".repeat(70))).toEqual("a".repeat(50));
+    });
+
+    it("truncates to a caller-provided limit when given", () => {
+      expect(parseLabel("a".repeat(70), 64)).toEqual("a".repeat(64));
+    });
   });
 });

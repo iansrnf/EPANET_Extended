@@ -1,10 +1,12 @@
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { isPlayingAtom } from "src/state/simulation-playback";
 import { useCallback, useContext, useRef, useState } from "react";
+import { fetchProjections } from "@epanet-js/projections";
 
 import { LngLatBoundsLike } from "mapbox-gl";
 import { nanoid } from "nanoid";
 import * as Popover from "@radix-ui/react-popover";
+import * as DD from "@radix-ui/react-dropdown-menu";
 import {
   DndContext,
   closestCenter,
@@ -31,6 +33,8 @@ import { projectSettingsAtom } from "src/state/project-settings";
 import {
   StyledPopoverArrow,
   StyledPopoverContent,
+  DDContent,
+  StyledItem,
   Button,
 } from "src/components/elements";
 import {
@@ -46,12 +50,14 @@ import {
   LocateIcon,
   LocateOffIcon,
   MultipleValuesIcon,
+  MoreActionsIcon,
+  PaywallLockIcon,
 } from "src/icons";
 import { NumericField } from "src/components/form/numeric-field";
-import { Selector } from "src/components/form/selector";
-import { localizeDecimal } from "src/infra/i18n/numbers";
+import { Selector } from "@epanet-js/ui-kit";
+import { localizeDecimal } from "@epanet-js/i18n";
 import { useUserTracking } from "src/infra/user-tracking";
-import { convertTo } from "src/quantity";
+import { convertTo } from "@epanet-js/quantity";
 import { offlineAtom } from "src/state/offline";
 import { elevationSourcesAtom } from "src/state/elevation-sources";
 import { mapOverlayFeaturesAtom } from "src/state/map-overlay";
@@ -61,24 +67,28 @@ import { notify } from "src/components/notifications";
 import { MapContext } from "src/map";
 import { ActionButton } from "src/components/action-button";
 import { usePermissions } from "src/hooks/use-permissions";
+import { useFeatureLock } from "src/components/form/paywall";
+import {
+  useElevationTargets,
+  useRecomputeElevations,
+} from "src/commands/recompute-elevations";
 import { dialogAtom } from "src/state/dialog";
+import { useSideTowardMap } from "src/panels/panel-dock-context";
 import {
   ElevationSource,
   GeoTiffElevationSource,
   TileServerElevationSource,
 } from "src/lib/elevations";
 import {
+  type ElevationSourceFailure,
+  toElevationSourceFailure,
+} from "@epanet-js/elevations";
+import {
   BoundaryResult,
-  computeTileBoundaries,
-  GeoTiffError,
   GeoTiffTile,
-  parseGeoTIFF,
-  ProjectionError,
-  TransformError,
-  tileCoverage,
-  tileResolution,
-} from "src/lib/elevations/geotiff";
-import type { LinearUnit } from "src/lib/elevations/geotiff/types";
+  getElevationEngine,
+  type LinearUnit,
+} from "src/lib/elevations";
 import { TextField } from "src/components/form/text-field";
 
 export const ElevationsEditor = () => {
@@ -88,6 +98,7 @@ export const ElevationsEditor = () => {
   const { getProj4Def } = useProj4Definitions();
   const actions = useElevationSourceActions(
     overlay.onSourceTilesUpdated,
+    overlay.syncCoverage,
     getProj4Def,
   );
   const reversedSources = [...actions.sources].reverse();
@@ -111,6 +122,8 @@ export const ElevationsEditor = () => {
 
   const [sections, setSections] = useAtom(mapStylingPanelSectionsExpandedAtom);
 
+  const canAddGeoTiffSources = getElevationEngine().supportsGeoTiff;
+
   return (
     <CollapsibleSection
       title={translate("elevations.title")}
@@ -120,6 +133,7 @@ export const ElevationsEditor = () => {
       }
       separator={false}
       variant="primary"
+      action={!isPlaying ? <RecomputeElevationsButton /> : undefined}
     >
       <DndContext
         onDragEnd={handleDragEnd}
@@ -153,7 +167,9 @@ export const ElevationsEditor = () => {
           </div>
         </SortableContext>
       </DndContext>
-      {!isPlaying && <AddElevationDataButton actions={actions} />}
+      {!isPlaying && canAddGeoTiffSources && (
+        <AddElevationDataButton actions={actions} />
+      )}
     </CollapsibleSection>
   );
 };
@@ -188,7 +204,7 @@ const ElevationSourceRowShell = ({
     <div
       ref={setNodeRef}
       style={style}
-      className="flex gap-x-2 items-start -ml-1 -mr-1"
+      className="flex gap-x-2 items-start -ml-1"
     >
       {readonly ? (
         <div className="opacity-20 flex items-center h-8">
@@ -206,14 +222,14 @@ const ElevationSourceRowShell = ({
       <div className="flex-auto min-w-0">
         <div className="flex items-center min-w-0">
           <div
-            className={`block select-none truncate flex-auto min-w-0 text-sm ${disabled ? "opacity-50" : ""}`}
+            className={`block select-none truncate flex-auto min-w-0 text-size-base ${disabled ? "opacity-50" : ""}`}
           >
             {name}
           </div>
           {children}
         </div>
         <div
-          className={`font-semibold text-xs text-gray-500 ${disabled ? "opacity-50" : ""}`}
+          className={`font-semibold text-size-small text-subtle ${disabled ? "opacity-50" : ""}`}
         >
           {description}
         </div>
@@ -234,10 +250,14 @@ const GeoTiffElevationSourceRow = ({
   readonly: boolean;
 }) => {
   const translate = useTranslate();
+  const sideTowardMap = useSideTowardMap();
   const { units } = useAtomValue(projectSettingsAtom);
   const elevationUnit = units.elevation;
   const resolutionDisplay = Math.round(
-    convertTo(tileResolution(source.tiles[0]), elevationUnit),
+    convertTo(
+      getElevationEngine().geoTiff.resolution(source.tiles[0]),
+      elevationUnit,
+    ),
   );
 
   const fileCount = source.tiles.length;
@@ -272,7 +292,7 @@ const GeoTiffElevationSourceRow = ({
           <StyledPopoverContent
             size="auto"
             onOpenAutoFocus={(e) => e.preventDefault()}
-            side="left"
+            side={sideTowardMap}
             align="start"
           >
             <StyledPopoverArrow />
@@ -290,7 +310,7 @@ const GeoTiffElevationSourceRow = ({
       {!readonly && (
         <Button
           variant="quiet/mode"
-          className="h-8 text-red-500"
+          className="h-8 text-error hover:bg-error-subtle"
           aria-label={translate("delete")}
           onClick={() => actions.deleteSource(source.id)}
         >
@@ -325,7 +345,7 @@ const GeoTiffTilesPopover = ({
 
   return (
     <div className="flex flex-col gap-y-2">
-      <div className="font-semibold text-sm">
+      <div className="font-semibold text-size-base">
         {translate("elevations.userElevationData")}
       </div>
       <ElevationOffsetField
@@ -339,20 +359,21 @@ const GeoTiffTilesPopover = ({
         readonly={readonly}
       />
       <div className="overflow-y-auto max-h-[30vh] scroll-shadows border rounded-sm">
-        <ul className="flex flex-col">
+        <ul className="flex flex-col p-1">
           {source.tiles.map((tile) => (
             <li
               key={tile.id}
               onMouseEnter={() => overlay.highlightTile(source.id, tile.id)}
               onMouseLeave={() => overlay.highlightTile(source.id, null)}
               onClick={() => handleTileClick(tile)}
-              className="group flex items-center justify-between gap-x-2 h-8 shrink-0 px-2 hover:bg-gray-100 dark:hover:bg-gray-800"
+              className="group flex items-center justify-between gap-x-2 h-8 shrink-0 px-2 rounded-sm hover:bg-base-hover"
             >
-              <span className="text-sm">{tile.file.name}</span>
+              <span className="text-size-base">{tile.file.name}</span>
               {!readonly && (
                 <Button
                   variant="quiet/mode"
-                  className="h-8 text-red-500"
+                  className="h-8 text-error hover:bg-error-subtle"
+                  aria-label={translate("Delete") + " " + tile.file.name}
                   onClick={(e) => {
                     e.stopPropagation();
                     actions.deleteTile(source.id, tile.id);
@@ -404,6 +425,7 @@ const TileServerElevationSourceRow = ({
   readonly: boolean;
 }) => {
   const translate = useTranslate();
+  const sideTowardMap = useSideTowardMap();
   const isOffline = useAtomValue(offlineAtom);
   const isDisabled = isOffline || !source.enabled;
 
@@ -425,7 +447,7 @@ const TileServerElevationSourceRow = ({
           <StyledPopoverContent
             size="auto"
             onOpenAutoFocus={(e) => e.preventDefault()}
-            side="left"
+            side={sideTowardMap}
             align="start"
           >
             <StyledPopoverArrow />
@@ -469,7 +491,7 @@ const TileServerPopover = ({
   const translate = useTranslate();
   return (
     <div className="flex flex-col gap-y-2">
-      <div className="font-semibold text-sm">
+      <div className="font-semibold text-size-base">
         {translate("elevations.mapboxDefaultData")}
       </div>
       <ElevationOffsetField
@@ -511,7 +533,6 @@ const ElevationOffsetField = ({
           displayValue={localizeDecimal(displayValue)}
           onChangeValue={(v) => actions.updateOffset(source.id, v)}
           styleOptions={{ padding: "md", textSize: "sm" }}
-          tabIndex={0}
         />
       )}
     </InlineField>
@@ -549,7 +570,11 @@ const ElevationUnitField = ({
           selected={currentUnit}
           onChange={(value) => actions.updateVerticalUnit(source.id, value)}
           ariaLabel={translate("elevations.verticalUnit")}
-          styleOptions={{ paddingX: 2, paddingY: 2, textSize: "text-sm" }}
+          styleOptions={{
+            paddingX: 2,
+            paddingY: 2,
+            textSize: "text-size-base",
+          }}
         />
       )}
     </InlineField>
@@ -610,26 +635,86 @@ const AddElevationDataButton = ({ actions }: { actions: Actions }) => {
   );
 };
 
+const RecomputeElevationsButton = () => {
+  const translate = useTranslate();
+  const setDialogState = useSetAtom(dialogAtom);
+  const { isLocked, openPaywall } = useFeatureLock("refreshElevations");
+  const { recompute } = useRecomputeElevations();
+  const [open, setOpen] = useState(false);
+  const targets = useElevationTargets(open);
+
+  const missingCount = targets?.missingIds.length ?? 0;
+  const allCount = targets?.allIds.length ?? 0;
+
+  const selectMissing = () => {
+    if (isLocked) return openPaywall();
+    if (!targets) return;
+    void recompute({ assetIds: targets.missingIds, mode: "missing" });
+  };
+
+  const selectAll = () => {
+    if (isLocked) return openPaywall();
+    if (!targets) return;
+    const assetIds = targets.allIds;
+    setDialogState({
+      type: "recalculateAllElevationsConfirm",
+      onConfirm: () => void recompute({ assetIds, mode: "all" }),
+    });
+  };
+
+  return (
+    <div onClick={(e) => e.stopPropagation()}>
+      <DD.Root modal={false} open={open} onOpenChange={setOpen}>
+        <DD.Trigger asChild>
+          <Button
+            variant="quiet/mode"
+            className="h-8 w-8 justify-center"
+            aria-label={translate("elevations.recompute.tooltip")}
+          >
+            <MoreActionsIcon />
+          </Button>
+        </DD.Trigger>
+        <DD.Portal>
+          <DDContent align="end" side="bottom" className="z-50">
+            <StyledItem
+              className="data-[disabled]:opacity-40 data-[disabled]:cursor-not-allowed"
+              disabled={!isLocked && (targets === null || missingCount === 0)}
+              onSelect={selectMissing}
+            >
+              {isLocked && <PaywallLockIcon size="sm" />}
+              <span className="grow">
+                {translate("elevations.recompute.recalculateMissing")}
+              </span>
+              <span className="text-subtle tabular-nums">
+                {targets === null ? "…" : missingCount}
+              </span>
+            </StyledItem>
+            <StyledItem
+              className="data-[disabled]:opacity-40 data-[disabled]:cursor-not-allowed"
+              disabled={!isLocked && (targets === null || allCount === 0)}
+              onSelect={selectAll}
+            >
+              {isLocked && <PaywallLockIcon size="sm" />}
+              <span className="grow">
+                {translate("elevations.recompute.recalculateAll")}
+              </span>
+              <span className="text-subtle tabular-nums">
+                {targets === null ? "…" : allCount}
+              </span>
+            </StyledItem>
+          </DDContent>
+        </DD.Portal>
+      </DD.Root>
+    </div>
+  );
+};
+
 function collectProcessingErrors(results: PromiseSettledResult<GeoTiffTile>[]) {
   return results
-    .filter(
-      (r): r is PromiseRejectedResult =>
-        r.status === "rejected" && r.reason instanceof GeoTiffError,
-    )
-    .map((r) => {
-      const e = r.reason as GeoTiffError;
-      return {
-        fileName: e.fileName,
-        error: geotiffErrorTranslationKey(e),
-      };
-    });
-}
-
-function geotiffErrorTranslationKey(error: GeoTiffError): string {
-  const inner = error.error;
-  if (inner instanceof ProjectionError) return inner.code as string;
-  if (inner instanceof TransformError) return inner.code as string;
-  return "unknown";
+    .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+    .map((r) => toElevationSourceFailure(r.reason))
+    .filter((failure): failure is ElevationSourceFailure => failure !== null)
+    .map(({ fileName, code }) => ({ fileName, error: code }));
 }
 
 function uniqueIssues(errors: { error: string }[]): string[] {
@@ -641,8 +726,11 @@ type OnSourceTilesUpdated = (
   updatedTiles: GeoTiffTile[],
 ) => void;
 
+type SyncCoverage = (sourceId: string, tiles: GeoTiffTile[]) => void;
+
 const useElevationSourceActions = (
   onSourceTilesUpdated: OnSourceTilesUpdated,
+  syncCoverage: SyncCoverage,
   getProj4Def: (epsgCode: number) => Promise<string | null>,
 ) => {
   const sources = useAtomValue(elevationSourcesAtom);
@@ -657,7 +745,10 @@ const useElevationSourceActions = (
     async (files: File[]) => {
       const results = await Promise.allSettled(
         files.map(async (file) => {
-          const metadata = await parseGeoTIFF(file, getProj4Def);
+          const metadata = await getElevationEngine().geoTiff.parse(
+            file,
+            getProj4Def,
+          );
           return { id: nanoid(), ...metadata } as GeoTiffTile;
         }),
       );
@@ -709,19 +800,23 @@ const useElevationSourceActions = (
         cancelTiles(source.tiles.map((t) => t.id));
       }
       setSources((prev) => prev.filter((s) => s.id !== sourceId));
+      syncCoverage(sourceId, []);
       userTracking.capture({
         name: "elevationSource.deleted",
         sourceType: source?.type ?? "unknown",
       });
     },
-    [sources, setSources, cancelTiles, userTracking],
+    [sources, setSources, cancelTiles, syncCoverage, userTracking],
   );
 
   const addTiles = useCallback(
     async (sourceId: string, files: File[]) => {
       const results = await Promise.allSettled(
         files.map(async (file) => {
-          const metadata = await parseGeoTIFF(file, getProj4Def);
+          const metadata = await getElevationEngine().geoTiff.parse(
+            file,
+            getProj4Def,
+          );
           return { id: nanoid(), ...metadata } as GeoTiffTile;
         }),
       );
@@ -767,6 +862,11 @@ const useElevationSourceActions = (
   const deleteTile = useCallback(
     (sourceId: string, tileId: string) => {
       cancelTiles([tileId]);
+      const source = sources.find((s) => s.id === sourceId);
+      const remainingTiles =
+        source?.type === "geotiff"
+          ? source.tiles.filter((t) => t.id !== tileId)
+          : [];
       setSources((prev) => {
         const updated = prev.map((s) =>
           s.id === sourceId && s.type === "geotiff"
@@ -777,9 +877,10 @@ const useElevationSourceActions = (
           (s) => s.type !== "geotiff" || s.tiles.length > 0,
         );
       });
+      syncCoverage(sourceId, remainingTiles);
       userTracking.capture({ name: "elevationSource.tileDeleted" });
     },
-    [setSources, cancelTiles, userTracking],
+    [sources, setSources, cancelTiles, syncCoverage, userTracking],
   );
 
   const reorderSources = useCallback(
@@ -868,6 +969,31 @@ const useElevationSourceActions = (
   };
 };
 
+const withCoveragePolygon = (
+  sources: ElevationSource[],
+  sourceId: string,
+  tileId: string,
+  polygon: GeoJSON.Geometry,
+): ElevationSource[] =>
+  sources.map((source) =>
+    source.id === sourceId && source.type === "geotiff"
+      ? {
+          ...source,
+          tiles: source.tiles.map((tile) =>
+            tile.id === tileId ? { ...tile, coveragePolygon: polygon } : tile,
+          ),
+        }
+      : source,
+  );
+
+const geoTiffTilesOf = (
+  sources: ElevationSource[],
+  sourceId: string,
+): GeoTiffTile[] | undefined => {
+  const source = sources.find((candidate) => candidate.id === sourceId);
+  return source?.type === "geotiff" ? source.tiles : undefined;
+};
+
 const useComputeTileBoundaries = (
   onSourceTilesUpdated?: OnSourceTilesUpdated,
 ) => {
@@ -878,50 +1004,45 @@ const useComputeTileBoundaries = (
   const onSourceTilesUpdatedRef = useRef(onSourceTilesUpdated);
   onSourceTilesUpdatedRef.current = onSourceTilesUpdated;
 
+  const applyBoundaryResult = useCallback(
+    (sourceId: string, { tileId, polygon }: BoundaryResult) => {
+      if (!polygon) return;
+
+      let updatedTiles: GeoTiffTile[] | undefined;
+      setSources((previous: ElevationSource[]) => {
+        const next = withCoveragePolygon(previous, sourceId, tileId, polygon);
+        updatedTiles = geoTiffTilesOf(next, sourceId);
+        return next;
+      });
+
+      if (updatedTiles) {
+        onSourceTilesUpdatedRef.current?.(sourceId, updatedTiles);
+      }
+    },
+    [setSources],
+  );
+
   const startComputation = useCallback(
     (sourceId: string, tiles: GeoTiffTile[]) => {
       pendingJobsRef.current += 1;
-      void computeTileBoundaries(
-        tiles,
-        ({ tileId, polygon }: BoundaryResult) => {
-          if (!polygon) return;
-          let updatedTiles: GeoTiffTile[] | undefined;
-          setSources((prev: ElevationSource[]) => {
-            const next = prev.map((s) =>
-              s.id === sourceId && s.type === "geotiff"
-                ? {
-                    ...s,
-                    tiles: s.tiles.map((t) =>
-                      t.id === tileId ? { ...t, coveragePolygon: polygon } : t,
-                    ),
-                  }
-                : s,
-            );
-            const updated = next.find(
-              (s) => s.id === sourceId && s.type === "geotiff",
-            );
-            if (updated?.type === "geotiff") {
-              updatedTiles = updated.tiles;
-            }
-            return next;
-          });
-          if (updatedTiles) {
-            onSourceTilesUpdatedRef.current?.(sourceId, updatedTiles);
+      void getElevationEngine()
+        .geoTiff.computeBoundaries(
+          tiles,
+          (result) => applyBoundaryResult(sourceId, result),
+          (tileId: string) => cancelledTilesRef.current.has(tileId),
+        )
+        .then(() => {
+          pendingJobsRef.current -= 1;
+          if (pendingJobsRef.current === 0) {
+            notify({
+              variant: "success",
+              title: translate("elevations.tilesProcessed"),
+              duration: 2000,
+            });
           }
-        },
-        (tileId: string) => cancelledTilesRef.current.has(tileId),
-      ).then(() => {
-        pendingJobsRef.current -= 1;
-        if (pendingJobsRef.current === 0) {
-          notify({
-            variant: "success",
-            title: translate("elevations.tilesProcessed"),
-            duration: 2000,
-          });
-        }
-      });
+        });
     },
-    [setSources, translate],
+    [applyBoundaryResult, translate],
   );
 
   const cancelTiles = useCallback((tileIds: string[]) => {
@@ -944,7 +1065,7 @@ const useElevationCoverageOverlay = () => {
       setCoverageFeatures(
         tiles.map((tile) => {
           const isHovered = tile.id === hoveredTileId;
-          return tileCoverage(tile, {
+          return getElevationEngine().geoTiff.coverage(tile, {
             isFilled: !isHovering,
             isDisabled: isHovering && !isHovered,
             showLabel: isHovered,
@@ -994,11 +1115,25 @@ const useElevationCoverageOverlay = () => {
     [rebuildOverlay],
   );
 
+  const syncCoverage: SyncCoverage = useCallback(
+    (sourceId, tiles) => {
+      if (activeSourceIdRef.current !== sourceId) return;
+      if (tiles.length === 0) {
+        hideCoverage();
+        return;
+      }
+      hoveredTileIdRef.current = null;
+      rebuildOverlay(tiles, null);
+    },
+    [rebuildOverlay, hideCoverage],
+  );
+
   return {
     showCoverage,
     hideCoverage,
     highlightTile,
     onSourceTilesUpdated,
+    syncCoverage,
   };
 };
 
@@ -1008,8 +1143,7 @@ const useProj4Definitions = () => {
   const getProj4Def = useCallback(
     async (epsgCode: number): Promise<string | null> => {
       if (!cacheRef.current) {
-        const response = await fetch("/projections.json");
-        const data: { id: string; code: string }[] = await response.json();
+        const data = await fetchProjections();
         cacheRef.current = new Map(data.map((p) => [p.id, p.code]));
       }
       return cacheRef.current.get(`EPSG:${epsgCode}`) ?? null;

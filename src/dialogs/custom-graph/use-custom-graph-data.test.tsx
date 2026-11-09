@@ -1,12 +1,13 @@
 import { act } from "react";
 import { renderHook, waitFor } from "@testing-library/react";
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { setInitialState } from "src/__helpers__/state";
 import { CommandContainer } from "src/commands/__helpers__/command-container";
 import { EPSResultsReader } from "src/simulation";
 import { TimeSeries } from "src/simulation/epanet/eps-results-reader";
 import { SimulationState } from "src/state";
 import { useCustomGraphData } from "./use-custom-graph-data";
+import { USelection } from "src/selection";
 
 const IDS = { J1: 1, J2: 2, P1: 3, P2: 4 } as const;
 
@@ -24,7 +25,7 @@ describe("useCustomGraphData", () => {
   it("returns empty series when no simulation results exist", async () => {
     const store = setInitialState({
       hydraulicModel: HydraulicModelBuilder.with().aJunction(IDS.J1).build(),
-      selection: { type: "single", id: IDS.J1, parts: [] },
+      selection: USelection.fromAssetIds([IDS.J1]),
     });
 
     const { result, onProgress } = renderDataHook(store);
@@ -69,7 +70,7 @@ describe("useCustomGraphData", () => {
     const store = setInitialState({
       hydraulicModel: model,
       simulation: makeSimulation(reader),
-      selection: { type: "multi", ids: [IDS.J1, IDS.P1] },
+      selection: USelection.fromAssetIds([IDS.J1, IDS.P1]),
     });
 
     const { result } = renderDataHook(store);
@@ -106,7 +107,7 @@ describe("useCustomGraphData", () => {
     const store = setInitialState({
       hydraulicModel: model,
       simulation: makeSimulation(reader),
-      selection: { type: "multi", ids: [IDS.J1, IDS.P1] },
+      selection: USelection.fromAssetIds([IDS.J1, IDS.P1]),
     });
 
     const { result, onProgress } = renderDataHook(store);
@@ -132,7 +133,7 @@ describe("useCustomGraphData", () => {
     const store = setInitialState({
       hydraulicModel: model,
       simulation: makeSimulation(reader),
-      selection: { type: "single", id: IDS.P1, parts: [] },
+      selection: USelection.fromAssetIds([IDS.P1]),
     });
 
     const { result } = renderDataHook(store);
@@ -167,7 +168,7 @@ describe("useCustomGraphData", () => {
     const store = setInitialState({
       hydraulicModel: model,
       simulation: makeSimulation(reader),
-      selection: { type: "single", id: IDS.P1, parts: [] },
+      selection: USelection.fromAssetIds([IDS.P1]),
     });
 
     const { result } = renderDataHook(store);

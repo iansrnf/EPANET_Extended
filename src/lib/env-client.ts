@@ -1,6 +1,11 @@
 import { envsafe, str } from "envsafe";
 
 export const env = envsafe({
+  NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: str({
+    input: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY,
+    default: "",
+    allowEmpty: true,
+  }),
   /**
    * Key for authenticating Mapbox maps.
    */

@@ -49,11 +49,6 @@ declare module "@tanstack/react-table" {
       row?: number;
       extend?: boolean;
     }) => { range: GridSelection; movingCorner: CellPosition } | null;
-    /**
-     * Memoized lookup from row id → visual (displayed) row position.
-     * Rebuilt only when the sorted/filtered row model changes.
-     */
-    getVisualIndexLookup: () => Map<string, number>;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -138,18 +133,6 @@ export const CellRangeSelectionFeature: TableFeature = {
     table.isSingleCellSelection = () =>
       isSingleCellSelection(table.getSelection());
 
-    table.getVisualIndexLookup = memo(
-      () => [table.getRowModel().rows],
-      (rows) => {
-        const map = new Map<string, number>();
-        for (let i = 0; i < rows.length; i++) {
-          map.set(rows[i].id, i);
-        }
-        return map;
-      },
-      { key: "CellRangeSelectionFeature.getVisualIndexLookup" },
-    );
-
     table.updateSelection = ({ col, row, extend = false }) => {
       const rowCount = table.getRowModel().rows.length;
       const colCount = table.getVisibleLeafColumns().length;
@@ -176,8 +159,10 @@ export const CellRangeSelectionFeature: TableFeature = {
     row: Row<TData>,
     table: Table<TData>,
   ): void => {
-    row.getVisualIndex = () =>
-      table.getVisualIndexLookup().get(row.id) ?? row.index;
+    row.getVisualIndex = () => {
+      const { visualByDataIndex } = table.getLazyRowOrder();
+      return visualByDataIndex ? visualByDataIndex[row.index] : row.index;
+    };
 
     row.isFullySelected = () =>
       table.isSelectionFullRows() &&

@@ -1,4 +1,4 @@
-import { RefObject, useEffect } from "react";
+import { RefObject, useEffect, useRef } from "react";
 import { Table } from "@tanstack/react-table";
 import { FIXED_COLUMN_SIZE } from "../shared/dimensions";
 
@@ -13,9 +13,25 @@ export function useScrollActiveCellIntoView<
   TData extends Record<string, unknown>,
 >({ scrollRef, table, gutterColumn, rowHeight }: Options<TData>) {
   const activeCell = table.getActiveCell();
+  // Avoid triggering if last active cell is the same as new one.
+  const activeCellKey = activeCell
+    ? `${activeCell.row}:${activeCell.col}`
+    : null;
+  const lastScrolledKey = useRef<string | null>(null);
+  const hasMounted = useRef(false);
 
   useEffect(
     function keepActiveCellInViewPort() {
+      // On mount the cursor has not moved, so there is nothing to bring into
+      // view — and scrolling here would discard a restored scroll position.
+      if (!hasMounted.current) {
+        hasMounted.current = true;
+        lastScrolledKey.current = activeCellKey;
+        return;
+      }
+      if (activeCellKey === lastScrolledKey.current) return;
+      lastScrolledKey.current = activeCellKey;
+
       const container = scrollRef.current;
       if (!activeCell || !container) return;
 
@@ -48,6 +64,6 @@ export function useScrollActiveCellIntoView<
         container.scrollLeft = colEnd - viewportWidth;
       }
     },
-    [activeCell, gutterColumn, table, scrollRef, rowHeight],
+    [activeCellKey, activeCell, gutterColumn, table, scrollRef, rowHeight],
   );
 }

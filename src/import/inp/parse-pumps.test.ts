@@ -222,6 +222,30 @@ describe("parse pumps", () => {
     expect(pump.speed).toEqual(1);
   });
 
+  it("leaves speed undefined when the SPEED keyword is omitted and null values are allowed", () => {
+    const reservoirId = "r1";
+    const junctionId = "j1";
+    const pumpId = "pu1";
+    const anyNumber = 10;
+    const inp = `
+    [RESERVOIRS]
+    ${reservoirId}\t${anyNumber}
+    [JUNCTIONS]
+    ${junctionId}\t${anyNumber}
+    [PUMPS]
+    ${pumpId}\t${reservoirId}\t${junctionId}\tPOWER 10
+
+    [COORDINATES]
+    ${reservoirId}\t${10}\t${20}
+    ${junctionId}\t${30}\t${40}
+    `;
+
+    const { hydraulicModel } = parseInp(inp);
+
+    const pump = getByLabel(hydraulicModel.assets, pumpId) as Pump;
+    expect(pump.speed).toBeUndefined();
+  });
+
   it("overrides speed setting when using a pattern", () => {
     const pumpId = "pu1";
     const anyNumber = 10;

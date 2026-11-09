@@ -1,23 +1,28 @@
 import * as Comlink from "comlink";
 
-import { AssetId } from "src/hydraulic-model/asset-types";
+import {
+  AssetId,
+  boundaryBarriers,
+  trace,
+  type TraceResult,
+  type TraceStart,
+} from "@epanet-js/hydraulic-model";
 import { HydraulicModel } from "src/hydraulic-model/hydraulic-model";
-import { ResultsReader } from "src/simulation/results-reader";
+import { ResultsReader } from "@epanet-js/simulation";
 import { canUseWorker, enrichWorkerError } from "src/infra/worker";
 import { encodeTraceData } from "./encode-trace-buffers";
 import {
   flowDirectionTransferables,
   allowedFlowDirectionTransferables,
 } from "./trace-buffers";
-import { topologyTransferables } from "src/hydraulic-model/topology/types";
-import { assetIndexTransferables } from "src/hydraulic-model/asset-index";
+import { topologyTransferables } from "src/hydraulic-model/topology/topology-transferable";
+import { assetIndexTransferables } from "src/hydraulic-model/asset-index-transferable";
 import { FlowDirection } from "./flow-direction";
 import { AllowedFlowDirection } from "./allowed-flow-direction";
-import { TraceMode, TraceStart, TraceResult } from "./types";
-import { boundaryTrace } from "./boundary-trace";
+import { TraceMode } from "./types";
 import { upstreamTrace } from "./upstream-trace";
 import { downstreamTrace } from "./downstream-trace";
-import type { TraceWorkerAPI } from "./worker-api";
+import { getTraceWorker } from "./get-worker";
 
 export interface TraceInput {
   mode: TraceMode;
@@ -62,11 +67,11 @@ function runSync(
 
   switch (input.mode) {
     case "boundary":
-      return boundaryTrace(
+      return trace(
         start,
         model.topology,
-        model.assetIndex,
         allowedFlowDirection,
+        boundaryBarriers(model.assetIndex, allowedFlowDirection),
       );
     case "upstream":
       return upstreamTrace(start, model.topology, status);
@@ -90,31 +95,22 @@ const runWithWorker = async (
     nodeIds: input.startNodeIds,
     linkIds: input.startLinkIds,
   };
+  const transferData = Comlink.transfer(data, [
+    ...topologyTransferables(data.topologyBuffers),
+    ...assetIndexTransferables(data.assetIndexBuffers),
+    ...flowDirectionTransferables(data.flowDirectionBuffers),
+    ...allowedFlowDirectionTransferables(data.allowedFlowDirectionBuffers),
+  ]);
 
-  const worker = new Worker(new URL("./worker.ts", import.meta.url), {
-    type: "module",
-  });
-
-  const workerAPI = Comlink.wrap<TraceWorkerAPI>(worker);
-
-  const abortHandler = () => worker.terminate();
-  signal?.addEventListener("abort", abortHandler);
-
+  const workerAPI = getTraceWorker();
   try {
-    return await workerAPI.runTrace(
-      input.mode,
-      start,
-      Comlink.transfer(data, [
-        ...topologyTransferables(data.topologyBuffers),
-        ...assetIndexTransferables(data.assetIndexBuffers),
-        ...flowDirectionTransferables(data.flowDirectionBuffers),
-        ...allowedFlowDirectionTransferables(data.allowedFlowDirectionBuffers),
-      ]),
-    );
+    const result = await workerAPI.runTrace(input.mode, start, transferData);
+    if (signal?.aborted) {
+      throw new DOMException("Operation cancelled", "AbortError");
+    }
+    return result;
   } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
     throw enrichWorkerError("trace", e);
-  } finally {
-    signal?.removeEventListener("abort", abortHandler);
-    worker.terminate();
   }
 };

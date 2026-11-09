@@ -1,7 +1,9 @@
 import * as Comlink from "comlink";
-import { EncodedCrossingPipes } from "./data";
-import { findCrossingPipes } from "./find-crossing-pipes";
-import { HydraulicModelBuffers } from "../hydraulic-model-buffers";
+import {
+  EncodedCrossingPipes,
+  HydraulicModelBuffers,
+  findCrossingPipes,
+} from "@epanet-js/network-review";
 
 export interface CrossingPipesWorkerAPI {
   findCrossingPipes: (

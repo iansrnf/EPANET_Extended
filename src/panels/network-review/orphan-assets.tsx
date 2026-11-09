@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "src/components/elements";
 import { useTranslate } from "src/hooks/use-translate";
 import { useZoomTo } from "src/hooks/use-zoom-to";
-import { AssetType } from "src/hydraulic-model";
+import { AssetType, HydraulicModel } from "src/hydraulic-model";
+import { Asset, AssetId } from "@epanet-js/hydraulic-model";
 import {
   JunctionIcon,
   PipeIcon,
@@ -13,19 +14,19 @@ import {
   ValveIcon,
 } from "src/icons";
 import { useUserTracking } from "src/infra/user-tracking";
-import {
-  findOrphanAssets,
-  OrphanAsset,
-} from "src/lib/network-review/orphan-assets";
+import { findOrphanAssets, CheckType } from "src/lib/network-review";
+import { useCachedCheck } from "src/hooks/use-review-checks";
 import { useSelection } from "src/selection";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { selectionAtom } from "src/state/selection";
+import { FixOrphanAssetButton } from "./fixes/fix-orphan-asset-button";
+import { useFixOrphanAsset } from "./fixes/use-fix-orphan-asset";
 import {
-  CheckType,
   EmptyState,
   LoadingState,
   ToolDescription,
   ToolHeader,
+  useCheckHeader,
   useLoadingStatus,
   VirtualizedIssuesList,
 } from "./common";
@@ -56,37 +57,33 @@ export const OrphanAssets = ({ onGoBack }: { onGoBack: () => void }) => {
   );
 
   const selectOrphanAsset = useCallback(
-    (orphanAsset: OrphanAsset | null) => {
-      if (!orphanAsset) {
+    (assetId: AssetId | null) => {
+      if (assetId === null) {
         setSelectedOrphanAssetId(null);
         clearSelection();
         return;
       }
 
-      const fullAsset = hydraulicModel.assets.get(orphanAsset.assetId);
+      const fullAsset = hydraulicModel.assets.get(assetId);
       if (!fullAsset) {
         setSelectedOrphanAssetId(null);
         return;
       }
-      setSelectedOrphanAssetId(orphanAsset.assetId);
-      selectAsset(orphanAsset.assetId);
+      setSelectedOrphanAssetId(assetId);
+      selectAsset(assetId);
       zoomTo([fullAsset]);
     },
     [hydraulicModel, selectAsset, zoomTo, clearSelection],
   );
 
   useEffect(() => {
-    const selectedOrphanAsset = orphanAssets.find((orphanAsset) =>
-      isSelected(orphanAsset.assetId),
-    );
+    const selectedAssetId = orphanAssets.find((assetId) => isSelected(assetId));
 
-    if (!selectedOrphanAsset) {
+    if (selectedAssetId === undefined) {
       setSelectedOrphanAssetId(null);
     } else
       setSelectedOrphanAssetId((prev) =>
-        prev === selectedOrphanAsset.assetId
-          ? prev
-          : selectedOrphanAsset.assetId,
+        prev === selectedAssetId ? prev : selectedAssetId,
       );
   }, [orphanAssets, isSelected]);
 
@@ -101,12 +98,16 @@ export const OrphanAssets = ({ onGoBack }: { onGoBack: () => void }) => {
     }
   }, [orphanAssets, userTracking]);
 
+  const headerProps = useCheckHeader(
+    CheckType.orphanAssets,
+    orphanAssets.length,
+    onGoBack,
+  );
+
   return (
     <div className="absolute inset-0 flex flex-col">
       <ToolHeader
-        checkType={CheckType.orphanAssets}
-        onGoBack={onGoBack}
-        itemsCount={orphanAssets.length}
+        {...headerProps}
         autoFocus={orphanAssets.length === 0 && !isLoading}
       />
       <div className="relative grow flex flex-col">
@@ -115,9 +116,10 @@ export const OrphanAssets = ({ onGoBack }: { onGoBack: () => void }) => {
             {orphanAssets.length > 0 ? (
               <OrphanAssetsList
                 orphanAssets={orphanAssets}
-                onClick={selectOrphanAsset}
+                onSelect={selectOrphanAsset}
                 selectedOrphanAsset={selectedOrphanAssetId}
                 onGoBack={onGoBack}
+                hydraulicModel={hydraulicModel}
               />
             ) : (
               <>
@@ -140,33 +142,51 @@ export const OrphanAssets = ({ onGoBack }: { onGoBack: () => void }) => {
 
 const OrphanAssetsList = ({
   orphanAssets,
-  onClick,
+  onSelect,
   selectedOrphanAsset,
   onGoBack,
+  hydraulicModel,
 }: {
-  orphanAssets: OrphanAsset[];
-  onClick: (issue: OrphanAsset | null) => void;
+  orphanAssets: AssetId[];
+  onSelect: (assetId: AssetId | null) => void;
   selectedOrphanAsset: number | null;
   onGoBack: () => void;
+  hydraulicModel: HydraulicModel;
 }) => {
+  const { kindOf, fix } = useFixOrphanAsset();
+
   return (
     <VirtualizedIssuesList
       items={orphanAssets}
       selectedItemId={selectedOrphanAsset}
-      onSelect={onClick}
-      getItemId={(issue) => issue.assetId}
-      renderItem={(_index, orphanAsset, selectedId, onClick) => (
-        <OrphanAssetItem
-          orphanAsset={orphanAsset}
-          selectedId={selectedId}
-          onClick={onClick}
-        />
-      )}
+      onSelect={onSelect}
+      getItemId={getOrphanAssetId}
+      renderItem={(_index, assetId, selectedId, onClick) => {
+        const asset = hydraulicModel.assets.get(assetId);
+        if (!asset) return null;
+
+        return (
+          <OrphanAssetItem
+            asset={asset}
+            selectedId={selectedId}
+            onClick={onClick}
+          />
+        );
+      }}
+      renderItemAction={(assetId) => {
+        const kind = kindOf(assetId);
+        if (!kind) return null;
+
+        return <FixOrphanAssetButton kind={kind} onFix={() => fix(assetId)} />;
+      }}
+      onItemAction={fix}
       checkType={CheckType.orphanAssets}
       onGoBack={onGoBack}
     />
   );
 };
+
+const getOrphanAssetId = (assetId: AssetId) => assetId;
 
 const iconByAssetType: { [key in AssetType]: React.ReactNode } = {
   junction: <JunctionIcon />,
@@ -178,37 +198,35 @@ const iconByAssetType: { [key in AssetType]: React.ReactNode } = {
 };
 
 const OrphanAssetItem = ({
-  orphanAsset,
+  asset,
   onClick,
   selectedId,
 }: {
-  orphanAsset: OrphanAsset;
-  onClick: (orphanAsset: OrphanAsset) => void;
+  asset: Asset;
+  onClick: (assetId: AssetId) => void;
   selectedId: number | null;
 }) => {
   const translate = useTranslate();
-  const isSelected = selectedId === orphanAsset.assetId;
+  const isSelected = selectedId === asset.id;
 
   return (
     <Button
-      onClick={() => onClick(orphanAsset)}
+      onClick={() => onClick(asset.id)}
       onMouseDown={(e) => e.preventDefault()}
       variant={"quiet/list"}
-      role="button"
+      size="xxs"
       aria-label={translate(
         "networkReview.orphanAssets.issueLabel",
-        translate(orphanAsset.type),
-        orphanAsset.label,
+        translate(asset.type),
+        asset.label,
       )}
-      aria-checked={isSelected}
-      aria-expanded={isSelected ? "true" : "false"}
       aria-selected={isSelected}
       tabIndex={-1}
-      className="group w-full"
+      className="group w-full hover:bg-transparent dark:hover:bg-transparent aria-selected:bg-transparent! aria-selected:hover:bg-transparent!"
     >
-      <div className="grid grid-cols-[auto_1fr] gap-x-2 items-start p-1 pr-0 text-sm w-full">
-        <div className="pt-[.125rem]">{iconByAssetType[orphanAsset.type]}</div>
-        <div className="text-sm text-left">{orphanAsset.label}</div>
+      <div className="grid grid-cols-[auto_1fr] gap-x-2 items-center h-8 px-2 pr-0 text-size-base w-full">
+        <div className="flex items-center">{iconByAssetType[asset.type]}</div>
+        <div className="text-size-base text-left">{asset.label}</div>
       </div>
     </Button>
   );
@@ -218,13 +236,23 @@ const deferToAllowRender = () =>
   new Promise((resolve) => setTimeout(resolve, 0));
 
 const useCheckOrphanAssets = () => {
-  const [orphanAssets, setOrphanAssets] = useState<OrphanAsset[]>([]);
+  const [orphanAssets, setOrphanAssets] = useState<AssetId[]>([]);
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
+  const { read, write } = useCachedCheck(CheckType.orphanAssets);
   const { startLoading, finishLoading, isLoading } = useLoadingStatus();
   const isReady = useRef(false);
 
   const checkOrphanAssets = useCallback(
     async (signal?: AbortSignal) => {
+      const cached = read();
+      if (cached) {
+        setOrphanAssets(cached);
+        finishLoading();
+        isReady.current = true;
+        return;
+      }
+
+      const modelVersion = hydraulicModel.version;
       startLoading();
       await deferToAllowRender();
 
@@ -234,6 +262,7 @@ const useCheckOrphanAssets = () => {
         const result = await findOrphanAssets(hydraulicModel, signal);
 
         if (!signal?.aborted) {
+          write(result, result.length, modelVersion);
           setOrphanAssets(result);
           finishLoading();
           isReady.current = true;
@@ -246,7 +275,7 @@ const useCheckOrphanAssets = () => {
         throw error;
       }
     },
-    [hydraulicModel, startLoading, finishLoading],
+    [hydraulicModel, startLoading, finishLoading, read, write],
   );
 
   return {

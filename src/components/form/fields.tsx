@@ -1,10 +1,9 @@
 import clsx from "clsx";
 import { createContext, useContext, useState } from "react";
 import * as C from "@radix-ui/react-collapsible";
-import * as Tooltip from "@radix-ui/react-tooltip";
+import { Tooltip } from "@epanet-js/ui-kit";
 import { ChevronDownIcon, ChevronRightIcon } from "src/icons";
 import { FooterResizer, useBigScreen } from "src/components/resizer";
-import { TContent, StyledTooltipArrow } from "src/components/elements";
 import { useTranslate } from "src/hooks/use-translate";
 
 // null = outside any SectionList; 0 = at outermost level; >0 = extra accumulated indentation from nested SectionLists
@@ -49,15 +48,17 @@ const ComparisonTooltip = ({
 
   if (hasChanged && baseDisplayValue !== undefined) {
     return (
-      <Tooltip.Root delayDuration={200}>
-        <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
-        <Tooltip.Portal>
-          <TContent side="left" sideOffset={15}>
-            <StyledTooltipArrow />
+      <Tooltip
+        content={
+          <>
             {translate("scenarios.main")}: {baseDisplayValue}
-          </TContent>
-        </Tooltip.Portal>
-      </Tooltip.Root>
+          </>
+        }
+        side="left"
+        sideOffset={15}
+      >
+        {children}
+      </Tooltip>
     );
   }
 
@@ -85,7 +86,7 @@ export const BlockComparisonField = ({
       <div className="relative">
         {hasChanged && (
           <div
-            className="absolute top-0 bottom-0 w-1 bg-purple-500 rounded-full"
+            className="absolute top-0 bottom-0 w-1 bg-accent rounded-full"
             style={{ left: `-${leftOffset}px` }}
           />
         )}
@@ -106,6 +107,7 @@ export const InlineField = ({
   align = "center",
   hasChanged = false,
   baseDisplayValue,
+  labelAction,
   children,
 }: {
   name: string;
@@ -114,12 +116,13 @@ export const InlineField = ({
   align?: "start" | "center";
   hasChanged?: boolean;
   baseDisplayValue?: React.ReactNode;
+  labelAction?: React.ReactNode;
   children: React.ReactNode;
 }) => {
   const indentation = useContext(IndentationContext) ?? 0;
   const nestingDepth = useContext(NestedBlockContext);
   const baseLabelWidth =
-    (labelSize === "sm" ? 90 : labelSize === "md" ? 140 : 180) -
+    (labelSize === "sm" ? 100 : labelSize === "md" ? 140 : 180) -
     indentation * 4 -
     nestingDepth * 2;
 
@@ -129,13 +132,14 @@ export const InlineField = ({
       : undefined;
   const inputStyle = layout === "fluid-label" ? { flexBasis: 150 } : undefined;
 
-  const labelClasses = clsx("text-sm text-gray-500 min-w-0", {
+  const labelSlotClasses = clsx("min-w-0", {
     "grow shrink": layout === "fluid-label",
     "shrink-0": layout === "fixed-label",
-    "wrap-break-word": layout === "fixed-label" && labelSize === "sm",
     "w-1/2": layout === "half-split",
     "flex-none": layout === "label-flex-none",
+    "flex items-center justify-between gap-1": !!labelAction,
   });
+  const labelClasses = "text-size-base text-subtle min-w-0 break-words";
   const inputWrapperClasses = clsx("min-w-0", {
     "grow shrink": layout === "fluid-label",
     "flex-1": layout === "fixed-label",
@@ -155,13 +159,12 @@ export const InlineField = ({
           "items-center": align === "center",
         })}
       >
-        <label
-          className={labelClasses}
-          style={labelStyle}
-          aria-label={`label: ${name}`}
-        >
-          {name}
-        </label>
+        <div className={labelSlotClasses} style={labelStyle}>
+          <label className={labelClasses} aria-label={`label: ${name}`}>
+            {name}
+          </label>
+          {labelAction}
+        </div>
         <div className={inputWrapperClasses} style={inputStyle}>
           {children}
         </div>
@@ -178,7 +181,7 @@ export const VerticalField = ({
   children: React.ReactNode;
 }) => (
   <div className="flex flex-col gap-y-2 w-full">
-    <span className="text-sm text-gray-500">{name}</span>
+    <span className="text-size-base text-subtle">{name}</span>
     {children}
   </div>
 );
@@ -198,9 +201,9 @@ export const Section = ({
     <div className="flex flex-col gap-1">
       <div
         className={clsx(
-          "flex items-center justify-between text-sm font-semibold h-8",
+          "flex items-center justify-between text-size-base font-semibold h-8",
           {
-            "text-gray-500": variant === "secondary",
+            "text-subtle": variant === "secondary",
           },
         )}
       >
@@ -274,16 +277,12 @@ export const SectionList = ({
     >
       {header || footer ? (
         <div className="flex flex-col grow overflow-hidden">
-          {header && (
-            <div className="sticky top-0 z-10 bg-white dark:bg-gray-950">
-              {header}
-            </div>
-          )}
+          {header && <div className="sticky top-0 z-10 bg-base">{header}</div>}
           {content}
           {isStickyFooter && footer && (
             <div
               className={clsx(
-                "z-10 bg-white dark:bg-gray-950 flex flex-col relative border-y border-gray-200 dark:border-gray-800",
+                "z-10 bg-base flex flex-col relative border-y",
                 isResizableFooter ? "shrink-0" : "sticky bottom-0",
               )}
               style={
@@ -359,16 +358,25 @@ export const CollapsibleSection = ({
             <div
               className={clsx(
                 "flex gap-1 items-center h-8 cursor-pointer",
-                "px-1 -mx-1 rounded-sm hover:bg-gray-100 dark:hover:bg-gray-800",
+                "px-1 -mx-1 rounded-sm hover:bg-base-hover",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent",
                 {
-                  "text-sm font-semibold": variant === "primary",
-                  "text-sm font-semibold text-gray-500":
+                  "text-size-base font-semibold": variant === "primary",
+                  "text-size-base font-semibold text-subtle":
                     variant === "secondary",
                 },
                 className,
               )}
               role="button"
               tabIndex={0}
+              onKeyDown={(e) => {
+                // Needs explicit keyboard handling since trigger is not a button
+                if (e.target !== e.currentTarget) return;
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleOpenChange(!open);
+                }
+              }}
             >
               {indicatorPosition === "left" ? (
                 open ? (
@@ -379,9 +387,7 @@ export const CollapsibleSection = ({
               ) : null}
 
               <span>{title}</span>
-              {showSeparator && (
-                <div className="flex-1 border-b border-gray-200 ml-2" />
-              )}
+              {showSeparator && <div className="flex-1 border-b ml-2" />}
               {!showSeparator && <div className="flex-1" />}
               {action && <div className="h-8 w-8 -my-1">{action}</div>}
               {indicatorPosition === "right" ? (
@@ -424,7 +430,7 @@ export const NestedSection = ({
         overflow={false}
         gap={1}
         className={clsx(
-          "bg-gray-50 -mr-1 pr-1 border-l-2 border-gray-400 rounded-xs",
+          "bg-panel -mr-1 pr-1 border-l-2 border-gray-400 rounded-xs",
           className,
         )}
       >

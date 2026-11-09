@@ -1,0 +1,686 @@
+import React, {
+  useState,
+  useRef,
+  useCallback,
+  useMemo,
+  useEffect,
+  useLayoutEffect,
+} from "react";
+import clsx from "clsx";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { CheckIcon } from "../icons";
+import { useUIConfig } from "../ui-config";
+
+export type SelectorListOption<T extends string | number | boolean> = {
+  label: string;
+  description?: string;
+  value: T;
+  disabled?: boolean;
+  icon?: React.ReactNode;
+};
+
+export type SelectorAction = {
+  label: string;
+  onSelect: () => void;
+  disabled?: boolean;
+  icon?: React.ReactNode;
+};
+
+export type SelectorListProps<T extends string | number | boolean> = {
+  options: SelectorListOption<T>[];
+  selected: T | null;
+  onCommit: (value: T | null) => void;
+  onClose: () => void;
+  actions?: SelectorAction[];
+  clearLabel?: string;
+  nullable?: boolean;
+  allowNew?: boolean;
+  createLabel?: (query: string) => string;
+  minOptionsForSearch?: number;
+  searchPlaceholder?: string;
+  listClassName?: string;
+  validateNew?: (query: string) => boolean;
+  /**
+   * Cap the scrollable option list at this many rows before it scrolls.
+   * Defaults to 5.
+   */
+  maxVisibleOptions?: number;
+  /** Seed the search query on mount (used by data-grid type-to-open). */
+  initialQuery?: string;
+  /**
+   * Called with the value of the option currently under the cursor or keyboard
+   * focus (null when none / on close). Lets a consumer preview the active
+   * option, e.g. highlight it elsewhere in the UI.
+   */
+  onActiveOptionChange?: (value: T | null) => void;
+};
+
+const VIRTUALIZATION_THRESHOLD = 100;
+const NO_INDEX = -1;
+const NO_ACTIONS: SelectorAction[] = [];
+const PAGE_SIZE = 5;
+const TYPE_AHEAD_RESET_MS = 500;
+
+const ROW_REM = 2;
+const LIST_TOP_PAD_REM = 0.25;
+const ROW_PX = 32;
+const LIST_PAD_PX = 4;
+const VIRTUAL_OVERSCAN = 8;
+
+/**
+ * A selector has nothing to show when there are no options and there is no
+ * other way to produce content (creating a new value or an action row). In
+ * those cases the trigger should be disabled rather than opening an empty
+ * dropdown. Use this to keep the disabled-when-empty behaviour consistent
+ * between the built-in `Selector` trigger and custom triggers wrapping
+ * `SelectorList`.
+ */
+export function isSelectorEmpty<T extends string | number | boolean>(
+  options: SelectorListOption<T>[],
+  {
+    allowNew = false,
+    actions = [],
+  }: { allowNew?: boolean; actions?: SelectorAction[] } = {},
+): boolean {
+  return options.length === 0 && !allowNew && actions.length === 0;
+}
+
+export const SelectorList = BaseSelectorList;
+
+export function BaseSelectorList<T extends string | number | boolean>({
+  options,
+  selected,
+  onCommit,
+  onClose,
+  actions = NO_ACTIONS,
+  clearLabel,
+  nullable = false,
+  allowNew = false,
+  createLabel,
+  minOptionsForSearch = 8,
+  searchPlaceholder,
+  listClassName,
+  validateNew,
+  maxVisibleOptions = 5,
+  initialQuery = "",
+  onActiveOptionChange,
+}: SelectorListProps<T>) {
+  const ui = useUIConfig();
+  const virtualized = options.length > VIRTUALIZATION_THRESHOLD;
+  const [query, setQuery] = useState(initialQuery);
+  const [activeIndex, setActiveIndex] = useState<number>(() => {
+    if (selected === null) return NO_INDEX;
+    const idx = options.findIndex((o) => o.value === selected);
+    return idx >= 0 ? idx : NO_INDEX;
+  });
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
+  const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(
+    null,
+  );
+
+  const showSearch = allowNew || options.length >= minOptionsForSearch;
+  const trimmedQuery = query.trim();
+
+  const filtered = useMemo(() => {
+    if (!trimmedQuery) return options;
+    const q = trimmedQuery.toLowerCase();
+    return options.filter((o) => o.label.toLowerCase().includes(q));
+  }, [options, trimmedQuery]);
+
+  const hasExactMatch = useMemo(() => {
+    if (!trimmedQuery) return false;
+    const q = trimmedQuery.toLowerCase();
+    return options.some((o) => o.label.toLowerCase() === q);
+  }, [options, trimmedQuery]);
+
+  const isNewQueryInvalid =
+    !!validateNew && trimmedQuery.length > 0 && !validateNew(trimmedQuery);
+  const showCreateOption =
+    allowNew && trimmedQuery.length > 0 && !hasExactMatch && !isNewQueryInvalid;
+  const showClearRow =
+    nullable && clearLabel !== undefined && options.length > 0;
+  const showActionRow = actions.length > 0;
+  const showList = filtered.length > 0 || showCreateOption;
+
+  const maxListHeight = `${(maxVisibleOptions + 0.5) * ROW_REM + LIST_TOP_PAD_REM}rem`;
+
+  const createIdx = showCreateOption ? filtered.length : -1;
+  const clearIdx = showClearRow
+    ? filtered.length + (showCreateOption ? 1 : 0)
+    : -1;
+  const firstActionIdx =
+    filtered.length + (showCreateOption ? 1 : 0) + (showClearRow ? 1 : 0);
+  const actionAt = useCallback(
+    (index: number): SelectorAction | undefined =>
+      index >= firstActionIdx ? actions[index - firstActionIdx] : undefined,
+    [actions, firstActionIdx],
+  );
+  const virtualRowCount = virtualized
+    ? filtered.length + (showCreateOption ? 1 : 0)
+    : 0;
+  const virtualizer = useVirtualizer({
+    count: virtualRowCount,
+    getScrollElement: () => scrollElement,
+    estimateSize: () => ROW_PX,
+    overscan: VIRTUAL_OVERSCAN,
+    paddingStart: LIST_PAD_PX,
+    paddingEnd: LIST_PAD_PX,
+    initialOffset: () =>
+      Math.max(0, (activeIndex - Math.floor(maxVisibleOptions / 2)) * ROW_PX),
+  });
+
+  const totalEntries =
+    filtered.length +
+    (showCreateOption ? 1 : 0) +
+    (showClearRow ? 1 : 0) +
+    actions.length;
+
+  useLayoutEffect(
+    function focusOnMount() {
+      if (showSearch) {
+        inputRef.current?.focus();
+      } else {
+        listContainerRef.current?.focus();
+      }
+    },
+    [showSearch],
+  );
+
+  useEffect(
+    function scrollActiveIntoView() {
+      if (activeIndex < 0) return;
+      if (virtualized) {
+        if (activeIndex < virtualRowCount) {
+          virtualizer.scrollToIndex(activeIndex, { align: "auto" });
+        }
+        return;
+      }
+      const list =
+        listContainerRef.current?.querySelector("ul[role='listbox']");
+      if (!list) return;
+      const items = list.querySelectorAll<HTMLElement>("li[role='option']");
+      items[activeIndex]?.scrollIntoView({ block: "nearest" });
+    },
+    [activeIndex, virtualized, virtualRowCount, virtualizer],
+  );
+
+  const activeValue =
+    activeIndex >= 0 && activeIndex < filtered.length
+      ? filtered[activeIndex].value
+      : null;
+
+  const onActiveOptionChangeRef = useRef(onActiveOptionChange);
+  onActiveOptionChangeRef.current = onActiveOptionChange;
+
+  useEffect(
+    function emitActiveOption() {
+      onActiveOptionChangeRef.current?.(activeValue);
+    },
+    [activeValue],
+  );
+
+  useEffect(function clearActiveOptionOnUnmount() {
+    return () => onActiveOptionChangeRef.current?.(null);
+  }, []);
+
+  const triggerAction = useCallback(
+    (action: SelectorAction) => {
+      if (action.disabled) return;
+      action.onSelect();
+      onClose();
+    },
+    [onClose],
+  );
+
+  const commitActive = useCallback(() => {
+    if (activeIndex >= 0 && activeIndex < filtered.length) {
+      const opt = filtered[activeIndex];
+      if (opt.disabled) return;
+      onCommit(opt.value);
+      return;
+    }
+    if (activeIndex === createIdx && showCreateOption) {
+      onCommit(trimmedQuery as T);
+      return;
+    }
+    if (activeIndex === clearIdx && showClearRow) {
+      onCommit(null);
+      return;
+    }
+    const activeAction = actionAt(activeIndex);
+    if (activeAction) {
+      triggerAction(activeAction);
+      return;
+    }
+    if (filtered.length === 1 && !filtered[0].disabled) {
+      onCommit(filtered[0].value);
+      return;
+    }
+    if (
+      filtered.length === 0 &&
+      !showCreateOption &&
+      !showClearRow &&
+      actions.length === 1
+    ) {
+      triggerAction(actions[0]);
+    }
+  }, [
+    activeIndex,
+    filtered,
+    showCreateOption,
+    showClearRow,
+    createIdx,
+    clearIdx,
+    actionAt,
+    actions,
+    trimmedQuery,
+    onCommit,
+    triggerAction,
+  ]);
+
+  const findNextEnabled = useCallback(
+    (start: number, direction: 1 | -1): number => {
+      if (totalEntries === 0) return NO_INDEX;
+      let i = start;
+      for (let steps = 0; steps < totalEntries; steps++) {
+        if (i < 0) i = totalEntries - 1;
+        if (i >= totalEntries) i = 0;
+        const isCreateRow = showCreateOption && i === filtered.length;
+        const isDisabled = filtered[i]?.disabled || actionAt(i)?.disabled;
+        if (isCreateRow || !isDisabled) return i;
+        i += direction;
+      }
+      return NO_INDEX;
+    },
+    [filtered, showCreateOption, totalEntries, actionAt],
+  );
+
+  const typedPrefixRef = useRef("");
+  const typedPrefixTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  const handleTypeAhead = useCallback(
+    (char: string) => {
+      if (showSearch) {
+        setQuery((prev) => prev + char);
+        setActiveIndex(0);
+        requestAnimationFrame(() => inputRef.current?.focus());
+        return;
+      }
+      if (typedPrefixTimerRef.current) {
+        clearTimeout(typedPrefixTimerRef.current);
+      }
+      typedPrefixRef.current += char.toLowerCase();
+      const prefix = typedPrefixRef.current;
+      const matchIdx = filtered.findIndex(
+        (o) => !o.disabled && o.label.toLowerCase().startsWith(prefix),
+      );
+      if (matchIdx >= 0) setActiveIndex(matchIdx);
+      typedPrefixTimerRef.current = setTimeout(() => {
+        typedPrefixRef.current = "";
+      }, TYPE_AHEAD_RESET_MS);
+    },
+    [showSearch, filtered],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActiveIndex((prev) =>
+          findNextEnabled(
+            prev < 0 ? 0 : Math.min(prev + 1, totalEntries - 1),
+            1,
+          ),
+        );
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActiveIndex((prev) =>
+          findNextEnabled(prev <= 0 ? totalEntries - 1 : prev - 1, -1),
+        );
+        return;
+      }
+      if (e.key === "PageDown") {
+        e.preventDefault();
+        setActiveIndex((prev) =>
+          findNextEnabled(
+            Math.min((prev < 0 ? 0 : prev) + PAGE_SIZE, totalEntries - 1),
+            1,
+          ),
+        );
+        return;
+      }
+      if (e.key === "PageUp") {
+        e.preventDefault();
+        setActiveIndex((prev) =>
+          findNextEnabled(Math.max((prev < 0 ? 0 : prev) - PAGE_SIZE, 0), -1),
+        );
+        return;
+      }
+      if (e.key === "Home") {
+        e.preventDefault();
+        setActiveIndex(findNextEnabled(0, 1));
+        return;
+      }
+      if (e.key === "End") {
+        e.preventDefault();
+        setActiveIndex(findNextEnabled(totalEntries - 1, -1));
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        type Region = "search" | "options" | "clear" | "action";
+        const regions: Region[] = [];
+        if (showSearch) regions.push("search");
+        if (showList) regions.push("options");
+        if (showClearRow) regions.push("clear");
+        if (showActionRow) regions.push("action");
+        if (regions.length === 0) return;
+
+        if (regions.length === 1 && regions[0] === "options") {
+          setActiveIndex((prev) =>
+            e.shiftKey
+              ? findNextEnabled(prev <= 0 ? totalEntries - 1 : prev - 1, -1)
+              : findNextEnabled(
+                  prev < 0 ? 0 : Math.min(prev + 1, totalEntries - 1),
+                  1,
+                ),
+          );
+          return;
+        }
+
+        const currentRegion: Region | null =
+          showSearch && activeIndex === NO_INDEX
+            ? "search"
+            : activeIndex === clearIdx
+              ? "clear"
+              : actionAt(activeIndex)
+                ? "action"
+                : activeIndex >= 0
+                  ? "options"
+                  : null;
+
+        const direction = e.shiftKey ? -1 : 1;
+        const currentIdx =
+          currentRegion === null ? -1 : regions.indexOf(currentRegion);
+        const targetIdx =
+          currentRegion === null
+            ? direction === 1
+              ? 0
+              : regions.length - 1
+            : (currentIdx + direction + regions.length) % regions.length;
+        const target = regions[targetIdx];
+
+        switch (target) {
+          case "search":
+            setActiveIndex(NO_INDEX);
+            inputRef.current?.focus();
+            break;
+          case "options":
+            setActiveIndex(
+              direction === 1
+                ? findNextEnabled(0, 1)
+                : findNextEnabled(filtered.length - 1, -1),
+            );
+            break;
+          case "clear":
+            setActiveIndex(clearIdx);
+            break;
+          case "action":
+            setActiveIndex(
+              direction === 1
+                ? findNextEnabled(firstActionIdx, 1)
+                : findNextEnabled(totalEntries - 1, -1),
+            );
+            break;
+        }
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        commitActive();
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+      if (
+        e.key.length === 1 &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        e.key !== " "
+      ) {
+        if (e.target === inputRef.current) return;
+        e.preventDefault();
+        handleTypeAhead(e.key);
+      }
+    },
+    [
+      totalEntries,
+      commitActive,
+      findNextEnabled,
+      handleTypeAhead,
+      onClose,
+      showSearch,
+      showList,
+      showClearRow,
+      showActionRow,
+      activeIndex,
+      clearIdx,
+      actionAt,
+      firstActionIdx,
+      filtered.length,
+    ],
+  );
+
+  function renderOptionRow(
+    option: SelectorListOption<T>,
+    i: number,
+    virtualStyle?: React.CSSProperties,
+  ) {
+    const isOptionDisabled = !!option.disabled;
+    return (
+      <li
+        key={String(option.value)}
+        role="option"
+        aria-selected={option.value === selected}
+        aria-disabled={isOptionDisabled}
+        style={virtualStyle}
+        className={clsx(
+          "flex items-center justify-between gap-4 h-8 px-2 rounded-sm",
+          virtualStyle && "absolute top-0 left-1 right-1",
+          isOptionDisabled
+            ? "cursor-default text-disabled"
+            : "cursor-pointer text-default",
+          !isOptionDisabled && option.value === selected && "bg-accent-tint",
+          !isOptionDisabled &&
+            option.value !== selected &&
+            i === activeIndex &&
+            "bg-base-hover",
+          !isOptionDisabled &&
+            option.value !== selected &&
+            i !== activeIndex &&
+            "hover:bg-base-hover",
+          listClassName,
+        )}
+        onMouseEnter={isOptionDisabled ? undefined : () => setActiveIndex(i)}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={isOptionDisabled ? undefined : () => onCommit(option.value)}
+      >
+        <span className="flex items-baseline gap-1 min-w-0">
+          {option.icon && (
+            <span className="self-center flex shrink-0">{option.icon}</span>
+          )}
+          <span className={clsx(virtualStyle && "truncate")}>
+            {option.label}
+          </span>
+          {option.description && (
+            <span className="text-subtle">{option.description}</span>
+          )}
+        </span>
+        {option.value === selected && (
+          <CheckIcon className="text-accent shrink-0" />
+        )}
+      </li>
+    );
+  }
+
+  function renderCreateRow(virtualStyle?: React.CSSProperties) {
+    return (
+      <li
+        key="create-new-value"
+        role="option"
+        style={virtualStyle}
+        className={clsx(
+          "flex items-center h-8 px-2 cursor-pointer text-accent rounded-sm",
+          virtualStyle
+            ? "absolute top-0 left-1 right-1 border-t border"
+            : filtered.length > 0 && "border-t border mt-1",
+          activeIndex === filtered.length && "bg-base-hover",
+          activeIndex !== filtered.length && "hover:bg-base-hover",
+        )}
+        onMouseEnter={() => setActiveIndex(filtered.length)}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => onCommit(trimmedQuery as T)}
+      >
+        {createLabel
+          ? createLabel(trimmedQuery)
+          : ui.selectorAddNewValueTemplate.replace("{{1}}", trimmedQuery)}
+      </li>
+    );
+  }
+
+  return (
+    <div
+      ref={listContainerRef}
+      tabIndex={showSearch ? -1 : 0}
+      onKeyDown={handleKeyDown}
+      onMouseLeave={() => setActiveIndex(NO_INDEX)}
+      className="outline-hidden flex flex-col min-h-0"
+    >
+      {showSearch && (
+        <div
+          className={clsx(
+            "p-2",
+            (showList || showClearRow || showActionRow) && "border-b",
+          )}
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setActiveIndex(e.target.value.trim() ? 0 : NO_INDEX);
+              if (virtualized) virtualizer.scrollToOffset(0);
+            }}
+            placeholder={searchPlaceholder ?? ui.searchPlaceholder}
+            aria-invalid={isNewQueryInvalid || undefined}
+            className={clsx(
+              "w-full h-8 px-2 text-size-base border rounded-sm outline-hidden",
+              isNewQueryInvalid
+                ? "border-warning focus:border-warning focus:ring-1 focus:ring-warning"
+                : "border-strong focus:border-accent focus:ring-1 focus:ring-accent",
+            )}
+          />
+        </div>
+      )}
+      {showList && (
+        <div
+          ref={setScrollElement}
+          style={{ maxHeight: maxListHeight }}
+          className="outline-hidden min-h-0 overflow-auto scroll-shadows [scrollbar-width:thin]"
+        >
+          {virtualized ? (
+            <ul
+              role="listbox"
+              tabIndex={-1}
+              className="relative"
+              style={{ height: virtualizer.getTotalSize() }}
+            >
+              {virtualizer.getVirtualItems().map((row) => {
+                const style = {
+                  height: ROW_PX,
+                  transform: `translateY(${row.start}px)`,
+                };
+                return row.index < filtered.length
+                  ? renderOptionRow(filtered[row.index], row.index, style)
+                  : renderCreateRow(style);
+              })}
+            </ul>
+          ) : (
+            <ul role="listbox" tabIndex={-1} className="p-1">
+              {filtered.map((option, i) => renderOptionRow(option, i))}
+              {showCreateOption && renderCreateRow()}
+            </ul>
+          )}
+        </div>
+      )}
+      {showClearRow && (
+        <div className={clsx("p-1", (showSearch || showList) && "border-t")}>
+          <button
+            type="button"
+            className={clsx(
+              "flex items-center justify-between gap-4 w-full h-8 px-2 italic cursor-pointer text-default rounded-sm",
+              activeIndex === clearIdx
+                ? "bg-base-hover"
+                : "hover:bg-base-hover",
+            )}
+            onMouseEnter={() => setActiveIndex(clearIdx)}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => onCommit(null)}
+          >
+            {clearLabel}
+          </button>
+        </div>
+      )}
+      {showActionRow && (
+        <div
+          className={clsx(
+            "p-1",
+            (showSearch || showList || showClearRow) && "border-t",
+          )}
+        >
+          {actions.map((action, i) => {
+            const index = firstActionIdx + i;
+            return (
+              <button
+                key={`${i}-${action.label}`}
+                type="button"
+                aria-disabled={action.disabled}
+                className={clsx(
+                  "flex items-center justify-between gap-4 w-full h-8 px-2 rounded-sm",
+                  action.disabled
+                    ? "cursor-default text-disabled"
+                    : "cursor-pointer text-default",
+                  !action.disabled &&
+                    (activeIndex === index
+                      ? "bg-base-hover"
+                      : "hover:bg-base-hover"),
+                )}
+                onMouseEnter={
+                  action.disabled ? undefined : () => setActiveIndex(index)
+                }
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => triggerAction(action)}
+              >
+                <span className="flex items-center gap-1 min-w-0">
+                  {action.icon}
+                  {action.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}

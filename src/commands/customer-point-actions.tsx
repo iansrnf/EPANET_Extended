@@ -3,7 +3,8 @@ import { useCallback } from "react";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { modeAtom, Mode } from "src/state/mode";
 import { selectionAtom } from "src/state/selection";
-import { disconnectCustomers } from "src/hydraulic-model/model-operations";
+import { USelection } from "src/selection";
+import { disconnectCustomers } from "@epanet-js/hydraulic-model-operations";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
 
@@ -18,9 +19,13 @@ export const useConnectCustomerPoints = () => {
 
   const connectCustomerPoints = useCallback(
     ({ source }: { source: "shortcut" | "toolbar" | "context-menu" }) => {
-      if (selection.type !== "singleCustomerPoint") return;
+      const selectedCustomerPointId =
+        USelection.singleCustomerPointId(selection);
+      if (selectedCustomerPointId === null) return;
 
-      const customerPoint = hydraulicModel.customerPoints.get(selection.id);
+      const customerPoint = hydraulicModel.customerPoints.get(
+        selectedCustomerPointId,
+      );
       if (!customerPoint) return;
 
       const isReconnecting = customerPoint.connection !== null;
@@ -50,21 +55,15 @@ export const useDisconnectCustomerPoints = () => {
 
   const disconnectCustomerPoints = useCallback(
     ({ source }: { source: "shortcut" | "toolbar" | "context-menu" }) => {
-      if (selection.type !== "singleCustomerPoint") return;
-
-      const customerPoint = hydraulicModel.customerPoints.get(selection.id);
-      if (!customerPoint) return;
+      const customerPointIds = USelection.getCustomerPointIds(selection);
 
       userTracking.capture({
         name: "customerPointActions.disconnected",
-        count: 1,
+        count: customerPointIds.length,
         source,
       });
 
-      const moment = disconnectCustomers(hydraulicModel, {
-        customerPointIds: [customerPoint.id],
-      });
-      transact(moment);
+      transact(() => disconnectCustomers(hydraulicModel, { customerPointIds }));
     },
     [selection, hydraulicModel, transact, userTracking],
   );

@@ -1,10 +1,16 @@
 import { parseInp } from "./parse-inp";
 import { buildInp } from "src/simulation/build-inp";
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
-import { presets } from "src/lib/project-settings/quantities-spec";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
+import { presets } from "@epanet-js/project-settings";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
-import { WGS84 } from "src/lib/projections";
-import type { Proj4Projection, XYGridProjection } from "src/lib/projections";
+import { WGS84 } from "@epanet-js/projections";
+import type { Proj4Projection, XYGridProjection } from "@epanet-js/projections";
+import { checksum } from "src/infra/checksum";
+
+const legacyAppMadeInp = (content: string, headerLines: string[] = []) => {
+  const body = [...headerLines, content].join("\n");
+  return `;MADE BY EPANET-JS [${checksum(body)}]\n${body}`;
+};
 
 const IDS = { J1: 1, J2: 2, P1: 3 } as const;
 
@@ -21,13 +27,12 @@ const buildOptions = (
   simulationSettings: defaultSimulationSettings,
   units: presets.LPS.units,
   headlossFormula: "H-W" as const,
-  madeBy: true,
   geolocation: true,
   projection,
 });
 
-describe("projection round-trip through INP header", () => {
-  it("round-trips proj4 projection metadata", () => {
+describe("projection header parsing from legacy app-made files", () => {
+  it("parses proj4 projection metadata", () => {
     const projection: Proj4Projection = {
       type: "proj4",
       id: "EPSG:2154",
@@ -36,7 +41,12 @@ describe("projection round-trip through INP header", () => {
     };
 
     const model = buildTestModel();
-    const inp = buildInp(model, buildOptions(projection));
+    const inp = legacyAppMadeInp(buildInp(model, buildOptions(projection)), [
+      `;PROJECTION ${projection.id}`,
+      `;PROJECTION_TYPE ${projection.type}`,
+      `;PROJECTION_PROJ4 ${projection.code}`,
+      `;PROJECTION_NAME ${projection.name}`,
+    ]);
     const result = parseInp(inp);
 
     expect(result.isMadeByApp).toBe(true);
@@ -48,7 +58,7 @@ describe("projection round-trip through INP header", () => {
     expect(parsed.code).toBe(projection.code);
   });
 
-  it("round-trips xy-grid projection", () => {
+  it("parses xy-grid projection", () => {
     const projection: XYGridProjection = {
       type: "xy-grid",
       id: "xy-grid",
@@ -57,16 +67,18 @@ describe("projection round-trip through INP header", () => {
     };
 
     const model = buildTestModel();
-    const inp = buildInp(model, buildOptions(projection));
+    const inp = legacyAppMadeInp(buildInp(model, buildOptions(projection)), [
+      `;PROJECTION ${projection.id}`,
+    ]);
     const result = parseInp(inp);
 
     expect(result.isMadeByApp).toBe(true);
     expect(result.projectSettings.projection.type).toBe("xy-grid");
   });
 
-  it("round-trips wgs84 with no projection header", () => {
+  it("defaults to wgs84 when there is no projection header", () => {
     const model = buildTestModel();
-    const inp = buildInp(model, buildOptions(WGS84));
+    const inp = legacyAppMadeInp(buildInp(model, buildOptions(WGS84)));
     const result = parseInp(inp);
 
     expect(result.isMadeByApp).toBe(true);
@@ -98,7 +110,7 @@ describe("xy-grid detection via pipe length sanity check", () => {
     J2\t${endCoord[0]}\t${endCoord[1]}
     `;
 
-  it("flags XY grid masquerading as WGS84 when flag is on", () => {
+  it("flags XY grid masquerading as WGS84", () => {
     const inp = buildInpWith({
       units: "LPS",
       startCoord: [0, 0],
@@ -106,7 +118,7 @@ describe("xy-grid detection via pipe length sanity check", () => {
       pipeLength: 100,
     });
 
-    const result = parseInp(inp, { xyDetect: true });
+    const result = parseInp(inp);
 
     expect(result.projectionStatus).toBe("unknown");
   });
@@ -119,20 +131,7 @@ describe("xy-grid detection via pipe length sanity check", () => {
       pipeLength: 730,
     });
 
-    const result = parseInp(inp, { xyDetect: true });
-
-    expect(result.projectionStatus).toBe("wgs84");
-  });
-
-  it("preserves WGS84 verdict when flag is off", () => {
-    const inp = buildInpWith({
-      units: "LPS",
-      startCoord: [0, 0],
-      endCoord: [0.5, 0],
-      pipeLength: 100,
-    });
-
-    const result = parseInp(inp, { xyDetect: false });
+    const result = parseInp(inp);
 
     expect(result.projectionStatus).toBe("wgs84");
   });
@@ -145,7 +144,7 @@ describe("xy-grid detection via pipe length sanity check", () => {
       pipeLength: 0,
     });
 
-    const result = parseInp(inp, { xyDetect: true });
+    const result = parseInp(inp);
 
     expect(result.projectionStatus).toBe("wgs84");
   });
@@ -158,7 +157,7 @@ describe("xy-grid detection via pipe length sanity check", () => {
       pipeLength: 100,
     });
 
-    const result = parseInp(inp, { xyDetect: true });
+    const result = parseInp(inp);
 
     expect(result.projectionStatus).toBe("unknown");
   });
@@ -171,7 +170,7 @@ describe("xy-grid detection via pipe length sanity check", () => {
       pipeLength: 630,
     });
 
-    const result = parseInp(inp, { xyDetect: true });
+    const result = parseInp(inp);
 
     expect(result.projectionStatus).toBe("unknown");
     expect(result.suggestedXyScale).toBeCloseTo(63, 5);

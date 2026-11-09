@@ -1,0 +1,320 @@
+import React, { useState, useRef, useCallback, useEffect } from "react";
+import * as Popover from "@radix-ui/react-popover";
+import clsx from "clsx";
+import { useSelectorPortalContainer } from "../portal";
+import { useUIConfig } from "../ui-config";
+
+export type SearchableSelectorOption = {
+  id: string;
+  label: string;
+  data?: any;
+};
+
+export const SearchableSelector = <T extends SearchableSelectorOption>({
+  selected,
+  onChange,
+  onSearch,
+  placeholder,
+  label,
+  disabled = false,
+  autoFocus = false,
+  wrapperClassName,
+  triggerClassName,
+  renderOption,
+  side = "auto",
+  searchDebounceMs = 0,
+  placeholderIcon,
+  emptySuggestions,
+}: {
+  selected?: T;
+  onChange: (option: T) => void;
+  onSearch: (query: string) => Promise<T[]>;
+  placeholder?: string;
+  label?: string;
+  disabled?: boolean;
+  autoFocus?: boolean;
+  wrapperClassName?: string;
+  triggerClassName?: string;
+  renderOption?: (option: T) => React.ReactNode;
+  /** Shown inside the input, before the placeholder, while it is empty. */
+  placeholderIcon?: React.ReactNode;
+  /** Where the dropdown opens: "auto" (default) lets it flip to fit the
+   *  viewport; "top"/"bottom" pin it to that side and never flip. */
+  side?: "top" | "bottom" | "auto";
+  /** Wait this long after the last keystroke before calling onSearch. When
+   *  set (> 0), the dropdown opens as soon as a search is scheduled and shows
+   *  the searching label until results arrive; when 0 (default), search fires
+   *  on every keystroke and the dropdown only opens once results arrive. */
+  searchDebounceMs?: number;
+  /** Listed when the input is focused, clicked or cleared while empty, before
+   *  anything is typed. Omit to open only once a search returns results. */
+  emptySuggestions?: T[];
+}) => {
+  const [searchTerm, setSearchTerm] = useState(selected?.label || "");
+  const [suggestions, setSuggestions] = useState<T[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState<number>(-1);
+
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const showPlaceholderIcon = !!placeholderIcon && searchTerm === "";
+  const listRef = useRef<HTMLUListElement | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchSeqRef = useRef(0);
+  const portalContainer = useSelectorPortalContainer();
+  const ui = useUIConfig();
+
+  useEffect(
+    function keepActiveItemVisible() {
+      if (!listRef.current || activeIndex < 0) return;
+      const item = listRef.current.children[activeIndex] as HTMLElement;
+      item?.scrollIntoView({ block: "nearest" });
+    },
+    [activeIndex],
+  );
+
+  useEffect(function clearPendingSearchOnUnmount() {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
+  const search = useCallback(
+    async (query: string) => {
+      if (query.trim().length < 2) {
+        setSuggestions([]);
+        return;
+      }
+      const seq = ++searchSeqRef.current;
+      setIsSearching(true);
+      if (searchDebounceMs > 0) setOpen(true);
+      try {
+        const results = await onSearch(query);
+        if (seq !== searchSeqRef.current) return;
+        setSuggestions(results);
+        setOpen(true);
+      } catch {
+        if (seq !== searchSeqRef.current) return;
+        setSuggestions([]);
+      } finally {
+        if (seq === searchSeqRef.current) setIsSearching(false);
+      }
+    },
+    [onSearch, searchDebounceMs],
+  );
+
+  const showEmptySuggestions = useCallback(() => {
+    if (!emptySuggestions?.length) return false;
+    setSuggestions(emptySuggestions);
+    setActiveIndex(-1);
+    setOpen(true);
+    return true;
+  }, [emptySuggestions]);
+
+  const handleEmptyInputOpen = useCallback(() => {
+    if (searchTerm.trim() === "") showEmptySuggestions();
+  }, [searchTerm, showEmptySuggestions]);
+
+  const handleInputChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value;
+      setSearchTerm(value);
+      setActiveIndex(-1);
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      searchSeqRef.current++;
+      if (value.trim().length < 2) {
+        setIsSearching(false);
+        if (value.trim() === "" && showEmptySuggestions()) return;
+        setSuggestions([]);
+        if (emptySuggestions?.length) setOpen(false);
+        return;
+      }
+      if (searchDebounceMs > 0) {
+        setIsSearching(true);
+        setOpen(true);
+        debounceRef.current = setTimeout(() => {
+          debounceRef.current = null;
+          void search(value);
+        }, searchDebounceMs);
+      } else {
+        void search(value);
+      }
+    },
+    [search, searchDebounceMs, showEmptySuggestions, emptySuggestions],
+  );
+
+  const commit = useCallback(
+    (option: T) => {
+      onChange(option);
+      setSearchTerm(option.label);
+      setOpen(false);
+      setActiveIndex(-1);
+    },
+    [onChange],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (!open && suggestions.length > 0) setOpen(true);
+        setActiveIndex((prev) =>
+          prev < 0 ? 0 : Math.min(prev + 1, suggestions.length - 1),
+        );
+        return;
+      }
+
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (!open && suggestions.length > 0) setOpen(true);
+        setActiveIndex((prev) =>
+          prev <= 0 ? suggestions.length - 1 : prev - 1,
+        );
+        return;
+      }
+
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (open && activeIndex >= 0) {
+          commit(suggestions[activeIndex]);
+        } else if (searchTerm.trim()) {
+          void search(searchTerm);
+        }
+        return;
+      }
+
+      if (e.key === "Escape") {
+        setOpen(false);
+        setActiveIndex(-1);
+        return;
+      }
+
+      if (e.key === "Tab") {
+        if (open && activeIndex >= 0) {
+          commit(suggestions[activeIndex]);
+        }
+        setOpen(false);
+        setActiveIndex(-1);
+      }
+    },
+    [open, suggestions, activeIndex, commit, search, searchTerm],
+  );
+
+  const handleOptionClick = useCallback(
+    (option: T) => {
+      commit(option);
+    },
+    [commit],
+  );
+
+  const handleOptionMouseEnter = useCallback((index: number) => {
+    setActiveIndex(index);
+  }, []);
+
+  const handleOptionMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+  }, []);
+
+  return (
+    <label className={wrapperClassName ?? "block pt-2 space-y-2 pb-3"}>
+      {label && (
+        <div className="text-size-base text-default flex items-center justify-between">
+          {label}
+        </div>
+      )}
+
+      <Popover.Root open={open} onOpenChange={setOpen}>
+        <Popover.Anchor asChild>
+          <div className="relative w-full">
+            {showPlaceholderIcon && (
+              <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-subtle">
+                {placeholderIcon}
+              </span>
+            )}
+            <input
+              ref={inputRef}
+              type="text"
+              value={searchTerm}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              onFocus={handleEmptyInputOpen}
+              onClick={handleEmptyInputOpen}
+              placeholder={placeholder}
+              disabled={disabled}
+              spellCheck={false}
+              autoFocus={autoFocus}
+              autoComplete="off"
+              className={clsx(
+                "flex items-center gap-x-2 w-full min-w-[90px]",
+                "border rounded-xs border-base py-2 pr-2 text-size-base",
+                showPlaceholderIcon ? "pl-7" : "pl-2",
+                "outline-hidden focus:outline-hidden focus-visible:outline-hidden",
+                disabled
+                  ? "cursor-not-allowed bg-base-disabled border-strong text-disabled"
+                  : "text-default bg-popover focus:ring-inset focus:ring-1 focus:ring-accent focus:bg-purple-300/10 focus:border-transparent",
+                triggerClassName,
+              )}
+            />
+
+            {isSearching && (
+              <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-accent"></div>
+              </div>
+            )}
+          </div>
+        </Popover.Anchor>
+
+        <Popover.Portal container={portalContainer ?? undefined}>
+          <Popover.Content
+            side={side === "auto" ? "bottom" : side}
+            avoidCollisions={side === "auto"}
+            align="start"
+            className="bg-popover w-(--anchor-width,100%) min-w-[220px] border text-size-base rounded-md shadow-md z-50 mt-1 max-h-60 overflow-auto p-1"
+            onOpenAutoFocus={(e) => e.preventDefault()}
+            onCloseAutoFocus={(e) => e.preventDefault()}
+            onEscapeKeyDown={() => setOpen(false)}
+            onPointerDownOutside={() => setOpen(false)}
+            onMouseDown={(e) => e.preventDefault()}
+            style={{
+              ["--anchor-width" as any]: `${inputRef.current?.offsetWidth ?? 0}px`,
+            }}
+          >
+            {isSearching && searchDebounceMs > 0 ? (
+              <div className="px-2 py-2 text-subtle">{ui.searchingLabel}</div>
+            ) : suggestions.length === 0 && !isSearching ? (
+              <div className="px-2 py-2 text-subtle">{ui.noResultsLabel}</div>
+            ) : (
+              <ul
+                ref={listRef}
+                tabIndex={-1}
+                role="listbox"
+                aria-label={label}
+                className="outline-hidden"
+              >
+                {suggestions.map((suggestion, index) => (
+                  <li
+                    key={suggestion.id}
+                    role="option"
+                    aria-selected={index === activeIndex}
+                    className={clsx(
+                      "px-2 py-2 cursor-pointer w-full text-left text-default hover:bg-base-hover rounded-sm",
+                      index === activeIndex && "bg-base-hover",
+                    )}
+                    onMouseEnter={() => handleOptionMouseEnter(index)}
+                    onMouseDown={handleOptionMouseDown}
+                    onClick={() => handleOptionClick(suggestion)}
+                  >
+                    {renderOption ? renderOption(suggestion) : suggestion.label}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+    </label>
+  );
+};

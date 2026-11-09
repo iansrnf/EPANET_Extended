@@ -1,9 +1,8 @@
 import { atom } from "jotai";
 import { AssetId } from "src/hydraulic-model";
-import { PathData } from "src/hydraulic-model/topology/types";
+import { PathData } from "@epanet-js/hydraulic-model";
 import { deriveProfilePath } from "src/panels/hgl-profile/path-finding";
 import { HglRange, TerrainPoint } from "src/panels/hgl-profile/chart-types";
-import { Mode, modeAtom } from "src/state/mode";
 import {
   simulationDerivedAtom,
   stagingModelDerivedAtom,
@@ -26,15 +25,6 @@ export type HglProfileUiPhase =
   | "pathBroken";
 
 export const hglProfileAtom = atom<HglProfile | null>(null);
-
-export const hglProfileOpenAtom = atom(false);
-
-export const hasHglProfileAtom = atom(
-  (get) =>
-    get(hglProfileOpenAtom) ||
-    get(hglProfileAtom) !== null ||
-    get(modeAtom).mode === Mode.HGL_PROFILE,
-);
 
 export const profilePathAtom = atom<PathData | null>((get) => {
   const hglProfile = get(hglProfileAtom);

@@ -4,11 +4,8 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type { FeatureCollection } from "geojson";
 import { env } from "src/lib/env-client";
 import { colors, emptyFeatureCollection } from "src/lib/constants";
-import { strokeColorFor } from "src/lib/color";
-import {
-  CustomMapControl,
-  FIT_TO_EXTENT_ICON,
-} from "src/map/custom-map-control";
+import { strokeColorFor } from "@epanet-js/map";
+import { CustomMapControl, FIT_TO_EXTENT_ICON } from "@epanet-js/map";
 import type { Bbox } from "./types";
 import type { MapPreviewHandle } from "./use-map-preview";
 import { useTranslate } from "src/hooks/use-translate";
@@ -138,13 +135,7 @@ export const MapPreview = ({
         return;
       }
       if (!onBoundsChangeRef.current) return;
-      const b = map.getBounds();
-      onBoundsChangeRef.current([
-        b.getWest(),
-        b.getSouth(),
-        b.getEast(),
-        b.getNorth(),
-      ]);
+      onBoundsChangeRef.current(currentViewportBbox(map));
     });
 
     mapRef.current = map;
@@ -157,8 +148,9 @@ export const MapPreview = ({
         }
       },
       fitToBbox: (bbox: Bbox) => {
-        if (!styleReadyRef.current) return;
+        if (!styleReadyRef.current) return null;
         programmaticFit(map, null, bbox);
+        return currentViewportBbox(map);
       },
     });
 
@@ -221,8 +213,8 @@ export const MapPreview = ({
     <div className="relative flex-1 flex flex-col min-h-0">
       <div ref={mapContainerRef} className="flex-1 w-full" />
       {isLoading && (
-        <div className="absolute inset-0 bg-white/50 dark:bg-black/30 flex items-center justify-center">
-          <div className="h-6 w-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+        <div className="absolute inset-0 bg-base/50 dark:bg-black/30 flex items-center justify-center">
+          <div className="h-6 w-6 border-2 border-strong border-t-gray-600 rounded-full animate-spin" />
         </div>
       )}
     </div>
@@ -248,6 +240,16 @@ export const MapPreview = ({
     fitToGeoJSON(map, geoJSON);
   }
 };
+
+function currentViewportBbox(map: mapboxgl.Map): Bbox {
+  const bounds = map.getBounds();
+  return [
+    bounds.getWest(),
+    bounds.getSouth(),
+    bounds.getEast(),
+    bounds.getNorth(),
+  ];
+}
 
 function fitToGeoJSON(map: mapboxgl.Map, geoJSON: FeatureCollection) {
   const coords: [number, number][] = [];

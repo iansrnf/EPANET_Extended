@@ -1,0 +1,13 @@
+import { z } from "zod";
+
+export { zoneGeometrySchema, zoneBboxSchema } from "@epanet-js/model-schema";
+
+export const zoneRowSchema = z.object({
+  id: z.number(),
+  label: z.string(),
+  geometry: z.string(),
+  bbox: z.string(),
+  custom_attributes: z.string().nullable().default(null),
+});
+
+export type ZoneRow = z.infer<typeof zoneRowSchema>;

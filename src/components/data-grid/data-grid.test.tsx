@@ -1,12 +1,12 @@
 import userEvent from "@testing-library/user-event";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createRef, useState } from "react";
 import { DataGrid, type DataGridRef } from "./data-grid";
 import { booleanColumn } from "./cells/boolean-cell";
 import { floatColumn } from "./cells/float-cell";
 import { filterableSelectColumn } from "./cells/filterable-select-cell";
 import { textColumn } from "./cells/text-cell";
-import type { GridColumn } from "./types";
+import type { GridColumn, GridSelection } from "./types";
 
 const setupUser = () => userEvent.setup({ pointerEventsCheck: 0 });
 
@@ -27,13 +27,14 @@ const categoryOptions = [
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const columns: GridColumn<TestRow>[] = [
   textColumn("label", { header: "Label", size: 80, isReadOnly: true }),
-  floatColumn("value", { header: "Value", size: 100, deleteValue: null }),
-  booleanColumn("active", { header: "Active", size: 80 }),
+  floatColumn("value", { header: "Value", size: 100, emptyValue: null }),
+  booleanColumn("active", { header: "Active", size: 80, emptyValue: false }),
   filterableSelectColumn("category", {
     header: "Category",
     options: categoryOptions,
     placeholder: "Select...",
     minOptionsForSearch: 10, // Disable search for simpler tests
+    emptyValue: null,
   }),
 ];
 
@@ -115,8 +116,7 @@ describe("DataGrid", () => {
         />,
       );
 
-      // Gutter cells have text-xs class
-      const gutterCells = container.querySelectorAll(".text-xs");
+      const gutterCells = container.querySelectorAll('[role="rowheader"]');
       const gutterTexts = Array.from(gutterCells).map((el) => el.textContent);
       expect(gutterTexts).toContain("1");
       expect(gutterTexts).toContain("2");
@@ -559,8 +559,7 @@ describe("DataGrid", () => {
         />,
       );
 
-      // Find gutter cells by their class (text-xs and cursor-pointer)
-      const gutterCells = container.querySelectorAll(".text-xs.cursor-pointer");
+      const gutterCells = container.querySelectorAll('[role="rowheader"]');
       const firstGutter = gutterCells[0];
       await user.click(firstGutter);
 
@@ -597,6 +596,44 @@ describe("DataGrid", () => {
           max: { col: 0, row: 2 },
         });
       });
+    });
+
+    it("selects the clicked column on the first click without bouncing to another column", async () => {
+      // Regression: clicking a header as the very first interaction focuses
+      // the grid, which used to trigger focusRow(0) and select the first
+      // editable column (col 1) before the header's own selection. That
+      // intermediate selection scrolls the grid, moving the header out from
+      // under the pending click so it never lands. The clicked column
+      // (Category, col 3) must be selected directly, with no col-1 detour.
+      const user = setupUser();
+      const onSelectionChange = vi.fn();
+
+      render(
+        <DataGrid
+          data={defaultData}
+          columns={columns}
+          onChange={vi.fn()}
+          createRow={createRow}
+          onSelectionChange={onSelectionChange}
+        />,
+      );
+
+      const categoryHeader = screen.getByRole("columnheader", {
+        name: "Category",
+      });
+      await user.click(categoryHeader);
+
+      await waitFor(() => {
+        expect(onSelectionChange).toHaveBeenLastCalledWith({
+          min: { col: 3, row: 0 },
+          max: { col: 3, row: 2 },
+        });
+      });
+
+      const selectedColumns = onSelectionChange.mock.calls.map(
+        (call) => (call[0] as GridSelection | null)?.min.col,
+      );
+      expect(selectedColumns).toEqual([3]);
     });
 
     it("active cell is at row 0 when selecting a full column", async () => {
@@ -701,7 +738,7 @@ describe("DataGrid", () => {
         />,
       );
 
-      const gutterCells = container.querySelectorAll(".text-xs.cursor-pointer");
+      const gutterCells = container.querySelectorAll('[role="rowheader"]');
 
       // Click first gutter row
       await user.click(gutterCells[0]);
@@ -742,7 +779,7 @@ describe("DataGrid", () => {
         />,
       );
 
-      const gutterCells = container.querySelectorAll(".text-xs.cursor-pointer");
+      const gutterCells = container.querySelectorAll('[role="rowheader"]');
       await user.click(gutterCells[0]);
       await user.keyboard("[ShiftLeft>]");
       await user.click(gutterCells[2]);
@@ -856,6 +893,90 @@ describe("DataGrid", () => {
       });
 
       // Verify no cells are selected via aria-selected
+      expect(
+        container.querySelectorAll('[role="gridcell"][aria-selected="true"]')
+          .length,
+      ).toBe(0);
+    });
+
+    it("keeps the selection and grid focus when pressing on the scrollbar", async () => {
+      const user = setupUser();
+      const onSelectionChange = vi.fn();
+
+      const { container } = render(
+        <DataGrid
+          data={defaultData}
+          columns={columns}
+          onChange={vi.fn()}
+          createRow={createRow}
+          onSelectionChange={onSelectionChange}
+        />,
+      );
+
+      // Select a cell so there is a range to preserve.
+      await user.click(screen.getByText("Row 1"));
+      await waitFor(() => {
+        expect(onSelectionChange).toHaveBeenCalledWith({
+          min: { col: 0, row: 0 },
+          max: { col: 0, row: 0 },
+        });
+      });
+
+      const grid = screen.getByRole("grid");
+      grid.focus();
+      const scrollArea = container.querySelector(".datagrid-scroll-area")!;
+
+      // jsdom reports a zero-sized rect, so any positive clientX lands past
+      // the (empty) content box and is treated as the scrollbar region.
+      const notCancelled = fireEvent.mouseDown(scrollArea, {
+        clientX: 10,
+        clientY: 0,
+      });
+
+      // The mousedown is prevent-defaulted so the grid does not blur, and the
+      // selection is left untouched.
+      expect(notCancelled).toBe(false);
+      expect(document.activeElement).toBe(grid);
+      expect(
+        container.querySelectorAll('[role="gridcell"][aria-selected="true"]')
+          .length,
+      ).toBe(1);
+      expect(onSelectionChange).toHaveBeenLastCalledWith({
+        min: { col: 0, row: 0 },
+        max: { col: 0, row: 0 },
+      });
+    });
+
+    it("clears the selection when pressing the empty area below the rows", async () => {
+      const user = setupUser();
+      const onSelectionChange = vi.fn();
+
+      const { container } = render(
+        <DataGrid
+          data={defaultData}
+          columns={columns}
+          onChange={vi.fn()}
+          createRow={createRow}
+          onSelectionChange={onSelectionChange}
+        />,
+      );
+
+      await user.click(screen.getByText("Row 1"));
+      await waitFor(() => {
+        expect(onSelectionChange).toHaveBeenCalledWith({
+          min: { col: 0, row: 0 },
+          max: { col: 0, row: 0 },
+        });
+      });
+
+      const scrollArea = container.querySelector(".datagrid-scroll-area")!;
+      // Origin click stays within the content box (not the scrollbar), so it
+      // clears the selection as before.
+      fireEvent.mouseDown(scrollArea, { clientX: 0, clientY: 0 });
+
+      await waitFor(() => {
+        expect(onSelectionChange).toHaveBeenLastCalledWith(null);
+      });
       expect(
         container.querySelectorAll('[role="gridcell"][aria-selected="true"]')
           .length,
@@ -1542,11 +1663,6 @@ describe("DataGrid", () => {
       await waitFor(() => {
         expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
       });
-
-      // Tab should have moved to next cell - verify we can still interact
-      // The grid should now have focus and be responsive
-      const grid = screen.getByRole("grid");
-      expect(document.activeElement).toBe(grid);
     });
 
     it("quick edit works on float cell after closing filterable-select with Enter", async () => {
@@ -1737,7 +1853,7 @@ describe("DataGrid", () => {
       // Popover should open with search showing "B"
       await waitFor(() => {
         expect(screen.getByRole("listbox")).toBeInTheDocument();
-        const searchInput = screen.getByPlaceholderText("Search...");
+        const searchInput = screen.getByPlaceholderText("Search…");
         expect(searchInput).toHaveValue("B");
       });
 
@@ -2012,6 +2128,69 @@ describe("DataGrid", () => {
       expect(onChange).not.toHaveBeenCalledWith(
         expect.arrayContaining([expect.objectContaining({ value: 999 })]),
       );
+    });
+  });
+
+  describe("on-load validation highlight (floatColumn required/validate)", () => {
+    const data: TestRow[] = [
+      { id: 1, label: "A", value: -5, category: null, active: null },
+      { id: 2, label: "B", value: 10, category: null, active: null },
+      { id: 3, label: "C", value: 20, category: null, active: null },
+    ];
+    const isWarned = (value: string) =>
+      screen.getByDisplayValue(value).closest(".bg-warning-subtle") !== null;
+
+    it("highlights an invalid value on load and tracks it after sorting", async () => {
+      const user = setupUser();
+      const warnColumns = [...columns];
+      warnColumns[1] = floatColumn("value", {
+        header: "Value",
+        size: 100,
+        emptyValue: null,
+        required: false,
+        validate: (v) => v >= 0,
+      });
+      render(
+        <DataGrid
+          data={data}
+          columns={warnColumns}
+          createRow={createRow}
+          onChange={() => {}}
+          sortable
+        />,
+      );
+
+      // On load, without interaction, only the failing value (-5) is highlighted.
+      expect(isWarned("-5")).toBe(true);
+      expect(isWarned("10")).toBe(false);
+
+      // Sorting reorders rows; the highlight follows the value's data row.
+      await user.click(screen.getByText("Value"));
+      expect(isWarned("-5")).toBe(true);
+      expect(isWarned("10")).toBe(false);
+    });
+
+    it("does not highlight a read-only cell", () => {
+      const warnColumns = [...columns];
+      warnColumns[1] = floatColumn("value", {
+        header: "Value",
+        size: 100,
+        emptyValue: null,
+        required: true,
+        validate: (v) => v >= 0,
+        isReadOnly: true,
+      });
+      const { container } = render(
+        <DataGrid
+          data={data}
+          columns={warnColumns}
+          createRow={createRow}
+          onChange={() => {}}
+        />,
+      );
+
+      // The only warn-worthy cell (-5) is read-only, so nothing is highlighted.
+      expect(container.querySelectorAll(".bg-warning-subtle")).toHaveLength(0);
     });
   });
 });

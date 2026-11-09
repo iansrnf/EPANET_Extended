@@ -9,7 +9,7 @@ import {
 } from "src/state/derived-branch-state";
 import { simulationStepAtom } from "src/state/simulation";
 import { currentFileNameAtom } from "src/state/file-system";
-import type { ResultsReader } from "src/simulation/results-reader";
+import type { ResultsReader } from "@epanet-js/simulation";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { useUserTracking } from "src/infra/user-tracking";
 
@@ -17,7 +17,11 @@ export type DataExportOptions = {
   format: ExportFormat;
   includeSimulationResults: boolean;
   simulationStep?: number;
-  selectedAssets: Set<number>;
+  // null means "no filter, export all" (callers must be explicit).
+  assetIdFilter: Set<number> | null;
+  customerPointIdFilter: Set<number> | null;
+  includeZones?: boolean;
+  zoneIdFilter?: Set<number> | null;
 };
 
 export const useExportAssetData = () => {
@@ -69,9 +73,13 @@ export const useExportAssetData = () => {
             options.format,
             hydraulicModel,
             projectSettings.projection,
+            translate,
             {
               includeSimulationResults: options.includeSimulationResults,
-              selectedAssets: options.selectedAssets,
+              assetIdsFilter: options.assetIdFilter,
+              customerPointIdFilter: options.customerPointIdFilter,
+              includeZones: options.includeZones,
+              zoneIdFilter: options.zoneIdFilter,
               resultsReader,
             },
           );
@@ -87,7 +95,10 @@ export const useExportAssetData = () => {
             name: "assetData.exported",
             format: options.format,
             includeSimulationResults: options.includeSimulationResults,
-            hasSelection: options.selectedAssets.size > 0,
+            hasSelection:
+              options.assetIdFilter !== null ||
+              options.customerPointIdFilter !== null ||
+              (options.zoneIdFilter ?? null) !== null,
           });
         } catch {}
       },

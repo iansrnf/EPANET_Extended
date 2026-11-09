@@ -2,9 +2,9 @@ import { act } from "@testing-library/react";
 import { Store } from "src/state";
 import { wizardStateAtom } from "../use-wizard-state";
 import { WizardState, ParsedDataSummary } from "../types";
-import { buildCustomerPoint } from "src/__helpers__/hydraulic-model-builder";
-import { Demand } from "src/hydraulic-model/demands";
-import { CustomerPointId } from "src/hydraulic-model/customer-points";
+import { buildCustomerPoint } from "@epanet-js/hydraulic-model-testing";
+import { Demand } from "@epanet-js/hydraulic-model";
+import { CustomerPointId } from "@epanet-js/hydraulic-model";
 
 export const setWizardState = (
   store: Store,
@@ -12,23 +12,18 @@ export const setWizardState = (
 ) => {
   const defaultWizardState: WizardState = {
     currentStep: 2,
-    selectedFile: null,
-    parsedCustomerPoints: null,
+    sourceFiles: [],
     parsedDataSummary: null,
     inputData: null,
     selectedDemandProperty: null,
     selectedLabelProperty: null,
+    coordinateAttributes: null,
     isLoading: false,
     error: null,
     isProcessing: false,
     keepDemands: false,
-    allocationRules: null,
-    connectionCounts: null,
-    allocationResult: null,
-    isAllocating: false,
-    lastAllocatedRules: null,
-    isEditingRules: false,
     selectedPatternId: null,
+    defaultDemand: 0,
   };
 
   act(() => {

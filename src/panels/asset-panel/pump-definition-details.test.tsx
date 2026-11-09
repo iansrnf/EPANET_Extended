@@ -4,9 +4,9 @@ import {
   PumpCurveTable,
   PumpDefinitionDetails,
 } from "./pump-definition-details";
-import { presets, UnitsSpec } from "src/lib/project-settings/quantities-spec";
-import { buildPump } from "src/__helpers__/hydraulic-model-builder";
-import type { Curves } from "src/hydraulic-model/curves";
+import { presets, UnitsSpec } from "@epanet-js/project-settings";
+import { buildPump } from "@epanet-js/hydraulic-model-testing";
+import { type Curves } from "@epanet-js/hydraulic-model";
 
 const spec = presets.LPS;
 const units: UnitsSpec = spec.units;
@@ -173,8 +173,8 @@ describe("PumpCurveTable", () => {
         />,
       );
 
-      expect(getFlowInput("Design")).toHaveClass("border-orange-500");
-      expect(getHeadInput("Design")).toHaveClass("border-orange-500");
+      expect(getFlowInput("Design")).toHaveClass("border-warning");
+      expect(getHeadInput("Design")).toHaveClass("border-warning");
     });
 
     it("calls onCurveChange with single point when valid", async () => {
@@ -200,6 +200,57 @@ describe("PumpCurveTable", () => {
       await user.keyboard("{Enter}");
 
       expect(onCurveChange).toHaveBeenCalledWith([{ flow: 50, head: 100 }]);
+    });
+
+    it("does not commit an invalid single-point curve by default", async () => {
+      const user = userEvent.setup();
+      const onCurveChange = vi.fn();
+
+      render(
+        <PumpCurveTable
+          curveType="designPointCurve"
+          units={units}
+          onCurveChange={onCurveChange}
+        />,
+      );
+
+      const flowInput = getFlowInput("Design");
+      await user.click(flowInput);
+      await user.type(flowInput, "50");
+      await user.keyboard("{Enter}");
+
+      const headInput = getHeadInput("Design");
+      await user.click(headInput);
+      await user.type(headInput, "0");
+      await user.keyboard("{Enter}");
+
+      expect(onCurveChange).not.toHaveBeenCalled();
+    });
+
+    it("commits an invalid single-point curve when null values are allowed", async () => {
+      const user = userEvent.setup();
+      const onCurveChange = vi.fn();
+
+      render(
+        <PumpCurveTable
+          curveType="designPointCurve"
+          units={units}
+          onCurveChange={onCurveChange}
+          commitInvalidValues
+        />,
+      );
+
+      const flowInput = getFlowInput("Design");
+      await user.click(flowInput);
+      await user.type(flowInput, "50");
+      await user.keyboard("{Enter}");
+
+      const headInput = getHeadInput("Design");
+      await user.click(headInput);
+      await user.type(headInput, "0");
+      await user.keyboard("{Enter}");
+
+      expect(onCurveChange).toHaveBeenCalledWith([{ flow: 50, head: 0 }]);
     });
   });
 
@@ -257,11 +308,11 @@ describe("PumpCurveTable", () => {
         />,
       );
 
-      expect(getHeadInput("Shutoff")).toHaveClass("border-orange-500");
-      expect(getFlowInput("Design")).toHaveClass("border-orange-500");
-      expect(getHeadInput("Design")).toHaveClass("border-orange-500");
-      expect(getFlowInput("Max Operating")).toHaveClass("border-orange-500");
-      expect(getHeadInput("Max Operating")).toHaveClass("border-orange-500");
+      expect(getHeadInput("Shutoff")).toHaveClass("border-warning");
+      expect(getFlowInput("Design")).toHaveClass("border-warning");
+      expect(getHeadInput("Design")).toHaveClass("border-warning");
+      expect(getFlowInput("Max Operating")).toHaveClass("border-warning");
+      expect(getHeadInput("Max Operating")).toHaveClass("border-warning");
     });
 
     it("shows validation error when flows are not in ascending order", async () => {
@@ -346,7 +397,7 @@ describe("PumpCurveTable", () => {
       await user.keyboard("{Enter}");
 
       expect(headInput).toHaveValue("");
-      expect(headInput).toHaveClass("border-orange-500");
+      expect(headInput).toHaveClass("border-warning");
     });
 
     it("clearing design point in design-point mode clears derived values", async () => {
@@ -400,17 +451,42 @@ describe("PumpCurveTable", () => {
     it("does not show warning styling in read-only mode when curve is invalid", () => {
       render(<PumpCurveTable curveType="standardCurve" units={units} />);
 
-      expect(getHeadSpan("Shutoff")).not.toHaveClass("border-orange-500");
-      expect(getFlowSpan("Design")).not.toHaveClass("border-orange-500");
-      expect(getHeadSpan("Design")).not.toHaveClass("border-orange-500");
+      expect(getHeadSpan("Shutoff")).not.toHaveClass("border-warning");
+      expect(getFlowSpan("Design")).not.toHaveClass("border-warning");
+      expect(getHeadSpan("Design")).not.toHaveClass("border-warning");
     });
   });
 });
 
 describe("PumpDefinitionDetails", () => {
+  describe("editing power", () => {
+    it("commits empty (not zero) when the power field is cleared", async () => {
+      const user = userEvent.setup();
+      const onChange = vi.fn();
+      const pump = buildPump({ definitionType: "power", power: 50 });
+
+      render(
+        <PumpDefinitionDetails
+          pump={pump}
+          curves={curves}
+          units={units}
+          onChange={onChange}
+        />,
+      );
+
+      const powerInput = screen.getByRole("textbox", { name: /power/i });
+      await user.clear(powerInput);
+      await user.tab();
+
+      expect(onChange).toHaveBeenCalledWith([
+        { property: "power", value: null },
+      ]);
+    });
+  });
+
   describe("definition type changes", () => {
     describe("changing to power type", () => {
-      it("emits onChange with power value when pump has power set", async () => {
+      it("emits just the type change when changing to power", async () => {
         const user = userEvent.setup();
         const onChange = vi.fn();
         const pump = buildPump({
@@ -436,45 +512,12 @@ describe("PumpDefinitionDetails", () => {
 
         expect(onChange).toHaveBeenCalledWith([
           { property: "definitionType", value: "power" },
-          { property: "power", value: 50 },
-          { property: "curveId", value: undefined },
-        ]);
-      });
-
-      it("emits onChange with power=0 when pump has no power set", async () => {
-        const user = userEvent.setup();
-        const onChange = vi.fn();
-        const pump = buildPump({
-          definitionType: "designPointCurve",
-          power: 0,
-          curve: [{ x: 50, y: 100 }],
-        });
-
-        render(
-          <PumpDefinitionDetails
-            pump={pump}
-            curves={curves}
-            units={units}
-            onChange={onChange}
-          />,
-        );
-
-        const select = screen.getByRole("combobox", { name: /pump type/i });
-        await user.click(select);
-        await user.click(
-          screen.getByRole("option", { name: /constant power/i }),
-        );
-
-        expect(onChange).toHaveBeenCalledWith([
-          { property: "definitionType", value: "power" },
-          { property: "power", value: 0 },
-          { property: "curveId", value: undefined },
         ]);
       });
     });
 
     describe("changing between curve types", () => {
-      it("emits onChange when changing from design-point to standard", async () => {
+      it("transforms the curve with null values on (design-point to standard)", async () => {
         const user = userEvent.setup();
         const onChange = vi.fn();
         const pump = buildPump({
@@ -507,15 +550,7 @@ describe("PumpDefinitionDetails", () => {
               { x: 100, y: 0 },
             ],
           },
-          { property: "curveId", value: undefined },
         ]);
-
-        expect(getFlowSpan("Shutoff")).toHaveTextContent("0");
-        expect(getHeadInput("Shutoff")).toHaveValue("133");
-        expect(getFlowInput("Design")).toHaveValue("50");
-        expect(getHeadInput("Design")).toHaveValue("100");
-        expect(getFlowInput("Max Operating")).toHaveValue("100");
-        expect(getHeadInput("Max Operating")).toHaveValue("0");
       });
 
       it("emits onChange when changing from standard to design-point", async () => {
@@ -549,7 +584,6 @@ describe("PumpDefinitionDetails", () => {
             property: "curve",
             value: [{ x: 50, y: 100 }],
           },
-          { property: "curveId", value: undefined },
         ]);
 
         expect(getFlowSpan("Shutoff")).toHaveTextContent("0");
@@ -562,7 +596,7 @@ describe("PumpDefinitionDetails", () => {
     });
 
     describe("changing to curveId type", () => {
-      it("does not emit onChange when pump has no curveId", async () => {
+      it("emits the definition type change with null values on, even without a curveId", async () => {
         const user = userEvent.setup();
         const onChange = vi.fn();
         const pump = buildPump({
@@ -583,7 +617,9 @@ describe("PumpDefinitionDetails", () => {
         await user.click(select);
         await user.click(screen.getByRole("option", { name: /library pump/i }));
 
-        expect(onChange).not.toHaveBeenCalled();
+        expect(onChange).toHaveBeenCalledWith([
+          { property: "definitionType", value: "curveId" },
+        ]);
       });
 
       it("emits onChange when selecting a curve from the selector", async () => {
@@ -619,7 +655,10 @@ describe("PumpDefinitionDetails", () => {
         await user.click(typeSelect);
         await user.click(screen.getByRole("option", { name: /library pump/i }));
 
-        expect(onChange).not.toHaveBeenCalled();
+        expect(onChange).toHaveBeenCalledWith([
+          { property: "definitionType", value: "curveId" },
+        ]);
+        onChange.mockClear();
 
         const curveSelect = screen.getByRole("combobox", {
           name: /pump name/i,
@@ -655,8 +694,6 @@ describe("PumpDefinitionDetails", () => {
 
         expect(onChange).toHaveBeenCalledWith([
           { property: "definitionType", value: "designPointCurve" },
-          { property: "curve", value: [{ x: 1, y: 1 }] },
-          { property: "curveId", value: undefined },
         ]);
         expect(select).toHaveTextContent(/design point/i);
         expect(screen.getByRole("table")).toBeInTheDocument();
@@ -684,15 +721,6 @@ describe("PumpDefinitionDetails", () => {
 
         expect(onChange).toHaveBeenCalledWith([
           { property: "definitionType", value: "standardCurve" },
-          {
-            property: "curve",
-            value: [
-              { x: 0, y: 1.33 },
-              { x: 1, y: 1 },
-              { x: 2, y: 0 },
-            ],
-          },
-          { property: "curveId", value: undefined },
         ]);
         expect(select).toHaveTextContent(/standard curve/i);
         expect(screen.getByRole("table")).toBeInTheDocument();

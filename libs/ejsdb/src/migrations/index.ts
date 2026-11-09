@@ -1,0 +1,65 @@
+import m0001 from "./0001_initial.sql?raw";
+import m0002 from "./0002_pump_definition_type.sql?raw";
+import m0003 from "./0003_pipe_material_year.sql?raw";
+import m0004 from "./0004_zones_table.sql?raw";
+import m0005 from "./0005_zones_bbox_adjacency.sql?raw";
+import m0006 from "./0006_sanitize_labels";
+import m0007 from "./0007_drop_zones_adjacency.sql?raw";
+import m0008 from "./0008_rename_controls_to_raw_controls.sql?raw";
+import m0009 from "./0009_create_controls_table.sql?raw";
+import m0010 from "./0010_lowercase_enums.sql?raw";
+import m0011 from "./0011_pipe_library.sql?raw";
+import m0012 from "./0012_custom_attributes_definition.sql?raw";
+import m0013 from "./0013_custom_attributes_data.sql?raw";
+import m0014 from "./0014_asset_custom_attributes.sql?raw";
+import m0015 from "./0015_drop_custom_attributes_data.sql?raw";
+import m0016 from "./0016_restore_link_endpoint_precision";
+import m0017 from "./0017_rebuild_broken_valve_geometry";
+import m0018 from "./0018_id_pools.sql?raw";
+import m0019 from "./0019_valve_target_node.sql?raw";
+import m0020 from "./0020_drop_id_pools.sql?raw";
+import m0021 from "./0021_collections.sql?raw";
+import m0022 from "./0022_scenarios.sql?raw";
+import m0023 from "./0023_rename_scenario_deltas_to_scenarios";
+import m0024 from "./0024_attach_detached_link_endpoints";
+import m0025 from "./0025_scripts.sql?raw";
+import m0026 from "./0026_zone_custom_attributes.sql?raw";
+import m0027 from "./0027_selection_set_zones.sql?raw";
+import m0028 from "./0028_selection_set_groups.sql?raw";
+
+export type MigrationDB = Parameters<typeof m0006>[0];
+
+export type Migration = string | ((db: MigrationDB) => void);
+
+export const migrations: Migration[] = [
+  m0001,
+  m0002,
+  m0003,
+  m0004,
+  m0005,
+  m0006,
+  m0007,
+  m0008,
+  m0009,
+  m0010,
+  m0011,
+  m0012,
+  m0013,
+  m0014,
+  m0015,
+  m0016,
+  m0017,
+  m0018,
+  m0019,
+  m0020,
+  m0021,
+  m0022,
+  m0023,
+  m0024,
+  m0025,
+  m0026,
+  m0027,
+  m0028,
+];
+
+export const APP_VERSION = migrations.length;

@@ -1,5 +1,5 @@
-import { Plan } from "src/lib/account-plans";
-import { Locale } from "./infra/i18n/locale";
+import { Plan, SubscriptionStatus } from "@epanet-js/account-plans";
+import { Locale } from "@epanet-js/i18n/locale";
 
 export type User = {
   id: string | null;
@@ -10,6 +10,7 @@ export type User = {
   trialActivatedAt: string | null;
   trialEndsAt: string | null;
   hasUsedTrial: boolean;
+  subscriptionStatus: SubscriptionStatus | null;
   getLocale?: () => Locale | undefined;
   setLocale?: (locale: Locale) => Promise<void>;
 };
@@ -23,6 +24,7 @@ export const nullUser: User = {
   trialActivatedAt: null,
   trialEndsAt: null,
   hasUsedTrial: false,
+  subscriptionStatus: null,
   getLocale: undefined,
   setLocale: undefined,
 };

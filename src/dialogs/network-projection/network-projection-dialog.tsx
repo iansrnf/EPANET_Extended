@@ -6,7 +6,7 @@ import {
   useDialogState,
 } from "src/components/dialog";
 import type { LocationData } from "src/components/form/location-search";
-import { isLikelyLatLng } from "src/lib/geojson-utils/coordinate-transform";
+import { isLikelyLatLng } from "@epanet-js/projections";
 import { MapPinnedIcon } from "src/icons";
 import { MapPreview } from "./map-preview";
 import { ProjectionSearch, type SearchMetadata } from "./projection-search";
@@ -19,12 +19,9 @@ import {
 } from "./filter-projection-candidates";
 import { projectGeoJson } from "./project-geojson";
 import { approximateToNullIsland } from "./approximate-to-null-island";
-import type { Proj4Projection, Projection } from "src/lib/projections";
-import { getExtent } from "src/lib/geometry";
-import {
-  computeCentroid,
-  transformPoint,
-} from "src/lib/projections/xy-grid-transform";
+import type { Proj4Projection, Projection } from "@epanet-js/projections";
+import { getExtent } from "@epanet-js/geometry";
+import { computeCentroid, transformPoint } from "@epanet-js/projections";
 import type { Bbox, ProjectionCandidate } from "./types";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
@@ -88,6 +85,7 @@ export const NetworkProjectionDialog = ({
     });
   const [showBasemap, setShowBasemap] = useState(false);
   const [projectionError, setProjectionError] = useState<string | null>(null);
+  const [isSearchUnavailable, setIsSearchUnavailable] = useState(false);
 
   const allCandidatesRef = useRef<ProjectionCandidate[]>([]);
   const abortRef = useRef<AbortController | null>(null);
@@ -223,8 +221,8 @@ export const NetworkProjectionDialog = ({
       selectedLocationRef.current = location;
       setProjectionError(null);
       setShowBasemap(true);
-      fitToBbox(location.bbox);
-      updateVisibleCandidates(location.bbox, "first");
+      const viewportBbox = fitToBbox(location.bbox);
+      updateVisibleCandidates(viewportBbox ?? location.bbox, "first");
     },
     [updateVisibleCandidates, fitToBbox],
   );
@@ -399,13 +397,20 @@ export const NetworkProjectionDialog = ({
       }
     >
       <div className="flex-1 flex min-h-0 overflow-hidden">
-        <div className="shrink-0 w-[300px] border-r border-gray-200 dark:border-gray-700 p-4 flex flex-col min-h-0">
+        <div className="shrink-0 w-[300px] border-r p-4 flex flex-col min-h-0">
           <ProjectionSearch
             projections={projections}
             onLocationSelect={handleLocationSelect}
             onProjectionSelect={handleProjectionSelectFromSearch}
             onSearched={handleSearched}
+            onSearchError={setIsSearchUnavailable}
           />
+
+          {isSearchUnavailable && (
+            <p className="mt-2 text-size-base p-2 border text-warning border-warning rounded-md bg-warning-subtle shrink-0">
+              {t("networkProjection.searchUnavailable")}
+            </p>
+          )}
 
           {selectedLocation || selectedProjection ? (
             <div className="flex-1 min-h-0 flex flex-col">
@@ -421,7 +426,7 @@ export const NetworkProjectionDialog = ({
                 showEmptyState={!!selectedLocation || !!initialProjection}
               />
               {projectionError && (
-                <p className="mt-2 text-sm text-red-600 dark:text-red-400 p-2 border border-red-200 dark:border-red-800 rounded-md bg-red-50 dark:bg-red-950 shrink-0">
+                <p className="mt-2 text-size-base text-error p-2 border border-red-200 dark:border-red-800 rounded-md bg-error-subtle dark:bg-red-950 shrink-0">
                   {projectionError}
                 </p>
               )}
@@ -524,13 +529,13 @@ const ProjectionEmptyState = () => {
   const t = useTranslate();
   return (
     <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 text-center">
-      <div className="text-gray-400">
-        <MapPinnedIcon size={96} />
+      <div className="text-subtle">
+        <MapPinnedIcon size="2xl" />
       </div>
-      <p className="text-sm font-semibold py-4 text-gray-600 dark:text-gray-300 max-w-48">
+      <p className="text-size-base font-semibold py-4 text-subtle dark:text-gray-300 max-w-48">
         {t("networkProjection.addBasemap")}
       </p>
-      <div className="text-sm text-gray-600 dark:text-gray-400 max-w-48 space-y-2">
+      <div className="text-size-base text-subtle max-w-48 space-y-2">
         <p>{t("networkProjection.searchHint")}</p>
         <p>{t("networkProjection.noProjectionHint")}</p>
       </div>

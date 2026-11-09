@@ -1,7 +1,7 @@
 import { createStore } from "jotai";
-import { HydraulicModelBuilder } from "./hydraulic-model-builder";
-import { MomentLog } from "src/lib/persistence/moment-log";
-import { dataAtom, nullData } from "src/state/data";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
+import { SessionHistory } from "src/lib/persistence/session-history";
+import { selectionAtom } from "src/state/selection";
 import {
   FileInfo,
   inpFileInfoAtom,
@@ -9,24 +9,22 @@ import {
 } from "src/state/file-system";
 import { RecentFilesStore } from "src/lib/recent-files";
 import { InMemoryKeyValueStore } from "src/infra/storage";
-import { stagingModelAtom } from "src/state/hydraulic-model";
 import { layerConfigAtom } from "src/state/map";
 import { modeAtom } from "src/state/mode";
-import { momentLogAtom } from "src/state/model-changes";
 import {
   SimulationFinished,
   SimulationState,
   initialSimulationState,
   simulationStepAtom,
 } from "src/state/simulation";
-import { simulationSettingsAtom } from "src/state/simulation-settings";
 import { Store } from "src/state";
-import type { ResultsReader } from "src/simulation/results-reader";
+import type { ResultsReader } from "@epanet-js/simulation";
 import { Mode } from "src/state/mode";
 import { Asset, HydraulicModel } from "src/hydraulic-model";
 import { ExportOptions } from "src/types/export";
 import { ILayerConfig, LayerConfigMap } from "src/types";
-import type { Sel } from "src/selection/types";
+import type { Sel } from "src/selection";
+import { USelection } from "src/selection";
 import { nanoid } from "nanoid";
 import {
   LinkSymbology,
@@ -40,17 +38,22 @@ import {
 } from "src/map/symbology/range-color-rule";
 import { linkSymbologyAtom, nodeSymbologyAtom } from "src/state/map-symbology";
 import { LabelRule } from "src/map/symbology/symbology-types";
-import { Locale } from "src/infra/i18n/locale";
+import { Locale } from "@epanet-js/i18n/locale";
 import { localeAtom } from "src/state/locale";
 import { branchStateAtom } from "src/state/branch-state";
-import { LabelManager } from "src/hydraulic-model/label-manager";
+import {
+  markProjectUnsavedAtom,
+  resetProjectRevision,
+} from "src/state/project-revision";
+import { worktreeAtom } from "src/state/scenarios";
+import { LabelManager } from "@epanet-js/hydraulic-model";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 
 export const setInitialState = (
   args: {
     store?: Store;
     hydraulicModel?: HydraulicModel;
-    momentLog?: MomentLog;
+    sessionHistory?: SessionHistory;
     selection?: Sel;
     fileInfo?: FileInfo | null;
     layerConfigs?: LayerConfigMap;
@@ -62,13 +65,15 @@ export const setInitialState = (
     simulationStep?: number | null;
     simulationResults?: ResultsReader | null;
     simulationSettings?: SimulationSettings;
+    isProjectSaved?: boolean;
+    labelManager?: LabelManager;
   } = {},
 ): Store => {
   const {
     store = createStore(),
     hydraulicModel = HydraulicModelBuilder.with().build(),
-    momentLog = new MomentLog(),
-    selection = { type: "none" },
+    sessionHistory = new SessionHistory(hydraulicModel.version),
+    selection = USelection.none(),
     fileInfo = null,
     layerConfigs = new Map(),
     nodeSymbology = nullSymbologySpec.node,
@@ -79,18 +84,15 @@ export const setInitialState = (
     simulationStep = null,
     simulationResults = null,
     simulationSettings,
+    isProjectSaved = true,
+    labelManager = new LabelManager(),
   } = args;
   const simulationStepWasExplicit = "simulationStep" in args;
   const recentFilesKv = new InMemoryKeyValueStore();
   recentFilesKv.defineStore("recent-files", "id");
   store.set(recentFilesStoreAtom, new RecentFilesStore(recentFilesKv));
 
-  store.set(stagingModelAtom, hydraulicModel);
-  store.set(dataAtom, {
-    ...nullData,
-    selection,
-  });
-  store.set(momentLogAtom, momentLog);
+  store.set(selectionAtom, selection);
   store.set(simulationStepAtom, simulationStep);
   store.set(inpFileInfoAtom, fileInfo);
   store.set(layerConfigAtom, layerConfigs);
@@ -103,10 +105,6 @@ export const setInitialState = (
       store.set(simulationStepAtom, 0);
     }
   }
-  if (simulationSettings) {
-    store.set(simulationSettingsAtom, simulationSettings);
-  }
-
   const branchSimulation: SimulationState =
     simulationResults && !("epsResultsReader" in simulation)
       ? ({
@@ -123,23 +121,26 @@ export const setInitialState = (
         } as unknown as SimulationState)
       : simulation;
 
-  store.set(
-    branchStateAtom,
-    new Map([
-      [
-        "main",
-        {
-          version: hydraulicModel.version,
-          hydraulicModel,
-          labelManager: new LabelManager(),
-          momentLog,
-          simulation: branchSimulation,
-          simulationSourceId: "main",
-          simulationSettings: simulationSettings ?? defaultSimulationSettings,
-        },
-      ],
-    ]),
-  );
+  const branchStates = new Map([
+    [
+      "main",
+      {
+        version: hydraulicModel.version,
+        hydraulicModel,
+        labelManager,
+        sessionHistory,
+        simulation: branchSimulation,
+        simulationSourceId: "main",
+        simulationSettings: simulationSettings ?? defaultSimulationSettings,
+      },
+    ],
+  ]);
+  store.set(branchStateAtom, branchStates);
+
+  resetProjectRevision(store.set, store.get(worktreeAtom), branchStates);
+  if (!isProjectSaved) {
+    store.set(markProjectUnsavedAtom);
+  }
 
   return store;
 };
@@ -154,7 +155,6 @@ export const aLayerConfig = (
     token: "TOKEN",
     url: "URL",
     opacity: 1,
-    sourceMaxZoom: {},
     isBasemap: false,
     at: "a0",
     tms: false,
@@ -166,12 +166,11 @@ export const aLayerConfig = (
 
 export const aFileInfo = (data: Partial<FileInfo> | null) => {
   const defaults = {
-    modelVersion: "ANY",
     name: "NAME",
     handle: undefined,
     isMadeByApp: true,
     isDemoNetwork: false,
-    options: { type: "inp", folderId: "" } as ExportOptions,
+    options: { type: "inp" } as ExportOptions,
   };
   return { ...defaults, ...data };
 };
@@ -200,15 +199,8 @@ export const aSimulationFailure = ({
   };
 };
 
-export const aSingleSelection = ({
-  id = 1,
-}: { id?: Asset["id"] } = {}): Sel => {
-  return {
-    type: "single",
-    id,
-    parts: [],
-  };
-};
+export const aSingleSelection = ({ id = 1 }: { id?: Asset["id"] } = {}): Sel =>
+  USelection.singleAsset(id);
 
 export const aNodeSymbology = ({
   colorRule: partialColorRule = {},
@@ -270,14 +262,9 @@ export const aRangeColorRule = (
 
 export const aMultiSelection = ({
   ids = [],
-}: { ids?: Asset["id"][] } = {}): Sel => {
-  return {
-    type: "multi",
-    ids,
-  };
-};
+}: { ids?: Asset["id"][] } = {}): Sel => USelection.fromAssetIds(ids);
 
-export const nullSelection: Sel = { type: "none" };
+export const nullSelection: Sel = USelection.none();
 
 export type SimulationData = {
   pipes?: Record<
@@ -461,20 +448,23 @@ export const createMockResultsReader = (
   getAllValues: (property) => {
     const junctions = Object.values(data.junctions ?? {});
     const pipes = Object.values(data.pipes ?? {});
+    const finite = (values: number[]) =>
+      Float32Array.from(values.filter(Number.isFinite));
     switch (property) {
       case "pressure":
-        return junctions.map((j) => j.pressure ?? 0);
+        return finite(junctions.map((j) => j.pressure ?? 0));
       case "head":
-        return junctions.map((j) => j.head ?? 0);
+        return finite(junctions.map((j) => j.head ?? 0));
       case "actualDemand":
-        return junctions.map((j) => j.demand ?? 0);
+        return finite(junctions.map((j) => j.demand ?? 0));
       case "flow":
-        return pipes.map((p) => p.flow ?? 0);
+        return finite(pipes.map((p) => p.flow ?? 0));
       case "velocity":
-        return pipes.map((p) => p.velocity ?? 0);
+        return finite(pipes.map((p) => p.velocity ?? 0));
       default:
-        return [];
+        return new Float32Array();
     }
   },
   getPumpEnergy: () => null,
+  getLinkSetting: () => null,
 });

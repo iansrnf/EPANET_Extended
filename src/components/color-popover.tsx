@@ -3,6 +3,12 @@ import * as P from "@radix-ui/react-popover";
 import { FieldProps } from "formik";
 import * as E from "./elements";
 import { useRef } from "react";
+import { useTranslate } from "src/hooks/use-translate";
+
+const HEX_PATTERN = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const fallbackColor = "#000000";
+
+const isValidHex = (value: string): boolean => HEX_PATTERN.test(value);
 
 export function ColorPopoverField({
   field,
@@ -32,18 +38,24 @@ export function ColorPopover({
   ariaLabel?: string;
   readonly?: boolean;
 }) {
-  const latestColor = useRef(color as string);
+  const translate = useTranslate();
+  const safeColor = isValidHex(color as string)
+    ? (color as string)
+    : fallbackColor;
+  const latestColor = useRef(safeColor);
 
   const handlePickerChange = (newColor: string) => {
     latestColor.current = newColor;
   };
 
   const handlePointerUp = () => {
+    if (!isValidHex(latestColor.current)) return;
     onChange?.(latestColor.current);
   };
 
   const handleInputChange = (newColor: string) => {
     latestColor.current = newColor;
+    if (!isValidHex(newColor)) return;
     onChange?.(newColor);
   };
 
@@ -66,7 +78,7 @@ export function ColorPopover({
             onPointerUp={handlePointerUp}
           >
             <HexColorPicker
-              color={color}
+              color={safeColor}
               onChange={handlePickerChange}
               onBlur={onBlur}
             />
@@ -74,12 +86,12 @@ export function ColorPopover({
           <HexColorInput
             className={E.inputClass({ _size })}
             prefixed
-            color={color}
+            color={safeColor}
             onChange={handleInputChange}
             aria-label="color input"
           />
           <P.Close asChild>
-            <E.Button>Done</E.Button>
+            <E.Button>{translate("done")}</E.Button>
           </P.Close>
         </div>
       </E.PopoverContent2>

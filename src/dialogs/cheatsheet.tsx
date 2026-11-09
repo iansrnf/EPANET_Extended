@@ -7,7 +7,7 @@ import { showSimulationSettingsShortcut } from "src/commands/show-simulation-set
 import { showControlsShortcut } from "src/commands/show-controls";
 import { getIsMac } from "src/infra/i18n/mac";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { toggleNetworkReviewShortcut } from "src/commands/toggle-network-review";
+import { toggleLeftPanelShortcut } from "src/commands/toggle-left-panel";
 import { toggleSidePanelShortcut } from "src/commands/toggle-side-panel";
 import { toggleBottomPanelShortcut } from "src/commands/toggle-bottom-panel";
 import { selectionModeShortcut } from "src/commands/set-area-selection-mode";
@@ -43,7 +43,6 @@ export function CheatsheetDialog() {
   const { closeDialog } = useDialogState();
   const translate = useTranslate();
   const isMac = useFeatureFlag("FLAG_MAC");
-  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
 
   const BINDINGS: ShortcutSection[] = [
     {
@@ -52,7 +51,7 @@ export function CheatsheetDialog() {
         { binding: "Alt+N", description: "newProject" },
         {
           binding: "Command+O",
-          description: isOurFileOn ? "openProject" : "openINP",
+          description: "openProject",
         },
         { binding: "Command+S", description: "save" },
         { binding: "Command+Shift+S", description: "saveAs" },
@@ -63,8 +62,8 @@ export function CheatsheetDialog() {
       shortcuts: [
         { binding: "B", description: "toggleSatellite" },
         {
-          binding: toggleNetworkReviewShortcut,
-          description: "networkReview.toggle",
+          binding: toggleLeftPanelShortcut,
+          description: "toggleLeftPanel",
         },
         {
           binding: toggleBottomPanelShortcut,
@@ -89,7 +88,6 @@ export function CheatsheetDialog() {
         { binding: "6", description: "pump" },
         { binding: "7", description: "valve" },
         { binding: "8", description: "customerPoint" as const },
-        { binding: "9", description: "pressureLogger" as const },
       ],
     },
     {
@@ -173,7 +171,7 @@ export function CheatsheetDialog() {
       <div className="p-4 columns-1 md:columns-2">
         {BINDINGS.map((section) => (
           <div key={section.group} className="break-inside-avoid mb-6">
-            <h2 className="text-sm font-bold mb-2 text-gray-700">
+            <h2 className="text-size-base font-bold mb-2 text-default">
               {translate(section.group)}
             </h2>
             <div className="space-y-2">
@@ -182,9 +180,9 @@ export function CheatsheetDialog() {
                   <Keycap className="w-28 shrink-0">
                     {localizeKeybinding(item.binding, isMac || getIsMac())}
                   </Keycap>
-                  <p className="text-xs pt-1">
+                  <p className="text-size-small pt-1">
                     {Array.isArray(item.description)
-                      ? item.description.map((k) => translate(k)).join(" / ")
+                      ? item.description.map((k) => translate(k)).join(" /")
                       : translate(item.description)}
                   </p>
                 </div>

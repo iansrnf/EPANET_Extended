@@ -3,13 +3,13 @@
  */
 import { act } from "react";
 import { renderHook } from "@testing-library/react";
-import {
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
+import { useReactTable } from "@tanstack/react-table";
 import { CellEditingFeature } from "./cell-editing-feature";
 import { CellRangeSelectionFeature } from "./cell-range-selection-feature";
+import { DefaultValueFeature } from "./default-value-feature";
+import { LazyRowModelFeature } from "./lazy-row-model-feature";
+import { getLazyCoreRowModel } from "../models/lazy-core-row-model";
+import { getLazyStickySortedRowModel } from "../models/lazy-sticky-sorted-row-model";
 
 type Row = { a: string; b: string; c: string };
 
@@ -17,8 +17,13 @@ const useFeatureTable = (data: Row[] = []) =>
   useReactTable({
     data,
     columns: [{ accessorKey: "a" }, { accessorKey: "b" }, { accessorKey: "c" }],
-    getCoreRowModel: getCoreRowModel(),
-    _features: [CellEditingFeature, CellRangeSelectionFeature],
+    getCoreRowModel: getLazyCoreRowModel(),
+    _features: [
+      LazyRowModelFeature,
+      CellEditingFeature,
+      CellRangeSelectionFeature,
+      DefaultValueFeature,
+    ],
   });
 
 const useGridTable = () =>
@@ -48,12 +53,17 @@ const useEditableTable = (
       { accessorKey: "label", meta: { isReadOnly: true } },
       { accessorKey: "value", meta: { deleteValue: null } },
     ],
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
+    getCoreRowModel: getLazyCoreRowModel(),
+    getSortedRowModel: getLazyStickySortedRowModel(),
     enableSorting: true,
     onDataChange,
     onDelete,
-    _features: [CellEditingFeature, CellRangeSelectionFeature],
+    _features: [
+      LazyRowModelFeature,
+      CellEditingFeature,
+      CellRangeSelectionFeature,
+      DefaultValueFeature,
+    ],
   });
 
 describe("CellEditingFeature", () => {
@@ -251,10 +261,15 @@ describe("deleteSelection", () => {
           { accessorKey: "label" },
           { accessorKey: "value", meta: { deleteValue: null } },
         ],
-        getCoreRowModel: getCoreRowModel(),
+        getCoreRowModel: getLazyCoreRowModel(),
         onDataChange,
         readOnly: true,
-        _features: [CellEditingFeature, CellRangeSelectionFeature],
+        _features: [
+          LazyRowModelFeature,
+          CellEditingFeature,
+          CellRangeSelectionFeature,
+          DefaultValueFeature,
+        ],
       }),
     );
 

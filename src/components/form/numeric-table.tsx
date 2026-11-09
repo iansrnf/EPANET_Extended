@@ -1,12 +1,13 @@
-import { localizeDecimal } from "src/infra/i18n/numbers";
+import { localizeDecimal } from "@epanet-js/i18n";
 import { NumericField } from "./numeric-field";
 
 export type Cell = {
   label: string;
   value: number | null;
   handler?: (newValue: number, isEmpty: boolean) => void;
-  positiveOnly?: boolean;
-  isNullable?: boolean;
+  isRequired?: boolean;
+  commitInvalidValues?: boolean;
+  validate?: (value: number) => boolean;
   readOnly?: boolean;
   disabled?: boolean;
   placeholder?: string;
@@ -48,7 +49,7 @@ const GridHeader = ({ labels }: { labels: [string, string] }) => {
         <div
           role="columnheader"
           key={colIndex}
-          className="pl-2 py-1 text-sm font-semibold text-gray-500 truncate"
+          className="pl-2 py-1 text-size-base font-semibold text-subtle truncate"
         >
           <span>{label}</span>
         </div>
@@ -60,7 +61,7 @@ const GridHeader = ({ labels }: { labels: [string, string] }) => {
 const GridRow = ({ label, cells }: { label: string; cells: [Cell, Cell] }) => {
   return (
     <>
-      <div role="cell" className="pt-2 text-sm text-gray-500">
+      <div role="cell" className="pt-2 text-size-base text-subtle">
         {label}
       </div>
 
@@ -76,9 +77,11 @@ const GridRow = ({ label, cells }: { label: string; cells: [Cell, Cell] }) => {
             {!cell.readOnly ? (
               <NumericField
                 label={cell.label}
-                positiveOnly={cell.positiveOnly}
-                isNullable={cell.isNullable}
+                isRequired={cell.isRequired}
+                commitInvalidValues={cell.commitInvalidValues}
+                validate={cell.validate}
                 displayValue={displayValue}
+                placeholder={cell.placeholder}
                 onChangeValue={cell.handler}
                 styleOptions={{
                   padding: "sm",
@@ -87,7 +90,7 @@ const GridRow = ({ label, cells }: { label: string; cells: [Cell, Cell] }) => {
                 }}
               />
             ) : (
-              <span className="block p-1 text-sm text-gray-700 dark:text-gray-100 tabular-nums border border-transparent">
+              <span className="block p-1 text-size-base text-default tabular-nums border border-transparent">
                 {displayValue}
               </span>
             )}

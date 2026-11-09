@@ -3,8 +3,10 @@ import { useSetAtom } from "jotai";
 import { useAtomCallback } from "jotai/utils";
 import { dialogAtom } from "src/state/dialog";
 import { inpFileInfoAtom, projectFileInfoAtom } from "src/state/file-system";
+import { markProjectUnsavedAtom } from "src/state/project-revision";
 import { userSettingsAtom } from "src/state/user-settings";
 import { captureError } from "src/infra/error-tracking";
+import { errorName, handleError } from "src/infra/errors";
 import { FileWithHandle } from "browser-fs-access";
 import { useTranslate } from "src/hooks/use-translate";
 import {
@@ -14,23 +16,30 @@ import {
 } from "src/import/inp";
 import type { ParseInpResult } from "src/import/inp";
 import { FeatureCollection } from "geojson";
-import { getExtent } from "src/lib/geometry";
+import { getExtent } from "@epanet-js/geometry";
 import { LngLatBoundsLike } from "mapbox-gl";
 import { MapContext, captureThumbnail } from "src/map";
 import { ImportInpCompleted, useUserTracking } from "src/infra/user-tracking";
 import { InpStats } from "src/import/inp/inp-data";
-import { ProjectSettings } from "src/lib/project-settings";
+import { ProjectSettings } from "@epanet-js/project-settings";
 import { chooseUnitSystem } from "src/simulation/build-inp";
 import { notify } from "src/components/notifications";
 import { WarningIcon } from "src/icons";
-import { isDemoNetwork } from "src/demo/demo-networks";
 import { useRecentFiles } from "src/hooks/use-recent-files";
-import { type Projection, createProjectionMapper } from "src/lib/projections";
+import {
+  type Projection,
+  createProjectionMapper,
+} from "@epanet-js/projections";
 import { transformCoordinates } from "src/hydraulic-model/mutations/transform-coordinates";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { useStartNewProject } from "src/hooks/persistence/use-start-new-project";
+import {
+  useStartBlankProject,
+  useStartNewProject,
+} from "src/hooks/persistence/use-start-new-project";
+import { useLabelMaxLength } from "src/hooks/use-label-max-length";
 
 export const inpExtension = ".inp";
+
+const fileReadErrorName = "NotReadableError";
 
 export const useImportInp = () => {
   const translate = useTranslate();
@@ -38,40 +47,36 @@ export const useImportInp = () => {
   const map = useContext(MapContext);
   const setInpFileInfo = useSetAtom(inpFileInfoAtom);
   const setProjectFileInfo = useSetAtom(projectFileInfoAtom);
+  const markProjectUnsaved = useSetAtom(markProjectUnsavedAtom);
   const userTracking = useUserTracking();
-  const isXyDetectOn = useFeatureFlag("FLAG_XY_DETECT");
-  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
   const { startNewProject } = useStartNewProject();
+  const startBlankProject = useStartBlankProject();
   const { addRecent } = useRecentFiles();
+  const labelMaxLength = useLabelMaxLength();
 
   const handleImportComplete = useAtomCallback(
-    useCallback(
-      (get, set, issues: ParserIssues | null) => {
-        const showFormat =
-          isOurFileOn && get(userSettingsAtom).showFileFormatUpdated;
-        const openFormatDialog = () =>
-          set(dialogAtom, { type: "fileFormatUpdated" });
+    useCallback((get, set, issues: ParserIssues | null) => {
+      const showFormat = get(userSettingsAtom).showFileFormatUpdated;
+      const openFormatDialog = () =>
+        set(dialogAtom, { type: "fileFormatUpdated" });
 
-        if (!issues) {
-          if (showFormat) openFormatDialog();
-          else set(dialogAtom, null);
-          return;
-        }
+      if (!issues) {
+        if (showFormat) openFormatDialog();
+        else set(dialogAtom, null);
+        return;
+      }
 
-        set(dialogAtom, {
-          type: "inpIssues",
-          issues,
-          onAfterClose: showFormat ? openFormatDialog : undefined,
-        });
-      },
-      [isOurFileOn],
-    ),
+      set(dialogAtom, {
+        type: "inpIssues",
+        issues,
+        onAfterClose: showFormat ? openFormatDialog : undefined,
+      });
+    }, []),
   );
 
   const completeImport = useCallback(
     async (
       file: FileWithHandle,
-      isDemo: boolean,
       result: ParseInpResult,
       options?: { autoElevations?: boolean },
     ) => {
@@ -87,13 +92,17 @@ export const useImportInp = () => {
       const projectName = file.name.replace(/\.[^.]+$/, "");
 
       try {
-        await startNewProject({
+        const started = await startNewProject({
           hydraulicModel,
           factories,
           projectSettings: { ...projectSettings, name: projectName },
           simulationSettings,
           autoElevations: options?.autoElevations,
         });
+        if (!started) {
+          setDialogState(null);
+          return;
+        }
       } catch (error) {
         captureError(error as Error);
         setDialogState(null);
@@ -126,29 +135,20 @@ export const useImportInp = () => {
       setInpFileInfo({
         name: file.name,
         handle: isMadeByApp ? file.handle : undefined,
-        modelVersion: hydraulicModel.version,
         isMadeByApp,
-        isDemoNetwork: isDemo,
-        options: { type: "inp", folderId: "" },
+        isDemoNetwork: false,
+        options: { type: "inp" },
       });
       setProjectFileInfo(null);
-      if (!isDemo && file.handle) {
+      markProjectUnsaved();
+      if (file.handle) {
         const handle = file.handle;
         const name = file.name;
         if (map) {
-          const captureAndSave = () => {
+          map.enqueueOnSettle(() => {
             const thumbnail = captureThumbnail(map) ?? undefined;
             void addRecent(name, handle, thumbnail);
-          };
-          if (map.map.loaded() && !map.map.isMoving()) {
-            captureAndSave();
-          } else {
-            const timeoutId = setTimeout(captureAndSave, 5000);
-            map.map.once("idle", () => {
-              clearTimeout(timeoutId);
-              captureAndSave();
-            });
-          }
+          });
         } else {
           void addRecent(name, handle);
         }
@@ -161,6 +161,7 @@ export const useImportInp = () => {
       map,
       setInpFileInfo,
       setProjectFileInfo,
+      markProjectUnsaved,
       handleImportComplete,
       setDialogState,
       translate,
@@ -203,14 +204,19 @@ export const useImportInp = () => {
       setDialogState({ type: "loading" });
 
       try {
+        const cleared = await startBlankProject();
+        if (!cleared) {
+          setDialogState(null);
+          return;
+        }
+
         const arrayBuffer = await file.arrayBuffer();
         const content = new TextDecoder().decode(arrayBuffer);
-        const isDemo = isDemoNetwork(content);
         const parseOptions = {
           customerPoints: true,
           inactiveAssets: true,
           populateAssetIndex: true,
-          xyDetect: isXyDetectOn,
+          labelMaxLength,
         };
 
         const result = parseInp(content, parseOptions);
@@ -221,10 +227,25 @@ export const useImportInp = () => {
           stats,
           projectionStatus,
           suggestedXyScale,
+          isMadeByApp,
         } = result;
         userTracking.capture(
-          buildCompleteEvent(source, projectSettings, issues, stats),
+          buildCompleteEvent(
+            source,
+            projectSettings,
+            issues,
+            stats,
+            isMadeByApp,
+          ),
         );
+
+        if (
+          issues &&
+          (issues.malformedCoordinates || issues.malformedVertices)
+        ) {
+          setDialogState({ type: "inpMalformedCoordinates", issues });
+          return;
+        }
 
         if (projectionStatus === "unknown") {
           const previewGeoJson = parseCoordinatesGeoJson(content);
@@ -239,7 +260,7 @@ export const useImportInp = () => {
                 projection,
               };
               const autoElevations = projection.type !== "xy-grid";
-              await completeImport(file, isDemo, result, {
+              await completeImport(file, result, {
                 autoElevations,
               });
             } catch (error) {
@@ -266,18 +287,28 @@ export const useImportInp = () => {
         }
 
         const autoElevations = projectSettings.projection.type !== "xy-grid";
-        await completeImport(file, isDemo, result, { autoElevations });
+        await completeImport(file, result, { autoElevations });
       } catch (error) {
-        captureError(error as Error);
-        setDialogState({ type: "invalidFilesError" });
+        handleError(error, {
+          as: "Import INP failed",
+          warn: [fileReadErrorName],
+          onUnexpected: "capture",
+          contexts: { "Import file": { name: file.name, size: file.size } },
+        });
+        setDialogState(
+          errorName(error) === fileReadErrorName
+            ? { type: "fileReadError", fileName: file.name }
+            : { type: "invalidFilesError" },
+        );
       }
     },
     [
       completeImport,
-      isXyDetectOn,
+      startBlankProject,
       setDialogState,
       userTracking,
       validateAndPrepare,
+      labelMaxLength,
     ],
   );
 
@@ -289,6 +320,7 @@ const buildCompleteEvent = (
   projectSettings: ProjectSettings,
   issues: ParserIssues | null,
   stats: InpStats,
+  isMadeByApp: boolean,
 ): ImportInpCompleted => {
   const issueKeys = issues ? Object.keys(issues) : [];
 
@@ -317,6 +349,7 @@ const buildCompleteEvent = (
     counts: Object.fromEntries(stats.counts),
     headlossFormula: projectSettings.headlossFormula,
     units: chooseUnitSystem(projectSettings.units),
+    isMadeByApp,
     issues: processedIssues,
   } as ImportInpCompleted;
 };

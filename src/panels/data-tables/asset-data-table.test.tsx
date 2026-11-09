@@ -8,13 +8,18 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider as JotaiProvider } from "jotai";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { TooltipProvider } from "@radix-ui/react-tooltip";
+import { TooltipProvider } from "@epanet-js/ui-kit";
 
 import { setInitialState } from "src/__helpers__/state";
 import { stubUserTracking } from "src/__helpers__/user-tracking";
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { stubFeatureOff } from "src/__helpers__/feature-flags";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
+import { AuthMockProvider, aUser } from "src/__helpers__/auth-mock";
+import type { User } from "src/auth-types";
 import { PersistenceContext } from "src/lib/persistence/context";
 import { Persistence } from "src/lib/persistence/persistence";
+import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
+import { dialogAtom } from "src/state/dialog";
 import type { Store } from "src/state";
 
 import { AssetDataTable } from "./asset-data-table";
@@ -32,18 +37,29 @@ import { notify } from "src/components/notifications";
 
 const setupUser = () => userEvent.setup({ pointerEventsCheck: 0 });
 
-const renderTable = (store: Store) => {
+const renderTable = (
+  store: Store,
+  user: User = aUser({ plan: "pro" }),
+  assetIds?: readonly number[],
+) => {
   const persistence = new Persistence(store);
   return render(
-    <QueryClientProvider client={new QueryClient()}>
-      <JotaiProvider store={store}>
-        <PersistenceContext.Provider value={persistence}>
-          <TooltipProvider>
-            <AssetDataTable assetType="junction" />
-          </TooltipProvider>
-        </PersistenceContext.Provider>
-      </JotaiProvider>
-    </QueryClientProvider>,
+    <AuthMockProvider user={user} isSignedIn={true}>
+      <QueryClientProvider client={new QueryClient()}>
+        <JotaiProvider store={store}>
+          <PersistenceContext.Provider value={persistence}>
+            <TooltipProvider>
+              <AssetDataTable
+                id="junction"
+                type="asset-table"
+                assetType="junction"
+                assetIds={assetIds}
+              />
+            </TooltipProvider>
+          </PersistenceContext.Provider>
+        </JotaiProvider>
+      </QueryClientProvider>
+    </AuthMockProvider>,
   );
 };
 
@@ -51,6 +67,7 @@ describe("AssetDataTable", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     stubUserTracking();
+    stubFeatureOff("FLAG_NULL_VALUES");
     // jsdom has no navigator.clipboard; stub it so the copy path doesn't
     // throw before reaching the notify call.
     Object.defineProperty(navigator, "clipboard", {
@@ -73,7 +90,7 @@ describe("AssetDataTable", () => {
 
     renderTable(store);
 
-    // Wait for the rows to be built (computeRows uses setTimeout(0)).
+    // Wait for the grid mount (deferred one frame via requestAnimationFrame).
     await waitFor(() => {
       expect(screen.getByDisplayValue("J1")).toBeInTheDocument();
     });
@@ -124,5 +141,241 @@ describe("AssetDataTable", () => {
     await new Promise((r) => setTimeout(r, 50));
 
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("renders model objects directly (direct attribute + computed column)", async () => {
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(1, { label: "J1", elevation: 25 })
+      .aJunctionDemand(1, [{ baseDemand: 10 }])
+      .build();
+    const store = setInitialState({ hydraulicModel });
+
+    renderTable(store);
+
+    // The grid mount is deferred a frame; the label (accessorKey) appears once
+    // it mounts. No async row build is involved.
+    expect(await screen.findByDisplayValue("J1")).toBeInTheDocument();
+    // Computed demand column (accessorFn) resolved from the model.
+    expect(screen.getByDisplayValue("10")).toBeInTheDocument();
+  });
+
+  it("edits a label and writes it back to the model", async () => {
+    const user = setupUser();
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(1, { label: "J1", elevation: 25 })
+      .aJunction(2, { label: "J2", elevation: 30 })
+      .build();
+    const store = setInitialState({ hydraulicModel });
+
+    renderTable(store);
+
+    const cell = await screen.findByDisplayValue("J1");
+    await user.dblClick(cell);
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("J1")).not.toHaveAttribute("readonly");
+    });
+
+    const input = screen.getByDisplayValue("J1");
+    await user.clear(input);
+    await user.type(input, "J9{Enter}");
+
+    // The edit round-trips through the model and the row re-renders from it.
+    await waitFor(() => {
+      const model = store.get(stagingModelDerivedAtom);
+      expect(model.assets.get(1)?.label).toBe("J9");
+    });
+  });
+
+  it("shows only the assets it is scoped to", async () => {
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(1, { label: "J1", elevation: 25 })
+      .aJunction(2, { label: "J2", elevation: 30 })
+      .build();
+    const store = setInitialState({ hydraulicModel });
+
+    renderTable(store, aUser({ plan: "pro" }), [2]);
+
+    expect(await screen.findByDisplayValue("J2")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("J1")).not.toBeInTheDocument();
+  });
+
+  it("writes an edit in a scoped table to the right asset", async () => {
+    const user = setupUser();
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(1, { label: "J1", elevation: 25 })
+      .aJunction(2, { label: "J2", elevation: 30 })
+      .build();
+    const store = setInitialState({ hydraulicModel });
+
+    renderTable(store, aUser({ plan: "pro" }), [2]);
+
+    const cell = await screen.findByDisplayValue("J2");
+    await user.dblClick(cell);
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("J2")).not.toHaveAttribute("readonly");
+    });
+
+    const input = screen.getByDisplayValue("J2");
+    await user.clear(input);
+    await user.type(input, "J7{Enter}");
+
+    await waitFor(() => {
+      const model = store.get(stagingModelDerivedAtom);
+      expect(model.assets.get(2)?.label).toBe("J7");
+    });
+    expect(store.get(stagingModelDerivedAtom).assets.get(1)?.label).toBe("J1");
+  });
+
+  it("renders custom-attribute columns", async () => {
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aCustomAttribute("junction", {
+        id: "custom-1",
+        label: "Zone",
+        type: "text",
+      })
+      .aCustomAttribute("junction", {
+        id: "custom-2",
+        label: "Score",
+        type: "number",
+      })
+      .aJunction(1, { label: "J1" })
+      .build();
+    const store = setInitialState({ hydraulicModel });
+
+    renderTable(store);
+
+    expect(await screen.findByText("Zone")).toBeInTheDocument();
+    expect(screen.getByText("Score")).toBeInTheDocument();
+  });
+
+  it("locks custom-attribute columns and opens the paywall for a free plan", async () => {
+    const user = setupUser();
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aCustomAttribute("junction", {
+        id: "custom-1",
+        label: "Zone",
+        type: "text",
+      })
+      .aJunction(1, { label: "J1" })
+      .build();
+    hydraulicModel.assets.get(1)?.setProperty("custom-1", "A");
+    const store = setInitialState({ hydraulicModel });
+
+    renderTable(store, aUser({ plan: "free" }));
+
+    await screen.findByText("Zone");
+    // Read-only cells render the value as static text rather than an input.
+    expect(screen.queryByDisplayValue("A")).not.toBeInTheDocument();
+
+    const locks = screen.getAllByRole("button", { name: "Paid feature" });
+    expect(locks.length).toBeGreaterThan(0);
+
+    await user.click(locks[0]);
+    expect(store.get(dialogAtom)).toEqual({
+      type: "featurePaywall",
+      feature: "customAttributes",
+    });
+  });
+
+  it("edits a custom-attribute value and writes it back to the model", async () => {
+    const user = setupUser();
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aCustomAttribute("junction", {
+        id: "custom-1",
+        label: "Zone",
+        type: "text",
+      })
+      .aJunction(1, { label: "J1" })
+      .build();
+    hydraulicModel.assets.get(1)?.setProperty("custom-1", "A");
+    const store = setInitialState({ hydraulicModel });
+
+    renderTable(store);
+
+    const cell = await screen.findByDisplayValue("A");
+    await user.dblClick(cell);
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("A")).not.toHaveAttribute("readonly");
+    });
+
+    const input = screen.getByDisplayValue("A");
+    await user.clear(input);
+    await user.type(input, "B{Enter}");
+
+    await waitFor(() => {
+      const model = store.get(stagingModelDerivedAtom);
+      expect(model.assets.get(1)?.getProperty("custom-1")).toBe("B");
+    });
+  });
+
+  it("reports a custom-attribute edit under a distinct event", async () => {
+    const tracking = stubUserTracking();
+    const user = setupUser();
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aCustomAttribute("junction", {
+        id: "custom-1",
+        label: "Zone",
+        type: "text",
+      })
+      .aJunction(1, { label: "J1" })
+      .build();
+    hydraulicModel.assets.get(1)?.setProperty("custom-1", "A");
+    const store = setInitialState({ hydraulicModel });
+
+    renderTable(store);
+
+    const cell = await screen.findByDisplayValue("A");
+    await user.dblClick(cell);
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("A")).not.toHaveAttribute("readonly");
+    });
+    const input = screen.getByDisplayValue("A");
+    await user.clear(input);
+    await user.type(input, "B{Enter}");
+
+    await waitFor(() => {
+      expect(tracking.capture).toHaveBeenCalledWith({
+        name: "customAttribute.batchEdited",
+        assetType: "junction",
+        attributeType: "text",
+        property: "custom-1",
+        label: "Zone",
+        count: 1,
+      });
+    });
+    expect(tracking.capture).not.toHaveBeenCalledWith(
+      expect.objectContaining({ name: "dataTables.cellEdited" }),
+    );
+  });
+
+  it("clears a custom-attribute value back to empty", async () => {
+    const user = setupUser();
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aCustomAttribute("junction", {
+        id: "custom-1",
+        label: "Zone",
+        type: "text",
+      })
+      .aJunction(1, { label: "J1" })
+      .build();
+    hydraulicModel.assets.get(1)?.setProperty("custom-1", "A");
+    const store = setInitialState({ hydraulicModel });
+
+    renderTable(store);
+
+    const cell = await screen.findByDisplayValue("A");
+    await user.dblClick(cell);
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("A")).not.toHaveAttribute("readonly");
+    });
+
+    const input = screen.getByDisplayValue("A");
+    await user.clear(input);
+    await user.type(input, "{Enter}");
+
+    await waitFor(() => {
+      const model = store.get(stagingModelDerivedAtom);
+      expect(model.assets.get(1)?.getProperty("custom-1") ?? null).toBeNull();
+    });
   });
 });

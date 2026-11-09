@@ -1,15 +1,15 @@
 import { memo, useEffect, useRef } from "react";
-import * as T from "@radix-ui/react-tooltip";
+import { Tooltip } from "@epanet-js/ui-kit";
 import { useSetAtom, useAtom } from "jotai";
 import {
   Side,
   splitsAtom,
   Splits,
+  MAX_SPLIT,
   MIN_SPLITS,
   OTHER_SIDE,
 } from "src/state/layout";
 import { useMove } from "@react-aria/interactions";
-import { TContent } from "src/components/elements";
 import clsx from "clsx";
 import { useMediaQuery } from "react-responsive";
 import { ChevronLeftIcon, ChevronRightIcon } from "src/icons";
@@ -86,7 +86,11 @@ export function solveSplits(
       onToggle?.(false);
     }
   } else {
-    newSplits[side] = Math.min(newValue, windowWidth - MIN_MAP_WIDTH);
+    newSplits[side] = Math.min(
+      newValue,
+      MAX_SPLIT,
+      windowWidth - MIN_MAP_WIDTH,
+    );
   }
 
   const thisPane = newSplits[side];
@@ -122,9 +126,8 @@ function useResize(
     },
     onMove(e) {
       if (rawSplit.current === null) return;
-      rawSplit.current -= Math.round(e.deltaX * (side === "left" ? -1 : 1));
-      if (rawSplit.current === null) return;
-      const raw = rawSplit.current;
+      rawSplit.current += side === "left" ? e.deltaX : -e.deltaX;
+      const raw = Math.round(rawSplit.current);
       setSplits((splits) => {
         return solveSplits(splits, side, raw, isCollapseAllowed, onToggle);
       });
@@ -139,6 +142,18 @@ function useResize(
 
 const MIN_BOTTOM_HEIGHT = 80;
 
+export const accumulateResize = (
+  accumulated: number,
+  growth: number,
+  { min, max }: { min: number; max: number },
+) => {
+  const next = accumulated + growth;
+  return { accumulated: next, value: Math.round(clamp(next, min, max)) };
+};
+
+const clamp = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, value));
+
 function useResizeBottom() {
   const [splits, setSplits] = useAtom(splitsAtom);
   const rawSplit = useRef<number | null>(null);
@@ -150,12 +165,13 @@ function useResizeBottom() {
     },
     onMove(e) {
       if (rawSplit.current === null) return;
-      rawSplit.current -= Math.round(e.deltaY);
-      const clamped = Math.max(
-        MIN_BOTTOM_HEIGHT,
-        Math.min(window.innerHeight - 200, rawSplit.current),
+      const { accumulated, value } = accumulateResize(
+        rawSplit.current,
+        -e.deltaY,
+        { min: MIN_BOTTOM_HEIGHT, max: window.innerHeight - 200 },
       );
-      setSplits((splits) => ({ ...splits, bottom: clamped }));
+      rawSplit.current = accumulated;
+      setSplits((splits) => ({ ...splits, bottom: value }));
     },
     onMoveEnd() {
       rawSplit.current = null;
@@ -180,43 +196,43 @@ export const Resizer = memo(function ResizerInner({
     onToggle,
   );
 
+  if (!showPanel) {
+    return isToggleAllowed ? <PanelToggle side={side} /> : null;
+  }
+
   return (
-    <>
-      <button
-        {...moveProps}
-        type="button"
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize panel"
-        tabIndex={-1}
-        style={{
-          cursor: "col-resize",
-          [side]: showPanel ? splits[side] : 0,
-        }}
-        className="absolute top-0 bottom-0
+    <button
+      {...moveProps}
+      type="button"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize panel"
+      tabIndex={-1}
+      style={{
+        cursor: "col-resize",
+        [side]: splits[side],
+      }}
+      className="absolute top-0 bottom-0 z-10
         touch-none
         flex items-center
         justify-center
         w-1
         hover-none:w-3
-        bg-purple-700/0
+        bg-transparent
         hover-none:bg-white/40
         hover-none:dark:bg-black/40
-        hover-hover:hover:bg-purple-700
-        hover-hover:dark:hover:bg-purple-700
+        hover-hover:hover:bg-accent
         "
-      >
-        <div
-          className="
+    >
+      <div
+        className="
         hover-hover:hidden
         h-16
         w-1
         rounded
         bg-white"
-        />
-      </button>
-      {showPanel ? null : isToggleAllowed && <PanelToggle side={side} />}
-    </>
+      />
+    </button>
   );
 });
 
@@ -240,8 +256,13 @@ function PanelToggle({
   };
 
   return (
-    <T.Root>
-      <T.Trigger
+    <Tooltip
+      delayDuration={700}
+      content={<div className="whitespace-nowrap">Expand panel</div>}
+      side="top"
+    >
+      <button
+        type="button"
         onClick={togglePanel}
         aria-label="Show panel"
         className={clsx(
@@ -251,49 +272,92 @@ function PanelToggle({
             : "border-r rounded-l-none",
           `
           absolute px-0.5 py-2 top-1/2 border-t border-b
-          bg-white hover:bg-purple-100 border-gray-300
-          dark:bg-gray-900 dark:text-white dark:hover:bg-purple-700 dark:border-white
+          bg-base text-default hover:bg-purple-100 border-strong dark:hover:bg-purple-700 dark:border-white
           rounded
         `,
         )}
       >
         {side === "right" ? <ChevronLeftIcon /> : <ChevronRightIcon />}
-      </T.Trigger>
-      <T.Portal>
-        <TContent>
-          <div className="whitespace-nowrap">Expand panel</div>
-        </TContent>
-      </T.Portal>
-    </T.Root>
+      </button>
+    </Tooltip>
   );
 }
+
+const RowResizer = ({
+  moveProps,
+}: {
+  moveProps: ReturnType<typeof useMove>["moveProps"];
+}) => (
+  <button
+    {...moveProps}
+    type="button"
+    role="separator"
+    aria-orientation="horizontal"
+    aria-label="Resize panel"
+    tabIndex={-1}
+    style={{ cursor: "row-resize" }}
+    className="absolute top-0 left-0 right-0 -translate-y-full z-20
+      touch-none
+      flex items-center
+      justify-center
+      h-1
+      hover-none:h-3
+      bg-transparent
+      hover-none:bg-white/40
+      hover-none:dark:bg-black/40
+      hover-hover:hover:bg-accent
+      "
+  >
+    <div
+      className="
+      hover-hover:hidden
+      w-16
+      h-1
+      rounded
+      bg-white"
+    />
+  </button>
+);
 
 export const BottomResizer = memo(function BottomResizerInner() {
   const { moveProps } = useResizeBottom();
 
-  return (
-    <button
-      {...moveProps}
-      type="button"
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label="Resize panel"
-      tabIndex={-1}
-      style={{ cursor: "row-resize" }}
-      className="absolute top-0 left-0 right-0 h-3 -translate-y-1/2 z-20
-        touch-none
-        flex items-center justify-center
-        group"
-    >
-      <div
-        className="w-full h-1
-          bg-purple-700 dark:bg-purple-700
-          opacity-0
-          group-hover:opacity-100
-          pointer-events-none"
-      />
-    </button>
-  );
+  return <RowResizer moveProps={moveProps} />;
+});
+
+const MIN_VERTICAL_HEIGHT = 80;
+
+function useResizeVertical() {
+  const [splits, setSplits] = useAtom(splitsAtom);
+  const rawSplit = useRef<number | null>(null);
+
+  const { moveProps } = useMove({
+    onMoveStart() {
+      rawSplit.current =
+        typeof splits.vertical === "number" ? splits.vertical : 300;
+    },
+    onMove(e) {
+      if (rawSplit.current === null) return;
+      const { accumulated, value } = accumulateResize(
+        rawSplit.current,
+        -e.deltaY,
+        { min: MIN_VERTICAL_HEIGHT, max: window.innerHeight - 200 },
+      );
+      rawSplit.current = accumulated;
+      setSplits((splits) => ({ ...splits, vertical: value }));
+    },
+    onMoveEnd() {
+      rawSplit.current = null;
+    },
+  });
+
+  return { moveProps };
+}
+
+export const VerticalResizer = memo(function VerticalResizerInner() {
+  const { moveProps } = useResizeVertical();
+
+  return <RowResizer moveProps={moveProps} />;
 });
 
 const MIN_FOOTER_HEIGHT = 205;
@@ -344,7 +408,7 @@ export const FooterResizer = memo(function FooterResizerInner({
     >
       <div
         className="w-full h-1
-          bg-purple-700 dark:bg-purple-700
+          bg-accent
           opacity-0
           group-hover:opacity-100
           pointer-events-none"

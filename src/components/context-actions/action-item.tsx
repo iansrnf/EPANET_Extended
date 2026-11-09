@@ -1,14 +1,15 @@
-import * as Tooltip from "@radix-ui/react-tooltip";
+import { Tooltip } from "@epanet-js/ui-kit";
 import {
   CMItem,
   StyledItem,
-  TContent,
-  StyledTooltipArrow,
   Button,
   B3Variant,
   Keycap,
 } from "src/components/elements";
 import { localizeKeybinding } from "src/infra/i18n";
+import { useActionLock } from "src/components/action-button";
+import type { PaywallFeature } from "src/state/dialog";
+import type { PaywallLockSource } from "src/infra/user-tracking";
 
 export interface Action {
   onSelect: (event?: Event) => Promise<void>;
@@ -16,8 +17,11 @@ export interface Action {
   label: string;
   variant?: B3Variant;
   applicable: boolean;
+  priority?: number;
   shortcut?: string;
   selected?: boolean;
+  lockedFeature?: PaywallFeature;
+  lockSource?: PaywallLockSource;
 }
 
 export interface ActionProps {
@@ -26,56 +30,62 @@ export interface ActionProps {
 }
 
 export function ActionItem({
-  action: {
-    icon,
-    label,
-    onSelect,
-    variant = "quiet",
-    shortcut,
-    selected = false,
-  },
+  action,
   as,
   ...rest
 }: {
   action: Action;
   as: ActionProps["as"];
 } & React.ComponentProps<typeof CMItem>) {
+  const { icon, label, variant = "quiet", shortcut, selected = false } = action;
+  const { isLocked, label: lockedLabel, onSelect } = useActionLock(action);
+  const lockedProps = isLocked
+    ? {
+        "aria-label": lockedLabel,
+        "aria-disabled": true,
+        className: "opacity-50",
+      }
+    : {};
+
   return as === "dropdown-item" ? (
-    <StyledItem onSelect={onSelect} {...rest} variant={variant}>
+    <StyledItem
+      onSelect={onSelect}
+      {...rest}
+      {...lockedProps}
+      variant={variant}
+    >
       {icon} {label}
     </StyledItem>
   ) : as === "context-item" ? (
-    <CMItem onSelect={onSelect} {...rest} variant={variant}>
+    <CMItem onSelect={onSelect} {...rest} {...lockedProps} variant={variant}>
       {icon} {label}
     </CMItem>
   ) : (
-    <Tooltip.Root>
-      <div
-        className="h-10 w-8 py-1
+    <div
+      className="h-10 w-8 py-1
           group bn
           flex items-stretch justify-center focus:outline-hidden"
+    >
+      <Tooltip
+        delayDuration={700}
+        content={
+          <div className="flex gap-x-2 items-center whitespace-nowrap">
+            {lockedLabel}
+            {shortcut ? (
+              <Keycap size="xs">{localizeKeybinding(shortcut)}</Keycap>
+            ) : null}
+          </div>
+        }
       >
-        <Tooltip.Trigger
+        <Button
+          variant={selected ? "quiet/mode" : variant}
+          aria-expanded={selected ? "true" : "false"}
+          {...lockedProps}
           onClick={(evt) => onSelect(evt as unknown as Event)}
-          asChild
         >
-          <Button
-            variant={selected ? "quiet/mode" : variant}
-            aria-expanded={selected ? "true" : "false"}
-          >
-            {icon}
-          </Button>
-        </Tooltip.Trigger>
-      </div>
-      <TContent side="bottom">
-        <StyledTooltipArrow />
-        <div className="flex gap-x-2 items-center whitespace-nowrap">
-          {label}
-          {shortcut ? (
-            <Keycap size="xs">{localizeKeybinding(shortcut)}</Keycap>
-          ) : null}
-        </div>
-      </TContent>
-    </Tooltip.Root>
+          {icon}
+        </Button>
+      </Tooltip>
+    </div>
   );
 }

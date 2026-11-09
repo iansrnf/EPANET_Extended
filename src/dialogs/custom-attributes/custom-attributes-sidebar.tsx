@@ -1,0 +1,57 @@
+import clsx from "clsx";
+import { useTranslate } from "src/hooks/use-translate";
+import {
+  CustomAttributeAssetType,
+  CustomAttributesDefinition,
+  countFor,
+} from "@epanet-js/hydraulic-model";
+import { WarningIcon } from "src/icons";
+
+type CustomAttributesSidebarProps = {
+  width: number;
+  assetTypes: CustomAttributeAssetType[];
+  definition: CustomAttributesDefinition;
+  selectedAssetType: CustomAttributeAssetType;
+  invalidAssetTypes: Set<CustomAttributeAssetType>;
+  onSelect: (assetType: CustomAttributeAssetType) => void;
+};
+
+export const CustomAttributesSidebar = ({
+  width,
+  assetTypes,
+  definition,
+  selectedAssetType,
+  invalidAssetTypes,
+  onSelect,
+}: CustomAttributesSidebarProps) => {
+  const translate = useTranslate();
+
+  return (
+    <div className="shrink-0 flex flex-col p-3 border-r" style={{ width }}>
+      {assetTypes.map((assetType) => {
+        const isSelected = assetType === selectedAssetType;
+        const count = countFor(definition, assetType);
+        const isInvalid = invalidAssetTypes.has(assetType);
+        return (
+          <button
+            key={assetType}
+            type="button"
+            onClick={() => onSelect(assetType)}
+            className={clsx(
+              "flex items-center justify-between gap-2 px-4 py-1.5 rounded-md text-size-base text-left",
+              isSelected
+                ? "bg-purple-100 text-purple-900 dark:bg-purple-900/40 dark:text-purple-100"
+                : "text-default hover:bg-gray-100 dark:hover:bg-gray-800",
+            )}
+          >
+            <span className="min-w-0 flex items-baseline gap-1">
+              <span className="truncate">{translate(assetType)}</span>
+              <span className="shrink-0 text-subtle">({count})</span>
+            </span>
+            {isInvalid && <WarningIcon className="text-warning" />}
+          </button>
+        );
+      })}
+    </div>
+  );
+};

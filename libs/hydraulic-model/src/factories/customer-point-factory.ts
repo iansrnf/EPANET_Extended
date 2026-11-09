@@ -1,0 +1,57 @@
+import { Position } from "geojson";
+import { ConsecutiveIdsGenerator, IdGenerator } from "@epanet-js/id-generator";
+import { CustomerPoint, CustomerPointId } from "../customer-points";
+import { roundCoordinates } from "@epanet-js/geometry";
+import { LabelManager } from "../label-manager";
+
+export const buildCustomerPointPreviewFactory = (
+  labelManager: LabelManager,
+  idGenerator: IdGenerator = new ConsecutiveIdsGenerator(),
+): CustomerPointFactory => {
+  const previewLabelManager = new LabelManager();
+  previewLabelManager.copyTypeFrom("customerPoint", labelManager);
+  return new CustomerPointFactory(idGenerator, previewLabelManager);
+};
+
+export class CustomerPointFactory {
+  private idGenerator: IdGenerator;
+  private labelManager: LabelManager;
+
+  constructor(idGenerator: IdGenerator, labelManager: LabelManager) {
+    this.idGenerator = idGenerator;
+    this.labelManager = labelManager;
+  }
+
+  create(coordinates: Position, label?: string): CustomerPoint {
+    const id = this.idGenerator.newId();
+    const resolvedLabel = this.resolveLabel(id, label);
+    return new CustomerPoint(id, roundCoordinates(coordinates), {
+      label: resolvedLabel,
+    });
+  }
+
+  load({
+    id,
+    coordinates,
+    label,
+  }: {
+    id: CustomerPointId;
+    coordinates: Position;
+    label: string;
+  }): CustomerPoint {
+    this.labelManager.register(label, "customerPoint", id);
+    return new CustomerPoint(id, roundCoordinates(coordinates), { label });
+  }
+
+  get totalGenerated(): number {
+    return this.idGenerator.totalGenerated;
+  }
+
+  private resolveLabel(id: number, label?: string): string {
+    if (label !== undefined) {
+      this.labelManager.register(label, "customerPoint", id);
+      return label;
+    }
+    return this.labelManager.generateFor("customerPoint", id);
+  }
+}

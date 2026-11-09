@@ -1,4 +1,5 @@
 export { runSimulation, cancelSimulation } from "./epanet/main";
+export { getLsxRequirements } from "./build-inp";
 export type { SimulationProgress, ProgressCallback } from "./epanet/worker";
 export { EPSResultsReader } from "./epanet/eps-results-reader";
 export type { SimulationIds } from "./epanet/eps-results-reader";
@@ -11,5 +12,8 @@ export type {
   TankSimulation,
   ResultsReader,
   SimulationProperty,
-} from "./results-reader";
-export { simulationProperties, isSimulationProperty } from "./results-reader";
+} from "@epanet-js/simulation";
+export {
+  simulationProperties,
+  isSimulationProperty,
+} from "@epanet-js/simulation";

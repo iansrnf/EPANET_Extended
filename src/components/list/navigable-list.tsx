@@ -28,6 +28,7 @@ type NavigableListProps<S extends string> = {
   navItems: NavItem<S>[];
   focusedItem?: NavItem<S>;
   onSelectItem: (item: NavItem<S>) => void;
+  onActivateItem?: (item: NavItem<S>) => void;
   isNavBlocked?: boolean;
   children: React.ReactNode;
 };
@@ -37,6 +38,7 @@ function NavigableListInner<S extends string>(
     navItems,
     focusedItem,
     onSelectItem,
+    onActivateItem,
     isNavBlocked,
     children,
   }: NavigableListProps<S>,
@@ -130,14 +132,14 @@ function NavigableListInner<S extends string>(
       }
       itemsBySection.get(item.section)!.push(item);
     }
-    for (const section of Object.keys(sectionStatus) as S[]) {
+    for (const section of sections as S[]) {
       result.push({ section });
-      if (sectionStatus[section]) {
+      if (sectionStatus[section] ?? true) {
         result.push(...(itemsBySection.get(section) ?? []));
       }
     }
     return result;
-  }, [navItems, sectionStatus]);
+  }, [navItems, sections, sectionStatus]);
 
   const currentNavIndex = useMemo(() => {
     if (focusedItem) {
@@ -170,6 +172,18 @@ function NavigableListInner<S extends string>(
         e.preventDefault();
         e.stopPropagation();
         toggleSection(focusedItem.section);
+        return;
+      }
+
+      if (
+        e.key === "Enter" &&
+        onActivateItem &&
+        focusedItem?.id != null &&
+        e.target === e.currentTarget
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        onActivateItem(focusedItem);
         return;
       }
 
@@ -238,6 +252,7 @@ function NavigableListInner<S extends string>(
       navigateToItem,
       toggleSection,
       currentNavIndex,
+      onActivateItem,
     ],
   );
 
@@ -245,7 +260,7 @@ function NavigableListInner<S extends string>(
     <NavigableListContext.Provider value={contextValue}>
       <div
         ref={listRef}
-        className="flex-1 overflow-y-auto outline-hidden placemark-scrollbar scroll-shadows border-gray-200 dark:border-gray-700 px-2 border-r"
+        className="flex-1 overflow-y-auto outline-hidden placemark-scrollbar scroll-shadows px-2 border-r"
         onKeyDown={handleKeyDown}
         onScroll={handleScroll}
         tabIndex={0}

@@ -10,6 +10,7 @@ import clsx from "clsx";
 type StyleOptions = {
   textSize?: "xs" | "sm" | "md";
   padding?: "md" | "sm";
+  width?: "full" | "content";
   border?: "sm" | "none";
   ghostBorder?: boolean;
   variant?: "default" | "warning";
@@ -25,14 +26,16 @@ export const EditableTextField = ({
   readOnly = false,
   disabled = false,
   styleOptions = {},
-  tabIndex = 1,
-  allowedChars,
-  maxByteLength,
+  tabIndex = 0,
+  sanitize,
   onDirty,
   onReset,
   hasError = false,
   allowEmpty = false,
   placeholder,
+  className,
+  title,
+  autoFocus = false,
 }: {
   label: string;
   value: string;
@@ -41,17 +44,25 @@ export const EditableTextField = ({
   disabled?: boolean;
   styleOptions?: Partial<StyleOptions>;
   tabIndex?: number;
-  allowedChars?: RegExp;
-  maxByteLength?: number;
+  sanitize?: (raw: string) => string;
   onDirty?: () => void;
   onReset?: () => void;
   hasError?: boolean;
   allowEmpty?: boolean;
   placeholder?: string;
+  className?: string;
+  title?: string;
+  autoFocus?: boolean;
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [inputValue, setInputValue] = useState(value);
   const [isDirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (autoFocus) {
+      inputRef.current?.focus();
+    }
+  }, [autoFocus]);
 
   useEffect(() => {
     if (!isDirty && document.activeElement !== inputRef.current) {
@@ -116,19 +127,7 @@ export const EditableTextField = ({
   };
 
   const handleInputChange: ChangeEventHandler<HTMLInputElement> = (e) => {
-    let newValue = e.target.value;
-    if (allowedChars) {
-      newValue = newValue
-        .split("")
-        .filter((char) => allowedChars.test(char))
-        .join("");
-    }
-    if (maxByteLength !== undefined) {
-      const encoder = new TextEncoder();
-      while (encoder.encode(newValue).length > maxByteLength) {
-        newValue = newValue.slice(0, -1);
-      }
-    }
+    const newValue = sanitize ? sanitize(e.target.value) : e.target.value;
     setInputValue(newValue);
     setDirty(true);
     onDirty?.();
@@ -139,8 +138,9 @@ export const EditableTextField = ({
   if (readOnly) {
     return (
       <span
-        className={styledReadOnlyText(styleOptions)}
+        className={clsx(styledReadOnlyText(styleOptions), className)}
         aria-label={`Value for: ${label}`}
+        title={title}
       >
         {value}
       </span>
@@ -154,20 +154,25 @@ export const EditableTextField = ({
       spellCheck="false"
       type="text"
       aria-label={`Value for: ${label}`}
+      aria-invalid={hasError || undefined}
       readOnly={readOnly}
       disabled={disabled}
       onBlur={handleBlur}
       ref={inputRef}
       value={inputValue}
       placeholder={placeholder}
+      title={title}
       onFocus={handleFocus}
       tabIndex={tabIndex}
-      className={styledInput({
-        ...styleOptions,
-        variant,
-        disabled,
-        readOnly,
-      })}
+      className={clsx(
+        styledInput({
+          ...styleOptions,
+          variant,
+          disabled,
+          readOnly,
+        }),
+        className,
+      )}
     />
   );
 };
@@ -176,23 +181,25 @@ function styledReadOnlyText({
   padding = "md",
   textSize = "xs",
   fontWeight = "normal",
+  width = "full",
 }: Partial<StyleOptions> = {}) {
   return clsx(
-    "text-gray-700 dark:text-gray-100",
+    "text-default",
     {
       "p-1": padding === "sm",
       "p-2": padding === "md",
     },
     {
-      "text-xs": textSize === "xs",
-      "text-sm": textSize === "sm",
+      "text-size-small": textSize === "xs",
+      "text-size-base": textSize === "sm",
       "text-md": textSize === "md",
     },
     {
       "font-normal": fontWeight === "normal",
       "font-semibold": fontWeight === "semibold",
     },
-    "block overflow-hidden whitespace-nowrap text-ellipsis w-full border border-transparent",
+    "block overflow-hidden whitespace-nowrap text-ellipsis border border-transparent",
+    width === "content" ? "w-fit" : "w-full",
   );
 }
 
@@ -201,6 +208,7 @@ function styledInput({
   border = "sm",
   variant = "default",
   textSize = "xs",
+  width = "full",
   ghostBorder = false,
   disabled = false,
   readOnly = false,
@@ -209,9 +217,7 @@ function styledInput({
   const isInteractive = !disabled && !readOnly;
 
   return clsx(
-    disabled
-      ? "text-gray-400 dark:text-gray-500 cursor-not-allowed"
-      : "text-gray-700 dark:text-gray-100",
+    disabled ? "text-disabled cursor-not-allowed" : "text-default",
     readOnly && "cursor-default",
     {
       "p-1": padding === "sm",
@@ -226,27 +232,28 @@ function styledInput({
     ghostBorder && variant !== "warning"
       ? "border-transparent bg-transparent"
       : variant === "warning"
-        ? "border-orange-500 dark:border-orange-700"
+        ? "border-warning"
         : isInteractive
-          ? "border-gray-300 hover:border-gray-200"
+          ? "border-strong hover:border"
           : "border-transparent",
-    !ghostBorder && variant !== "warning" && "bg-white dark:bg-gray-800",
+    !ghostBorder && variant !== "warning" && "bg-popover",
     isInteractive && {
-      "focus-visible:bg-purple-300/10 dark:focus-visible:bg-purple-700/40 dark:focus-visible:ring-purple-700 focus-visible:ring-purple-500":
+      "focus-visible:bg-purple-300/10 dark:focus-visible:bg-purple-700/40 focus-visible:ring-accent":
         variant === "default",
-      "focus-visible:bg-orange-300/10 dark:focus-visible:bg-orange-700/40 dark:focus-visible:ring-orange-700 focus-visible:ring-orange-500":
+      "focus-visible:bg-warning-subtle focus-visible:ring-warning":
         variant === "warning",
     },
     {
-      "text-xs": textSize === "xs",
-      "text-sm": textSize === "sm",
+      "text-size-small": textSize === "xs",
+      "text-size-base": textSize === "sm",
       "text-md": textSize === "md",
     },
     {
       "font-normal": fontWeight === "normal",
       "font-semibold": fontWeight === "semibold",
     },
-    "rounded-xs block overflow-hidden whitespace-nowrap text-ellipsis w-full",
+    "rounded-xs block overflow-hidden whitespace-nowrap text-ellipsis",
+    width === "content" ? "field-sizing-content w-fit min-w-16" : "w-full",
     isInteractive && "focus-visible:ring-inset",
   );
 }

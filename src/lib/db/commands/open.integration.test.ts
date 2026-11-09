@@ -1,19 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
-import { defaultProjectSettings } from "src/lib/project-settings";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
+import { defaultProjectSettings } from "@epanet-js/project-settings";
 import {
   defaultSimulationSettings,
   type SimulationSettings,
 } from "src/simulation/simulation-settings";
-import type { ProjectSettings } from "src/lib/project-settings";
-import type { Junction } from "src/hydraulic-model/asset-types/junction";
-import type { Reservoir } from "src/hydraulic-model/asset-types/reservoir";
-import type { Pipe } from "src/hydraulic-model/asset-types/pipe";
+import type { ProjectSettings } from "@epanet-js/project-settings";
+import {
+  type Junction,
+  type Reservoir,
+  type Pipe,
+} from "@epanet-js/hydraulic-model";
+import { ensureUniqueId } from "./ensure-unique-id";
 import { exportDb } from "./export-db";
 import { fetchProject } from "./fetch-project";
 import { importProject } from "./import-project";
 import { openProject } from "./open-project";
 import { useInProcessDb } from "../__test-helpers__/in-process-db";
+import { withTransaction } from "@epanet-js/ejsdb/worker-api";
+import { USelection } from "src/selection";
 
 describe("open integration", () => {
   useInProcessDb();
@@ -28,7 +33,18 @@ describe("open integration", () => {
       globalDemandMultiplier: 1.5,
     };
 
+    const pipeLibrary = [
+      {
+        label: "PVC",
+        entries: [
+          { age: 0, roughness: 150 },
+          { age: 20, roughness: 130 },
+        ],
+      },
+    ];
+
     const hydraulicModel = HydraulicModelBuilder.with()
+      .aPipeMaterial(pipeLibrary[0])
       .aJunction(1, { label: "J1", elevation: 10 })
       .aJunction(2, { label: "J2", elevation: 20 })
       .aReservoir(3, { label: "R1", elevation: 100 })
@@ -124,6 +140,225 @@ describe("open integration", () => {
     ]);
     expect(project.hydraulicModel.demands.junctions.get(1)).toEqual([
       { baseDemand: 2.5, patternId: 6 },
+    ]);
+
+    expect(project.hydraulicModel.pipeMaterials).toEqual(pipeLibrary);
+  });
+
+  it("opens a project without a uniqueId as undefined (optional field)", async () => {
+    await importProject({
+      newDb: true,
+      hydraulicModel: HydraulicModelBuilder.with().aJunction(1).build(),
+      projectSettings: defaultProjectSettings,
+      simulationSettings: defaultSimulationSettings,
+    });
+
+    const blob = await exportDb();
+    const file = new File([blob], "no-id.ejsdb", {
+      type: "application/octet-stream",
+    });
+
+    const openResult = await openProject(file);
+    expect(openResult.status).toBe("ok");
+    expect((await fetchProject()).projectSettings.uniqueId).toBeUndefined();
+  });
+
+  it("preserves the uniqueId across a newDb=false rebuild that leaves settings untouched", async () => {
+    await importProject({
+      newDb: true,
+      hydraulicModel: HydraulicModelBuilder.with().aJunction(1).build(),
+      projectSettings: defaultProjectSettings,
+      simulationSettings: defaultSimulationSettings,
+    });
+    const id = await ensureUniqueId();
+
+    await importProject({
+      newDb: false,
+      hydraulicModel: HydraulicModelBuilder.with().aJunction(2).build(),
+      simulationSettings: defaultSimulationSettings,
+    });
+
+    expect((await fetchProject()).projectSettings.uniqueId).toBe(id);
+  });
+
+  it("carries the uniqueId when a newDb=false rebuild rewrites settings that include it", async () => {
+    await importProject({
+      newDb: true,
+      hydraulicModel: HydraulicModelBuilder.with().aJunction(1).build(),
+      projectSettings: defaultProjectSettings,
+      simulationSettings: defaultSimulationSettings,
+    });
+    const id = await ensureUniqueId();
+    const settingsWithId = (await fetchProject()).projectSettings;
+
+    await importProject({
+      newDb: false,
+      hydraulicModel: HydraulicModelBuilder.with().aJunction(2).build(),
+      projectSettings: { ...settingsWithId, name: "renamed" },
+      simulationSettings: defaultSimulationSettings,
+    });
+
+    const project = await fetchProject();
+    expect(project.projectSettings.name).toBe("renamed");
+    expect(project.projectSettings.uniqueId).toBe(id);
+  });
+
+  it("starts a fresh newDb=true project with no uniqueId", async () => {
+    await importProject({
+      newDb: true,
+      hydraulicModel: HydraulicModelBuilder.with().aJunction(1).build(),
+      projectSettings: defaultProjectSettings,
+      simulationSettings: defaultSimulationSettings,
+    });
+    await ensureUniqueId();
+
+    await importProject({
+      newDb: true,
+      hydraulicModel: HydraulicModelBuilder.with().aJunction(2).build(),
+      projectSettings: defaultProjectSettings,
+      simulationSettings: defaultSimulationSettings,
+    });
+
+    expect((await fetchProject()).projectSettings.uniqueId).toBeUndefined();
+  });
+
+  it("migrates a file saved before the scenarios table existed", async () => {
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(1, { label: "J1" })
+      .build();
+    await importProject({
+      newDb: true,
+      hydraulicModel,
+      projectSettings: defaultProjectSettings,
+      simulationSettings: defaultSimulationSettings,
+    });
+    await withTransaction("downgrade", (db) => {
+      db.exec("DROP TABLE scenarios");
+      db.exec("DROP TABLE scripts");
+      db.exec("ALTER TABLE zones DROP COLUMN custom_attributes");
+      db.exec("ALTER TABLE selection_sets DROP COLUMN zones");
+      db.exec("DROP TABLE selection_set_groups");
+      db.exec("ALTER TABLE selection_sets DROP COLUMN group_id");
+      db.exec("PRAGMA user_version = 21");
+    });
+    const blob = await exportDb();
+
+    const result = await openProject(new File([blob], "before.epnt"));
+
+    expect(result).toMatchObject({ status: "migrated", fileVersion: 21 });
+    const rows = await withTransaction("count", (db) =>
+      db.exec("SELECT COUNT(*) FROM scenarios", {
+        returnValue: "resultRows",
+      }),
+    );
+    expect(rows).toEqual([[0]]);
+    const project = await fetchProject();
+    expect(project.hydraulicModel.assets.size).toBe(1);
+  });
+
+  it("migrates a file saved before scripts were stored, opening with none", async () => {
+    await importProject({
+      newDb: true,
+      hydraulicModel: HydraulicModelBuilder.with()
+        .aJunction(1, { label: "J1" })
+        .build(),
+      projectSettings: defaultProjectSettings,
+      simulationSettings: defaultSimulationSettings,
+    });
+    await withTransaction("downgrade", (db) => {
+      db.exec("DROP TABLE scripts");
+      db.exec("ALTER TABLE zones DROP COLUMN custom_attributes");
+      db.exec("ALTER TABLE selection_sets DROP COLUMN zones");
+      db.exec("DROP TABLE selection_set_groups");
+      db.exec("ALTER TABLE selection_sets DROP COLUMN group_id");
+      db.exec("PRAGMA user_version = 24");
+    });
+    const blob = await exportDb();
+
+    const result = await openProject(new File([blob], "before.epnt"));
+
+    expect(result).toMatchObject({ status: "migrated", fileVersion: 24 });
+    const project = await fetchProject();
+    expect(project.scripts).toEqual([]);
+    expect(project.hydraulicModel.assets.size).toBe(1);
+  });
+
+  it("migrates a file saved before zones stored custom attributes, keeping its zones", async () => {
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aZone({
+        id: 1,
+        label: "NORTH",
+        geometry: {
+          type: "MultiPolygon",
+          coordinates: [
+            [
+              [
+                [0, 0],
+                [1, 0],
+                [1, 1],
+                [0, 0],
+              ],
+            ],
+          ],
+        },
+        bbox: [0, 0, 1, 1],
+      })
+      .build();
+    await importProject({
+      newDb: true,
+      hydraulicModel,
+      projectSettings: defaultProjectSettings,
+      simulationSettings: defaultSimulationSettings,
+    });
+    await withTransaction("downgrade", (db) => {
+      db.exec("ALTER TABLE zones DROP COLUMN custom_attributes");
+      db.exec("ALTER TABLE selection_sets DROP COLUMN zones");
+      db.exec("DROP TABLE selection_set_groups");
+      db.exec("ALTER TABLE selection_sets DROP COLUMN group_id");
+      db.exec("PRAGMA user_version = 25");
+    });
+    const blob = await exportDb();
+
+    const result = await openProject(new File([blob], "before.epnt"));
+
+    expect(result).toMatchObject({ status: "migrated", fileVersion: 25 });
+    const project = await fetchProject();
+    expect(project.hydraulicModel.zones.get(1)?.label).toBe("NORTH");
+  });
+
+  it("migrates a file saved before selection sets stored zones, keeping its sets", async () => {
+    await importProject({
+      newDb: true,
+      hydraulicModel: HydraulicModelBuilder.with()
+        .aJunction(1, { label: "J1" })
+        .build(),
+      projectSettings: defaultProjectSettings,
+      simulationSettings: defaultSimulationSettings,
+      selectionSets: [
+        {
+          id: "set-1",
+          label: "Loop",
+          selection: USelection.fromIds([1], []),
+          groupId: null,
+        },
+      ],
+    });
+    await withTransaction("downgrade", (db) => {
+      db.exec("ALTER TABLE selection_sets DROP COLUMN zones");
+      db.exec("DROP TABLE selection_set_groups");
+      db.exec("ALTER TABLE selection_sets DROP COLUMN group_id");
+      db.exec("PRAGMA user_version = 26");
+    });
+    const blob = await exportDb();
+
+    const result = await openProject(new File([blob], "before.epnt"));
+
+    expect(result).toMatchObject({ status: "migrated", fileVersion: 26 });
+    const project = await fetchProject();
+    expect(project.selectionSets).toHaveLength(1);
+    expect(project.selectionSets[0].label).toBe("Loop");
+    expect(USelection.getAssetIds(project.selectionSets[0].selection)).toEqual([
+      1,
     ]);
   });
 });

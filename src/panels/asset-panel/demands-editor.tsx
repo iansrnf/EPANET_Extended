@@ -11,8 +11,8 @@ import { Patterns, PatternId } from "src/hydraulic-model";
 import { useTranslate } from "src/hooks/use-translate";
 import { DeleteIcon, AddIcon } from "src/icons";
 import { PropertyComparison } from "src/hooks/use-asset-comparison";
-import { calculateAverageDemand, Demand } from "src/hydraulic-model/demands";
-import { UnitsSpec } from "src/lib/project-settings/quantities-spec";
+import { calculateAverageDemand, Demand } from "@epanet-js/hydraulic-model";
+import { UnitsSpec } from "@epanet-js/project-settings";
 import { QuantityRow } from "./ui-components";
 import {
   NestedSection,
@@ -21,7 +21,7 @@ import {
 
 type DemandCategoryRow = {
   baseDemand: number | null;
-  patternId: PatternId;
+  patternId: PatternId | null;
 };
 
 type Props = {
@@ -31,8 +31,6 @@ type Props = {
   comparison?: PropertyComparison;
   readOnly?: boolean;
 };
-
-const CONSTANT_PATTERN_ID = 0;
 
 const toRow = (demand: Demand, patterns: Patterns): DemandCategoryRow => {
   if (demand.patternId) {
@@ -46,21 +44,20 @@ const toRow = (demand: Demand, patterns: Patterns): DemandCategoryRow => {
   }
   return {
     baseDemand: demand.baseDemand,
-    patternId: CONSTANT_PATTERN_ID,
+    patternId: null,
   };
 };
 
 const fromRow = (row: DemandCategoryRow): Demand => {
   return {
     baseDemand: row.baseDemand ?? 0,
-    patternId:
-      row.patternId === CONSTANT_PATTERN_ID ? undefined : row.patternId,
+    patternId: row.patternId ?? undefined,
   };
 };
 
 const createDefaultRow = (): DemandCategoryRow => ({
   baseDemand: 0,
-  patternId: CONSTANT_PATTERN_ID,
+  patternId: null,
 });
 
 export const DemandCategoriesEditor = ({
@@ -108,19 +105,14 @@ export const DemandCategoriesEditor = ({
   }, []);
 
   const patternOptions = useMemo(() => {
-    const options: { value: number; label: string }[] = [
-      {
-        value: CONSTANT_PATTERN_ID,
-        label: translate("constant"),
-      },
-    ];
+    const options: { value: number; label: string }[] = [];
     for (const [patternId, { label, type }] of patterns.entries()) {
       if (type === "demand") {
         options.push({ value: patternId, label });
       }
     }
     return options;
-  }, [patterns, translate]);
+  }, [patterns]);
 
   const handleDeleteRow = useCallback(
     (rowIndex: number) => {
@@ -163,7 +155,7 @@ export const DemandCategoriesEditor = ({
     (rowIndex: number) => {
       if (rowData.length > 1) return false;
       const row = rowData[rowIndex];
-      return row?.baseDemand === 0 && row?.patternId === CONSTANT_PATTERN_ID;
+      return row?.baseDemand === 0 && row?.patternId === null;
     },
     [rowData],
   );
@@ -175,6 +167,7 @@ export const DemandCategoriesEditor = ({
         icon: <DeleteIcon size="sm" />,
         onSelect: handleDeleteRow,
         disabled: isDeleteDisabled,
+        variant: "destructive" as const,
       },
       {
         label: translate("insertRowAbove"),
@@ -201,14 +194,15 @@ export const DemandCategoriesEditor = ({
       floatColumn("baseDemand", {
         header: translate("demand"),
         size: 60,
-        deleteValue: 0,
-        nullValue: 0,
+        emptyValue: 0,
       }),
       filterableSelectColumn("patternId", {
         header: translate("timePattern"),
         size: 80,
         options: patternOptions,
-        deleteValue: CONSTANT_PATTERN_ID,
+        placeholder: translate("constant"),
+        emptyOptionLabel: translate("constant"),
+        emptyValue: null,
       }),
     ],
     [translate, patternOptions],
@@ -293,7 +287,7 @@ export const DemandCategoriesEditor = ({
     <BlockComparisonField hasChanged={comparison?.hasChanged ?? false}>
       <div ref={containerRef} className="flex flex-col gap-2">
         <label
-          className="text-sm text-gray-500 w-full shrink-0"
+          className="text-size-base text-subtle w-full shrink-0"
           aria-label={`label: ${translate("demandCategories")}`}
         >
           {translate("demandCategories")}

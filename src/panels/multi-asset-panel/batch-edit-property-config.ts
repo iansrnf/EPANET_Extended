@@ -1,37 +1,46 @@
 import { Asset } from "src/hydraulic-model";
-import { pipeStatuses } from "src/hydraulic-model/asset-types/pipe";
-import { pumpStatuses } from "src/hydraulic-model/asset-types/pump";
-import { tankMixingModels } from "src/hydraulic-model/asset-types/tank";
 import {
+  pipeStatuses,
+  pumpStatuses,
+  tankMixingModels,
   valveStatuses,
   valveKinds,
-} from "src/hydraulic-model/asset-types/valve";
-import { chemicalSourceTypes } from "src/hydraulic-model/asset-types/node";
-import type { ChangeableProperty } from "src/hydraulic-model/model-operations/change-property";
-import type { CurveType } from "src/hydraulic-model/curves";
-import type { PatternType } from "src/hydraulic-model/patterns";
+  chemicalSourceTypes,
+  type CurveType,
+  type PatternType,
+} from "@epanet-js/hydraulic-model";
+import type { ChangeableProperty } from "@epanet-js/hydraulic-model-operations";
+import type { PaywallFeature } from "src/state/dialog";
+import { fieldValidator } from "src/lib/model-attributes-validation";
 
-type QuantityConfig = {
-  fieldType: "quantity";
-  modelProperty: ChangeableProperty;
-  positiveOnly?: boolean;
-  isNullable?: boolean;
+type CommonConfig = {
+  paywall?: PaywallFeature;
+  disabled?: boolean;
 };
 
-type CategoryConfig = {
+type QuantityConfig = CommonConfig & {
+  fieldType: "quantity";
+  modelProperty: ChangeableProperty;
+  validate?: (value: number) => boolean;
+  hasModelValidation?: boolean;
+  labelKey?: string;
+};
+
+type CategoryConfig = CommonConfig & {
   fieldType: "category";
   modelProperty: ChangeableProperty;
   statsPrefix: string;
   values: readonly string[];
   useUppercaseLabel?: boolean;
+  nullLabelKey?: string;
 };
 
-type BooleanConfig = {
+type BooleanConfig = CommonConfig & {
   fieldType: "boolean";
   modelProperty: ChangeableProperty;
 };
 
-type LibrarySelectConfig = {
+type LibrarySelectConfig = CommonConfig & {
   fieldType: "librarySelect";
   modelProperty: ChangeableProperty;
   library: "curves" | "patterns" | "pumps";
@@ -40,10 +49,11 @@ type LibrarySelectConfig = {
   libraryLabelKey?: string;
 };
 
-type OpenCategoryConfig = {
+type OpenCategoryConfig = CommonConfig & {
   fieldType: "openCategory";
   modelProperty: ChangeableProperty;
   nullLabelKey?: string;
+  validateNew?: (query: string) => boolean;
 };
 
 export type BatchEditPropertyConfig =
@@ -55,45 +65,39 @@ export type BatchEditPropertyConfig =
 
 export type EditableProperties = Record<string, BatchEditPropertyConfig>;
 
-export const PIPE_YEAR_EDITABLE_CONFIG: BatchEditPropertyConfig = {
-  fieldType: "quantity",
-  modelProperty: "year",
-  positiveOnly: true,
-  isNullable: true,
-};
-
-export const PIPE_MATERIAL_EDITABLE_CONFIG: BatchEditPropertyConfig = {
-  fieldType: "openCategory",
-  modelProperty: "material",
-};
-
 export const BATCH_EDITABLE_PROPERTIES: Record<
   Asset["type"],
   Record<string, BatchEditPropertyConfig>
 > = {
   junction: {
-    elevation: { fieldType: "quantity", modelProperty: "elevation" },
+    elevation: {
+      fieldType: "quantity",
+      modelProperty: "elevation",
+    },
     emitterCoefficient: {
       fieldType: "quantity",
       modelProperty: "emitterCoefficient",
-      positiveOnly: true,
+      validate: fieldValidator("junction", "emitterCoefficient"),
+      hasModelValidation: true,
     },
     initialQuality: {
       fieldType: "quantity",
       modelProperty: "initialQuality",
-      positiveOnly: true,
+      validate: fieldValidator("junction", "initialQuality"),
+      hasModelValidation: true,
     },
     chemicalSourceType: {
       fieldType: "category",
       modelProperty: "chemicalSourceType",
       statsPrefix: "source.",
       values: chemicalSourceTypes,
+      nullLabelKey: "none",
     },
     chemicalSourceStrength: {
       fieldType: "quantity",
       modelProperty: "chemicalSourceStrength",
-      positiveOnly: true,
-      isNullable: true,
+      validate: fieldValidator("junction", "chemicalSourceStrength"),
+      hasModelValidation: true,
     },
     chemicalSourcePattern: {
       fieldType: "librarySelect",
@@ -115,34 +119,45 @@ export const BATCH_EDITABLE_PROPERTIES: Record<
     diameter: {
       fieldType: "quantity",
       modelProperty: "diameter",
-      positiveOnly: true,
-      isNullable: false,
+      validate: fieldValidator("pipe", "diameter"),
     },
     length: {
       fieldType: "quantity",
       modelProperty: "length",
-      positiveOnly: true,
-      isNullable: false,
+      validate: fieldValidator("pipe", "length"),
+    },
+    material: {
+      fieldType: "openCategory",
+      modelProperty: "material",
+      paywall: "pipeAttributes",
+    },
+    year: {
+      fieldType: "quantity",
+      modelProperty: "year",
+      validate: fieldValidator("pipe", "year"),
+      hasModelValidation: true,
+      labelKey: "yearOfInstallation",
+      paywall: "pipeAttributes",
     },
     roughness: {
       fieldType: "quantity",
       modelProperty: "roughness",
-      positiveOnly: true,
+      validate: fieldValidator("pipe", "roughness"),
+      hasModelValidation: true,
     },
     minorLoss: {
       fieldType: "quantity",
       modelProperty: "minorLoss",
-      positiveOnly: true,
+      validate: fieldValidator("pipe", "minorLoss"),
+      hasModelValidation: true,
     },
     bulkReactionCoeff: {
       fieldType: "quantity",
       modelProperty: "bulkReactionCoeff",
-      isNullable: true,
     },
     wallReactionCoeff: {
       fieldType: "quantity",
       modelProperty: "wallReactionCoeff",
-      isNullable: true,
     },
   },
   pump: {
@@ -153,7 +168,21 @@ export const BATCH_EDITABLE_PROPERTIES: Record<
       statsPrefix: "pump.",
       values: pumpStatuses,
     },
-    speed: { fieldType: "quantity", modelProperty: "speed" },
+    speed: {
+      fieldType: "quantity",
+      modelProperty: "speed",
+      validate: fieldValidator("pump", "speed"),
+      labelKey: "initialSpeed",
+      hasModelValidation: true,
+    },
+    speedPattern: {
+      fieldType: "librarySelect",
+      modelProperty: "speedPatternId",
+      library: "patterns",
+      filterByType: "pumpSpeed",
+      nullLabelKey: "constant",
+      libraryLabelKey: "openPatternsLibrary",
+    },
     efficiencyCurve: {
       fieldType: "librarySelect",
       modelProperty: "efficiencyCurveId",
@@ -165,8 +194,8 @@ export const BATCH_EDITABLE_PROPERTIES: Record<
     energyPrice: {
       fieldType: "quantity",
       modelProperty: "energyPrice",
-      positiveOnly: true,
-      isNullable: true,
+      validate: fieldValidator("pump", "energyPrice"),
+      hasModelValidation: true,
     },
     energyPricePattern: {
       fieldType: "librarySelect",
@@ -186,7 +215,11 @@ export const BATCH_EDITABLE_PROPERTIES: Record<
       values: valveKinds,
       useUppercaseLabel: true,
     },
-    setting: { fieldType: "quantity", modelProperty: "setting" },
+    setting: {
+      fieldType: "quantity",
+      modelProperty: "setting",
+      hasModelValidation: true,
+    },
     initialStatus: {
       fieldType: "category",
       modelProperty: "initialStatus",
@@ -196,32 +229,46 @@ export const BATCH_EDITABLE_PROPERTIES: Record<
     diameter: {
       fieldType: "quantity",
       modelProperty: "diameter",
-      positiveOnly: true,
+      validate: fieldValidator("valve", "diameter"),
+      hasModelValidation: true,
     },
     minorLoss: {
       fieldType: "quantity",
       modelProperty: "minorLoss",
-      positiveOnly: true,
+      validate: fieldValidator("valve", "minorLoss"),
+      hasModelValidation: true,
     },
   },
   reservoir: {
-    elevation: { fieldType: "quantity", modelProperty: "elevation" },
+    elevation: {
+      fieldType: "quantity",
+      modelProperty: "elevation",
+    },
+    headPattern: {
+      fieldType: "librarySelect",
+      modelProperty: "headPatternId",
+      library: "patterns",
+      nullLabelKey: "constant",
+      libraryLabelKey: "openPatternsLibrary",
+    },
     initialQuality: {
       fieldType: "quantity",
       modelProperty: "initialQuality",
-      positiveOnly: true,
+      validate: fieldValidator("reservoir", "initialQuality"),
+      hasModelValidation: true,
     },
     chemicalSourceType: {
       fieldType: "category",
       modelProperty: "chemicalSourceType",
       statsPrefix: "source.",
       values: chemicalSourceTypes,
+      nullLabelKey: "none",
     },
     chemicalSourceStrength: {
       fieldType: "quantity",
       modelProperty: "chemicalSourceStrength",
-      positiveOnly: true,
-      isNullable: true,
+      validate: fieldValidator("reservoir", "chemicalSourceStrength"),
+      hasModelValidation: true,
     },
     chemicalSourcePattern: {
       fieldType: "librarySelect",
@@ -233,38 +280,44 @@ export const BATCH_EDITABLE_PROPERTIES: Record<
     },
   },
   tank: {
-    elevation: { fieldType: "quantity", modelProperty: "elevation" },
+    elevation: {
+      fieldType: "quantity",
+      modelProperty: "elevation",
+    },
     initialLevel: {
       fieldType: "quantity",
       modelProperty: "initialLevel",
-      positiveOnly: true,
+      validate: fieldValidator("tank", "initialLevel"),
+      hasModelValidation: true,
     },
     minLevel: {
       fieldType: "quantity",
       modelProperty: "minLevel",
-      positiveOnly: true,
+      validate: fieldValidator("tank", "minLevel"),
     },
     maxLevel: {
       fieldType: "quantity",
       modelProperty: "maxLevel",
-      positiveOnly: true,
+      validate: fieldValidator("tank", "maxLevel"),
     },
     diameter: {
       fieldType: "quantity",
       modelProperty: "diameter",
-      positiveOnly: true,
-      isNullable: false,
+      validate: fieldValidator("tank", "diameter"),
+      hasModelValidation: true,
     },
     minVolume: {
       fieldType: "quantity",
       modelProperty: "minVolume",
-      positiveOnly: true,
+      validate: fieldValidator("tank", "minVolume"),
+      hasModelValidation: true,
     },
     canOverflow: { fieldType: "boolean", modelProperty: "overflow" },
     initialQuality: {
       fieldType: "quantity",
       modelProperty: "initialQuality",
-      positiveOnly: true,
+      validate: fieldValidator("tank", "initialQuality"),
+      hasModelValidation: true,
     },
     mixingModel: {
       fieldType: "category",
@@ -275,24 +328,25 @@ export const BATCH_EDITABLE_PROPERTIES: Record<
     mixingFraction: {
       fieldType: "quantity",
       modelProperty: "mixingFraction",
-      positiveOnly: true,
+      validate: fieldValidator("tank", "mixingFraction"),
+      hasModelValidation: true,
     },
     bulkReactionCoeff: {
       fieldType: "quantity",
       modelProperty: "bulkReactionCoeff",
-      isNullable: true,
     },
     chemicalSourceType: {
       fieldType: "category",
       modelProperty: "chemicalSourceType",
       statsPrefix: "source.",
       values: chemicalSourceTypes,
+      nullLabelKey: "none",
     },
     chemicalSourceStrength: {
       fieldType: "quantity",
       modelProperty: "chemicalSourceStrength",
-      positiveOnly: true,
-      isNullable: true,
+      validate: fieldValidator("tank", "chemicalSourceStrength"),
+      hasModelValidation: true,
     },
     chemicalSourcePattern: {
       fieldType: "librarySelect",
@@ -305,13 +359,21 @@ export const BATCH_EDITABLE_PROPERTIES: Record<
   },
 };
 
-// Parallel to BATCH_EDITABLE_PROPERTIES.pipe with material and year attached.
-// The consumer picks this version when FLAG_PIPE_ATTRIBUTES is on.
-export const PIPE_BATCH_EDITABLE_PROPERTIES_WITH_ATTRIBUTES: Record<
-  string,
-  BatchEditPropertyConfig
-> = {
-  ...BATCH_EDITABLE_PROPERTIES.pipe,
-  material: PIPE_MATERIAL_EDITABLE_CONFIG,
-  year: PIPE_YEAR_EDITABLE_CONFIG,
-};
+// Properties that can be cleared to empty in batch edit: either a default
+// always applies, or the value is left empty (null/undefined).
+const OPTIONAL_KEYS = new Set<string>([
+  "bulkReactionCoeff",
+  "wallReactionCoeff",
+  "energyPrice",
+  "chemicalSourceStrength",
+  "year",
+  "minorLoss",
+  "emitterCoefficient",
+  "minVolume",
+  "mixingFraction",
+  "speed",
+  "initialQuality",
+]);
+
+export const isOptionalProperty = (modelProperty: string): boolean =>
+  OPTIONAL_KEYS.has(modelProperty);

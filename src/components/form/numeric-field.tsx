@@ -7,7 +7,10 @@ import {
   useEffect,
 } from "react";
 import { parseLocaleNumber, reformatWithoutGroups } from "src/infra/i18n";
-import { normalizeNumericInput } from "./numeric-input-utils";
+import {
+  normalizeNumericInput,
+  validationStateFor,
+} from "./numeric-input-utils";
 import clsx from "clsx";
 
 type StyleOptions = {
@@ -23,47 +26,70 @@ export const NumericField = ({
   label,
   displayValue,
   onChangeValue,
-  positiveOnly = false,
   readOnly = false,
   disabled = false,
-  isNullable = true,
+  isRequired = false,
+  commitInvalidValues = false,
   placeholder,
   styleOptions = {},
-  tabIndex = 1,
+  tabIndex = 0,
+  validate,
 }: {
   label: string;
   displayValue: string;
   onChangeValue?: (newValue: number, isEmpty: boolean) => void;
-  isNullable?: boolean;
-  positiveOnly?: boolean;
+  isRequired?: boolean;
+  commitInvalidValues?: boolean;
   readOnly?: boolean;
   disabled?: boolean;
   placeholder?: string;
   styleOptions?: Partial<StyleOptions>;
   tabIndex?: number;
+  validate?: (value: number) => boolean;
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [inputValue, setInputValue] = useState(displayValue);
   const [hasError, setError] = useState(false);
+  // hasError drives the warning styling; isBlocked gates the commit. For
+  // nullable fields a failed domain validation (e.g. not > 0) is informational
+  // only — the value still commits and enforcement moves to the
+  // pre-simulation check. A genuinely invalid number always blocks.
+  const [isBlocked, setBlocked] = useState(false);
   const [isDirty, setDirty] = useState(false);
 
   useEffect(() => {
     if (!isDirty && document.activeElement !== inputRef.current) {
       setInputValue(displayValue);
+      const { hasError, isBlocked } = disabled
+        ? { hasError: false, isBlocked: false }
+        : validationStateFor(displayValue, {
+            isRequired,
+            commitInvalidValues,
+            validate,
+          });
+      setError(hasError);
+      setBlocked(isBlocked);
     }
-  }, [displayValue, isDirty]);
+  }, [
+    displayValue,
+    isDirty,
+    disabled,
+    isRequired,
+    commitInvalidValues,
+    validate,
+  ]);
 
   const handleKeyDown: KeyboardEventHandler<HTMLInputElement> = (e) => {
     if (e.key === "Escape") {
       resetInput();
       return;
     }
-    if (e.key === "Enter" && !hasError) {
+    if (e.key === "Enter" && !isBlocked) {
       e.preventDefault();
       handleCommitLastChange();
       return;
     }
-    if (e.key === "Enter" && hasError) {
+    if (e.key === "Enter" && isBlocked) {
       e.preventDefault();
       resetInput();
       return;
@@ -77,12 +103,18 @@ export const NumericField = ({
   const resetInput = () => {
     setInputValue(displayValue);
     setDirty(false);
-    setError(false);
+    const { hasError, isBlocked } = validationStateFor(displayValue, {
+      isRequired,
+      commitInvalidValues,
+      validate,
+    });
+    setError(hasError);
+    setBlocked(isBlocked);
     blurInput();
   };
 
   const handleBlur = () => {
-    if (isDirty && !hasError) {
+    if (isDirty && !isBlocked) {
       handleCommitLastChange();
     } else {
       resetInput();
@@ -98,11 +130,12 @@ export const NumericField = ({
   const handleCommitLastChange = () => {
     const numericValue = parseLocaleNumber(inputValue);
     const isEmpty = inputValue.trim() === "";
-    setInputValue(isNullable && isEmpty ? "" : String(numericValue));
+    setInputValue(isEmpty ? "" : String(numericValue));
     onChangeValue && onChangeValue(numericValue, isEmpty);
 
     setDirty(false);
     setError(false);
+    setBlocked(false);
     blurInput();
   };
 
@@ -114,14 +147,17 @@ export const NumericField = ({
 
   const handleInputChange: ChangeEventHandler<HTMLInputElement> = (e) => {
     const rawValue = e.target.value;
-    const newInputValue = normalizeNumericInput(rawValue, {
-      positiveOnly,
-    });
+    const newInputValue = normalizeNumericInput(rawValue);
     if (newInputValue === inputValue) return;
     if (rawValue.length > 0 && newInputValue.length === 0) return;
     setInputValue(newInputValue);
-    const numericValue = parseLocaleNumber(newInputValue);
-    setError(isNaN(numericValue) || (!isNullable && numericValue === 0));
+    const { hasError, isBlocked } = validationStateFor(newInputValue, {
+      isRequired,
+      commitInvalidValues,
+      validate,
+    });
+    setError(hasError);
+    setBlocked(isBlocked);
     setDirty(true);
   };
 
@@ -143,6 +179,7 @@ export const NumericField = ({
       spellCheck="false"
       type="text"
       aria-label={`Value for: ${label}`}
+      aria-invalid={hasError || undefined}
       readOnly={readOnly}
       disabled={disabled}
       placeholder={placeholder}
@@ -150,7 +187,7 @@ export const NumericField = ({
       ref={inputRef}
       value={inputValue}
       onFocus={handleFocus}
-      tabIndex={tabIndex}
+      tabIndex={readOnly ? -1 : tabIndex}
       className={styledInput({ ...styleOptions, disabled })}
     />
   );
@@ -166,8 +203,8 @@ function styledInput({
 }: StyleOptions = {}) {
   return clsx(
     disabled
-      ? "text-gray-500 dark:text-gray-500 cursor-not-allowed bg-gray-100 dark:bg-gray-800"
-      : "text-gray-700 dark:text-gray-100",
+      ? "text-subtle cursor-not-allowed bg-base-disabled"
+      : "text-default",
     {
       "p-1": padding === "sm",
       "p-2": padding === "md",
@@ -179,21 +216,21 @@ function styledInput({
     ghostBorder && variant !== "warning"
       ? "border-transparent bg-transparent"
       : variant === "warning"
-        ? "border-orange-500 dark:border-orange-700"
-        : "border-gray-300 hover:border-gray-200",
-    !disabled && !ghostBorder && variant !== "warning" && "bg-white",
+        ? "border-warning"
+        : "border-strong hover:border",
+    !disabled && !ghostBorder && variant !== "warning" && "bg-base",
     !disabled && {
-      "focus-visible:bg-purple-300/10 dark:focus-visible:bg-purple-700/40 dark:focus-visible:ring-purple-700 focus-visible:ring-purple-500":
+      "focus-visible:bg-purple-300/10 dark:focus-visible:bg-purple-700/40 focus-visible:ring-accent":
         variant === "default",
-      "focus-visible:bg-orange-300/10 dark:focus-visible:bg-orange-700/40 dark:focus-visible:ring-orange-700 focus-visible:ring-orange-500":
+      "focus-visible:bg-warning-subtle focus-visible:ring-warning":
         variant === "warning",
     },
     {
-      "text-xs": textSize === "xs",
-      "text-sm": textSize === "sm",
+      "text-size-small": textSize === "xs",
+      "text-size-base": textSize === "sm",
       "text-md": textSize === "md",
     },
 
-    "rounded-xs block tabular-nums overflow-hidden whitespace-nowrap text-ellipsis focus-visible:ring-inset w-full placeholder:italic placeholder:text-gray-500",
+    "rounded-xs block tabular-nums overflow-hidden whitespace-nowrap text-ellipsis focus-visible:ring-inset w-full placeholder:italic placeholder:text-subtle",
   );
 }

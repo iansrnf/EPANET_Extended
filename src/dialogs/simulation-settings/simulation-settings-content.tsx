@@ -10,7 +10,7 @@ import {
   formatSecondsToDisplay,
 } from "src/components/form/time-field";
 import { NumericField } from "src/components/form/numeric-field";
-import { Selector, SelectorOption } from "src/components/form/selector";
+import { Selector, SelectorListOption } from "@epanet-js/ui-kit";
 import { hasScenariosAtom } from "src/state/scenarios";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import {
@@ -31,11 +31,11 @@ import { projectSettingsAtom } from "src/state/project-settings";
 import {
   flowUnitTranslationKeys,
   pressureUnitTranslationKeys,
-} from "src/lib/project-settings/quantities-spec";
+} from "@epanet-js/project-settings";
 import {
   headlossFormulas,
   headlossFormulasFullNames,
-} from "src/hydraulic-model/asset-types/pipe";
+} from "@epanet-js/hydraulic-model";
 import { EditableTextField } from "src/components/form/editable-text-field";
 import type {
   FormValues,
@@ -92,13 +92,13 @@ export const SettingsSection = ({
 );
 
 const SectionHeader = ({ children }: { children: React.ReactNode }) => (
-  <h3 className="sticky top-0 bg-white dark:bg-gray-800 -mt-3 -mx-3 pt-4 px-3 pb-2 z-5 text-base font-semibold text-gray-900 dark:text-white">
+  <h3 className="sticky top-0 bg-popover -mt-3 -mx-3 pt-4 px-3 pb-2 z-5 text-base font-semibold text-default dark:text-white">
     {children}
   </h3>
 );
 
 const SubsectionHeader = ({ children }: { children: React.ReactNode }) => (
-  <div className="sticky top-12 z-3 px-3 py-2 -mx-3 bg-white dark:bg-gray-800 text-sm font-semibold text-gray-900 dark:text-white">
+  <div className="sticky top-12 z-3 px-3 py-2 -mx-3 bg-popover text-size-base font-semibold text-default dark:text-white">
     {children}
   </div>
 );
@@ -756,28 +756,20 @@ export const EnergySection = () => {
     { label: translate("simulationSettings.reportEnergyNo"), value: "NO" },
   ];
 
-  const EMPTY_PATTERN_ID = 0;
-
-  const energyPricePatternOptions = useMemo(() => {
-    const patternGroup: SelectorOption<number>[] = [];
+  const energyPricePatterns = useMemo(() => {
+    const patternGroup: SelectorListOption<number>[] = [];
     for (const [, pattern] of patterns) {
       if (pattern.type === "energyPrice") {
         patternGroup.push({ label: pattern.label, value: pattern.id });
       }
     }
+    return patternGroup;
+  }, [patterns]);
 
-    const constantGroup: SelectorOption<number>[] = [
-      {
-        label:
-          patternGroup.length === 0
-            ? translate("simulationSettings.noPatternsYet")
-            : translate("constant"),
-        value: EMPTY_PATTERN_ID,
-      },
-    ];
-
-    return patternGroup.length ? [...constantGroup, ...patternGroup] : [];
-  }, [patterns, translate]);
+  const energyPricePatternClearLabel =
+    energyPricePatterns.length === 0
+      ? translate("simulationSettings.noPatternsYet")
+      : translate("constant");
 
   return (
     <div>
@@ -814,22 +806,13 @@ export const EnergySection = () => {
         <SelectorSetting
           label={translate("simulationSettings.energyGlobalPattern")}
           description={translate("simulationSettings.energyGlobalPatternDesc")}
-          options={energyPricePatternOptions}
+          options={energyPricePatterns}
           selected={values.energyGlobalPatternId}
           nullable
-          placeholder={
-            energyPricePatternOptions.length === 0
-              ? translate("simulationSettings.noPatternsYet")
-              : translate("constant")
-          }
-          listClassName="first:italic"
-          onChange={(v) =>
-            setFieldValue(
-              "energyGlobalPatternId",
-              v === EMPTY_PATTERN_ID ? null : v,
-            )
-          }
-          disabled={readonly || energyPricePatternOptions.length === 0}
+          placeholder={energyPricePatternClearLabel}
+          clearLabel={energyPricePatternClearLabel}
+          onChange={(v) => setFieldValue("energyGlobalPatternId", v)}
+          disabled={readonly || energyPricePatterns.length === 0}
         />
 
         <ValueSetting
@@ -856,18 +839,16 @@ export const SettingsRow = ({
   children: React.ReactNode;
 }) => (
   <div className="flex flex-col gap-1">
-    <span className="text-sm text-gray-700 dark:text-gray-200">
+    <span className="text-size-base text-default dark:text-gray-200">
       {label}
       {badge && (
-        <span className="ml-2 px-1.5 py-0.5 text-[10px] font-medium rounded-sm bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500">
+        <span className="ml-2 px-1.5 py-0.5 text-[10px] font-medium rounded-sm bg-panel text-subtle">
           {badge}
         </span>
       )}
     </span>
     {description && (
-      <span className="text-xs text-gray-400 dark:text-gray-500">
-        {description}
-      </span>
+      <span className="text-size-small text-subtle">{description}</span>
     )}
     {children}
   </div>
@@ -919,7 +900,7 @@ const TimeSetting = ({
           />
         </div>
         {errorMessage && (
-          <span className="text-xs font-semibold text-orange-800">
+          <span className="text-size-small font-semibold text-orange-800">
             {errorMessage}
           </span>
         )}
@@ -958,10 +939,8 @@ type SelectorSettingPropsBase<T extends string | number> = {
   label: string;
   description?: string;
   badge?: string;
-  options: SelectorOption<T>[] | SelectorOption<T>[][];
-  listClassName?: string;
+  options: SelectorListOption<T>[];
   disabled?: boolean;
-  stickyFirstGroup?: boolean;
   warning?: string;
 };
 
@@ -978,6 +957,7 @@ type SelectorSettingPropsNullable<T extends string | number> =
     selected: T | null;
     nullable: true;
     placeholder: string;
+    clearLabel?: string;
     onChange: (value: T | null) => void;
   };
 
@@ -994,38 +974,44 @@ const SelectorSetting = <T extends string | number>({
   nullable = false,
   placeholder,
   disabled = false,
-  stickyFirstGroup,
-  listClassName,
   warning,
   onChange,
-}: SelectorSettingProps<T>) => (
-  <SettingsRow label={label} description={description} badge={badge}>
-    <div className="flex items-center gap-2">
-      <div className="w-56">
-        <Selector
-          ariaLabel={label}
-          options={options}
-          selected={selected}
-          onChange={(v: T | null) => (onChange as (value: T | null) => void)(v)}
-          disabled={disabled}
-          nullable={nullable as true}
-          placeholder={placeholder as string}
-          stickyFirstGroup={stickyFirstGroup}
-          listClassName={listClassName}
-          styleOptions={{
-            border: true,
-            textSize: "text-sm",
-            paddingY: 2,
-            variant: warning ? "warning" : undefined,
-          }}
-        />
+  ...rest
+}: SelectorSettingProps<T>) => {
+  const clearLabel = (rest as { clearLabel?: string }).clearLabel;
+  const styleOptions = {
+    border: true,
+    textSize: "text-size-base" as const,
+    paddingY: 2,
+    variant: warning ? ("warning" as const) : undefined,
+  };
+  return (
+    <SettingsRow label={label} description={description} badge={badge}>
+      <div className="flex items-center gap-2">
+        <div className="w-56">
+          <Selector
+            ariaLabel={label}
+            options={options}
+            selected={selected}
+            onChange={(v: T | null) =>
+              (onChange as (value: T | null) => void)(v)
+            }
+            disabled={disabled}
+            nullable={nullable as true}
+            placeholder={placeholder as string}
+            clearLabel={clearLabel}
+            styleOptions={styleOptions}
+          />
+        </div>
+        {warning && (
+          <span className="text-size-small font-semibold text-orange-800">
+            {warning}
+          </span>
+        )}
       </div>
-      {warning && (
-        <span className="text-xs font-semibold text-orange-800">{warning}</span>
-      )}
-    </div>
-  </SettingsRow>
-);
+    </SettingsRow>
+  );
+};
 
 const TextSetting = ({
   label,
@@ -1051,8 +1037,7 @@ const TextSetting = ({
       <div
         className={clsx(
           "w-56",
-          disabled &&
-            "[&>input]:border-gray-300 [&>input]:bg-gray-100 dark:[&>input]:bg-gray-800",
+          disabled && "[&>input]:border-strong [&>input]:bg-base-disabled",
         )}
       >
         <EditableTextField
@@ -1073,7 +1058,7 @@ const TextSetting = ({
         />
       </div>
       {errorMessage && (
-        <span className="text-xs font-semibold text-orange-800">
+        <span className="text-size-small font-semibold text-orange-800">
           {errorMessage}
         </span>
       )}
@@ -1127,4 +1112,19 @@ export const useQualitySettingsValidation = () => {
   );
 
   return { hasValidationError, fieldErrors };
+};
+
+export const useInvalidSectionIds = (): Set<string> => {
+  const { hasValidationError: timeError } = useTimeSettingsValidation();
+  const { hasValidationError: qualityError } = useQualitySettingsValidation();
+
+  return useMemo(() => {
+    const set = new Set<string>();
+    if (timeError) set.add("times");
+    if (qualityError) {
+      set.add("waterQuality");
+      set.add("waterQuality-analysis");
+    }
+    return set;
+  }, [timeError, qualityError]);
 };

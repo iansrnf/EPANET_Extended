@@ -1,0 +1,220 @@
+import { atom, type Atom } from "jotai";
+import { selectAtom } from "jotai/utils";
+import { isNarrowViewportAtom, splitsAtom } from "src/state/layout";
+import type { Panel } from "src/panels/panel";
+import type { PanelContentState, PanelLayout } from "src/panels/panel-template";
+import {
+  type Dock,
+  type HorizontalDock,
+  type ResolvedLayout,
+  VERTICAL_DOCK,
+  bySidePriority,
+  resolveLayout,
+} from "src/panels/docks";
+
+export type { ResolvedLayout, Dock, HorizontalDock, PanelLayout };
+
+export const DOCKS: readonly Dock[] = [
+  "left",
+  "right",
+  "center",
+  "bottom",
+  "vertical",
+];
+
+export type PlacedPanel = {
+  id: string;
+  closable: boolean;
+  panel: Panel;
+  dock: Dock | undefined;
+  renamedTo?: string;
+};
+
+export const panelsAtom = atom<Panel[]>([]);
+
+export const panelLayoutAtom = atom<Record<string, PanelLayout>>({});
+
+export const panelContentStateAtom = atom<Record<string, PanelContentState>>(
+  {},
+);
+
+const selectedPanelIdsAtom = atom<Partial<Record<Dock, string>>>({});
+
+const panelOrderAtom = atom<Partial<Record<Dock, string[]>>>({});
+
+export const forgetPanelAtom = atom(null, (_get, set, panelId: string) => {
+  const drop = <T>(prev: Record<string, T>) => {
+    if (!(panelId in prev)) return prev;
+    const next = { ...prev };
+    delete next[panelId];
+    return next;
+  };
+  set(panelLayoutAtom, drop);
+  set(panelContentStateAtom, drop);
+  set(panelOrderAtom, (prev) => {
+    const dock = DOCKS.find((candidate) => prev[candidate]?.includes(panelId));
+    if (!dock) return prev;
+    return {
+      ...prev,
+      [dock]: prev[dock]!.filter((id) => id !== panelId),
+    };
+  });
+});
+
+export const resetPanelsAtom = atom(null, (_get, set, panels: Panel[]) => {
+  set(panelsAtom, panels);
+  set(panelLayoutAtom, {});
+  set(panelContentStateAtom, {});
+  set(selectedPanelIdsAtom, {});
+  set(panelOrderAtom, {});
+});
+
+const layoutPreferenceAtom = selectAtom(splitsAtom, (splits) => splits.layout);
+
+const resolvedLayoutAtom = atom<ResolvedLayout>((get) =>
+  resolveLayout(get(layoutPreferenceAtom), get(isNarrowViewportAtom)),
+);
+
+export function horizontalDock(
+  panel: Panel,
+  movedToDock: HorizontalDock | undefined,
+): HorizontalDock {
+  return movedToDock ?? panel.initialDock;
+}
+
+export function currentDock(
+  panel: Panel,
+  movedToDock: HorizontalDock | undefined,
+  layout: ResolvedLayout,
+): Dock | undefined {
+  if (layout === "vertical") {
+    return panel.availableInVerticalLayout ? VERTICAL_DOCK : undefined;
+  }
+  return horizontalDock(panel, movedToDock);
+}
+
+export const placedPanelsAtom = atom<PlacedPanel[]>((get) => {
+  const layout = get(panelLayoutAtom);
+  const resolved = get(resolvedLayoutAtom);
+  return get(panelsAtom).map((panel) => ({
+    id: panel.id,
+    closable: panel.closable,
+    panel,
+    dock: currentDock(panel, layout[panel.id]?.movedToDock, resolved),
+    renamedTo: layout[panel.id]?.renamedTo,
+  }));
+});
+
+export const panelsByDockAtom = atom<Record<Dock, PlacedPanel[]>>((get) => {
+  const order = get(panelOrderAtom);
+  const layout = get(panelLayoutAtom);
+  const byDock: Record<Dock, PlacedPanel[]> = {
+    left: [],
+    right: [],
+    center: [],
+    bottom: [],
+    vertical: [],
+  };
+  for (const entry of get(placedPanelsAtom)) {
+    if (entry.dock) byDock[entry.dock].push(entry);
+  }
+  byDock[VERTICAL_DOCK].sort((a, b) =>
+    bySidePriority(
+      horizontalDock(a.panel, layout[a.id]?.movedToDock),
+      horizontalDock(b.panel, layout[b.id]?.movedToDock),
+    ),
+  );
+  for (const dock of DOCKS) {
+    const ids = order[dock];
+    if (!ids) continue;
+    const positionOf = (entry: PlacedPanel) => {
+      const position = ids.indexOf(entry.id);
+      return position === -1 ? Infinity : position;
+    };
+    byDock[dock].sort((a, b) => positionOf(a) - positionOf(b));
+  }
+  return byDock;
+});
+
+export const activePanelsAtom = atom<Record<Dock, PlacedPanel | null>>(
+  (get) => {
+    const selected = get(selectedPanelIdsAtom);
+    const byDock = get(panelsByDockAtom);
+    const active = {} as Record<Dock, PlacedPanel | null>;
+    for (const dock of DOCKS) {
+      const panels = byDock[dock];
+      active[dock] =
+        panels.find((entry) => entry.id === selected[dock]) ??
+        panels[0] ??
+        null;
+    }
+    return active;
+  },
+);
+
+export const activatePanelAtom = atom(null, (get, set, panelId: string) => {
+  const entry = get(placedPanelsAtom).find((docked) => docked.id === panelId);
+  if (!entry) return;
+  const { dock } = entry;
+  if (!dock) return;
+  set(selectedPanelIdsAtom, (prev) => ({ ...prev, [dock]: panelId }));
+});
+
+export const reorderPanelAtom = atom(
+  null,
+  (get, set, { dock, activeId, overId }: ReorderPanel) => {
+    if (activeId === overId) return;
+
+    const ids = get(panelsByDockAtom)[dock].map((entry) => entry.id);
+    const from = ids.indexOf(activeId);
+    const to = ids.indexOf(overId);
+    if (from === -1 || to === -1) return;
+
+    const reordered = [...ids];
+    reordered.splice(to, 0, ...reordered.splice(from, 1));
+    set(panelOrderAtom, (prev) => ({ ...prev, [dock]: reordered }));
+  },
+);
+
+export type ReorderPanel = {
+  dock: Dock;
+  activeId: string;
+  overId: string;
+};
+
+const samePlacedPanel = (
+  a: PlacedPanel | null,
+  b: PlacedPanel | null,
+): boolean =>
+  a === b ||
+  (a !== null &&
+    b !== null &&
+    a.id === b.id &&
+    a.renamedTo === b.renamedTo &&
+    a.dock === b.dock &&
+    a.closable === b.closable &&
+    a.panel === b.panel);
+
+const sameEntries = (a: PlacedPanel[], b: PlacedPanel[]): boolean =>
+  a.length === b.length && a.every((entry, i) => samePlacedPanel(entry, b[i]));
+
+const perDock = <T>(
+  source: Atom<Record<Dock, T>>,
+  equals: (a: T, b: T) => boolean,
+): Record<Dock, Atom<T>> =>
+  DOCKS.reduce(
+    (atoms, dock) => {
+      atoms[dock] = selectAtom(source, (byDock) => byDock[dock], equals);
+      return atoms;
+    },
+    {} as Record<Dock, Atom<T>>,
+  );
+
+const activePanelAtoms = perDock(activePanelsAtom, samePlacedPanel);
+const panelsInDockAtoms = perDock(panelsByDockAtom, sameEntries);
+
+export const activePanelIn = (dock: Dock): Atom<PlacedPanel | null> =>
+  activePanelAtoms[dock];
+
+export const panelsIn = (dock: Dock): Atom<PlacedPanel[]> =>
+  panelsInDockAtoms[dock];

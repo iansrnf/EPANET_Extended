@@ -1,0 +1,225 @@
+import { useCallback, useEffect, useMemo } from "react";
+import { numericChecks } from "src/lib/model-attributes-validation";
+import { useSetAtom } from "jotai";
+import { Selector } from "@epanet-js/ui-kit";
+import {
+  buildDefaultLevelSetting,
+  LevelSettingControl,
+  Tank,
+} from "@epanet-js/hydraulic-model";
+import { Unit } from "@epanet-js/quantity";
+import { useTranslate } from "src/hooks/use-translate";
+import { useTranslateUnit } from "src/hooks/use-translate-unit";
+import { highlightsAtom } from "src/state/highlights";
+import { localizeDecimal } from "@epanet-js/i18n";
+import { InlineField, NestedSection } from "src/components/form/fields";
+import { TextField } from "src/components/form/text-field";
+import { NumericTable, Cell } from "src/components/form/numeric-table";
+
+const selectorStyleOptions = {
+  border: true,
+  textSize: "text-size-base",
+  paddingY: 2,
+} as const;
+
+type LevelField = "onLevel" | "offLevel";
+
+type LevelSettingError = "onOutOfRange" | "offOutOfRange" | "order";
+
+export const validateLevelSetting = (params: {
+  onLevel: number;
+  offLevel: number;
+  minLevel: number;
+  maxLevel: number;
+}): LevelSettingError[] => {
+  const { onLevel, offLevel, minLevel, maxLevel } = params;
+  const errors: LevelSettingError[] = [];
+  const inRange = (value: number) => value >= minLevel && value <= maxLevel;
+  if (!inRange(onLevel)) errors.push("onOutOfRange");
+  if (!inRange(offLevel)) errors.push("offOutOfRange");
+  if (onLevel >= offLevel) errors.push("order");
+  return errors;
+};
+
+export const PumpLevelBasedControls = ({
+  control,
+  tanks,
+  levelUnit,
+  onControlChange,
+  readOnly = false,
+}: {
+  control: LevelSettingControl;
+  tanks: Tank[];
+  levelUnit: Unit;
+  onControlChange: (control: LevelSettingControl) => void;
+  readOnly?: boolean;
+}) => {
+  const translate = useTranslate();
+  const translateUnit = useTranslateUnit();
+  const levelLabel = `${translate("level")} (${translateUnit(levelUnit)})`;
+  const setHighlights = useSetAtom(highlightsAtom);
+
+  const tankOptions = useMemo(
+    () => tanks.map((tank) => ({ value: tank.id, label: tank.label })),
+    [tanks],
+  );
+
+  const selectedTank = tanks.find((tank) => tank.id === control.tankId) ?? null;
+
+  const errors = selectedTank
+    ? validateLevelSetting({
+        onLevel: control.on.level,
+        offLevel: control.off.level,
+        minLevel: selectedTank.minLevel ?? 0,
+        maxLevel: selectedTank.maxLevel ?? 0,
+      })
+    : [];
+
+  const handleLevelChange = (
+    field: LevelField,
+    value: number,
+    isEmpty: boolean,
+  ) => {
+    if (isEmpty) return;
+    onControlChange(
+      field === "onLevel"
+        ? { ...control, on: { ...control.on, level: value } }
+        : { ...control, off: { level: value } },
+    );
+  };
+
+  const handleSettingChange = (value: number, isEmpty: boolean) => {
+    if (isEmpty) return;
+    onControlChange({ ...control, on: { ...control.on, setting: value } });
+  };
+
+  const handleTankChange = (tankId: number) => {
+    const tank = tanks.find((t) => t.id === tankId);
+    if (!tank) return;
+    onControlChange(
+      buildDefaultLevelSetting(
+        control.linkId,
+        tank.id,
+        tank.minLevel ?? 0,
+        tank.maxLevel ?? 0,
+        control.on.setting,
+        control.id,
+      ),
+    );
+  };
+
+  const clearHighlight = useCallback(() => setHighlights([]), [setHighlights]);
+
+  const highlightTankById = useCallback(
+    (tankId: number | null) => {
+      const coordinates =
+        tankId === null
+          ? undefined
+          : tanks.find((tank) => tank.id === tankId)?.coordinates;
+      if (!coordinates) {
+        setHighlights([]);
+        return;
+      }
+      const [lng, lat] = coordinates;
+      setHighlights([
+        { type: "marker", coordinates: [lng, lat], nodeType: "tank" },
+      ]);
+    },
+    [tanks, setHighlights],
+  );
+
+  useEffect(() => clearHighlight, [clearHighlight]);
+
+  const hasOrderError = errors.includes("order");
+  const hasOnError = errors.includes("onOutOfRange") || hasOrderError;
+  const hasOffError = errors.includes("offOutOfRange") || hasOrderError;
+
+  const cells: Array<[Cell, Cell]> = [
+    [
+      {
+        label: `${translate("pump.on")} ${levelLabel}`,
+        value: control.on.level,
+        hasError: hasOnError,
+        handler: (newValue, isEmpty) =>
+          handleLevelChange("onLevel", newValue, isEmpty),
+        readOnly,
+      },
+      {
+        label: `${translate("pump.on")} ${translate("speed")}`,
+        value: control.on.setting,
+        validate: numericChecks.positive,
+        handler: handleSettingChange,
+        readOnly,
+      },
+    ],
+    [
+      {
+        label: `${translate("pump.off")} ${levelLabel}`,
+        value: control.off.level,
+        hasError: hasOffError,
+        handler: (newValue, isEmpty) =>
+          handleLevelChange("offLevel", newValue, isEmpty),
+        readOnly,
+      },
+      {
+        label: `${translate("pump.off")} ${translate("speed")}`,
+        value: null,
+        readOnly: true,
+      },
+    ],
+  ];
+
+  const messageParts: string[] = [];
+  if (
+    selectedTank &&
+    (errors.includes("onOutOfRange") || errors.includes("offOutOfRange"))
+  ) {
+    messageParts.push(
+      translate(
+        "controls.levelValidation.outOfRange",
+        localizeDecimal(selectedTank.minLevel ?? 0),
+        localizeDecimal(selectedTank.maxLevel ?? 0),
+      ),
+    );
+  }
+  if (hasOrderError) {
+    messageParts.push(translate("controls.levelValidation.onBelowOff"));
+  }
+
+  return (
+    <NestedSection className="pb-2">
+      <InlineField name={translate("tank")} labelSize="md">
+        <div
+          className="w-full"
+          onMouseEnter={() => highlightTankById(control.tankId)}
+          onMouseLeave={clearHighlight}
+        >
+          {readOnly ? (
+            <TextField padding="md">{selectedTank?.label ?? ""}</TextField>
+          ) : (
+            <Selector
+              ariaLabel={translate("tank")}
+              options={tankOptions}
+              selected={control.tankId}
+              onChange={handleTankChange}
+              onActiveOptionChange={highlightTankById}
+              styleOptions={selectorStyleOptions}
+            />
+          )}
+        </div>
+      </InlineField>
+      <NumericTable
+        labels={{
+          horizontal: [levelLabel, translate("speed")],
+          vertical: [translate("pump.on"), translate("pump.off")],
+        }}
+        cells={cells}
+      />
+      {messageParts.length > 0 && (
+        <p className="text-size-base font-semibold text-orange-800">
+          {messageParts.join(" ")}
+        </p>
+      )}
+    </NestedSection>
+  );
+};

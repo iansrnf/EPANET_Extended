@@ -1,7 +1,13 @@
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
-import { buildOrphanAssets, encodeData } from "./data";
-import { AssetIndexView } from "src/hydraulic-model/asset-index";
-import { TopologyView } from "src/hydraulic-model/topology/topologyView";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
+import { buildOrphanAssets } from "@epanet-js/network-review";
+import { encodeData } from "./data";
+import { AssetIndexView } from "src/hydraulic-model/asset-index-transferable";
+import { TopologyView } from "src/hydraulic-model/topology/topology-transferable";
+import { AssetId } from "@epanet-js/hydraulic-model";
+import { HydraulicModel } from "src/hydraulic-model";
+
+const labelsOf = (model: HydraulicModel, assetIds: AssetId[]) =>
+  assetIds.map((assetId) => model.assets.get(assetId)?.label);
 
 describe("buildOrphanAssets", () => {
   it("returns results sorted by type and asset label", () => {
@@ -37,7 +43,7 @@ describe("buildOrphanAssets", () => {
 
     const orphanAssets = buildOrphanAssets(model, rawOrphanAssets);
 
-    expect(orphanAssets.map((asset) => asset.label)).toEqual([
+    expect(labelsOf(model, orphanAssets)).toEqual([
       "R1",
       "R2",
       "T1",
@@ -49,6 +55,22 @@ describe("buildOrphanAssets", () => {
       "J1",
       "J2",
     ]);
+  });
+
+  it("includes a pipe that lost one of its nodes", () => {
+    const IDS = { J1: 1, J2: 2, P1: 3 } as const;
+    const model = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { label: "J1" })
+      .aJunction(IDS.J2, { label: "J2" })
+      .aPipe(IDS.P1, { label: "P1", startNodeId: IDS.J1, endNodeId: IDS.J2 })
+      .build();
+
+    const orphanAssets = buildOrphanAssets(model, {
+      orphanNodes: [],
+      orphanLinks: [IDS.P1],
+    });
+
+    expect(labelsOf(model, orphanAssets)).toEqual(["P1"]);
   });
 });
 

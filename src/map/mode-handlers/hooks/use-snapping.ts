@@ -1,5 +1,5 @@
 import { MapMouseEvent, MapTouchEvent } from "mapbox-gl";
-import type { MapEngine } from "../../map-engine";
+import type { MapEngine } from "@epanet-js/map";
 import { Position } from "src/types";
 import { decodeId } from "src/lib/id";
 import { AssetsMap, getNode, LinkAsset } from "src/hydraulic-model";
@@ -8,8 +8,7 @@ import {
   DEFAULT_SNAP_DISTANCE_PIXELS,
 } from "../../search";
 import { lineString, point } from "@turf/helpers";
-import { findNearestPointOnLine } from "src/lib/geometry";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { findNearestPointOnLine } from "@epanet-js/geometry";
 import { SnappingCandidate } from "../draw-link/draw-link-handlers";
 import { DataSource } from "../../data-source";
 
@@ -33,8 +32,6 @@ export const useSnapping = (
     enablePipeSnapping: true,
   },
 ) => {
-  const withPrecision = useFeatureFlag("FLAG_DRAWING_PRECISION");
-
   const getNeighborPoint = (
     point: mapboxgl.Point,
     excludeIds?: number[],
@@ -46,10 +43,10 @@ export const useSnapping = (
       layers: [
         "delta-features-junctions",
         "main-features-junctions",
-        "delta-features-junction-results",
-        "main-features-junction-results",
         "icons-tanks",
         "icons-reservoirs",
+        "delta-icons-tanks",
+        "delta-icons-reservoirs",
       ],
     });
     if (!pointFeatures.length) return null;
@@ -60,7 +57,13 @@ export const useSnapping = (
       const assetId = decodedId.featureId;
 
       if (assetId && (!excludeIds || !excludeIds.includes(assetId))) {
-        if (map.isFeatureHidden(feature.source as DataSource, id as RawId)) {
+        if (
+          map.isFeatureHidden(
+            feature.source as DataSource,
+            id as RawId,
+            feature.sourceLayer,
+          )
+        ) {
           continue;
         }
         return assetId;
@@ -94,7 +97,13 @@ export const useSnapping = (
 
       if (excludeIds && excludeIds.includes(assetId)) continue;
 
-      if (map.isFeatureHidden(feature.source as DataSource, id as RawId)) {
+      if (
+        map.isFeatureHidden(
+          feature.source as DataSource,
+          id as RawId,
+          feature.sourceLayer,
+        )
+      ) {
         continue;
       }
 
@@ -106,11 +115,9 @@ export const useSnapping = (
 
       const pipeLineString = lineString(pipeGeometry.coordinates);
       const mousePoint = point(mouseCoord);
-      const result = withPrecision
-        ? findNearestPointOnLine(pipeLineString, mousePoint, {
-            precision: map.getPrecision(),
-          })
-        : findNearestPointOnLine(pipeLineString, mousePoint);
+      const result = findNearestPointOnLine(pipeLineString, mousePoint, {
+        precision: map.getPrecision(),
+      });
 
       let snapPosition = result.coordinates;
       let snappedVertexIndex: number | null = null;

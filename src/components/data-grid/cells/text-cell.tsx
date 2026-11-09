@@ -1,38 +1,46 @@
 import clsx from "clsx";
 import { useCallback, useEffect, useRef } from "react";
-import type { ColumnDef, RowData } from "@tanstack/react-table";
+import type { RowData } from "@tanstack/react-table";
 import { CellProps, GridColumn } from "../types";
+import { type ColumnKey, resolveColumnKey } from "./column-key";
 import { useEditableTextInput } from "./use-editable-text-input";
 
 const VALIDATION_DEBOUNCE_MS = 150;
 
-type TextCellProps = CellProps<string | null> & {
+type TextCellProps<TData = unknown> = CellProps<string | null> & {
+  emptyValue?: string | null;
   readonly?: boolean;
-  validate?: (value: string, rowIndex: number) => boolean;
+  placeholder?: string;
+  validate?: (value: string, row: TData) => boolean;
+  sanitize?: (raw: string) => string;
 };
 
-export function TextCell({
+export function TextCell<TData = unknown>({
   value,
-  rowIndex,
+  row,
   editMode,
   onChange,
   stopEditing,
+  emptyValue,
   readonly,
+  placeholder,
   validate,
-}: TextCellProps) {
+  sanitize,
+}: TextCellProps<TData>) {
   const validationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isValid = useCallback(
-    (v: string) => !validate || v === "" || validate(v, rowIndex),
-    [validate, rowIndex],
+    (v: string) => !validate || v === "" || validate(v, row as TData),
+    [validate, row],
   );
 
   const parse = useCallback(
     (raw: string): string | null | undefined => {
       if (!isValid(raw)) return undefined;
-      return raw || null;
+      if (raw === "") return emptyValue;
+      return raw;
     },
-    [isValid],
+    [isValid, emptyValue],
   );
 
   const format = useCallback((v: string | null) => v ?? "", []);
@@ -63,24 +71,24 @@ export function TextCell({
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const newValue = e.target.value;
+      const newValue = sanitize ? sanitize(e.target.value) : e.target.value;
       setEditValue(newValue);
 
       if (validate) {
         if (validationTimerRef.current)
           clearTimeout(validationTimerRef.current);
         validationTimerRef.current = setTimeout(() => {
-          setHasError(newValue !== "" && !validate(newValue, rowIndex));
+          setHasError(newValue !== "" && !validate(newValue, row as TData));
         }, VALIDATION_DEBOUNCE_MS);
       }
     },
-    [validate, rowIndex, setEditValue, setHasError],
+    [validate, row, setEditValue, setHasError, sanitize],
   );
 
   if (readonly) {
     return (
-      <div className="w-full h-full flex items-center px-2 text-sm tabular-nums text-gray-500 bg-gray-50 overflow-hidden">
-        <span className="truncate">{value ?? ""}</span>
+      <div className="w-full h-full flex items-center px-2 text-size-base tabular-nums text-subtle bg-panel overflow-hidden">
+        <span className="truncate">{value ?? placeholder ?? ""}</span>
       </div>
     );
   }
@@ -89,9 +97,7 @@ export function TextCell({
     <div
       className={clsx(
         "w-full h-full flex items-center",
-        hasError &&
-          editMode &&
-          "z-2 bg-orange-100 dark:bg-orange-900/30 ring-1 ring-orange-500 dark:ring-orange-700",
+        hasError && editMode && "z-2 bg-warning-subtle ring-1 ring-warning",
       )}
     >
       <input
@@ -103,7 +109,7 @@ export function TextCell({
         onKeyDown={handleKeyDown}
         readOnly={!editMode}
         className={clsx(
-          "w-full px-2 text-sm tabular-nums outline-hidden border-none ring-0 focus:outline-hidden focus:ring-0 bg-transparent truncate",
+          "w-full px-2 text-size-base tabular-nums outline-hidden border-none ring-0 focus:outline-hidden focus:ring-0 bg-transparent truncate",
           // Mousetrap forces availability of global hot keys when not editing
           // pointer-events-none prevents text selection highlight when not editing
           !editMode && "mousetrap pointer-events-none",
@@ -114,40 +120,57 @@ export function TextCell({
 }
 
 export function textColumn<TData extends RowData = RowData>(
-  accessorKey: Extract<keyof TData, string> & string,
+  key: ColumnKey<TData, string | null>,
   options: {
     header: string;
     size?: number;
+    emptyValue?: string | null;
     isReadOnly?: boolean | ((rowIndex: number) => boolean);
-    validate?: (value: string, rowIndex: number) => boolean;
+    placeholder?: string;
+    validate?: (value: string, row: TData) => boolean;
+    cleanLabel?: (raw: string) => string;
   },
 ): GridColumn<TData> {
-  const { isReadOnly, validate } = options;
+  const { emptyValue, isReadOnly, placeholder, validate, cleanLabel } = options;
   const resolveReadOnly = (rowIndex: number) =>
     typeof isReadOnly === "function"
       ? isReadOnly(rowIndex)
       : (isReadOnly ?? false);
 
   const CellComponent =
-    isReadOnly || validate
+    emptyValue !== undefined ||
+    isReadOnly ||
+    placeholder !== undefined ||
+    validate ||
+    cleanLabel
       ? (props: CellProps<string | null>) => (
-          <TextCell
+          <TextCell<TData>
             {...props}
+            emptyValue={emptyValue}
             readonly={resolveReadOnly(props.rowIndex)}
+            placeholder={placeholder}
             validate={validate}
+            sanitize={cleanLabel}
           />
         )
       : TextCell;
 
-  const column: ColumnDef<TData, string | null> = {
-    accessorKey,
+  const column = {
+    ...resolveColumnKey(key),
     header: options.header,
     size: options.size,
     meta: {
       cellComponent: CellComponent,
-      copyValue: (v) => v ?? "",
-      pasteValue: (v) => v || null,
-      deleteValue: null,
+      copyValue: (v: string | null) => v ?? "",
+      pasteValue: (v: string, row: TData) => {
+        if (!v) return emptyValue;
+        const cleaned = cleanLabel ? cleanLabel(v) : v;
+        if (!cleaned) return emptyValue;
+        if (validate && !validate(cleaned, row)) return undefined;
+        return cleaned;
+      },
+      deleteValue: emptyValue,
+      placeholder,
       isReadOnly,
     },
   };

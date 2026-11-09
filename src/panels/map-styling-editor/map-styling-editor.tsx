@@ -7,18 +7,22 @@ import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { showGridAtom } from "src/state/map-projection";
 import { simulationDerivedAtom } from "src/state/derived-branch-state";
-import { Selector, SelectorLikeButton } from "src/components/form/selector";
+import { Selector, SelectorLikeButton } from "@epanet-js/ui-kit";
 import { useUserTracking } from "src/infra/user-tracking";
 import {
   SupportedProperty,
   supportedLinkProperties,
   supportedNodeProperties,
+  type ZoneLabelRule,
+  type ZoneColorRule,
 } from "src/map/symbology/symbology-types";
 import { useSymbologyState } from "src/state/map-symbology";
 import { useChangeColorBy } from "src/hooks/use-change-color-by";
 import { Checkbox } from "src/components/form/Checkbox";
 import { ColorRampSelector } from "src/components/color-ramp-selector";
 import { RangeColorRuleEditor } from "./range-color-rule-editor";
+import { NodeSizeField } from "./node-size-field";
+import { useOutsidePanelPlacement } from "./popover-placement";
 import {
   StyledPopoverArrow,
   StyledPopoverContent,
@@ -38,10 +42,11 @@ import { ColorPopover } from "src/components/color-popover";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { LegendRamp } from "src/components/legends";
 import { selectionAtom } from "src/state/selection";
-import { USelection } from "src/selection/selection";
+import { USelection } from "src/selection";
 import { ElevationsEditor } from "./elevations-editor";
 import { ProjectionSection } from "./projection-section";
 import { TextField } from "src/components/form/text-field";
+import { zoneFeaturesAtom } from "src/state/zone-features";
 
 const colorPropertyLabelFor = (
   property: string,
@@ -83,9 +88,11 @@ export const MapStylingEditor = () => {
   const translate = useTranslate();
   const isGridOn = useAtomValue(showGridAtom);
   const isPlaying = useAtomValue(isPlayingAtom);
+  const zoneFeatures = useAtomValue(zoneFeaturesAtom);
+  const showZoneSymbology = zoneFeatures.length > 0;
 
   return (
-    <div className="flex-auto overflow-y-auto placemark-scrollbar border-gray-200 dark:border-gray-900">
+    <div className="flex-auto overflow-y-auto placemark-scrollbar ">
       <SectionList gap={1} padding={3}>
         <SymbologyEditor
           geometryType="node"
@@ -95,6 +102,7 @@ export const MapStylingEditor = () => {
           geometryType="link"
           properties={supportedLinkProperties}
         />
+        {showZoneSymbology && <ZoneSymbologySection />}
         <CustomerPointsSection readonly={isPlaying} />
         {!isGridOn && <ElevationsEditor />}
         {!isGridOn && (
@@ -121,8 +129,7 @@ const simulationProperties = [
   "waterAge",
 ];
 
-type SelectOption = SupportedProperty | "none";
-type LabelSelectOption = SupportedProperty | "none" | "label";
+type LabelSelectOption = SupportedProperty | null | "label";
 
 const SymbologyEditor = ({
   geometryType,
@@ -146,6 +153,9 @@ const SymbologyEditor = ({
   const symbology = geometryType === "node" ? nodeSymbology : linkSymbology;
   const hasCompletedSimulation =
     "epsResultsReader" in simulation && !!simulation.epsResultsReader;
+  const isEpsSimulation =
+    "epsResultsReader" in simulation &&
+    (simulation.epsResultsReader?.timestepCount ?? 0) > 1;
   const hasWaterAge =
     hasCompletedSimulation &&
     simulation.epsResultsReader?.qualityType === "age";
@@ -160,60 +170,47 @@ const SymbologyEditor = ({
   const { changeColorBy } = useChangeColorBy(geometryType);
 
   const colorByOptions = useMemo(() => {
-    const unitKeyFor = (type: string): keyof typeof units => {
+    const unitKeyFor = (type: SupportedProperty): keyof typeof units => {
       if (type === "minPressure" || type === "maxPressure") return "pressure";
       return type as keyof typeof units;
     };
-    const options = (["none", ...properties] as SelectOption[]).map((type) => {
-      const unit = type !== "none" ? (units[unitKeyFor(type)] ?? null) : null;
-      const isSimProp = simulationProperties.includes(type);
-      const label = `${colorPropertyLabelFor(type, translate)} ${!!unit ? `(${translateUnit(unit)})` : ""}`;
-      return {
-        value: type,
-        label,
-        disabled:
-          (!hasCompletedSimulation && isSimProp) ||
-          (type === "waterAge" && !hasWaterAge) ||
-          (type === "waterTrace" && !hasWaterTrace) ||
-          (type === "chemicalConcentration" && !hasChemical),
-      };
-    });
-    // Sort enabled options before disabled ones, keeping "none" always first
-    return options.sort((a, b) => {
-      if (a.value === "none") return -1;
-      if (b.value === "none") return 1;
-      return Number(a.disabled) - Number(b.disabled);
-    });
+    return properties
+      .map((type) => {
+        const unit = units[unitKeyFor(type)] ?? null;
+        const isSimProp = simulationProperties.includes(type);
+        const label = `${colorPropertyLabelFor(type, translate)} ${unit ? `(${translateUnit(unit)})` : ""}`;
+        return {
+          value: type,
+          label,
+          disabled:
+            (!hasCompletedSimulation && isSimProp) ||
+            ((type === "minPressure" || type === "maxPressure") &&
+              !isEpsSimulation) ||
+            (type === "waterAge" && !hasWaterAge) ||
+            (type === "waterTrace" && !hasWaterTrace) ||
+            (type === "chemicalConcentration" && !hasChemical),
+        };
+      })
+      .sort((a, b) => Number(a.disabled) - Number(b.disabled));
   }, [
     properties,
     units,
     translate,
     translateUnit,
     hasCompletedSimulation,
+    isEpsSimulation,
     hasWaterAge,
     hasWaterTrace,
     hasChemical,
   ]);
 
   const labelByOptions = useMemo(() => {
-    const noneOption = {
-      value: "none" as LabelSelectOption,
-      label: translate("none"),
-      disabled: false,
-    };
     const labelOption = {
       value: "label" as LabelSelectOption,
       label: translate("label"),
       disabled: false,
     };
-    const propertyOptions = colorByOptions
-      .filter((o) => o.value !== "none")
-      .map((o) => ({
-        ...o,
-        value: o.value as LabelSelectOption,
-      }));
-
-    return [noneOption, labelOption, ...propertyOptions];
+    return [labelOption, ...colorByOptions];
   }, [colorByOptions, translate]);
 
   const userTracking = useUserTracking();
@@ -237,10 +234,6 @@ const SymbologyEditor = ({
     } else {
       updateLinkSymbology({ ...symbology, labelRule: label });
     }
-  };
-
-  const handleLabelByChange = (value: LabelSelectOption) => {
-    handleLabelRuleChange(value === "none" ? null : value);
   };
 
   const title =
@@ -282,13 +275,20 @@ const SymbologyEditor = ({
         ) : (
           <Selector
             ariaLabel={`${translate(geometryType)} ${translate("colorBy")}`}
-            options={colorByOptions}
-            selected={
-              (symbology.colorRule
-                ? symbology.colorRule.property
-                : "none") as SelectOption
+            options={
+              colorByOptions as {
+                value: SupportedProperty;
+                label: string;
+                disabled: boolean;
+              }[]
             }
-            onChange={changeColorBy}
+            selected={symbology.colorRule?.property ?? null}
+            nullable
+            placeholder={translate("none")}
+            clearLabel={translate("none")}
+            onChange={(v) => {
+              void changeColorBy(v as SupportedProperty | null);
+            }}
             disabled={readonly}
           />
         )}
@@ -350,6 +350,7 @@ const SymbologyEditor = ({
           </div>
         </InlineField>
       )}
+      {geometryType === "node" && <NodeSizeField readonly={readonly} />}
       <InlineField
         name={translate("labelBy")}
         labelSize="sm"
@@ -366,9 +367,18 @@ const SymbologyEditor = ({
         ) : (
           <Selector
             ariaLabel={`${translate(geometryType)} ${translate("labelBy")}`}
-            options={labelByOptions}
-            selected={(symbology.labelRule ?? "none") as LabelSelectOption}
-            onChange={handleLabelByChange}
+            options={
+              labelByOptions as {
+                value: string;
+                label: string;
+                disabled: boolean;
+              }[]
+            }
+            selected={symbology.labelRule ?? null}
+            nullable
+            placeholder={translate("none")}
+            clearLabel={translate("none")}
+            onChange={handleLabelRuleChange}
           />
         )}
       </InlineField>
@@ -395,8 +405,12 @@ const CustomerPointsSection = ({ readonly }: { readonly?: boolean }) => {
 
     updateCustomerPointsSymbology({ visible: newVisibility });
 
-    if (!newVisibility && selection.type === "singleCustomerPoint") {
-      setSelection(USelection.none());
+    if (!newVisibility) {
+      const assetIds = USelection.getAssetIds(selection);
+      const customerPointIds = USelection.getCustomerPointIds(selection);
+      if (customerPointIds.length > 0) {
+        setSelection(USelection.fromIds(assetIds, []));
+      }
     }
   };
 
@@ -421,6 +435,119 @@ const CustomerPointsSection = ({ readonly }: { readonly?: boolean }) => {
   );
 };
 
+const zoneRuleOptions = [{ label: "Label", value: "label" }];
+
+const ZoneSymbologySection = () => {
+  const translate = useTranslate();
+  const userTracking = useUserTracking();
+  const { zoneSymbology, updateZoneSymbology } = useSymbologyState();
+
+  const handleLabelRuleChange = (value: string | null) => {
+    const mapped = value === "none" ? null : value;
+    userTracking.capture({
+      name: "map.zonesLabelRule.changed",
+      labelRule: mapped,
+    });
+    updateZoneSymbology({ labelRule: mapped as ZoneLabelRule });
+  };
+  const handleColorRuleChange = (value: string | null) => {
+    const mapped = value === "none" ? null : value;
+    userTracking.capture({
+      name: "map.zonesColorRule.changed",
+      colorRule: mapped,
+    });
+    updateZoneSymbology({ colorRule: mapped as ZoneColorRule });
+  };
+
+  const handleVisibilityChange = () => {
+    const newVisible = !zoneSymbology.visible;
+    userTracking.capture({
+      name: "map.zonesVisibility.changed",
+      visible: newVisible,
+    });
+    updateZoneSymbology({ visible: newVisible });
+  };
+
+  const handleDefaultColorChange = (color: string) => {
+    userTracking.capture({ name: "map.zonesDefaultColor.changed", color });
+    updateZoneSymbology({
+      defaults: { ...zoneSymbology.defaults, color },
+    });
+  };
+
+  return (
+    <MapStylingSectionWrapper
+      title={translate("zoneSymbology")}
+      section="zoneSymbology"
+    >
+      <InlineField
+        name={translate("visible")}
+        labelSize="sm"
+        layout="fixed-label"
+      >
+        <Checkbox
+          checked={zoneSymbology.visible}
+          aria-label={`${translate("zoneSymbology")} ${translate("visible")}`}
+          onChange={handleVisibilityChange}
+        />
+      </InlineField>
+      <InlineField
+        name={translate("colorBy")}
+        labelSize="sm"
+        layout="fixed-label"
+      >
+        <Selector
+          ariaLabel={`${translate("zoneSymbology")} ${translate("colorBy")}`}
+          options={zoneRuleOptions}
+          selected={zoneSymbology.colorRule ?? null}
+          nullable
+          placeholder={translate("none")}
+          clearLabel={translate("none")}
+          onChange={handleColorRuleChange}
+        />
+      </InlineField>
+      {zoneSymbology.colorRule === "label" ? (
+        <InlineField
+          name={translate("palette")}
+          labelSize="sm"
+          layout="fixed-label"
+        >
+          <ColorRampSelector geometryType="zone" />
+        </InlineField>
+      ) : (
+        <InlineField
+          name={translate("defaultColor")}
+          labelSize="sm"
+          layout="fixed-label"
+        >
+          <div className="h-7 w-12 rounded-sm overflow-hidden">
+            <ColorPopover
+              color={zoneSymbology.defaults.color}
+              onChange={handleDefaultColorChange}
+              ariaLabel="Default zone color"
+            />
+          </div>
+        </InlineField>
+      )}
+      <InlineField
+        name={translate("labelBy")}
+        labelSize="sm"
+        layout="fixed-label"
+      >
+        <Selector
+          ariaLabel={`${translate("zoneSymbology")} ${translate("labelBy")}`}
+          options={zoneRuleOptions}
+          selected={zoneSymbology.labelRule ?? null}
+          nullable
+          placeholder={translate("none")}
+          clearLabel={translate("none")}
+          onChange={handleLabelRuleChange}
+        />
+      </InlineField>
+    </MapStylingSectionWrapper>
+  );
+};
+
 const RangeColorRuleEditorTrigger = ({
   geometryType,
   mode,
@@ -433,6 +560,7 @@ const RangeColorRuleEditorTrigger = ({
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
+  const placement = useOutsidePanelPlacement();
 
   return readonly ? (
     <TextField>
@@ -449,9 +577,9 @@ const RangeColorRuleEditorTrigger = ({
         <StyledPopoverContent
           size="sm"
           onOpenAutoFocus={(e) => e.preventDefault()}
-          side="right"
+          side={placement.side}
           align="start"
-          sideOffset={94}
+          sideOffset={placement.sideOffset}
         >
           <StyledPopoverArrow />
           <RangeColorRuleEditor geometryType={geometryType} />

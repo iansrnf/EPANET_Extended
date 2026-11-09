@@ -2,11 +2,11 @@ import { Position } from "geojson";
 import {
   HeadlossFormula,
   PipeStatus,
-} from "src/hydraulic-model/asset-types/pipe";
-import { ValveKind } from "src/hydraulic-model/asset-types/valve";
-import { CurveType } from "src/hydraulic-model/curves";
-import { PatternType } from "src/hydraulic-model/patterns";
-import { EpanetUnitSystem } from "src/simulation/build-inp";
+  ValveKind,
+  CurveType,
+  PatternType,
+} from "@epanet-js/hydraulic-model";
+import type { EpanetUnitSystem } from "@epanet-js/project-settings";
 
 export type PipeData = {
   id: string;
@@ -165,7 +165,7 @@ export type InpData = {
     diffusivity?: number;
   };
   sources: ItemData<{
-    type: "CONCEN" | "MASS" | "FLOWPACED" | "SETPOINT";
+    type: "concen" | "mass" | "flowpaced" | "setpoint";
     strength: number;
     patternId?: string;
   }>;

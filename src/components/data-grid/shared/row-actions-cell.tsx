@@ -17,28 +17,33 @@ export function RowActionsCell({
   isLastRow,
   disabled = false,
 }: RowActionsCellProps) {
-  return rowActions ? (
+  if (!rowActions) return null;
+
+  const visibleActions = rowActions.filter(
+    (action) => !action.hidden?.(rowIndex),
+  );
+
+  return (
     <div
       role="gridcell"
       onFocus={(e) => e.stopPropagation()}
       className={clsx(
-        "sticky right-0 shrink-0 w-8 h-8 bg-white z-10",
-        "border border-transparent",
-        {
-          "border-t-gray-200": variant === "inline" && rowIndex === 0,
-        },
-        {
-          "border-b-gray-200":
-            variant === "inline" || (variant === "spreadsheet" && !isLastRow),
-        },
-        { "border-l-gray-200": variant === "spreadsheet" },
+        "sticky right-0 shrink-0 w-8 h-8 bg-base z-10",
+        "border-r-0",
+        variant === "spreadsheet" ? "border-l" : "border-l-0",
+        variant === "inline" && rowIndex === 0 ? "border-t" : "border-t-0",
+        variant === "inline" || (variant === "spreadsheet" && !isLastRow)
+          ? "border-b"
+          : "border-b-0",
       )}
     >
-      <ActionsCell
-        rowIndex={rowIndex}
-        actions={rowActions}
-        disabled={disabled}
-      />
+      {visibleActions.length > 0 && (
+        <ActionsCell
+          rowIndex={rowIndex}
+          actions={visibleActions}
+          disabled={disabled}
+        />
+      )}
     </div>
-  ) : null;
+  );
 }

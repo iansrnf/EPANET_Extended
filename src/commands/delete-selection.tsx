@@ -1,10 +1,12 @@
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback } from "react";
-import { Asset } from "src/hydraulic-model";
 import {
   deleteAssets,
+  mergeChangeSets,
   removeCustomerPoints,
-} from "src/hydraulic-model/model-operations";
+  removeZones,
+} from "@epanet-js/hydraulic-model-operations";
+import type { ChangeSet } from "@epanet-js/change-set";
 import { AssetDeleted, useUserTracking } from "src/infra/user-tracking";
 import { USelection } from "src/selection";
 import { ephemeralStateAtom } from "src/state/drawing";
@@ -28,67 +30,79 @@ export const useDeleteSelection = () => {
     setEphemeralState({ type: "none" });
   }, [setSelection, setMode, setEphemeralState]);
 
-  const deleteSelectedAssets = useCallback(
-    (source: AssetDeleted["source"]) => {
-      const assetIds = USelection.toIds(selection);
-      if (!assetIds.length) return false;
+  return useCallback(
+    ({ source }: { source: AssetDeleted["source"] }) => {
+      const assetIds = USelection.getAssetIds(selection);
+      const customerPointIds = USelection.getCustomerPointIds(selection);
+      const zoneIds = USelection.getZoneIds(selection);
+      if (
+        assetIds.length === 0 &&
+        customerPointIds.length === 0 &&
+        zoneIds.length === 0
+      )
+        return;
 
       clearSelection();
 
-      if (assetIds.length === 1) {
+      const singleAsset =
+        assetIds.length === 1 && customerPointIds.length === 0
+          ? hydraulicModel.assets.get(assetIds[0])
+          : undefined;
+      if (singleAsset) {
         userTracking.capture({
           name: "asset.deleted",
           source,
-          type: (hydraulicModel.assets.get(assetIds[0]) as Asset).type,
+          type: singleAsset.type,
         });
-      } else {
+      } else if (assetIds.length > 0) {
         userTracking.capture({
           name: "assets.deleted",
           source,
           count: assetIds.length,
         });
       }
+      if (customerPointIds.length > 0) {
+        userTracking.capture({
+          name: "customerPointActions.removed",
+          count: customerPointIds.length,
+          source,
+        });
+      }
+      if (zoneIds.length > 0) {
+        userTracking.capture({
+          name: "zones.deleted",
+          count: zoneIds.length,
+          source,
+        });
+      }
 
-      const moment = deleteAssets(hydraulicModel, {
-        assetIds,
+      const deleteAssetsData = {
+        assetIds: assetIds.slice(),
         shouldUpdateCustomerPoints: true,
+        shouldRemoveRawControls: true,
+      };
+      const removeCustomerPointsData = {
+        customerPointIds: customerPointIds.slice(),
+      };
+
+      transact(() => {
+        const changeSets: ChangeSet[] = [];
+        if (assetIds.length > 0) {
+          changeSets.push(deleteAssets(hydraulicModel, deleteAssetsData));
+        }
+        if (customerPointIds.length > 0) {
+          changeSets.push(
+            removeCustomerPoints(hydraulicModel, removeCustomerPointsData),
+          );
+        }
+        if (zoneIds.length > 0) {
+          changeSets.push(
+            removeZones(hydraulicModel, { zoneIds: zoneIds.slice() }),
+          );
+        }
+        return mergeChangeSets(changeSets, "deleteSelection");
       });
-      transact(moment);
-      return true;
     },
     [hydraulicModel, selection, transact, clearSelection, userTracking],
   );
-
-  const deleteSelectedCustomerPoint = useCallback(
-    (source: AssetDeleted["source"]) => {
-      if (selection.type !== "singleCustomerPoint") return false;
-
-      const customerPoint = hydraulicModel.customerPoints.get(selection.id);
-      if (!customerPoint) return false;
-
-      clearSelection();
-
-      userTracking.capture({
-        name: "customerPointActions.removed",
-        count: 1,
-        source,
-      });
-
-      const moment = removeCustomerPoints(hydraulicModel, {
-        customerPointIds: [customerPoint.id],
-      });
-      transact(moment);
-      return true;
-    },
-    [hydraulicModel, selection, transact, clearSelection, userTracking],
-  );
-
-  const deleteSelection = useCallback(
-    ({ source }: { source: AssetDeleted["source"] }) => {
-      deleteSelectedAssets(source) || deleteSelectedCustomerPoint(source);
-    },
-    [deleteSelectedAssets, deleteSelectedCustomerPoint],
-  );
-
-  return deleteSelection;
 };

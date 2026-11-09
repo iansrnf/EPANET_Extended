@@ -1,7 +1,7 @@
 import { useAtomValue } from "jotai";
 import { useCallback } from "react";
 import { LinkAsset } from "src/hydraulic-model";
-import { reverseLink } from "src/hydraulic-model/model-operations/reverse-link";
+import { reverseLink } from "@epanet-js/hydraulic-model-operations";
 import { useUserTracking } from "src/infra/user-tracking";
 import { USelection } from "src/selection";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
@@ -18,11 +18,10 @@ export const useReverseLink = () => {
 
   const reverseLinkAction = useCallback(
     ({ source }: { source: "shortcut" | "toolbar" | "context-menu" }) => {
-      const selectedIds = USelection.toIds(selection);
+      const selectedAssetId = USelection.singleAssetId(selection);
+      if (selectedAssetId === null) return;
 
-      if (selectedIds.length !== 1) return;
-
-      const selectedAsset = hydraulicModel.assets.get(selectedIds[0]);
+      const selectedAsset = hydraulicModel.assets.get(selectedAssetId);
 
       if (!selectedAsset || !selectedAsset.isLink) return;
 
@@ -34,11 +33,7 @@ export const useReverseLink = () => {
         type: linkAsset.type,
       });
 
-      const moment = reverseLink(hydraulicModel, {
-        linkId: linkAsset.id,
-      });
-
-      transact(moment);
+      transact(() => reverseLink(hydraulicModel, { linkId: linkAsset.id }));
     },
     [selection, hydraulicModel, userTracking, transact],
   );

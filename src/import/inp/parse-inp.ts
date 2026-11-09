@@ -1,4 +1,7 @@
-import { defaultProjectName, ProjectSettings } from "src/lib/project-settings";
+import {
+  defaultProjectName,
+  ProjectSettings,
+} from "@epanet-js/project-settings";
 import { IssuesAccumulator, ParserIssues } from "./issues";
 import { readInpData } from "./read-inp-data";
 import { buildModel, isWgs84 } from "./build-model";
@@ -8,9 +11,8 @@ import {
   type NodeAsset,
   type LinkAsset,
 } from "src/hydraulic-model";
-import { ModelFactories } from "src/hydraulic-model/factories";
-import { LabelManager } from "src/hydraulic-model/label-manager";
-import type { IdGenerator } from "src/lib/id-generator";
+import { ModelFactories, LabelManager } from "@epanet-js/hydraulic-model";
+import type { IdGenerator } from "@epanet-js/id-generator";
 import { nanoid } from "nanoid";
 import {
   defaultTiming,
@@ -25,14 +27,14 @@ import { checksum } from "src/infra/checksum";
 import { InpData, InpStats } from "./inp-data";
 import { Position } from "geojson";
 import turfDistance from "@turf/distance";
-import { convertTo, type Unit } from "src/quantity";
+import { convertTo, type Unit } from "@epanet-js/quantity";
 import {
   type Projection,
   WGS84,
   createProjectionMapper,
-} from "src/lib/projections";
-import { createProjectionTransformer } from "src/lib/geojson-utils/coordinate-transform";
-import { computeCentroid } from "src/lib/projections/xy-grid-transform";
+} from "@epanet-js/projections";
+import { createProjectionTransformer } from "@epanet-js/projections";
+import { computeCentroid } from "@epanet-js/projections";
 
 type SourceProjection = { id: string; name: string; code?: string };
 
@@ -42,7 +44,7 @@ export type ParseInpOptions = {
   customerPoints?: boolean;
   inactiveAssets?: boolean;
   populateAssetIndex?: boolean;
-  xyDetect?: boolean;
+  labelMaxLength?: number;
 };
 
 export type ParseInpResult = {
@@ -91,7 +93,6 @@ export const parseInp = (
     const detection = detectProjectionStatusWithLengths(
       hydraulicModel,
       inpData,
-      safeOptions,
     );
     projectionStatus = detection.status;
 
@@ -312,11 +313,8 @@ type ProjectionDetection = {
 const detectProjectionStatusWithLengths = (
   hydraulicModel: HydraulicModel,
   inpData: InpData,
-  options: ParseInpOptions,
 ): ProjectionDetection => {
   const rangeStatus = detectProjectionStatus(hydraulicModel);
-  if (!options.xyDetect) return { status: rangeStatus };
-
   const declaredUnit: Unit = isUsUnitSystem(inpData.options.units) ? "ft" : "m";
   const geodesicRatios: number[] = [];
   const rawScales: number[] = [];

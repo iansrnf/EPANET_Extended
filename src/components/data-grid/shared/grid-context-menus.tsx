@@ -5,47 +5,65 @@ import { CMContent, CMItem } from "src/components/elements";
 import { CopyIcon, ClipboardPasteIcon } from "src/icons";
 import { useTranslate } from "src/hooks/use-translate";
 import { CellContextAction, GutterContextAction } from "../types";
+import { useGridBusy } from "./grid-busy";
 
 const itemClassName = (isDisabled: boolean) =>
   clsx({ "opacity-50 cursor-not-allowed": isDisabled });
+
+// The full data array in display order, without materializing every Row (which
+// `getRowModel().rows.map(r => r.original)` would do).
+function orderedOriginals<TData extends Record<string, unknown>>(
+  table: Table<TData>,
+): TData[] {
+  return table.getOrderedOriginals();
+}
 
 type CellContextMenuContentProps<TData extends Record<string, unknown>> = {
   table: Table<TData>;
   actions: CellContextAction<TData>[];
   readOnly: boolean;
+  rowIndex: number;
+  colIndex: number;
 };
 
 export function CellContextMenuContent<TData extends Record<string, unknown>>({
   table,
   actions,
   readOnly,
+  rowIndex,
+  colIndex,
 }: CellContextMenuContentProps<TData>) {
   const translate = useTranslate();
+  const { runBusyAsync } = useGridBusy();
   const selection = table.getSelection();
   if (!selection) return null;
-  const sortedRows = table.getRowModel().rows.map((r) => r.original);
+  const sortedRows = orderedOriginals(table);
+
+  const runCopy = () => {
+    runBusyAsync(() => table.copySelection());
+  };
+
+  const runPaste = () => {
+    if (readOnly) return;
+    runBusyAsync(() => table.pasteSelection());
+  };
 
   return (
     <CM.Portal>
       <CMContent>
-        <CMItem onSelect={() => void table.copySelection()}>
+        <CMItem onSelect={runCopy}>
           <CopyIcon />
           {translate("copy")}
         </CMItem>
         <CMItem
           disabled={readOnly}
           className={itemClassName(readOnly)}
-          onSelect={() => {
-            if (readOnly) return;
-            void table.pasteSelection();
-          }}
+          onSelect={runPaste}
         >
           <ClipboardPasteIcon />
           {translate("paste")}
         </CMItem>
-        {actions.length > 0 && (
-          <CM.Separator className="border-t border-gray-100 dark:border-gray-700 my-1" />
-        )}
+        {actions.length > 0 && <CM.Separator className="border-t my-1" />}
         {actions.map((action, index) => {
           const { disabled, onSelect } = action;
           const isDisabled = disabled ? disabled(selection) : false;
@@ -59,7 +77,10 @@ export function CellContextMenuContent<TData extends Record<string, unknown>>({
               variant={variant}
               onSelect={() => {
                 if (isDisabled) return;
-                onSelect(selection, sortedRows);
+                onSelect(selection, sortedRows, {
+                  col: colIndex,
+                  row: rowIndex,
+                });
               }}
             >
               {action.icon}
@@ -72,10 +93,9 @@ export function CellContextMenuContent<TData extends Record<string, unknown>>({
   );
 }
 
-export type GridContextMenuTarget = {
-  type: "cell" | "gutter";
-  rowIndex: number;
-};
+export type GridContextMenuTarget =
+  | { type: "cell"; rowIndex: number; colIndex: number }
+  | { type: "gutter"; rowIndex: number };
 
 type GridContextMenuContentProps<TData extends Record<string, unknown>> = {
   target: GridContextMenuTarget | null;
@@ -99,6 +119,8 @@ export function GridContextMenuContent<TData extends Record<string, unknown>>({
         table={table}
         actions={cellContextActions}
         readOnly={readOnly}
+        rowIndex={target.rowIndex}
+        colIndex={target.colIndex}
       />
     );
   }
@@ -126,7 +148,7 @@ export function GutterContextMenuContent<
   const selection = table.getSelection();
   if (!selection) return null;
   if (actions.length === 0) return null;
-  const sortedRows = table.getRowModel().rows.map((r) => r.original);
+  const sortedRows = orderedOriginals(table);
 
   return (
     <CM.Portal>
@@ -143,7 +165,7 @@ export function GutterContextMenuContent<
               variant={variant}
               onSelect={() => {
                 if (isDisabled) return;
-                action.onSelect(selection, sortedRows);
+                action.onSelect(selection, sortedRows, rowIndex);
               }}
             >
               {action.icon}

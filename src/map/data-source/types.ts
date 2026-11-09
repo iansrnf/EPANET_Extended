@@ -2,11 +2,12 @@ export type DataSource =
   | "main-features"
   | "delta-features"
   | "icons"
-  | "selected-features"
+  | "delta-icons"
   | "ephemeral"
   | "map-overlay"
   | "highlights"
-  | "grid";
+  | "grid"
+  | "zones";
 
 export const FeatureSources = {
   MAIN: "main-features" as const,

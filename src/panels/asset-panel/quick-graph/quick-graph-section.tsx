@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import { PinIcon, PinOffIcon } from "src/icons";
 import { Button } from "src/components/elements";
-import { Selector } from "src/components/form/selector";
+import { Selector } from "@epanet-js/ui-kit";
 import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import { projectSettingsAtom } from "src/state/project-settings";
@@ -19,13 +19,14 @@ import {
   type QuickGraphAssetType,
   type QuickGraphPropertyByAssetType,
 } from "src/state/quick-graph";
-import type { QuantityProperty } from "src/lib/project-settings/quantities-spec";
-import { getDecimals } from "src/lib/project-settings";
+import type { QuantityProperty } from "@epanet-js/project-settings";
+import { getDecimals } from "@epanet-js/project-settings";
 import type { TimeSeries } from "src/simulation/epanet/eps-results-reader";
-import type { AssetId, Valve } from "src/hydraulic-model/asset-types";
+import { type AssetId, type Valve } from "@epanet-js/hydraulic-model";
 import { useTimeSeries } from "./use-time-series";
 import { QuickGraphChart } from "./quick-graph-chart";
 import { useChangeTimestep } from "src/commands/change-timestep";
+import { RingSpinner } from "src/components/ring-spinner";
 
 const QUICK_GRAPH_PROPERTIES: {
   [K in QuickGraphAssetType]: {
@@ -51,6 +52,12 @@ const QUICK_GRAPH_PROPERTIES: {
   pump: [
     { value: "flow", labelKey: "flow", quantityKey: "flow" },
     { value: "head", labelKey: "pumpHead", quantityKey: "head" },
+    {
+      value: "setting",
+      labelKey: "pump.relativeSpeedSetting",
+      quantityKey: "speed",
+    },
+    { value: "status", labelKey: "status", quantityKey: "status" },
   ],
   valve: [
     { value: "flow", labelKey: "flow", quantityKey: "flow" },
@@ -119,6 +126,9 @@ const getValveSettingQuantityKey = (valve: Valve): QuantityProperty | null => {
   return null;
 };
 
+const STATUS_OPEN = 1;
+const STATUS_CLOSED = 0;
+
 const QuickGraphSection = ({
   assetType,
   assetId,
@@ -151,8 +161,30 @@ const QuickGraphSection = ({
       (opt: { value: string; quantityKey: QuantityProperty }) =>
         opt.value === selectedProperty,
     );
+  const isStatusProperty = selectedProperty === "status";
+
+  const toStatusStep = (code: number) =>
+    code > 2 ? STATUS_OPEN : STATUS_CLOSED;
+
+  const valueLabels = useMemo(() => {
+    if (!isStatusProperty) return null;
+
+    if (assetType == "pump") {
+      return new Map([
+        [STATUS_OPEN, translate("pump.on")],
+        [STATUS_CLOSED, translate("pump.off")],
+      ]);
+    }
+
+    return new Map([
+      [STATUS_OPEN, translate("statusOpen")],
+      [STATUS_CLOSED, translate("statusClosed")],
+    ]);
+  }, [isStatusProperty, translate, assetType]);
+
   const decimals = useMemo(() => {
     if (!selectedOption) return 0;
+    if (isStatusProperty) return 0;
     let quantityKey = selectedOption.quantityKey;
     if (assetType === "valve" && selectedProperty === "setting") {
       const valve = hydraulicModel.assets.get(assetId) as Valve | undefined;
@@ -165,16 +197,23 @@ const QuickGraphSection = ({
     selectedOption,
     assetType,
     selectedProperty,
+    isStatusProperty,
     assetId,
     hydraulicModel,
     formatting,
   ]);
 
-  const values = useMemo(() => (data ? Array.from(data.values) : []), [data]);
-  const baseValues = useMemo(
-    () => (baseData ? Array.from(baseData.values) : null),
-    [baseData],
-  );
+  const values = useMemo(() => {
+    if (!data) return [];
+    const raw = Array.from(data.values);
+    return isStatusProperty ? raw.map(toStatusStep) : raw;
+  }, [data, isStatusProperty]);
+
+  const baseValues = useMemo(() => {
+    if (!baseData) return null;
+    const raw = Array.from(baseData.values);
+    return isStatusProperty ? raw.map(toStatusStep) : raw;
+  }, [baseData, isStatusProperty]);
   const timeStepIndex = simulationStep ?? 0;
 
   const propertyOptions = useMemo(() => {
@@ -282,7 +321,7 @@ const QuickGraphSection = ({
 
   return (
     <div className="flex flex-col flex-1 min-h-0 pl-5">
-      <div className="flex items-center justify-between text-sm font-semibold h-8">
+      <div className="flex items-center justify-between text-size-base font-semibold h-8">
         {translate("quickGraph")}
         {pinButton}
       </div>
@@ -294,12 +333,12 @@ const QuickGraphSection = ({
             onChange={handlePropertyChange}
             styleOptions={{
               border: true,
-              textSize: "text-sm",
+              textSize: "text-size-base",
               paddingY: 1,
             }}
           />
         ) : (
-          <span className="text-sm text-gray-700 py-1">
+          <span className="text-size-base text-default py-1">
             {propertyOptions[0]?.label}
           </span>
         )}
@@ -307,8 +346,8 @@ const QuickGraphSection = ({
 
       <div className="relative flex-1 min-h-[120px]">
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-gray-900/50 z-10">
-            <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center bg-base/50/50 z-10">
+            <RingSpinner />
           </div>
         )}
         {data !== null ? (
@@ -321,12 +360,13 @@ const QuickGraphSection = ({
               intervalsCount={data.intervalsCount}
               currentIntervalIndex={timeStepIndex}
               decimals={decimals}
+              valueLabels={valueLabels}
               onIntevalClick={handleIntervalClick}
               scenarioName={scenarioName}
             />
           </div>
         ) : (
-          <div className="h-full flex items-center justify-center text-gray-400 text-xs">
+          <div className="h-full flex items-center justify-center text-subtle text-size-small">
             {translate("errorLoadingData")}
           </div>
         )}

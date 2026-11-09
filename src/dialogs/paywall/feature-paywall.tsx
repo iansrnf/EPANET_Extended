@@ -1,32 +1,35 @@
-import { useMemo, useState } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useSetAtom } from "jotai";
 import { BaseDialog } from "src/components/dialog";
 import { Button } from "src/components/elements";
 import { CheckoutButton } from "src/components/checkout-button";
 import { VideoPlayer } from "src/components/video-player";
-import { useActivateTrial } from "src/hooks/use-activate-trial";
+import {
+  trialAfterSignInAtom,
+  useActivateTrial,
+  useIsTrialEmailRefused,
+} from "src/hooks/use-activate-trial";
 import { dialogAtom, type PaywallFeature } from "src/state/dialog";
-import { ChevronLeftIcon, RefreshIcon, SuccessIcon } from "src/icons";
+import { RefreshIcon } from "src/icons";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useAuth } from "src/hooks/use-auth";
-import { SignInButton as ClerkSignInButton } from "@clerk/nextjs";
+import { SignInButton } from "src/components/auth/sign-in-button";
 import { buildAfterSignupUrl } from "src/hooks/use-early-access";
-import { notify } from "src/components/notifications";
+import { isTrialAvailable } from "@epanet-js/account-plans";
 
 export type FeaturePaywallConfig = {
   feature: PaywallFeature;
-  videoSrc: string;
-  captions: readonly { start: number; end: number; captionKey: string }[];
+  imageSrc?: string;
+  videoSrc?: string;
+  media?: ReactNode;
+  captions?: readonly { start: number; end: number; captionKey: string }[];
   titleKey: string;
   descriptionKeys: string[];
   actionDescriptionKeys: {
     trial: string;
     plans: string;
-    demo?: string;
   };
-  onTryDemo?: () => Promise<void>;
   onTrialActivated: () => void;
 };
 
@@ -38,20 +41,18 @@ export const FeaturePaywall = ({
   onClose: () => void;
 }) => {
   const setDialog = useSetAtom(dialogAtom);
+  const setTrialAfterSignIn = useSetAtom(trialAfterSignInAtom);
   const userTracking = useUserTracking();
   const translate = useTranslate();
   const { user, isSignedIn } = useAuth();
-  const isActivateTrialOn = useFeatureFlag("FLAG_ACTIVATE_TRIAL");
-  const showTrialButton =
-    isActivateTrialOn && !user.hasUsedTrial && user.plan === "free";
-  const [showPlans, setShowPlans] = useState(false);
-  const [isDemoLoading, setIsDemoLoading] = useState(false);
+  const isTrialEmailRefused = useIsTrialEmailRefused();
+  const showTrialButton = isTrialAvailable(user) && !isTrialEmailRefused;
 
   const { activateTrial, isLoading: isTrialLoading } = useActivateTrial();
 
   const captions = useMemo(
     () =>
-      config.captions.map(({ captionKey, ...timing }) => ({
+      (config.captions ?? []).map(({ captionKey, ...timing }) => ({
         ...timing,
         text: translate(captionKey),
       })),
@@ -66,61 +67,29 @@ export const FeaturePaywall = ({
     _onClose();
   };
 
-  const handleChooseYourPlan = () => {
-    userTracking.capture({
-      name: "paywall.clickedChoosePlan",
-      feature: config.feature,
-    });
-    setDialog({
-      type: "upgrade",
-      source: { kind: "paywall", feature: config.feature },
-    });
-  };
-
-  const handlePersonalCheckout = () => {
-    userTracking.capture({
-      name: "paywall.clickedPersonal",
-      feature: config.feature,
-    });
-  };
-
   const handleExplorePlans = () => {
     userTracking.capture({
       name: "paywall.clickedExplorePlans",
       feature: config.feature,
     });
-    setShowPlans(true);
+    setDialog({ type: "upgrade", feature: config.feature, source: "paywall" });
   };
 
   const handleStartTrial = async () => {
     userTracking.capture({
-      name: "trial.activated",
+      name: "trial.clickedStart",
+      source: "paywall",
       feature: config.feature,
     });
-    await activateTrial();
-
-    notify({
-      variant: "success",
-      title: translate("trial.activated"),
-      Icon: SuccessIcon,
-      duration: 3000,
-    });
+    const activated = await activateTrial();
+    if (!activated) return;
 
     config.onTrialActivated();
   };
 
-  const handleTryDemo = async () => {
-    if (!config.onTryDemo) return;
-    userTracking.capture({
-      name: "paywall.clickedTryDemo",
-      feature: config.feature,
-    });
-    setIsDemoLoading(true);
-    try {
-      await config.onTryDemo();
-    } finally {
-      setIsDemoLoading(false);
-    }
+  const handleSignInToStartTrial = () => {
+    setTrialAfterSignIn(true);
+    _onClose();
   };
 
   return (
@@ -131,15 +100,25 @@ export const FeaturePaywall = ({
       onClose={handleClose}
     >
       <div className="grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-8 p-4">
-        <div className="relative aspect-square bg-gray-100 dark:bg-gray-800 border border-gray-200 rounded-lg shadow-md overflow-hidden">
-          <VideoPlayer
-            src={config.videoSrc}
-            captions={captions}
-            autoPlay
-            muted
-            loop
-            playsInline
-          />
+        <div className="relative aspect-square bg-panel border rounded-lg shadow-md overflow-hidden">
+          {config.media ? (
+            config.media
+          ) : config.videoSrc ? (
+            <VideoPlayer
+              src={config.videoSrc}
+              captions={captions}
+              autoPlay
+              muted
+              loop
+              playsInline
+            />
+          ) : (
+            <img
+              src={config.imageSrc}
+              alt={translate(config.titleKey)}
+              className="w-full h-full object-cover"
+            />
+          )}
         </div>
 
         <div className="flex flex-col">
@@ -147,14 +126,11 @@ export const FeaturePaywall = ({
             <>
               <div className="space-y-3 pb-6">
                 {config.descriptionKeys.map((key) => (
-                  <p
-                    key={key}
-                    className="text-sm text-gray-700 dark:text-gray-300"
-                  >
+                  <p key={key} className="text-size-base text-default">
                     {translate(key)}
                   </p>
                 ))}
-                <p className="text-sm text-gray-700 dark:text-gray-300">
+                <p className="text-size-base text-default">
                   {translate(config.actionDescriptionKeys.trial)}
                 </p>
               </div>
@@ -163,17 +139,19 @@ export const FeaturePaywall = ({
                   <Button
                     variant="primary"
                     size="full-width"
+                    className="relative"
                     onClick={() => void handleStartTrial()}
-                    disabled={isTrialLoading || isDemoLoading}
+                    disabled={isTrialLoading}
                   >
-                    {isTrialLoading ? (
-                      <RefreshIcon className="animate-spin" />
-                    ) : (
-                      translate("trial.activateFree")
+                    <span className={isTrialLoading ? "invisible" : undefined}>
+                      {translate("trial.startFree")}
+                    </span>
+                    {isTrialLoading && (
+                      <RefreshIcon className="animate-spin absolute" />
                     )}
                   </Button>
                 ) : (
-                  <ClerkSignInButton
+                  <SignInButton
                     forceRedirectUrl={buildAfterSignupUrl("activatingTrial")}
                     signUpForceRedirectUrl={buildAfterSignupUrl(
                       "activatingTrial",
@@ -182,150 +160,44 @@ export const FeaturePaywall = ({
                     <Button
                       variant="primary"
                       size="full-width"
-                      disabled={isDemoLoading}
+                      onClick={handleSignInToStartTrial}
                     >
-                      {translate("trial.activateFree")}
+                      {translate("trial.startFree")}
                     </Button>
-                  </ClerkSignInButton>
+                  </SignInButton>
                 )}
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
-                  <span className="text-xs text-gray-400 dark:text-gray-500">
-                    {translate("paywall.or")}
-                  </span>
-                  <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
-                </div>
-                {config.onTryDemo ? (
-                  <Button
-                    variant="default"
-                    size="full-width"
-                    onClick={() => void handleTryDemo()}
-                    disabled={isTrialLoading || isDemoLoading}
-                  >
-                    {isDemoLoading ? (
-                      <RefreshIcon className="animate-spin" />
-                    ) : (
-                      translate("trial.tryWithDemo")
-                    )}
-                  </Button>
-                ) : (
-                  <Button
-                    variant="default"
-                    size="full-width"
-                    onClick={handleExplorePlans}
-                    disabled={isTrialLoading}
-                  >
-                    {translate("paywall.explorePlans")}
-                  </Button>
-                )}
-              </div>
-            </>
-          ) : showPlans ? (
-            <>
-              <button
-                className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 pb-2"
-                onClick={() => setShowPlans(false)}
-              >
-                <ChevronLeftIcon className="w-4 h-4" />
-                {translate("back")}
-              </button>
-              <div className="flex flex-col gap-5">
-                <div className="flex flex-col gap-1">
-                  <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {translate("paywall.nonCommercial.title")}
-                  </h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {translate("paywall.nonCommercial.description")}
-                  </p>
-                  <div className="pt-2" onClick={handlePersonalCheckout}>
-                    <CheckoutButton
-                      plan="personal"
-                      paymentType="yearly"
-                      variant="default"
-                    >
-                      {translate("paywall.nonCommercial.cta")}
-                    </CheckoutButton>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <h3 className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {translate("paywall.commercial.title")}
-                  </h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {translate("paywall.commercial.description")}
-                  </p>
-                  <div className="pt-2">
-                    <Button
-                      variant="primary"
-                      size="full-width"
-                      onClick={handleChooseYourPlan}
-                    >
-                      {translate("paywall.commercial.cta")}
-                    </Button>
-                  </div>
-                </div>
+                <Button
+                  variant="default"
+                  size="full-width"
+                  onClick={handleExplorePlans}
+                  disabled={isTrialLoading}
+                >
+                  {translate("paywall.explorePlans")}
+                </Button>
               </div>
             </>
           ) : (
             <>
               <div className="space-y-3 pb-6">
                 {config.descriptionKeys.map((key) => (
-                  <p
-                    key={key}
-                    className="text-sm text-gray-700 dark:text-gray-300"
-                  >
+                  <p key={key} className="text-size-base text-default">
                     {translate(key)}
                   </p>
                 ))}
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  {translate(
-                    config.onTryDemo && config.actionDescriptionKeys.demo
-                      ? config.actionDescriptionKeys.demo
-                      : config.actionDescriptionKeys.plans,
-                  )}
+                <p className="text-size-base text-default">
+                  {translate(config.actionDescriptionKeys.plans)}
                 </p>
               </div>
               <div className="flex flex-col gap-3">
-                {config.onTryDemo ? (
-                  <>
-                    <Button
-                      variant="default"
-                      size="full-width"
-                      onClick={() => void handleTryDemo()}
-                      disabled={isDemoLoading}
-                    >
-                      {isDemoLoading ? (
-                        <RefreshIcon className="animate-spin" />
-                      ) : (
-                        translate("trial.tryWithDemo")
-                      )}
-                    </Button>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
-                      <span className="text-xs text-gray-400 dark:text-gray-500">
-                        {translate("paywall.or")}
-                      </span>
-                      <div className="flex-1 border-t border-gray-200 dark:border-gray-700" />
-                    </div>
-                    <Button
-                      variant="primary"
-                      size="full-width"
-                      onClick={handleExplorePlans}
-                      disabled={isDemoLoading}
-                    >
-                      {translate("paywall.explorePlans")}
-                    </Button>
-                  </>
-                ) : (
-                  <Button
-                    variant="primary"
-                    size="full-width"
-                    onClick={handleExplorePlans}
-                  >
-                    {translate("paywall.explorePlans")}
-                  </Button>
-                )}
+                <CheckoutButton
+                  plan="pro"
+                  paymentType="yearly"
+                  variant="primary"
+                  source="paywall"
+                  feature={config.feature}
+                >
+                  {translate("upgradeTo", "Pro")}
+                </CheckoutButton>
               </div>
             </>
           )}

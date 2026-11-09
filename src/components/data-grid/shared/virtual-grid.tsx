@@ -1,4 +1,4 @@
-import { forwardRef, useRef } from "react";
+import { forwardRef, useCallback, useRef } from "react";
 import { Table } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
@@ -23,6 +23,8 @@ import { ScrollShadows } from "./scroll-shadows";
 import { VirtualRows } from "./virtual-rows";
 
 export type VirtualGridProps<TData extends Record<string, unknown>> = {
+  scrollElementRef?: React.MutableRefObject<HTMLDivElement | null>;
+  onScrollOffset?: (offset: { top: number; left: number }) => void;
   table: Table<TData>;
   onCellMouseDown: (col: number, row: number, e: React.MouseEvent) => void;
   onCellMouseEnter: (col: number, row: number) => void;
@@ -79,16 +81,34 @@ export const VirtualGrid = forwardRef(function VirtualGrid<
     onColumnSort,
     cellContextActions,
     gutterContextActions,
+    scrollElementRef,
+    onScrollOffset,
   }: VirtualGridProps<TData>,
   ref: React.ForwardedRef<GridRef>,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const headerScrollRef = useRef<HTMLDivElement>(null);
+
+  const attachScrollElement = useCallback(
+    (element: HTMLDivElement | null) => {
+      scrollRef.current = element;
+      if (scrollElementRef) scrollElementRef.current = element;
+    },
+    [scrollElementRef],
+  );
 
   const rowsHeight = useContainerHeight(containerRef);
   const scrollState = useScrollState(scrollRef);
-  const onScroll = useHeaderScrollSync(scrollRef, headerScrollRef);
+  const syncHeaderScroll = useHeaderScrollSync(scrollRef, headerScrollRef);
+  const onScroll = useCallback(
+    (event: React.UIEvent<HTMLDivElement>) => {
+      syncHeaderScroll();
+      const { scrollTop, scrollLeft } = event.currentTarget;
+      onScrollOffset?.({ top: scrollTop, left: scrollLeft });
+    },
+    [syncHeaderScroll, onScrollOffset],
+  );
 
   useScrollActiveCellIntoView({
     scrollRef,
@@ -124,6 +144,11 @@ export const VirtualGrid = forwardRef(function VirtualGrid<
 
   const gutterWidth = gutterColumn ? FIXED_COLUMN_SIZE : 0;
   const actionsWidth = rowActions ? FIXED_COLUMN_SIZE : 0;
+  // Sum widths of all left-pinned columns so the left scroll shadow lands
+  // at the pinned block's right edge.
+  const pinnedLeftWidth = table
+    .getLeftLeafColumns()
+    .reduce((sum, col) => sum + col.getSize(), 0);
   const isReady = rowsHeight !== undefined;
 
   return (
@@ -132,7 +157,10 @@ export const VirtualGrid = forwardRef(function VirtualGrid<
       className="flex-1 min-h-0 flex flex-col datagrid-scroll-container"
       style={{ visibility: isReady ? "visible" : "hidden" }}
     >
-      <div ref={headerScrollRef} className="shrink-0 overflow-hidden">
+      <div
+        ref={headerScrollRef}
+        className="shrink-0 overflow-hidden border-t border-x border-base"
+      >
         <GridHeader
           table={table}
           showGutterColumn={gutterColumn}
@@ -154,13 +182,13 @@ export const VirtualGrid = forwardRef(function VirtualGrid<
         onClose={clearMenuTarget}
       >
         <div
-          ref={scrollRef}
+          ref={attachScrollElement}
           onMouseDown={onEmptyAreaMouseDown}
           onContextMenu={(e) => {
             if (e.target === e.currentTarget) e.preventDefault();
           }}
           onScroll={onScroll}
-          className="outline-hidden overflow-auto overscroll-none flex-1 border border-gray-200 datagrid-scroll-area"
+          className="outline-hidden overflow-auto overscroll-none flex-1 border border-base datagrid-scroll-area"
         >
           <VirtualRows
             rowVirtualizer={rowVirtualizer}
@@ -188,6 +216,7 @@ export const VirtualGrid = forwardRef(function VirtualGrid<
         gutterWidth={gutterWidth}
         actionsWidth={actionsWidth}
         rowHeight={ROW_HEIGHT}
+        pinnedLeftWidth={pinnedLeftWidth}
       />
     </div>
   );

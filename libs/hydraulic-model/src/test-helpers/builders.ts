@@ -1,0 +1,46 @@
+import { Position } from "geojson";
+import {
+  AssetFactory,
+  LabelManager,
+  CustomerPoint,
+  JunctionBuildData,
+  PipeBuildData,
+  PumpBuildData,
+  ReservoirBuildData,
+  TankBuildData,
+  ValveBuildData,
+} from "..";
+import { ConsecutiveIdsGenerator } from "@epanet-js/id-generator";
+
+const factory = () =>
+  new AssetFactory(new ConsecutiveIdsGenerator(), new LabelManager());
+
+export const buildPipe = (data: PipeBuildData = {}) =>
+  factory().createPipe(data);
+
+export const buildPump = (data: PumpBuildData = {}) =>
+  factory().createPump(data);
+
+export const buildValve = (data: ValveBuildData = {}) =>
+  factory().createValve(data);
+
+export const buildJunction = (data: JunctionBuildData = {}) =>
+  factory().createJunction(data);
+
+export const buildReservoir = (data: ReservoirBuildData = {}) =>
+  factory().createReservoir(data);
+
+export const buildTank = (data: TankBuildData = {}) =>
+  factory().createTank(data);
+
+export const buildCustomerPoint = (
+  id: number,
+  options: {
+    coordinates?: Position;
+    junctionId?: number;
+    label?: string;
+  } = {},
+) => {
+  const { coordinates = [0, 0], label = String(id) } = options;
+  return new CustomerPoint(id, coordinates, { label });
+};

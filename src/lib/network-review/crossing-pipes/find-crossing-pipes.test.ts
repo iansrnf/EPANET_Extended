@@ -1,9 +1,9 @@
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
-import { findCrossingPipes } from "./find-crossing-pipes";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import {
   EncodedHydraulicModel,
   HydraulicModelEncoder,
-} from "../hydraulic-model-buffers";
+  findCrossingPipes,
+} from "@epanet-js/network-review";
 import { HydraulicModel } from "src/hydraulic-model";
 
 describe("findCrossingPipes", () => {

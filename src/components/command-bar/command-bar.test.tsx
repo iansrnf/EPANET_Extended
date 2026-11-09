@@ -1,21 +1,32 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Provider as JotaiProvider } from "jotai";
 import { vi } from "vitest";
-import { TooltipProvider } from "@radix-ui/react-tooltip";
+import { TooltipProvider } from "@epanet-js/ui-kit";
 import Mousetrap from "mousetrap";
 
 import { Maybe } from "purify-ts/Maybe";
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { setInitialState } from "src/__helpers__/state";
-import { LabelManager } from "src/hydraulic-model/label-manager";
+import {
+  LabelManager,
+  initializeModelFactories,
+} from "@epanet-js/hydraulic-model";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import { selectionAtom } from "src/state/selection";
 import { commandBarOpenAtom } from "src/state/command-bar";
-import { initializeModelFactories } from "src/hydraulic-model/factories";
-import { ConsecutiveIdsGenerator } from "src/lib/id-generator";
-import { presets } from "src/lib/project-settings/quantities-spec";
+import { buildIdPools } from "src/lib/id-pools";
 import { Store } from "src/state";
+import { useInitializeBranch } from "src/hooks/persistence/use-initialize-branch";
+import { useSwitchBranch } from "src/hooks/persistence/use-switch-branch";
+import { worktreeAtom } from "src/state/scenarios";
+import type { Branch } from "@epanet-js/worktree";
 
 const zoomToMock = vi.fn();
 vi.mock("src/hooks/use-zoom-to", () => ({
@@ -23,6 +34,7 @@ vi.mock("src/hooks/use-zoom-to", () => ({
 }));
 
 import { CommandBar } from "./command-bar";
+import { USelection } from "src/selection";
 
 describe("CommandBar", () => {
   beforeEach(() => {
@@ -107,15 +119,9 @@ describe("CommandBar", () => {
     await waitFor(() => screen.getByText("P1"));
     await user.click(screen.getByText("P1"));
 
-    expect(store.get(selectionAtom)).toEqual({
-      type: "single",
-      id: 1,
-      parts: [],
-    });
-    expect(zoomToMock).toHaveBeenCalledWith(
-      { type: "single", id: 1, parts: [] },
-      18,
-    );
+    const selection = store.get(selectionAtom);
+    expect(USelection.isAssetSelected(selection, 1)).toBe(true);
+    expect(zoomToMock).toHaveBeenCalledWith(selection, 18);
     expect(store.get(commandBarOpenAtom)).toBe(false);
   });
 
@@ -130,9 +136,8 @@ describe("CommandBar", () => {
     store.set(
       modelFactoriesAtom,
       initializeModelFactories({
-        idGenerator: new ConsecutiveIdsGenerator(),
+        idPools: buildIdPools(),
         labelManager,
-        defaults: presets.LPS.defaults,
       }),
     );
     store.set(commandBarOpenAtom, true);
@@ -143,11 +148,25 @@ describe("CommandBar", () => {
     await waitFor(() => screen.getByText("CP7"));
     await user.click(screen.getByText("CP7"));
 
-    expect(store.get(selectionAtom)).toEqual({
-      type: "singleCustomerPoint",
-      id: 42,
-    });
-    expect(zoomToMock).toHaveBeenCalledWith(Maybe.of([10, 20, 10, 20]), 18);
+    expect(
+      USelection.isCustomerPointSelected(store.get(selectionAtom), 42),
+    ).toBe(true);
+    expect(zoomToMock.mock.calls).toEqual([[Maybe.of([10, 20, 10, 20]), 18]]);
+  });
+
+  it("selects a zone and zooms to it on click", async () => {
+    const user = userEvent.setup();
+    const { store } = setupWithZone();
+    store.set(commandBarOpenAtom, true);
+
+    renderComponent(store);
+
+    await user.type(screen.getByRole("textbox"), "NOR");
+    await waitFor(() => screen.getByText("NORTH"));
+    await user.click(screen.getByText("NORTH"));
+
+    expect(USelection.getZoneIds(store.get(selectionAtom))).toEqual([7]);
+    expect(zoomToMock.mock.calls).toEqual([[USelection.singleZone(7)]]);
   });
 
   it("closes on Escape", async () => {
@@ -161,6 +180,25 @@ describe("CommandBar", () => {
     await user.keyboard("{Escape}");
 
     await waitFor(() => expect(store.get(commandBarOpenAtom)).toBe(false));
+  });
+
+  it("finds assets inherited from main when a scenario is active", async () => {
+    const user = userEvent.setup();
+    const { store } = setupWithLabels([
+      { label: "P1", type: "pipe", id: 1 },
+      { label: "J3", type: "junction", id: 3 },
+    ]);
+    switchToNewScenario(store);
+    store.set(commandBarOpenAtom, true);
+
+    renderComponent(store);
+
+    await user.type(screen.getByRole("textbox"), "P1");
+
+    await waitFor(() => {
+      expect(screen.getByText("P1")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("No results")).not.toBeInTheDocument();
   });
 
   it("closes when clicking the backdrop", async () => {
@@ -196,18 +234,74 @@ const setupWithLabels = (
   entries.forEach((e) => labelManager.register(e.label, e.type, e.id));
 
   const hydraulicModel = HydraulicModelBuilder.with({ labelManager }).build();
-  const store = setInitialState({ hydraulicModel });
+  const store = setInitialState({ hydraulicModel, labelManager });
 
   store.set(
     modelFactoriesAtom,
     initializeModelFactories({
-      idGenerator: new ConsecutiveIdsGenerator(),
+      idPools: buildIdPools(),
       labelManager,
-      defaults: presets.LPS.defaults,
     }),
   );
 
   return { store, labelManager };
+};
+
+const setupWithZone = (): { store: Store } => {
+  const labelManager = new LabelManager();
+  const hydraulicModel = HydraulicModelBuilder.with({ labelManager })
+    .aZone({
+      id: 7,
+      label: "NORTH",
+      geometry: { type: "MultiPolygon", coordinates: [] },
+      bbox: [0, 0, 1, 1],
+    })
+    .build();
+  const store = setInitialState({ hydraulicModel, labelManager });
+  store.set(
+    modelFactoriesAtom,
+    initializeModelFactories({
+      idPools: buildIdPools(),
+      labelManager,
+    }),
+  );
+  return { store };
+};
+
+const switchToNewScenario = (store: Store) => {
+  const { result } = renderHook(
+    () => ({
+      ...useInitializeBranch(),
+      ...useSwitchBranch(),
+    }),
+    {
+      wrapper: ({ children }: { children: React.ReactNode }) => (
+        <JotaiProvider store={store}>{children}</JotaiProvider>
+      ),
+    },
+  );
+
+  const scenario: Branch = {
+    id: "scenario-1",
+    name: "Scenario #1",
+    parentId: "main",
+    status: "open",
+  };
+
+  act(() => {
+    result.current.initializeBranch(scenario);
+    result.current.switchBranch(scenario.id);
+  });
+
+  const worktree = store.get(worktreeAtom);
+  store.set(worktreeAtom, {
+    ...worktree,
+    branches: new Map(worktree.branches).set(scenario.id, scenario),
+    scenarios: [scenario.id],
+    activeBranchId: scenario.id,
+    lastActiveBranchId: worktree.activeBranchId,
+    highestScenarioNumber: 1,
+  });
 };
 
 const renderComponent = (store: Store) => {

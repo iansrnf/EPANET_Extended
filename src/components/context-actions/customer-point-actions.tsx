@@ -2,12 +2,8 @@ import type {
   Action,
   ActionProps,
 } from "src/components/context-actions/action-item";
-import { ActionItem } from "./action-item";
 import { useCallback } from "react";
-import { CustomerPoint } from "src/hydraulic-model/customer-points";
-import { useAtomValue } from "jotai";
-import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
-import { selectionAtom } from "src/state/selection";
+import { CustomerPoint } from "@epanet-js/hydraulic-model";
 import { useTranslate } from "src/hooks/use-translate";
 import {
   useConnectCustomerPoints,
@@ -17,6 +13,7 @@ import {
 } from "src/commands/customer-point-actions";
 import { ConnectIcon, DisconnectIcon, DeleteIcon } from "src/icons";
 import { useDeleteSelection } from "src/commands/delete-selection";
+import { useIsDrawingAvailable } from "src/hooks/use-is-drawing-available";
 
 export function useCustomerPointActions(
   customerPoint: CustomerPoint | undefined,
@@ -26,6 +23,7 @@ export function useCustomerPointActions(
   const connectCustomerPoints = useConnectCustomerPoints();
   const disconnectCustomerPoints = useDisconnectCustomerPoints();
   const deleteSelection = useDeleteSelection();
+  const isDrawingAvailable = useIsDrawingAvailable();
 
   const isReconnecting = customerPoint?.connection !== null;
 
@@ -49,7 +47,7 @@ export function useCustomerPointActions(
     label: isReconnecting
       ? translate("contextActions.customerPoints.reconnect")
       : translate("contextActions.customerPoints.connect"),
-    applicable: true,
+    applicable: isDrawingAvailable,
     icon: <ConnectIcon />,
     onSelect: onConnect,
     shortcut: connectCustomersShortcut,
@@ -74,34 +72,11 @@ export function useCustomerPointActions(
   const deleteAction: Action = {
     label: translate("delete"),
     applicable: true,
+    priority: 1,
     variant: "danger-quiet",
     icon: <DeleteIcon />,
     onSelect: onDelete,
   };
 
   return [connectAction, disconnectAction, deleteAction];
-}
-
-export function CustomerPointActions({ as }: { as: ActionProps["as"] }) {
-  const selection = useAtomValue(selectionAtom);
-  const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
-
-  const customerPoint =
-    selection.type === "singleCustomerPoint"
-      ? hydraulicModel.customerPoints.get(selection.id)
-      : undefined;
-
-  const actions = useCustomerPointActions(customerPoint, as);
-
-  if (selection.type !== "singleCustomerPoint") return null;
-
-  return (
-    <>
-      {actions
-        .filter((action) => action.applicable)
-        .map((action, i) => (
-          <ActionItem as={as} key={i} action={action} />
-        ))}
-    </>
-  );
 }

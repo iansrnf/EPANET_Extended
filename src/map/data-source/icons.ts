@@ -1,12 +1,15 @@
 import { AssetId, AssetsMap, Pipe, Pump, Reservoir } from "src/hydraulic-model";
-import { Link, findLargestSegment } from "src/hydraulic-model/asset-types/link";
+import {
+  Link,
+  findLargestSegment,
+  Valve,
+  controlKinds,
+  Tank,
+} from "@epanet-js/hydraulic-model";
 import { Feature } from "src/types";
 import calculateMidpoint from "@turf/midpoint";
 import calculateBearing from "@turf/bearing";
-import { Valve } from "src/hydraulic-model/asset-types";
-import { controlKinds } from "src/hydraulic-model/asset-types/valve";
-import { Tank } from "src/hydraulic-model/asset-types/tank";
-import type { ResultsReader } from "src/simulation/results-reader";
+import type { ResultsReader } from "@epanet-js/simulation";
 
 export const buildIconPointsSource = (
   assets: AssetsMap,
@@ -130,10 +133,11 @@ const buildValveIcon = (
       ? simStatus
       : valve.initialStatus
     : "disabled";
-  return buildDirectionalLinkIcon(valve, selectedAssets, () => ({
+  return buildDirectionalLinkIcon(valve, selectedAssets, (asset) => ({
     kind: valve.kind,
     icon: `valve-${valve.kind}-${status}`,
     isControlValve: controlKinds.includes(valve.kind),
+    isActive: asset.isActive,
   }));
 };
 

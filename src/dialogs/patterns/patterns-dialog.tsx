@@ -11,22 +11,28 @@ import {
   Pattern,
   PatternId,
   PatternType,
-  getNextPatternId,
   deepClonePatterns,
   differentPatternsCount,
 } from "src/hydraulic-model";
 import { PatternsIcon } from "src/icons";
-import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
-import { simulationSettingsAtom } from "src/state/simulation-settings";
+import {
+  stagingModelDerivedAtom,
+  simulationSettingsDerivedAtom,
+} from "src/state/derived-branch-state";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
-import { HydraulicModel } from "src/hydraulic-model/hydraulic-model";
-import { Reservoir } from "src/hydraulic-model/asset-types/reservoir";
-import { Pump } from "src/hydraulic-model/asset-types/pump";
+import { isPatternInUse } from "@epanet-js/hydraulic-model";
 import { notify } from "src/components/notifications";
 import { useUserTracking } from "src/infra/user-tracking";
-import { changePatterns } from "src/hydraulic-model/model-operations";
+import { modelFactoriesAtom } from "src/state/model-factories";
+import { changePatterns } from "@epanet-js/hydraulic-model-operations";
 import { VerticalResizer } from "../vertical-resizer";
 import { DialogActions, DialogActionsHandle } from "../dialog-actions-row";
+import {
+  ImportExportPatternsToolbar,
+  PATTERNS_IMPORT_KEYS,
+} from "./import-export-patterns-toolbar";
+import type { ImportOutcome } from "src/components/import-outcome";
+import { ImportOutcomeReport } from "src/components/import-outcome-report";
 
 type PatternUpdate = Partial<Pick<Pattern, "label" | "multipliers" | "type">>;
 
@@ -41,6 +47,7 @@ export const PatternsDialog = ({
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
   const userTracking = useUserTracking();
   const isEditionBlocked = useIsEditionBlocked();
+  const { idPools } = useAtomValue(modelFactoriesAtom);
   const [selectedPatternId, setSelectedPatternId] = useState<PatternId | null>(
     initialPatternId ?? null,
   );
@@ -49,16 +56,9 @@ export const PatternsDialog = ({
   );
   const [sidebarWidth, setSidebarWidth] = useState(224);
   const dialogActions = useRef<DialogActionsHandle>(null);
-  const nextPatternIdRef = useRef<PatternId>(
-    getNextPatternId(editedPatterns, editedPatterns.size),
-  );
-  nextPatternIdRef.current = getNextPatternId(
-    editedPatterns,
-    nextPatternIdRef.current,
-  );
 
   const { timing, energyGlobalPatternId } = useAtomValue(
-    simulationSettingsAtom,
+    simulationSettingsDerivedAtom,
   );
   const hasPatterns = editedPatterns.size > 0;
   const patternTimestepSeconds = timing.patternTimestep;
@@ -115,7 +115,7 @@ export const PatternsDialog = ({
       source: "new" | "clone",
       type: PatternType = "demand",
     ): PatternId => {
-      const id = nextPatternIdRef.current;
+      const id = idPools.newId("pattern");
       setEditedPatterns((prev) => {
         const patterns = new Map(prev);
         patterns.set(id, { id, label, multipliers, type });
@@ -124,20 +124,12 @@ export const PatternsDialog = ({
       userTracking.capture({ name: "pattern.added", source });
       return id;
     },
-    [userTracking],
+    [userTracking, idPools],
   );
 
   const handleDeletePattern = useCallback(
-    (patternId: PatternId, patternType?: PatternType) => {
-      if (
-        patternType &&
-        isPatternInUse(
-          hydraulicModel,
-          patternId,
-          patternType,
-          energyGlobalPatternId,
-        )
-      ) {
+    (patternId: PatternId) => {
+      if (isPatternInUse(hydraulicModel, patternId, energyGlobalPatternId)) {
         notify({
           variant: "error",
           title: translate("patterns.deletePatternInUse"),
@@ -172,8 +164,7 @@ export const PatternsDialog = ({
   );
 
   const handleSave = useCallback(() => {
-    const moment = changePatterns(hydraulicModel, editedPatterns);
-    transact(moment);
+    transact(() => changePatterns(hydraulicModel, editedPatterns));
     userTracking.capture({
       name: "patterns.updated",
       count: unsavedChanges,
@@ -188,6 +179,31 @@ export const PatternsDialog = ({
     [userTracking],
   );
 
+  // The report takes over the empty state, so the import clears the selection
+  // to make room for it, and the next selection puts the detail back.
+  const [importOutcome, setImportOutcome] = useState<ImportOutcome | null>(
+    null,
+  );
+
+  const handleImported = useCallback(
+    (imported: Patterns | null, outcome: ImportOutcome) => {
+      if (imported) setEditedPatterns(imported);
+      setImportOutcome(outcome);
+      setSelectedPatternId(null);
+    },
+    [],
+  );
+
+  const handleSelectPattern = useCallback((patternId: PatternId | null) => {
+    setSelectedPatternId(patternId);
+    setImportOutcome(null);
+  }, []);
+
+  // An import replaces the whole draft from a snapshot taken when it started,
+  // so edits made while it runs would be silently overwritten.
+  const [isImporting, setImporting] = useState(false);
+  const isLocked = isEditionBlocked || isImporting;
+
   return (
     <BaseDialog
       title={translate("patterns.title")}
@@ -200,51 +216,68 @@ export const PatternsDialog = ({
           ref={dialogActions}
           onSave={handleSave}
           onClose={handleClose}
-          readOnly={isEditionBlocked}
+          readOnly={isLocked}
           hasChanges={!!unsavedChanges}
         />
       }
     >
-      <div className="flex-1 flex min-h-0">
-        <div className="shrink-0 flex">
-          <PatternSidebar
-            width={sidebarWidth}
-            patterns={editedPatterns}
-            selectedPatternId={selectedPatternId}
-            initialSection={initialSection}
-            minPatternSteps={minPatternSteps}
-            onSelectPattern={setSelectedPatternId}
-            onAddPattern={handleAddPattern}
-            onChangePattern={handlePatternChange}
-            onDeletePattern={handleDeletePattern}
-            readOnly={isEditionBlocked}
-          />
-          <VerticalResizer
-            width={sidebarWidth}
-            onWidthChange={setSidebarWidth}
-          />
-        </div>
-        <div className="flex-1 flex flex-col min-h-0 w-full ml-1">
-          {selectedPatternId ? (
-            <PatternDetail
-              pattern={getPatternMultipliers(selectedPatternId)}
-              patternType={editedPatterns.get(selectedPatternId)?.type}
-              patternTimestepSeconds={patternTimestepSeconds}
-              totalDurationSeconds={totalDurationSeconds}
-              onChange={(multipliers) =>
-                handlePatternChange(selectedPatternId, { multipliers })
-              }
-              readOnly={isEditionBlocked}
+      <div className="flex flex-col flex-1 min-h-0">
+        <ImportExportPatternsToolbar
+          patterns={editedPatterns}
+          intervalSeconds={patternTimestepSeconds}
+          onImported={handleImported}
+          isImporting={isImporting}
+          onImportingChange={setImporting}
+          readOnly={isEditionBlocked}
+        />
+        <div className="flex-1 flex min-h-0">
+          <div className="shrink-0 flex">
+            <PatternSidebar
+              width={sidebarWidth}
+              patterns={editedPatterns}
+              selectedPatternId={selectedPatternId}
+              initialSection={initialSection}
+              minPatternSteps={minPatternSteps}
+              onSelectPattern={handleSelectPattern}
+              onAddPattern={handleAddPattern}
+              onChangePattern={handlePatternChange}
+              onDeletePattern={handleDeletePattern}
+              readOnly={isLocked}
             />
-          ) : hasPatterns ? (
-            <div className="flex-1 flex items-center justify-center p-2">
-              <NoSelectionState />
-            </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center p-2">
-              <EmptyState readOnly={isEditionBlocked} />
-            </div>
-          )}
+            <VerticalResizer
+              width={sidebarWidth}
+              onWidthChange={setSidebarWidth}
+            />
+          </div>
+          <div className="flex-1 flex flex-col min-h-0 w-full ml-1">
+            {importOutcome && (
+              <ImportOutcomeReport
+                outcome={importOutcome}
+                translationKeys={PATTERNS_IMPORT_KEYS}
+                onDismiss={() => setImportOutcome(null)}
+              />
+            )}
+            {selectedPatternId ? (
+              <PatternDetail
+                pattern={getPatternMultipliers(selectedPatternId)}
+                patternType={editedPatterns.get(selectedPatternId)?.type}
+                patternTimestepSeconds={patternTimestepSeconds}
+                totalDurationSeconds={totalDurationSeconds}
+                onChange={(multipliers) =>
+                  handlePatternChange(selectedPatternId, { multipliers })
+                }
+                readOnly={isLocked}
+              />
+            ) : hasPatterns ? (
+              <div className="flex-1 flex items-center justify-center p-2">
+                <NoSelectionState />
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center p-2">
+                <EmptyState readOnly={isLocked} />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </BaseDialog>
@@ -256,10 +289,10 @@ const NoSelectionState = () => {
 
   return (
     <div className="flex flex-col items-center justify-center px-4">
-      <div className="text-gray-400">
-        <PatternsIcon size={96} />
+      <div className="text-subtle">
+        <PatternsIcon size="2xl" />
       </div>
-      <p className="text-sm text-gray-600 text-center max-w-64 py-4">
+      <p className="text-size-base text-subtle text-center max-w-64 py-4">
         {translate("patterns.noSelection")}
       </p>
     </div>
@@ -271,67 +304,17 @@ const EmptyState = ({ readOnly }: { readOnly: boolean }) => {
 
   return (
     <div className="flex flex-col items-center justify-center px-4">
-      <div className="text-gray-400">
-        <PatternsIcon size={96} />
+      <div className="text-subtle">
+        <PatternsIcon size="2xl" />
       </div>
-      <p className="text-sm font-semibold py-4 text-gray-600">
+      <p className="text-size-base font-semibold py-4 text-subtle">
         {translate("patterns.emptyTitle")}
       </p>
       {!readOnly && (
-        <p className="text-sm text-gray-600 text-center max-w-64">
+        <p className="text-size-base text-subtle text-center max-w-64">
           {translate("patterns.emptyDescription")}
         </p>
       )}
     </div>
   );
-};
-
-const isPatternInUse = (
-  hydraulicModel: HydraulicModel,
-  patternId: PatternId,
-  patternType: PatternType,
-  energyGlobalPatternId?: PatternId | null,
-): boolean => {
-  switch (patternType) {
-    case "demand":
-      // Check customer points — all CPs share the same pattern, so only check the first one with demands
-      for (const demands of hydraulicModel.demands.customerPoints.values()) {
-        if (demands.length > 0) {
-          return demands.some((demand) => demand.patternId === patternId);
-        }
-      }
-
-      // Check junctions
-      for (const demands of hydraulicModel.demands.junctions.values()) {
-        for (const demand of demands) {
-          if (demand.patternId === patternId) {
-            return true;
-          }
-        }
-      }
-      break;
-    case "reservoirHead":
-      for (const asset of hydraulicModel.assets.values()) {
-        if (asset instanceof Reservoir && asset.headPatternId === patternId) {
-          return true;
-        }
-      }
-      break;
-    case "pumpSpeed":
-      for (const asset of hydraulicModel.assets.values()) {
-        if (asset instanceof Pump && asset.speedPatternId === patternId) {
-          return true;
-        }
-      }
-      break;
-    case "energyPrice":
-      if (energyGlobalPatternId === patternId) {
-        return true;
-      }
-      break;
-    default:
-      return false;
-  }
-
-  return false;
 };

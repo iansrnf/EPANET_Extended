@@ -4,7 +4,7 @@ import {
   AckDialogAction,
   useDialogState,
 } from "../components/dialog";
-import { processReportWithSlots, ReportRow } from "src/simulation/report";
+import { processReportWithSlots, ReportRow } from "@epanet-js/simulation";
 import { useMemo, useCallback } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { dialogAtom } from "src/state/dialog";
@@ -14,7 +14,7 @@ import {
 } from "src/state/derived-branch-state";
 import { selectionAtom } from "src/state/selection";
 
-import { useSelection } from "src/selection/use-selection";
+import { useSelection } from "src/selection";
 import { AssetId } from "src/hydraulic-model";
 import { useZoomTo } from "src/hooks/use-zoom-to";
 import { useUserTracking } from "src/infra/user-tracking";
@@ -50,7 +50,7 @@ export const SimulationReportDialog = () => {
   const renderRowWithSlots = useCallback(
     (reportRow: ReportRow, index: number) => {
       const trimmedText = reportRow.text.slice(2);
-      const finalText = trimmedText.startsWith("  Error")
+      const finalText = trimmedText.startsWith(" Error")
         ? trimmedText.slice(2)
         : trimmedText;
 
@@ -73,7 +73,7 @@ export const SimulationReportDialog = () => {
             parts.push(
               <span
                 key={`${index}-slot-${slotIndex}`}
-                className="text-purple-600 underline cursor-pointer hover:text-purple-700 hover:bg-purple-50 px-1 rounded-sm"
+                className="text-accent-hover underline cursor-pointer hover:text-purple-700 hover:bg-purple-50 px-1 rounded-sm"
                 onClick={() => handleAssetClick(assetId)}
               >
                 {asset.label}
@@ -103,11 +103,10 @@ export const SimulationReportDialog = () => {
 
     if (errorCollector.hasErrors()) {
       const errors = errorCollector.getErrors();
-      setErrorContext("Report Processing Issues", {
-        issues: errors.map((e) => JSON.stringify(e)),
-      });
+      const issues = errors.map((e) => JSON.stringify(e));
+      setErrorContext("Report Processing Issues", { issues });
 
-      const errorMessage = `Report processing encountered ${errors.length} lines with issues`;
+      const errorMessage = `Report processing encountered ${errors.length} lines with issues: ${JSON.stringify(issues)}`;
       captureError(new Error(errorMessage));
     }
 
@@ -124,7 +123,7 @@ export const SimulationReportDialog = () => {
         <AckDialogAction label={translate("understood")} onAck={closeDialog} />
       }
     >
-      <div className="flex-1 p-4 text-sm bg-gray-100 text-gray-700 font-mono leading-loose">
+      <div className="flex-1 p-4 text-size-base bg-panel text-default font-mono leading-loose">
         {processedReport.map(renderRowWithSlots)}
       </div>
     </BaseDialog>

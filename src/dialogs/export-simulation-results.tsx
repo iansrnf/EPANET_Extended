@@ -6,13 +6,16 @@ import { ExportSimulationResultsProgressDialog } from "./export-simulation-resul
 import { useTranslate } from "src/hooks/use-translate";
 import { selectionAtom } from "src/state/selection";
 import { USelection } from "src/selection";
-import { stagingModelAtom } from "src/state/hydraulic-model";
 import {
   simulationDerivedAtom,
   simulationSettingsDerivedAtom,
+  stagingModelDerivedAtom,
 } from "src/state/derived-branch-state";
 import { Export } from "src/lib/export";
-import type { ExportSimulationResultsProperties } from "src/lib/export/types";
+import {
+  combineMetrics,
+  type ExportSimulationResultsProperties,
+} from "src/lib/export/types";
 
 type SimulationExportFormat = "csv" | "xlsx";
 
@@ -35,7 +38,23 @@ type LinkFields = {
   flow: boolean;
   velocity: boolean;
   unitHeadloss: boolean;
+  waterQuality: boolean;
 };
+
+const NODE_FIELDS: [keyof NodeFields, string][] = [
+  ["pressure", "pressure"],
+  ["head", "head"],
+  ["demand", "demand"],
+  ["waterQuality", "simulationSettings.waterQuality"],
+];
+
+const LINK_FIELDS: [keyof LinkFields, string][] = [
+  ["status", "status"],
+  ["flow", "flow"],
+  ["velocity", "velocity"],
+  ["unitHeadloss", "unitHeadloss"],
+  ["waterQuality", "simulationSettings.waterQuality"],
+];
 
 const IndeterminateCheckbox = ({
   checked,
@@ -76,10 +95,10 @@ export const ExportSimulationResultsDialog = ({
   const exportSimulationResults = useExportSimulationResults();
 
   const selection = useAtomValue(selectionAtom);
-  const selectedIds = USelection.toIds(selection);
+  const selectedIds = USelection.getAssetIds(selection);
   const hasSelection = selectedIds.length > 0;
 
-  const model = useAtomValue(stagingModelAtom);
+  const model = useAtomValue(stagingModelDerivedAtom);
   const simulation = useAtomValue(simulationDerivedAtom);
   const simulationSettings = useAtomValue(simulationSettingsDerivedAtom);
   const isWaterQualityEnabled =
@@ -101,18 +120,25 @@ export const ExportSimulationResultsDialog = ({
     flow: true,
     velocity: true,
     unitHeadloss: true,
+    waterQuality: isWaterQualityEnabled,
   });
 
-  const enabledNodeFields = Object.entries(nodeFields).filter(
-    ([key]) => key !== "waterQuality" || isWaterQualityEnabled,
+  const isFieldEnabled = (key: string) =>
+    key !== "waterQuality" || isWaterQualityEnabled;
+
+  const enabledNodeFields = Object.entries(nodeFields).filter(([key]) =>
+    isFieldEnabled(key),
   );
   const nodeCheckedCount = enabledNodeFields.filter(([, v]) => v).length;
   const nodeTotal = enabledNodeFields.length;
   const nodeAllChecked = nodeCheckedCount === nodeTotal;
   const nodeIndeterminate = nodeCheckedCount > 0 && !nodeAllChecked;
 
-  const linkCheckedCount = Object.values(linkFields).filter(Boolean).length;
-  const linkTotal = Object.keys(linkFields).length;
+  const enabledLinkFields = Object.entries(linkFields).filter(([key]) =>
+    isFieldEnabled(key),
+  );
+  const linkCheckedCount = enabledLinkFields.filter(([, v]) => v).length;
+  const linkTotal = enabledLinkFields.length;
   const linkAllChecked = linkCheckedCount === linkTotal;
   const linkIndeterminate = linkCheckedCount > 0 && !linkAllChecked;
 
@@ -133,6 +159,7 @@ export const ExportSimulationResultsDialog = ({
       flow: next,
       velocity: next,
       unitHeadloss: next,
+      waterQuality: isWaterQualityEnabled && next,
     });
   };
 
@@ -151,7 +178,7 @@ export const ExportSimulationResultsDialog = ({
 
   const estimatedBytes = Export.estimateSimulationResultsSize(
     format,
-    [...selectedNodeProperties, ...selectedLinkProperties],
+    combineMetrics(selectedNodeProperties, selectedLinkProperties),
     assetCount,
     timestepCount,
   );
@@ -193,7 +220,6 @@ export const ExportSimulationResultsDialog = ({
     isExporting || exceedsLimit || nodeCheckedCount + linkCheckedCount === 0;
 
   const handleExport = useCallback(async () => {
-    const properties = [...selectedNodeProperties, ...selectedLinkProperties];
     const selectedAssets = selectedAssetsOnly
       ? new Set(selectedIds)
       : new Set<number>();
@@ -205,7 +231,8 @@ export const ExportSimulationResultsDialog = ({
     try {
       await exportSimulationResults({
         format,
-        properties,
+        nodeProperties: selectedNodeProperties,
+        linkProperties: selectedLinkProperties,
         selectedAssets,
         onProgress,
         signal: controller.signal,
@@ -259,7 +286,7 @@ export const ExportSimulationResultsDialog = ({
         }
       >
         <div className="p-4">
-          <p className="text-sm text-gray-700">
+          <p className="text-size-base text-default">
             {translate("exportAssetData.noAssets")}
           </p>
         </div>
@@ -267,7 +294,7 @@ export const ExportSimulationResultsDialog = ({
     );
   }
 
-  if (epsResultsReader === null) {
+  if (simulation.status === "failure") {
     return (
       <BaseDialog
         title={translate("exportTimeSeries")}
@@ -282,7 +309,30 @@ export const ExportSimulationResultsDialog = ({
         }
       >
         <div className="p-4">
-          <p className="text-sm text-gray-700">
+          <p className="text-size-base text-default">
+            {translate("exportTimeSeries.simulationFailed")}
+          </p>
+        </div>
+      </BaseDialog>
+    );
+  }
+
+  if (!epsResultsReader) {
+    return (
+      <BaseDialog
+        title={translate("exportTimeSeries")}
+        size="sm"
+        isOpen={true}
+        onClose={onClose}
+        footer={
+          <SimpleDialogActions
+            action={translate("dialog.close")}
+            onAction={onClose}
+          />
+        }
+      >
+        <div className="p-4">
+          <p className="text-size-base text-default">
             {translate("exportTimeSeries.noSimulation")}
           </p>
         </div>
@@ -310,7 +360,7 @@ export const ExportSimulationResultsDialog = ({
     >
       <div className="p-4 space-y-4">
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="block text-size-base font-medium text-default">
             {translate("exportFormat")}
           </label>
           <select
@@ -318,7 +368,7 @@ export const ExportSimulationResultsDialog = ({
             onChange={(e) =>
               setFormat(e.target.value as SimulationExportFormat)
             }
-            className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-hidden focus:ring-1 focus:ring-purple-500"
+            className="w-full px-3 py-2 border border-strong rounded-sm text-size-base focus:outline-hidden focus:ring-1 focus:ring-accent"
           >
             {exportFormats.map(({ value, labelKey }) => (
               <option key={value} value={value}>
@@ -336,37 +386,29 @@ export const ExportSimulationResultsDialog = ({
             checked={selectedAssetsOnly}
             disabled={!hasSelection}
             onChange={(e) => setSelectedAssetsOnly(e.target.checked)}
-            className="rounded-sm text-purple-600 focus:ring-purple-500 disabled:opacity-50"
+            className="rounded-sm text-accent-hover focus:ring-accent disabled:opacity-50"
           />
-          <span className="text-sm text-gray-700">
+          <span className="text-size-base text-default">
             {translate("exportSelectedAssetsOnly")}
           </span>
         </label>
 
-        <div className="grid grid-cols-2 gap-4 border-t border-gray-200 pt-4">
+        <div className="grid grid-cols-2 gap-4 border-t pt-4">
           <div className="space-y-2">
             <label className="flex items-center gap-x-2 cursor-pointer">
               <IndeterminateCheckbox
                 checked={nodeAllChecked}
                 indeterminate={nodeIndeterminate}
                 onChange={toggleAllNodes}
-                className="rounded-sm text-purple-600 focus:ring-purple-500"
+                className="rounded-sm text-accent-hover focus:ring-accent"
               />
-              <span className="text-sm font-medium text-gray-900">
+              <span className="text-size-base font-medium text-default">
                 {translate("nodes")}
               </span>
             </label>
             <div className="pl-5 space-y-2">
-              {(
-                [
-                  ["pressure", "pressure"],
-                  ["head", "head"],
-                  ["demand", "demand"],
-                  ["waterQuality", "simulationSettings.waterQuality"],
-                ] as [keyof NodeFields, string][]
-              ).map(([key, translationKey]) => {
-                const disabled =
-                  key === "waterQuality" && !isWaterQualityEnabled;
+              {NODE_FIELDS.map(([key, translationKey]) => {
+                const disabled = !isFieldEnabled(key);
                 return (
                   <label
                     key={key}
@@ -382,9 +424,9 @@ export const ExportSimulationResultsDialog = ({
                           [key]: e.target.checked,
                         }))
                       }
-                      className="rounded text-purple-600 focus:ring-purple-500 disabled:opacity-50"
+                      className="rounded text-accent-hover focus:ring-accent disabled:opacity-50"
                     />
-                    <span className="text-sm text-gray-700">
+                    <span className="text-size-base text-default">
                       {translate(translationKey)}
                     </span>
                   </label>
@@ -399,41 +441,38 @@ export const ExportSimulationResultsDialog = ({
                 checked={linkAllChecked}
                 indeterminate={linkIndeterminate}
                 onChange={toggleAllLinks}
-                className="rounded-sm text-purple-600 focus:ring-purple-500"
+                className="rounded-sm text-accent-hover focus:ring-accent"
               />
-              <span className="text-sm font-medium text-gray-900">
+              <span className="text-size-base font-medium text-default">
                 {translate("links")}
               </span>
             </label>
             <div className="pl-5 space-y-2">
-              {(
-                [
-                  ["status", "status"],
-                  ["flow", "flow"],
-                  ["velocity", "velocity"],
-                  ["unitHeadloss", "unitHeadloss"],
-                ] as [keyof LinkFields, string][]
-              ).map(([key, translationKey]) => (
-                <label
-                  key={key}
-                  className="flex items-center gap-x-2 cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={linkFields[key]}
-                    onChange={(e) =>
-                      setLinkFields((prev) => ({
-                        ...prev,
-                        [key]: e.target.checked,
-                      }))
-                    }
-                    className="rounded-sm text-purple-600 focus:ring-purple-500"
-                  />
-                  <span className="text-sm text-gray-700">
-                    {translate(translationKey)}
-                  </span>
-                </label>
-              ))}
+              {LINK_FIELDS.map(([key, translationKey]) => {
+                const disabled = !isFieldEnabled(key);
+                return (
+                  <label
+                    key={key}
+                    className={`flex items-center gap-x-2 ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={linkFields[key]}
+                      disabled={disabled}
+                      onChange={(e) =>
+                        setLinkFields((prev) => ({
+                          ...prev,
+                          [key]: e.target.checked,
+                        }))
+                      }
+                      className="rounded-sm text-accent-hover focus:ring-accent disabled:opacity-50"
+                    />
+                    <span className="text-size-base text-default">
+                      {translate(translationKey)}
+                    </span>
+                  </label>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -442,12 +481,12 @@ export const ExportSimulationResultsDialog = ({
           <div
             className={`p-3 rounded-md space-y-1 ${
               exceedsLimit
-                ? "bg-red-50 border border-red-200"
+                ? "bg-error-subtle border border-red-200"
                 : "bg-yellow-50 border border-yellow-200"
             }`}
           >
             <p
-              className={`text-sm font-medium ${exceedsLimit ? "text-red-800" : "text-yellow-800"}`}
+              className={`text-size-base font-medium ${exceedsLimit ? "text-red-800" : "text-yellow-800"}`}
             >
               {translate(
                 exceedsLimit
@@ -457,7 +496,7 @@ export const ExportSimulationResultsDialog = ({
               )}
             </p>
             <p
-              className={`text-sm ${exceedsLimit ? "text-red-800" : "text-yellow-800"}`}
+              className={`text-size-base ${exceedsLimit ? "text-red-800" : "text-yellow-800"}`}
             >
               {translate(
                 exceedsLimit

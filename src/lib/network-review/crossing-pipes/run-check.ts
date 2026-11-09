@@ -7,17 +7,15 @@ import {
   enrichWorkerError,
 } from "src/infra/worker";
 import {
-  decodeCrossingPipes,
-  EncodedCrossingPipes,
   CrossingPipe,
-} from "./data";
-import {
+  EncodedCrossingPipes,
   HydraulicModelBuffers,
   HydraulicModelEncoder,
+  decodeCrossingPipes,
+  findCrossingPipes,
   hydraulicModelTransferables,
-} from "../hydraulic-model-buffers";
-import { findCrossingPipes } from "./find-crossing-pipes";
-import { CrossingPipesWorkerAPI } from "./worker";
+} from "@epanet-js/network-review";
+import { getCrossingPipesWorker } from "./get-worker";
 
 export const runCheck = async (
   hydraulicModel: HydraulicModel,
@@ -58,24 +56,23 @@ const runWithWorker = async (
     throw new DOMException("Operation cancelled", "AbortError");
   }
 
-  const worker = new Worker(new URL("./worker.ts", import.meta.url), {
-    type: "module",
-  });
+  const transferData = Comlink.transfer(
+    data,
+    hydraulicModelTransferables(data),
+  );
 
-  const workerAPI = Comlink.wrap<CrossingPipesWorkerAPI>(worker);
-
-  const abortHandler = () => worker.terminate();
-  signal?.addEventListener("abort", abortHandler);
-
+  const workerAPI = getCrossingPipesWorker();
   try {
-    return await workerAPI.findCrossingPipes(
-      Comlink.transfer(data, hydraulicModelTransferables(data)),
+    const result = await workerAPI.findCrossingPipes(
+      transferData,
       junctionTolerance,
     );
+    if (signal?.aborted) {
+      throw new DOMException("Operation cancelled", "AbortError");
+    }
+    return result;
   } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
     throw enrichWorkerError("crossing-pipes", e);
-  } finally {
-    signal?.removeEventListener("abort", abortHandler);
-    worker.terminate();
   }
 };

@@ -1,0 +1,323 @@
+import { useCallback, useContext } from "react";
+import { useSetAtom } from "jotai";
+import { FileWithHandle } from "browser-fs-access";
+import {
+  buildModel,
+  type Converter,
+  type NetworkData,
+} from "@epanet-js/converters";
+import { LngLatBoundsLike } from "mapbox-gl";
+import { defaultProjectSettings } from "@epanet-js/project-settings";
+import { useUnsavedChangesCheck } from "./check-unsaved-changes";
+import {
+  blockingIssues,
+  applyConverterSettings,
+  getConverter,
+  issueCodes,
+  type ConverterVendor,
+} from "src/lib/converters";
+import { dialogAtom } from "src/state/dialog";
+import { inpFileInfoAtom, projectFileInfoAtom } from "src/state/file-system";
+import { markProjectUnsavedAtom } from "src/state/project-revision";
+import { captureError } from "src/infra/error-tracking";
+import { handleError } from "src/infra/errors";
+import { ConvertModelStarted, useUserTracking } from "src/infra/user-tracking";
+import { useFileOpen } from "src/hooks/use-file-open";
+import { useProjections } from "src/hooks/use-projections";
+import { useLabelMaxLength } from "src/hooks/use-label-max-length";
+import { usePermissions } from "src/hooks/use-permissions";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import {
+  defaultSimulationSettings,
+  type SimulationSettings,
+} from "src/simulation/simulation-settings";
+import {
+  useStartBlankProject,
+  useStartNewProject,
+} from "src/hooks/persistence/use-start-new-project";
+import { saveCustomAttributes } from "src/lib/db";
+import { newSelectionSet } from "src/lib/collections";
+import { USelection } from "src/selection";
+import { MapContext } from "src/map";
+
+export const useConvertFile = () => {
+  const userTracking = useUserTracking();
+  const { projections } = useProjections();
+  const labelMaxLength = useLabelMaxLength();
+  const { startNewProject } = useStartNewProject();
+  const startBlankProject = useStartBlankProject();
+  const { canImportSynergi } = usePermissions();
+  const parseSelectionSets = useFeatureFlag("FLAG_SYNERGI_SELECTION_SETS");
+  const freeDischargeInlet = useFeatureFlag(
+    "FLAG_SYNERGI_FREE_DISCHARGE_INLET",
+  );
+  const remoteSetpointPrv = useFeatureFlag("FLAG_SYNERGI_REMOTE_SETPOINT_PRV");
+  const variableSpeedPumps = useFeatureFlag(
+    "FLAG_SYNERGI_VARIABLE_SPEED_PUMPS",
+  );
+  const setDialogState = useSetAtom(dialogAtom);
+  const setInpFileInfo = useSetAtom(inpFileInfoAtom);
+  const setProjectFileInfo = useSetAtom(projectFileInfoAtom);
+  const markProjectUnsaved = useSetAtom(markProjectUnsavedAtom);
+  const map = useContext(MapContext);
+
+  const convertFile = useCallback(
+    async (
+      converter: Converter,
+      vendor: ConverterVendor,
+      file: FileWithHandle,
+      source: string,
+    ) => {
+      if (!canImportSynergi) {
+        setDialogState({ type: "featurePaywall", feature: "convertModel" });
+        return;
+      }
+
+      if (!projections) {
+        setDialogState({ type: "invalidFilesError" });
+        userTracking.capture({ name: "invalidFilesError.seen" });
+        return;
+      }
+
+      setDialogState({ type: "loading" });
+
+      try {
+        const cleared = await startBlankProject();
+        if (!cleared) {
+          setDialogState(null);
+          return;
+        }
+
+        applyConverterSettings({
+          parseSelectionSets,
+          freeDischargeInlet,
+          remoteSetpointPrv,
+          variableSpeedPumps,
+        });
+        const { network, issues } = await converter.parseNetworkData({
+          files: [file],
+        });
+
+        const blocking = blockingIssues(issues);
+        if (blocking.length > 0) {
+          userTracking.capture({
+            name: "convertModel.failed",
+            source,
+            vendor,
+            issues: issueCodes(blocking),
+          });
+          setDialogState({ type: "convertModelFailed", issues: blocking });
+          return;
+        }
+
+        const {
+          hydraulicModel,
+          selectionSets,
+          factories,
+          projectSettings,
+          bounds,
+          issues: builderIssues,
+        } = buildModel(network, {
+          projections,
+          labelMaxLength,
+        });
+        const allIssues = [...issues, ...builderIssues];
+
+        const started = await startNewProject({
+          hydraulicModel,
+          selectionSets: selectionSets.map(({ label, assetIds }) =>
+            newSelectionSet(label, USelection.fromIds(assetIds, [])),
+          ),
+          factories,
+          projectSettings: {
+            ...defaultProjectSettings,
+            ...projectSettings,
+            name: file.name.replace(/\.[^.]+$/, ""),
+          },
+          simulationSettings: withSourceHydraulics(
+            defaultSimulationSettings,
+            network,
+          ),
+        });
+        if (!started) {
+          setDialogState(null);
+          return;
+        }
+
+        if (hydraulicModel.customAttributes.size > 0) {
+          await saveCustomAttributes(hydraulicModel.customAttributes);
+        }
+
+        bounds.map((importedExtent) => {
+          map?.map.fitBounds(importedExtent as LngLatBoundsLike, {
+            padding: 100,
+            duration: 0,
+          });
+        });
+
+        setInpFileInfo(null);
+        setProjectFileInfo(null);
+        markProjectUnsaved();
+
+        userTracking.capture({
+          name: "convertModel.completed",
+          source,
+          vendor,
+          counts: {
+            junctions: network.junctions.length,
+            reservoirs: network.reservoirs.length,
+            tanks: network.tanks.length,
+            pipes: network.pipes.length,
+            pumps: network.pumps.length,
+            valves: network.valves.length,
+            zones: hydraulicModel.zones.size,
+            selectionSets: selectionSets.length,
+            customAttributes: network.customAttributes.length,
+          },
+          issues: issueCodes(allIssues),
+        });
+
+        setDialogState(
+          allIssues.length > 0
+            ? { type: "convertModelIssues", issues: allIssues }
+            : null,
+        );
+      } catch (error) {
+        handleError(error, {
+          as: "Convert model failed",
+          onUnexpected: "capture",
+          contexts: {
+            "Import file": { name: file.name, size: file.size, vendor },
+          },
+        });
+        setDialogState({ type: "invalidFilesError" });
+      }
+    },
+    [
+      canImportSynergi,
+      parseSelectionSets,
+      freeDischargeInlet,
+      remoteSetpointPrv,
+      variableSpeedPumps,
+      projections,
+      labelMaxLength,
+      startNewProject,
+      startBlankProject,
+      map,
+      setDialogState,
+      setInpFileInfo,
+      setProjectFileInfo,
+      markProjectUnsaved,
+      userTracking,
+    ],
+  );
+
+  return convertFile;
+};
+
+export const useConvertModel = () => {
+  const checkUnsavedChanges = useUnsavedChangesCheck();
+  const userTracking = useUserTracking();
+  const { openFile, isReady } = useFileOpen();
+  const setDialogState = useSetAtom(dialogAtom);
+  const { canImportSynergi } = usePermissions();
+  const convertFile = useConvertFile();
+
+  const pickAndConvert = useCallback(
+    async ({ vendor, source }: { vendor: ConverterVendor; source: string }) => {
+      userTracking.capture({
+        name: "convertModel.started",
+        source,
+        vendor,
+        canImportSynergi,
+      });
+
+      if (!canImportSynergi) {
+        setDialogState({ type: "featurePaywall", feature: "convertModel" });
+        return;
+      }
+
+      const converter = getConverter(vendor);
+      if (!converter) {
+        setDialogState({ type: "invalidFilesError" });
+        userTracking.capture({ name: "invalidFilesError.seen" });
+        return;
+      }
+
+      if (!isReady) throw new Error("FS not ready");
+      try {
+        const file = await openFile({
+          multiple: false,
+          extensions: converter.extensions,
+          description: converter.name,
+        });
+
+        if (!file) return;
+
+        void convertFile(converter, vendor, file, source);
+      } catch (error) {
+        captureError(error as Error);
+      }
+    },
+    [
+      openFile,
+      isReady,
+      convertFile,
+      setDialogState,
+      userTracking,
+      canImportSynergi,
+    ],
+  );
+
+  return useCallback(
+    ({
+      vendor,
+      source,
+    }: {
+      vendor: ConverterVendor;
+      source: ConvertModelStarted["source"];
+    }) => {
+      checkUnsavedChanges(() => pickAndConvert({ vendor, source }));
+    },
+    [pickAndConvert, checkUnsavedChanges],
+  );
+};
+
+const withSourceHydraulics = (
+  settings: SimulationSettings,
+  {
+    patternTimeStep,
+    simulationDuration,
+    qualityTimeStep,
+    viscosity,
+    trials,
+    headError,
+    flowChange,
+  }: NetworkData,
+): SimulationSettings => {
+  const timing = {
+    ...settings.timing,
+    ...(patternTimeStep === undefined
+      ? {}
+      : {
+          patternTimestep: patternTimeStep,
+          hydraulicTimestep: patternTimeStep,
+          reportTimestep: patternTimeStep,
+        }),
+    ...(simulationDuration === undefined
+      ? {}
+      : { duration: simulationDuration }),
+    ...(qualityTimeStep === undefined
+      ? {}
+      : { qualityTimestep: qualityTimeStep }),
+  };
+
+  return {
+    ...settings,
+    ...(viscosity === undefined ? {} : { viscosity }),
+    ...(trials === undefined ? {} : { trials }),
+    ...(headError === undefined ? {} : { headError }),
+    ...(flowChange === undefined ? {} : { flowChange }),
+    timing,
+  };
+};

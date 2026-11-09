@@ -1,26 +1,33 @@
 import { NumericField } from "src/components/form/numeric-field";
-import { localizeDecimal } from "src/infra/i18n/numbers";
+import { localizeDecimal } from "@epanet-js/i18n";
 
 import {
   CheckType,
+  ProximityAnomaly,
+  findProximityAnomalies,
+} from "src/lib/network-review";
+import clsx from "clsx";
+import { useArchivedItems } from "./use-archived-items";
+import { FixProximityAnomalyButton } from "./fixes/fix-proximity-anomaly-button";
+import { useFixProximityAnomaly } from "./fixes/use-fix-proximity-anomaly";
+import {
+  Archiving,
   EmptyState,
   LoadingState,
   ToolDescription,
   ToolHeader,
+  useCheckHeader,
   useLoadingStatus,
   VirtualizedIssuesList,
 } from "./common";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useAtomValue } from "jotai";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAtom, useAtomValue } from "jotai";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { projectSettingsAtom } from "src/state/project-settings";
+import { proximityDistanceAtom } from "src/state/network-review";
 import { selectionAtom } from "src/state/selection";
 import { useTranslate } from "src/hooks/use-translate";
-import { convertTo, Quantity } from "src/quantity";
-import {
-  ProximityAnomaly,
-  findProximityAnomalies,
-} from "src/lib/network-review/proximity-anomalies";
+import { convertTo, Quantity } from "@epanet-js/quantity";
 import { useSelection, USelection } from "src/selection";
 import { useZoomTo } from "src/hooks/use-zoom-to";
 import { useUserTracking } from "src/infra/user-tracking";
@@ -70,9 +77,9 @@ export const ProximityAnomalies = ({ onGoBack }: { onGoBack: () => void }) => {
         setSelectedProximityAnomalyId(null);
         return;
       }
-      const connectionId = `${anomaly.nodeId}-${anomaly.pipeId}`;
+      const connectionId = proximityAnomalyId(anomaly);
       setSelectedProximityAnomalyId(connectionId);
-      setSelection(USelection.fromIds([anomaly.nodeId, anomaly.pipeId]));
+      setSelection(USelection.fromAssetIds([anomaly.nodeId, anomaly.pipeId]));
 
       const nodeGeometry = nodeAsset.feature.geometry as GeoJSON.Point;
       const boundingBox = bbox(
@@ -91,7 +98,7 @@ export const ProximityAnomalies = ({ onGoBack }: { onGoBack: () => void }) => {
     if (!selectedAnomaly) {
       setSelectedProximityAnomalyId(null);
     } else {
-      const connectionId = `${selectedAnomaly.nodeId}-${selectedAnomaly.pipeId}`;
+      const connectionId = proximityAnomalyId(selectedAnomaly);
       setSelectedProximityAnomalyId((prev) =>
         prev === connectionId ? prev : connectionId,
       );
@@ -125,12 +132,26 @@ export const ProximityAnomalies = ({ onGoBack }: { onGoBack: () => void }) => {
     [proximityAnomalies.length],
   );
 
+  const archiving = useArchivedItems(CheckType.proximityAnomalies);
+  const { isArchived } = archiving;
+
+  const activeCount = useMemo(
+    () =>
+      proximityAnomalies.filter((item) => !isArchived(proximityAnomalyId(item)))
+        .length,
+    [proximityAnomalies, isArchived],
+  );
+
+  const headerProps = useCheckHeader(
+    CheckType.proximityAnomalies,
+    activeCount,
+    onGoBack,
+  );
+
   return (
     <div className="absolute inset-0 flex flex-col">
       <ToolHeader
-        onGoBack={onGoBack}
-        itemsCount={proximityAnomalies.length}
-        checkType={CheckType.proximityAnomalies}
+        {...headerProps}
         autoFocus={proximityAnomalies.length === 0 && !isLoading}
       />
       <DistanceInput
@@ -145,9 +166,10 @@ export const ProximityAnomalies = ({ onGoBack }: { onGoBack: () => void }) => {
             {proximityAnomalies.length > 0 ? (
               <ProximityAnomaliesList
                 proximityAnomalies={proximityAnomalies}
-                onClick={selectProximityAnomaly}
+                onSelect={selectProximityAnomaly}
                 selectedAnomaly={selectedProximityAnomalyId}
                 onGoBack={onGoBack}
+                archiving={archiving}
               />
             ) : (
               <>
@@ -167,6 +189,9 @@ export const ProximityAnomalies = ({ onGoBack }: { onGoBack: () => void }) => {
     </div>
   );
 };
+
+const proximityAnomalyId = (anomaly: ProximityAnomaly) =>
+  `${anomaly.nodeId}-${anomaly.pipeId}`;
 
 const DEFAULT_DISTANCE_FT = 1.5;
 const DEFAULT_DISTANCE_M = 0.5;
@@ -189,7 +214,7 @@ const DistanceInput = ({
   return (
     <div
       ref={inputRef}
-      className="flex gap-2 p-3 border-b border-gray-200 items-center flex-wrap"
+      className="flex gap-2 p-3 border-b items-center flex-wrap"
     >
       <InlineField layout="label-flex-none" name={label}>
         <NumericField
@@ -197,7 +222,6 @@ const DistanceInput = ({
           displayValue={localizeDecimal(distance.value)}
           onChangeValue={onChange}
           styleOptions={{ padding: "md", textSize: "sm" }}
-          tabIndex={0}
           disabled={disabled}
         />
       </InlineField>
@@ -207,22 +231,39 @@ const DistanceInput = ({
 
 const useDistance = () => {
   const { units } = useAtomValue(projectSettingsAtom);
+  const userTracking = useUserTracking();
   const unit = units.length;
-  const [distance, setDistance] = useState<number>(() =>
-    unit === "ft" ? DEFAULT_DISTANCE_FT : DEFAULT_DISTANCE_M,
-  );
-  const distanceInM = useRef<number>(convertTo({ value: distance, unit }, "m"));
+  const [storedDistance, setStoredDistance] = useAtom(proximityDistanceAtom);
 
+  // Stored with its own unit, so the number the user typed is shown back
+  // verbatim; only a mid-session unit change needs converting.
+  const distance = useMemo((): number => {
+    if (!storedDistance) {
+      return unit === "ft" ? DEFAULT_DISTANCE_FT : DEFAULT_DISTANCE_M;
+    }
+
+    return storedDistance.unit === unit
+      ? storedDistance.value
+      : convertTo(storedDistance, unit);
+  }, [storedDistance, unit]);
+
+  // Only reached from the input's commit, so this records values the user chose
+  // and never the unit default.
   const updateDistance = useCallback(
     (value: number) => {
-      setDistance(value);
-      distanceInM.current = convertTo({ value, unit }, "m");
+      setStoredDistance({ value, unit });
+
+      userTracking.capture({
+        name: "networkReview.proximityAnomalies.distanceSet",
+        distance: value,
+        units: unit ?? "",
+      });
     },
-    [unit],
+    [unit, setStoredDistance, userTracking],
   );
 
   return {
-    distanceInM: distanceInM.current,
+    distanceInM: convertTo({ value: distance, unit }, "m"),
     localizedDistance: { value: distance, unit },
     updateDistance,
   };
@@ -280,28 +321,52 @@ const useCheckProximityAnomalies = () => {
 
 const ProximityAnomaliesList = ({
   proximityAnomalies,
-  onClick,
+  onSelect,
   selectedAnomaly,
   onGoBack,
+  archiving,
 }: {
   proximityAnomalies: ProximityAnomaly[];
-  onClick: (issue: ProximityAnomaly | null) => void;
+  onSelect: (issue: ProximityAnomaly | null) => void;
   selectedAnomaly: string | null;
   onGoBack: () => void;
+  archiving: Archiving<string>;
 }) => {
+  const { fix } = useFixProximityAnomaly();
+
+  const fixAnomaly = useCallback(
+    (anomalyId: string) => {
+      const anomaly = proximityAnomalies.find(
+        (candidate) => proximityAnomalyId(candidate) === anomalyId,
+      );
+      if (!anomaly) return;
+
+      fix(anomaly);
+    },
+    [proximityAnomalies, fix],
+  );
+
   return (
     <VirtualizedIssuesList
       items={proximityAnomalies}
       selectedItemId={selectedAnomaly}
-      onSelect={onClick}
-      getItemId={(issue) => `${issue.nodeId}-${issue.pipeId}`}
-      renderItem={(_index, anomaly, selectedId, onClick) => (
+      onSelect={onSelect}
+      getItemId={proximityAnomalyId}
+      renderItem={(_index, anomaly, selectedId, onClick, isArchived) => (
         <ProximityAnomalyItem
           anomaly={anomaly}
           selectedId={selectedId}
           onClick={onClick}
+          isArchived={isArchived}
         />
       )}
+      renderItemAction={(anomaly) => (
+        <FixProximityAnomalyButton
+          onFix={() => fixAnomaly(proximityAnomalyId(anomaly))}
+        />
+      )}
+      onItemAction={fixAnomaly}
+      archiving={archiving}
       checkType={CheckType.proximityAnomalies}
       onGoBack={onGoBack}
     />
@@ -312,15 +377,17 @@ const ProximityAnomalyItem = ({
   anomaly,
   onClick,
   selectedId,
+  isArchived = false,
 }: {
   anomaly: ProximityAnomaly;
   onClick: (anomaly: ProximityAnomaly) => void;
   selectedId: string | null;
+  isArchived?: boolean;
 }) => {
   const translate = useTranslate();
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
   const { units } = useAtomValue(projectSettingsAtom);
-  const connectionId = `${anomaly.nodeId}-${anomaly.pipeId}`;
+  const connectionId = proximityAnomalyId(anomaly);
   const isSelected = selectedId === connectionId;
 
   const nodeAsset = hydraulicModel.assets.get(anomaly.nodeId);
@@ -341,20 +408,25 @@ const ProximityAnomalyItem = ({
       onClick={() => onClick(anomaly)}
       onMouseDown={(e) => e.preventDefault()}
       variant={"quiet/list"}
-      role="button"
+      size="xxs"
       aria-label={translate(
         "networkReview.proximityAnomalies.issueLabel",
         nodeAsset.label,
       )}
-      aria-checked={isSelected}
-      aria-expanded={isSelected ? "true" : "false"}
       aria-selected={isSelected}
       tabIndex={-1}
-      className="group w-full"
+      className="group w-full hover:bg-transparent dark:hover:bg-transparent aria-selected:bg-transparent! aria-selected:hover:bg-transparent!"
     >
-      <div className="grid grid-cols-[1fr_auto] gap-x-2 items-center p-1 pr-0 text-sm w-full justify-between">
-        <div className="truncate text-left">{nodeAsset.label}</div>
-        <div className="text-gray-500 min-w-0">
+      <div className="grid gap-x-2 items-center h-8 px-2 pr-0 text-size-base w-full grid-cols-[minmax(0,auto)_auto] justify-start">
+        <div
+          className={clsx(
+            "min-w-0 truncate text-left",
+            isArchived && "text-subtle",
+          )}
+        >
+          {nodeAsset.label}
+        </div>
+        <div className="text-subtle whitespace-nowrap">
           {distanceFormatted} {lengthUnit}
         </div>
       </div>

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef } from "react";
 import clsx from "clsx";
-import type { ColumnDef, RowData } from "@tanstack/react-table";
+import type { Row, RowData } from "@tanstack/react-table";
 import { CellProps, GridColumn } from "../types";
+import { type ColumnKey, resolveColumnKey } from "./column-key";
 
 export function BooleanCell({
   value,
@@ -60,7 +61,7 @@ export function BooleanCell({
         onChange={toggle}
         onKeyDown={handleKeyDown}
         className={clsx(
-          "w-4 h-4 text-purple-500 border-gray-300 rounded-sm outline-hidden focus:ring-0",
+          "w-4 h-4 text-accent border-strong rounded-sm outline-hidden focus:ring-0",
           readOnly ? "cursor-not-allowed opacity-50" : "cursor-pointer",
         )}
       />
@@ -69,23 +70,24 @@ export function BooleanCell({
 }
 
 export function booleanColumn<TData extends RowData = RowData>(
-  accessorKey: Extract<keyof TData, string> & string,
+  key: ColumnKey<TData, boolean | null>,
   options: {
     header: string;
     size?: number;
+    emptyValue?: boolean | null;
     isReadOnly?: boolean | ((rowIndex: number) => boolean);
   },
 ): GridColumn<TData> {
-  const { isReadOnly } = options;
+  const { emptyValue, isReadOnly } = options;
   const resolveReadOnly = (rowIndex: number) =>
     typeof isReadOnly === "function"
       ? isReadOnly(rowIndex)
       : (isReadOnly ?? false);
-  const column: ColumnDef<TData, boolean | null> = {
-    accessorKey,
+  const column = {
+    ...resolveColumnKey(key),
     header: options.header,
     size: options.size,
-    sortingFn: (rowA, rowB, columnId) => {
+    sortingFn: (rowA: Row<TData>, rowB: Row<TData>, columnId: string) => {
       const a = rowA.getValue(columnId) ? 1 : 0;
       const b = rowB.getValue(columnId) ? 1 : 0;
       return a - b;
@@ -97,14 +99,16 @@ export function booleanColumn<TData extends RowData = RowData>(
           readOnly={resolveReadOnly(props.rowIndex) || props.readOnly}
         />
       ),
-      copyValue: (v) => (v === true ? "TRUE" : v === false ? "FALSE" : ""),
-      pasteValue: (v) => {
+      copyValue: (v: boolean | null) =>
+        v === true ? "TRUE" : v === false ? "FALSE" : "",
+      pasteValue: (v: string) => {
         const lower = v.toLowerCase();
         if (lower === "true") return true;
         if (lower === "false") return false;
-        return null;
+        if (v === "") return emptyValue;
+        return undefined;
       },
-      deleteValue: false,
+      deleteValue: emptyValue,
       autoSizeExtraWidth: 16, // checkbox w-4
       isReadOnly,
     },

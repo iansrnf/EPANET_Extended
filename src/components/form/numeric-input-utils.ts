@@ -1,7 +1,6 @@
 import { parseLocaleNumber } from "src/infra/i18n";
 
 type NormalizeOptions = {
-  positiveOnly?: boolean;
   allowExponentSign?: boolean;
 };
 
@@ -9,13 +8,9 @@ export function normalizeNumericInput(
   input: string,
   options: NormalizeOptions = {},
 ): string {
-  const { positiveOnly = false, allowExponentSign = false } = options;
+  const { allowExponentSign = false } = options;
   const pattern = allowExponentSign ? /[^0-9\-.,eE+]/g : /[^0-9\-.,eE]/g;
-  let normalized = input.replace(pattern, "");
-  if (positiveOnly) {
-    normalized = normalized.replace(/^-/, "");
-  }
-  return normalized;
+  return input.replace(pattern, "");
 }
 
 export function parseNumericInput(input: string): number | null {
@@ -29,3 +24,25 @@ export function formatNumericDisplay(value: number | null | undefined): string {
   if (value === null || value === undefined) return "";
   return new Intl.NumberFormat().format(value);
 }
+
+export const isNumber = (value: number) => !Number.isNaN(value);
+
+export const validationStateFor = (
+  value: string,
+  {
+    isRequired,
+    commitInvalidValues,
+    validate = isNumber,
+  }: {
+    isRequired: boolean;
+    commitInvalidValues: boolean;
+    validate?: (value: number) => boolean;
+  },
+) => {
+  const isEmpty = value.trim() === "";
+  const numericValue = parseLocaleNumber(value);
+  const isNonNumeric = !isEmpty && isNaN(numericValue);
+  const hasError = isEmpty ? isRequired : !validate(numericValue);
+  const isBlocked = isNonNumeric || (hasError && !commitInvalidValues);
+  return { hasError, isBlocked };
+};

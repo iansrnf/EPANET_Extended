@@ -1,0 +1,107 @@
+import type { AssetType } from "@epanet-js/hydraulic-model";
+import { CustomerPointIcon, TableIcon, ZonesIcon } from "src/icons";
+import { tableHandlesAtom } from "./table-handles";
+import { panelTrackingName } from "src/panels/panel";
+import type { PanelTemplate } from "src/panels/panel-template";
+import { AssetDataTable } from "./asset-data-table";
+import { CustomerPointDataTable } from "./customer-point-data-table";
+import { ZoneDataTable } from "./zone-data-table";
+
+const countMatching = <T,>(ids: readonly T[], matches: (id: T) => boolean) =>
+  ids.reduce((count, id) => (matches(id) ? count + 1 : count), 0);
+
+const assetTypeLabelKeys: Record<AssetType, string> = {
+  junction: "junctions",
+  reservoir: "reservoirs",
+  tank: "tanks",
+  pipe: "pipes",
+  pump: "pumps",
+  valve: "valves",
+};
+
+const scopeDescription = (rowCount: number | undefined) =>
+  rowCount === undefined ? undefined : `(${rowCount.toLocaleString()})`;
+
+export const assetTablePanel: PanelTemplate<"asset-table"> = {
+  component: ({ panel }) => (
+    <AssetDataTable
+      id={panel.id}
+      type={panel.type}
+      assetType={panel.assetType}
+      assetIds={panel.assetIds}
+    />
+  ),
+  onDeactivate: ({ get }, panel) =>
+    get(tableHandlesAtom)[panel.id]?.captureState(),
+  buildLabel: (panel, { translate }) =>
+    translate(assetTypeLabelKeys[panel.assetType]),
+  icon: () => <TableIcon />,
+  buildDescription: (panel, { hydraulicModel }) =>
+    scopeDescription(
+      panel.assetIds &&
+        countMatching(
+          panel.assetIds,
+          (assetId) =>
+            hydraulicModel.assets.get(assetId)?.type === panel.assetType,
+        ),
+    ),
+  onClose: ({ userTracking }, panel) => {
+    userTracking.capture({
+      name: "dataTables.closed",
+      source: "tab",
+      panelType: panelTrackingName(panel),
+    });
+  },
+};
+
+export const customerPointTablePanel: PanelTemplate<"customer-point-table"> = {
+  component: ({ panel }) => (
+    <CustomerPointDataTable
+      id={panel.id}
+      type={panel.type}
+      customerPointIds={panel.customerPointIds}
+    />
+  ),
+  onDeactivate: ({ get }, panel) =>
+    get(tableHandlesAtom)[panel.id]?.captureState(),
+  buildLabel: (_panel, { translate }) => translate("customerPoints"),
+  icon: () => <CustomerPointIcon />,
+  buildDescription: (panel, { hydraulicModel }) =>
+    scopeDescription(
+      panel.customerPointIds &&
+        countMatching(panel.customerPointIds, (customerPointId) =>
+          hydraulicModel.customerPoints.has(customerPointId),
+        ),
+    ),
+  onClose: ({ userTracking }, panel) => {
+    userTracking.capture({
+      name: "dataTables.closed",
+      source: "tab",
+      panelType: panelTrackingName(panel),
+    });
+  },
+};
+
+export const zoneTablePanel: PanelTemplate<"zone-table"> = {
+  component: ({ panel }) => (
+    <ZoneDataTable id={panel.id} type={panel.type} zoneIds={panel.zoneIds} />
+  ),
+  onDeactivate: ({ get }, panel) =>
+    get(tableHandlesAtom)[panel.id]?.captureState(),
+  buildLabel: (_panel, { translate }) => translate("zones"),
+  icon: () => <ZonesIcon />,
+  buildDescription: (panel, { hydraulicModel }) =>
+    scopeDescription(
+      panel.zoneIds &&
+        countMatching(panel.zoneIds, (zoneId) =>
+          hydraulicModel.zones.has(zoneId),
+        ),
+    ),
+  onClose: ({ userTracking }, panel) => {
+    userTracking.capture({
+      name: "dataTables.closed",
+      source: "tab",
+      panelType: panelTrackingName(panel),
+    });
+  },
+};

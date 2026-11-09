@@ -1,0 +1,1952 @@
+import sqliteWasmPkg from "@sqlite.org/sqlite-wasm/package.json";
+import type { SAHPoolUtil } from "@sqlite.org/sqlite-wasm";
+import { APP_VERSION, migrations } from "./migrations";
+import { setPerfLogging, timed, timedSync } from "./perf-log";
+import { sahpoolDirectory, sahpoolPoolName } from "./sahpool-storage";
+import { normalizeError } from "./worker-api-errors";
+
+export { withErrorNormalization } from "./worker-api-errors";
+import type {
+  AssetRows,
+  JunctionRow,
+  ReservoirRow,
+  TankRow,
+  PipeRow,
+  PumpRow,
+  ValveRow,
+} from "./schema/assets";
+import type {
+  CustomerPointRow,
+  CustomerPointDemandRow,
+  CustomerPointsData,
+} from "./schema/customer-points";
+import type { JunctionDemandRow } from "./schema/junction-demands";
+import type { PatternRow } from "./schema/patterns";
+import type { CurveRow } from "./schema/curves";
+import type { ZoneRow } from "./schema/zones";
+import type {
+  SelectionSetGroupRow,
+  SelectionSetRow,
+} from "./schema/collections";
+import type { ScriptRow } from "./schema/scripts";
+import type {
+  AssetPatchRow,
+  CustomerPointPatchRow,
+  CurvePatchRow,
+  PatternPatchRow,
+} from "./schema/patches";
+
+type PatchRow =
+  | AssetPatchRow
+  | CustomerPointPatchRow
+  | CurvePatchRow
+  | PatternPatchRow;
+import type {
+  WriteBatch,
+  CustomAttributeValueUpdate,
+  ImportProjectPayload,
+  NewDbResult,
+  OpenDbResult,
+  IdPoolMaxima,
+} from "./types";
+import { isEmptyWriteBatch } from "./types";
+import { ChangeSet, type Direction } from "@epanet-js/change-set";
+import { nullFileTagger, type FileTagger } from "@epanet-js/ejsdb-tag";
+import { transfer } from "comlink";
+import { buildChangeSetPayload } from "./change-set/to-payload";
+
+const formatErrorDetails = (e: unknown): string => {
+  if (!(e instanceof Error)) return String(e);
+  const head = e.stack ?? `${e.name}: ${e.message}`;
+  if (e.cause !== undefined) {
+    return `${head}\nCaused by: ${formatErrorDetails(e.cause)}`;
+  }
+  return head;
+};
+
+type Stmt = {
+  bind: (values: unknown[]) => Stmt;
+  step: () => boolean;
+  reset: (alsoBindValues?: boolean) => Stmt;
+  stepReset: () => Stmt;
+  finalize: () => void;
+};
+
+type OoDb = {
+  pointer?: number;
+  exec: (
+    sql: string,
+    opts?: {
+      bind?: unknown[];
+      returnValue?: "this" | "resultRows" | "saveSql";
+      rowMode?: "array" | "object";
+    },
+  ) => unknown;
+  prepare: (sql: string) => Stmt;
+  close: () => void;
+};
+
+type Sqlite3 = {
+  oo1: { DB: new (filename?: string, flags?: string) => OoDb };
+  wasm: {
+    allocFromTypedArray: (bytes: Uint8Array) => number;
+  };
+  capi: {
+    sqlite3_deserialize: (
+      db: number,
+      schema: string,
+      data: number,
+      dbSize: number,
+      bufferSize: number,
+      flags: number,
+    ) => number;
+    sqlite3_js_db_export: (db: number, schema?: string) => Uint8Array;
+    sqlite3_extended_errcode: (db: number) => number;
+    sqlite3_errmsg: (db: number) => string;
+    SQLITE_DESERIALIZE_FREEONCLOSE: number;
+    SQLITE_DESERIALIZE_RESIZEABLE: number;
+  };
+  installOpfsSAHPoolVfs: (opts: {
+    name?: string;
+    directory?: string;
+    initialCapacity?: number;
+    clearOnInit?: boolean;
+  }) => Promise<SAHPoolUtil>;
+};
+
+let sqlite3: Sqlite3 | null = null;
+let db: OoDb | null = null;
+const stmtCache = new Map<string, Stmt>();
+
+type StorageMode = "memory" | "sahpool";
+let storageMode: StorageMode = "memory";
+let fileTagger: FileTagger = nullFileTagger;
+let poolUtil: SAHPoolUtil | null = null;
+const SAHPOOL_DB_PATH = "/main.sqlite3";
+const SAHPOOL_BASE_CAPACITY = 6;
+
+// Why the VFS install failed. Kept because the caller degrades to an in-memory db on a
+// bare `false`, which reports that storage was lost but never why — and the reason (quota,
+// a handle another tab holds, OPFS blocked) is the only thing that tells those apart.
+export type SahpoolFailure = { name: string; message: string };
+let sahpoolFailure: SahpoolFailure | null = null;
+
+export type DbStorageDiagnostics = {
+  storageMode: StorageMode;
+  dbOpen: boolean;
+  poolInstalled: boolean;
+  poolPaused: boolean | null;
+  poolCapacity: number | null;
+  poolFileCount: number | null;
+  extendedErrcode: number | null;
+  errmsg: string | null;
+  sahpoolFailure: SahpoolFailure | null;
+};
+
+const ensureSahpool = async (appId: string): Promise<boolean> => {
+  if (poolUtil) return true;
+  try {
+    poolUtil = await sqlite3!.installOpfsSAHPoolVfs({
+      name: sahpoolPoolName(appId),
+      directory: sahpoolDirectory(appId),
+      initialCapacity: SAHPOOL_BASE_CAPACITY,
+    });
+    sahpoolFailure = null;
+    return true;
+  } catch (error) {
+    const normalized = normalizeError(error);
+    sahpoolFailure = { name: normalized.name, message: normalized.message };
+    return false;
+  }
+};
+
+export const setSahpoolForTest = (pool: SAHPoolUtil | null): void => {
+  poolUtil = pool;
+  storageMode = pool ? "sahpool" : "memory";
+};
+
+export const createMemoryDbForTest = async (): Promise<OoDb> => {
+  await ready;
+  return new sqlite3!.oo1.DB(":memory:", "c");
+};
+
+export type { OoDb };
+
+const ready = (async () => {
+  const mod = await import("@sqlite.org/sqlite-wasm");
+  const init = mod.default as unknown as (config?: {
+    locateFile?: (file: string) => string;
+  }) => Promise<unknown>;
+  const inWorker =
+    typeof (globalThis as { WorkerGlobalScope?: unknown }).WorkerGlobalScope !==
+    "undefined";
+  const config = inWorker
+    ? {
+        locateFile: (file: string) =>
+          file === "sqlite3.wasm"
+            ? `/vendor/sqlite3-${sqliteWasmPkg.version}.wasm`
+            : file,
+      }
+    : undefined;
+  sqlite3 = (await init(config)) as Sqlite3;
+})();
+
+const getStmt = (sql: string): Stmt => {
+  let stmt = stmtCache.get(sql);
+  if (!stmt) {
+    stmt = db!.prepare(sql);
+    stmtCache.set(sql, stmt);
+  }
+  return stmt;
+};
+
+const finalizeStmts = (cache: Map<string, Stmt>) => {
+  for (const stmt of cache.values()) {
+    try {
+      stmt.finalize();
+    } catch {
+      // ignore
+    }
+  }
+  cache.clear();
+};
+
+const closeExistingDb = () => {
+  if (db) {
+    finalizeStmts(stmtCache);
+    try {
+      db.close();
+    } catch {
+      // ignore
+    }
+    db = null;
+  }
+};
+
+const WIPE_RETRY_DELAY_MS = 100;
+
+// wipeFiles() releases every access handle on the pool directory and
+// reacquires them; another context grabbing a handle inside that window (a
+// duplicate tab installing the same pool, an interleaved reset) makes the
+// reacquire throw NoModificationAllowedError. That contention is usually
+// transient, so retry once before giving up.
+const wipePoolFiles = async (): Promise<void> => {
+  try {
+    await poolUtil!.wipeFiles();
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, WIPE_RETRY_DELAY_MS));
+    await poolUtil!.wipeFiles();
+  }
+};
+
+const createNewDb = async (): Promise<NewDbResult> => {
+  closeExistingDb();
+
+  if (storageMode === "sahpool") {
+    try {
+      await wipePoolFiles();
+      db = new poolUtil!.OpfsSAHPoolDb(SAHPOOL_DB_PATH) as unknown as OoDb;
+    } catch (e) {
+      return { status: "storage-error", errorDetails: formatErrorDetails(e) };
+    }
+  } else {
+    db = new sqlite3!.oo1.DB(":memory:", "c");
+  }
+
+  runMigrations();
+  db.exec(`PRAGMA application_id = ${APP_VERSION}`);
+
+  return { status: "ok" };
+};
+
+const tagFile = (bytes: Uint8Array) =>
+  fileTagger.tag(transfer(bytes, [bytes.buffer]));
+
+const verifyFile = (bytes: Uint8Array) =>
+  fileTagger.verify(transfer(bytes, [bytes.buffer]));
+
+const readUserVersion = (): number => {
+  const rows = db!.exec("PRAGMA user_version", {
+    returnValue: "resultRows",
+  }) as number[][];
+  return rows[0][0];
+};
+
+const runMigrations = () => {
+  const current = readUserVersion();
+  if (current >= migrations.length) return;
+
+  db!.exec("BEGIN IMMEDIATE");
+  try {
+    for (let i = current; i < migrations.length; i++) {
+      const m = migrations[i];
+      if (typeof m === "string") {
+        db!.exec(m);
+      } else {
+        m(db!);
+      }
+    }
+    db!.exec(`PRAGMA user_version = ${migrations.length}`);
+    db!.exec("COMMIT");
+  } catch (e) {
+    db!.exec("ROLLBACK");
+    throw e;
+  }
+};
+
+const readAll = async (sql: string): Promise<unknown[]> => {
+  await ready;
+  if (!db) throw new Error("No database open");
+  return db.exec(sql, {
+    returnValue: "resultRows",
+    rowMode: "object",
+  }) as unknown[];
+};
+
+export const withTransaction = <T>(
+  command: string,
+  fn: (db: OoDb) => T,
+  meta?: Record<string, unknown>,
+): Promise<T> =>
+  timed(
+    command,
+    async () => {
+      await ready;
+      if (!db) throw new Error(`[${command}] No database open`);
+
+      db.exec("BEGIN IMMEDIATE");
+      let result: T;
+      try {
+        result = fn(db);
+        db.exec("COMMIT");
+      } catch (e) {
+        db.exec("ROLLBACK");
+        throw e;
+      }
+      return result;
+    },
+    meta,
+  );
+
+const ASSET_TYPE_TABLES = [
+  "junctions",
+  "reservoirs",
+  "tanks",
+  "pipes",
+  "pumps",
+  "valves",
+] as const;
+
+const insertPattern = (row: PatternRow) => {
+  getStmt(
+    `INSERT INTO patterns (id, label, type, multipliers) VALUES (?, ?, ?, ?) ` +
+      `ON CONFLICT(id) DO UPDATE SET label = excluded.label, type = excluded.type, multipliers = excluded.multipliers`,
+  )
+    .bind([row.id, row.label, row.type, row.multipliers])
+    .stepReset();
+};
+
+const insertCurve = (row: CurveRow) => {
+  getStmt(
+    `INSERT INTO curves (id, label, type, points) VALUES (?, ?, ?, ?) ` +
+      `ON CONFLICT(id) DO UPDATE SET label = excluded.label, type = excluded.type, points = excluded.points`,
+  )
+    .bind([row.id, row.label, row.type, row.points])
+    .stepReset();
+};
+
+const insertZone = (row: ZoneRow) => {
+  getStmt(
+    `INSERT INTO zones (id, label, geometry, bbox, custom_attributes) VALUES (?, ?, ?, ?, ?) ` +
+      `ON CONFLICT(id) DO UPDATE SET label = excluded.label, geometry = excluded.geometry, bbox = excluded.bbox, custom_attributes = excluded.custom_attributes`,
+  )
+    .bind([row.id, row.label, row.geometry, row.bbox, row.custom_attributes])
+    .stepReset();
+};
+
+const upsertProjectSettings = (json: string) => {
+  db!.exec(
+    "INSERT INTO project (id, settings) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET settings = excluded.settings",
+    { bind: [json] },
+  );
+};
+
+const updateBookmarks = (json: string) => {
+  db!.exec("UPDATE project SET bookmarks = ? WHERE id = 1", {
+    bind: [json],
+  });
+};
+
+const updatePipeLibrary = (json: string) => {
+  db!.exec("UPDATE project SET pipe_library = ? WHERE id = 1", {
+    bind: [json],
+  });
+};
+
+const upsertRawControls = (data: string) => {
+  db!.exec(`INSERT OR REPLACE INTO raw_controls (id, data) VALUES (1, ?)`, {
+    bind: [data],
+  });
+};
+
+const upsertControls = (data: string) => {
+  db!.exec(`INSERT OR REPLACE INTO controls (id, data) VALUES (1, ?)`, {
+    bind: [data],
+  });
+};
+
+const upsertSimulationSettings = (data: string) => {
+  db!.exec(
+    `INSERT OR REPLACE INTO simulation_settings (id, data) VALUES (1, ?)`,
+    {
+      bind: [data],
+    },
+  );
+};
+
+/*
+ * SQLite caps total bound parameters per statement at SQLITE_MAX_VARIABLE_NUMBER
+ * (32766 in modern builds). A bulk INSERT binds `chunkSize × columnCount`
+ * parameters, so the usable chunk size shrinks as a table's column count grows.
+ * These values target ~30000 params per statement (~92% of the cap, ~8%
+ * headroom) — pushing junctions and pipes (the abundant tables) as close to the
+ * ceiling as their column counts allow, and scaling down for wider tables.
+ */
+const BULK_TABLES = [
+  ...ASSET_TYPE_TABLES,
+  "customer_points",
+  "customer_point_demands",
+  "junction_demands",
+  "zones",
+  "selection_set_groups",
+  "selection_sets",
+  "scripts",
+] as const;
+
+const BULK_CHUNK_SIZES = {
+  junctions: 2500, // 12 cols × 2500 = 30000 params
+  reservoirs: 2300, // 13 cols × 2300 = 29900 params
+  tanks: 1400, // 21 cols × 1400 = 29400 params
+  pipes: 1800, // 16 cols × 1800 = 28800 params
+  pumps: 1600, // 18 cols × 1600 = 28800 params
+  valves: 2000, // 15 cols × 2000 = 30000 params
+  customer_points: 3200, //  9 cols × 3200 = 28800 params
+  customer_point_demands: 7500, //  4 cols × 7500 = 30000 params
+  junction_demands: 7500, //  4 cols × 7500 = 30000 params
+  zones: 6000, // 5 cols × 6000 = 30000 params
+  selection_set_groups: 10000, // 3 cols × 10000 = 30000 params
+  selection_sets: 500, // 6 cols, rows carry id-list blobs
+  scripts: 500, // 5 cols, rows carry script sources
+} as const satisfies Record<(typeof BULK_TABLES)[number], number>;
+
+const buildBulkInsertSql = (
+  table: string,
+  columns: readonly string[],
+  rowCount: number,
+): string => {
+  const placeholder = `(${columns.map(() => "?").join(",")})`;
+  const values = new Array<string>(rowCount).fill(placeholder).join(",");
+  return `INSERT INTO ${table} (${columns.join(",")}) VALUES ${values}`;
+};
+
+const bulkInsert = <T>(
+  table: string,
+  columns: readonly string[],
+  rows: readonly T[],
+  appendParams: (row: T, params: unknown[]) => void,
+  chunkSize: number,
+): void => {
+  if (rows.length === 0) return;
+  const fullChunks = Math.floor(rows.length / chunkSize);
+  const remainder = rows.length % chunkSize;
+
+  if (fullChunks > 0) {
+    const sql = buildBulkInsertSql(table, columns, chunkSize);
+    for (let c = 0; c < fullChunks; c++) {
+      const params: unknown[] = [];
+      const base = c * chunkSize;
+      for (let i = 0; i < chunkSize; i++) {
+        appendParams(rows[base + i], params);
+      }
+      getStmt(sql).bind(params).stepReset();
+    }
+  }
+
+  if (remainder > 0) {
+    const sql = buildBulkInsertSql(table, columns, remainder);
+    const params: unknown[] = [];
+    const base = fullChunks * chunkSize;
+    for (let i = 0; i < remainder; i++) {
+      appendParams(rows[base + i], params);
+    }
+    getStmt(sql).bind(params).stepReset();
+  }
+};
+
+const BULK_DELETE_CHUNK_SIZE = 10000;
+
+const bulkDelete = (
+  tables: readonly string[],
+  column: string,
+  ids: readonly number[],
+): void => {
+  if (ids.length === 0) return;
+  const fullChunks = Math.floor(ids.length / BULK_DELETE_CHUNK_SIZE);
+  const remainder = ids.length % BULK_DELETE_CHUNK_SIZE;
+  const fullPlaceholders = new Array<string>(BULK_DELETE_CHUNK_SIZE)
+    .fill("?")
+    .join(",");
+  const tailPlaceholders =
+    remainder > 0 ? new Array<string>(remainder).fill("?").join(",") : "";
+
+  for (const table of tables) {
+    if (fullChunks > 0) {
+      const sql = `DELETE FROM ${table} WHERE ${column} IN (${fullPlaceholders})`;
+      for (let c = 0; c < fullChunks; c++) {
+        const base = c * BULK_DELETE_CHUNK_SIZE;
+        const params = ids.slice(base, base + BULK_DELETE_CHUNK_SIZE);
+        getStmt(sql).bind(params).stepReset();
+      }
+    }
+    if (remainder > 0) {
+      const sql = `DELETE FROM ${table} WHERE ${column} IN (${tailPlaceholders})`;
+      const base = fullChunks * BULK_DELETE_CHUNK_SIZE;
+      const params = ids.slice(base, base + remainder);
+      getStmt(sql).bind(params).stepReset();
+    }
+  }
+};
+
+/*
+ * Bulk UPDATE via SQLite's `UPDATE … FROM (VALUES …)` (supported since 3.33).
+ * Patches are grouped by their column set so each group uses a single
+ * prepared-statement shape; rows within a group fill one VALUES row each.
+ * Total params per statement = rows × (1 + columnCount); chunk size is
+ * derived from the 30000-param target (matching BULK_CHUNK_SIZES headroom).
+ */
+const BULK_UPDATE_MAX_PARAMS = 30000;
+
+const bulkUpdate = (table: string, rows: readonly PatchRow[]): void => {
+  if (rows.length === 0) return;
+
+  const groups = new Map<string, { columns: string[]; rows: PatchRow[] }>();
+  for (const row of rows) {
+    const cols: string[] = [];
+    for (const key in row) {
+      if (key !== "id") cols.push(key);
+    }
+    if (cols.length === 0) continue;
+    cols.sort();
+    const groupKey = cols.join(",");
+    let group = groups.get(groupKey);
+    if (!group) {
+      group = { columns: cols, rows: [] };
+      groups.set(groupKey, group);
+    }
+    group.rows.push(row);
+  }
+
+  for (const { columns, rows: groupRows } of groups.values()) {
+    applyBulkUpdateGroup(table, columns, groupRows);
+  }
+};
+
+const applyBulkUpdateGroup = (
+  table: string,
+  columns: readonly string[],
+  rows: readonly PatchRow[],
+): void => {
+  const paramsPerRow = 1 + columns.length;
+  const chunkSize = Math.max(
+    1,
+    Math.floor(BULK_UPDATE_MAX_PARAMS / paramsPerRow),
+  );
+  const fullChunks = Math.floor(rows.length / chunkSize);
+  const remainder = rows.length % chunkSize;
+
+  if (fullChunks > 0) {
+    const sql = buildBulkUpdateSql(table, columns, chunkSize);
+    for (let c = 0; c < fullChunks; c++) {
+      const params: unknown[] = [];
+      const base = c * chunkSize;
+      for (let i = 0; i < chunkSize; i++) {
+        appendUpdateParams(rows[base + i], columns, params);
+      }
+      getStmt(sql).bind(params).stepReset();
+    }
+  }
+
+  if (remainder > 0) {
+    const sql = buildBulkUpdateSql(table, columns, remainder);
+    const params: unknown[] = [];
+    const base = fullChunks * chunkSize;
+    for (let i = 0; i < remainder; i++) {
+      appendUpdateParams(rows[base + i], columns, params);
+    }
+    getStmt(sql).bind(params).stepReset();
+  }
+};
+
+const buildBulkUpdateSql = (
+  table: string,
+  columns: readonly string[],
+  rowCount: number,
+): string => {
+  const rowPh = `(${new Array<string>(1 + columns.length).fill("?").join(",")})`;
+  const values = new Array<string>(rowCount).fill(rowPh).join(",");
+  const cteCols = ["id", ...columns].join(",");
+  const setClause = columns.map((c) => `${c} = _p.${c}`).join(",");
+  return `WITH _p(${cteCols}) AS (VALUES ${values}) UPDATE ${table} SET ${setClause} FROM _p WHERE ${table}.id = _p.id`;
+};
+
+const appendUpdateParams = (
+  row: PatchRow,
+  columns: readonly string[],
+  params: unknown[],
+): void => {
+  params.push(row.id);
+  for (const col of columns) {
+    params.push((row as Record<string, unknown>)[col]);
+  }
+};
+
+const applyCustomAttributeValues = (
+  table: (typeof ASSET_TYPE_TABLES)[number] | "customer_points" | "zones",
+  updates: readonly CustomAttributeValueUpdate[],
+): void => {
+  if (updates.length === 0) return;
+  const sql = `UPDATE ${table} SET custom_attributes = json_patch(coalesce(custom_attributes, '{}'), ?) WHERE id = ?`;
+  for (const { id, delta } of updates) {
+    getStmt(sql).bind([delta, id]).stepReset();
+  }
+};
+
+const bulkInsertJunctions = (rows: readonly JunctionRow[]) => {
+  bulkInsert(
+    "junctions",
+    [
+      "id",
+      "label",
+      "is_active",
+      "coord_x",
+      "coord_y",
+      "elevation",
+      "initial_quality",
+      "chemical_source_type",
+      "chemical_source_strength",
+      "chemical_source_pattern_id",
+      "emitter_coefficient",
+      "custom_attributes",
+    ],
+    rows,
+    (row, params) => {
+      params.push(
+        row.id,
+        row.label,
+        row.is_active,
+        row.coord_x,
+        row.coord_y,
+        row.elevation,
+        row.initial_quality,
+        row.chemical_source_type,
+        row.chemical_source_strength,
+        row.chemical_source_pattern_id,
+        row.emitter_coefficient,
+        row.custom_attributes,
+      );
+    },
+    BULK_CHUNK_SIZES.junctions,
+  );
+};
+
+const bulkInsertReservoirs = (rows: readonly ReservoirRow[]) => {
+  bulkInsert(
+    "reservoirs",
+    [
+      "id",
+      "label",
+      "is_active",
+      "coord_x",
+      "coord_y",
+      "elevation",
+      "initial_quality",
+      "chemical_source_type",
+      "chemical_source_strength",
+      "chemical_source_pattern_id",
+      "head",
+      "head_pattern_id",
+      "custom_attributes",
+    ],
+    rows,
+    (row, params) => {
+      params.push(
+        row.id,
+        row.label,
+        row.is_active,
+        row.coord_x,
+        row.coord_y,
+        row.elevation,
+        row.initial_quality,
+        row.chemical_source_type,
+        row.chemical_source_strength,
+        row.chemical_source_pattern_id,
+        row.head,
+        row.head_pattern_id,
+        row.custom_attributes,
+      );
+    },
+    BULK_CHUNK_SIZES.reservoirs,
+  );
+};
+
+const bulkInsertTanks = (rows: readonly TankRow[]) => {
+  bulkInsert(
+    "tanks",
+    [
+      "id",
+      "label",
+      "is_active",
+      "coord_x",
+      "coord_y",
+      "elevation",
+      "initial_quality",
+      "chemical_source_type",
+      "chemical_source_strength",
+      "chemical_source_pattern_id",
+      "initial_level",
+      "min_level",
+      "max_level",
+      "min_volume",
+      "diameter",
+      "overflow",
+      "mixing_model",
+      "mixing_fraction",
+      "bulk_reaction_coeff",
+      "volume_curve_id",
+      "custom_attributes",
+    ],
+    rows,
+    (row, params) => {
+      params.push(
+        row.id,
+        row.label,
+        row.is_active,
+        row.coord_x,
+        row.coord_y,
+        row.elevation,
+        row.initial_quality,
+        row.chemical_source_type,
+        row.chemical_source_strength,
+        row.chemical_source_pattern_id,
+        row.initial_level,
+        row.min_level,
+        row.max_level,
+        row.min_volume,
+        row.diameter,
+        row.overflow,
+        row.mixing_model,
+        row.mixing_fraction,
+        row.bulk_reaction_coeff,
+        row.volume_curve_id,
+        row.custom_attributes,
+      );
+    },
+    BULK_CHUNK_SIZES.tanks,
+  );
+};
+
+const bulkInsertPipes = (rows: readonly PipeRow[]) => {
+  bulkInsert(
+    "pipes",
+    [
+      "id",
+      "label",
+      "is_active",
+      "start_node_id",
+      "end_node_id",
+      "coords",
+      "length",
+      "initial_status",
+      "diameter",
+      "roughness",
+      "minor_loss",
+      "bulk_reaction_coeff",
+      "wall_reaction_coeff",
+      "material",
+      "year",
+      "custom_attributes",
+    ],
+    rows,
+    (row, params) => {
+      params.push(
+        row.id,
+        row.label,
+        row.is_active,
+        row.start_node_id,
+        row.end_node_id,
+        row.coords,
+        row.length,
+        row.initial_status,
+        row.diameter,
+        row.roughness,
+        row.minor_loss,
+        row.bulk_reaction_coeff,
+        row.wall_reaction_coeff,
+        row.material,
+        row.year,
+        row.custom_attributes,
+      );
+    },
+    BULK_CHUNK_SIZES.pipes,
+  );
+};
+
+const bulkInsertPumps = (rows: readonly PumpRow[]) => {
+  bulkInsert(
+    "pumps",
+    [
+      "id",
+      "label",
+      "is_active",
+      "start_node_id",
+      "end_node_id",
+      "coords",
+      "length",
+      "initial_status",
+      "definition_type",
+      "power",
+      "speed",
+      "speed_pattern_id",
+      "efficiency_curve_id",
+      "energy_price",
+      "energy_price_pattern_id",
+      "curve_id",
+      "curve_points",
+      "custom_attributes",
+    ],
+    rows,
+    (row, params) => {
+      params.push(
+        row.id,
+        row.label,
+        row.is_active,
+        row.start_node_id,
+        row.end_node_id,
+        row.coords,
+        row.length,
+        row.initial_status,
+        row.definition_type,
+        row.power,
+        row.speed,
+        row.speed_pattern_id,
+        row.efficiency_curve_id,
+        row.energy_price,
+        row.energy_price_pattern_id,
+        row.curve_id,
+        row.curve_points,
+        row.custom_attributes,
+      );
+    },
+    BULK_CHUNK_SIZES.pumps,
+  );
+};
+
+const bulkInsertValves = (rows: readonly ValveRow[]) => {
+  bulkInsert(
+    "valves",
+    [
+      "id",
+      "label",
+      "is_active",
+      "start_node_id",
+      "end_node_id",
+      "coords",
+      "length",
+      "initial_status",
+      "diameter",
+      "minor_loss",
+      "valve_kind",
+      "setting",
+      "curve_id",
+      "target_node_id",
+      "custom_attributes",
+    ],
+    rows,
+    (row, params) => {
+      params.push(
+        row.id,
+        row.label,
+        row.is_active,
+        row.start_node_id,
+        row.end_node_id,
+        row.coords,
+        row.length,
+        row.initial_status,
+        row.diameter,
+        row.minor_loss,
+        row.valve_kind,
+        row.setting,
+        row.curve_id,
+        row.target_node_id,
+        row.custom_attributes,
+      );
+    },
+    BULK_CHUNK_SIZES.valves,
+  );
+};
+
+const bulkInsertCustomerPoints = (rows: readonly CustomerPointRow[]) => {
+  bulkInsert(
+    "customer_points",
+    [
+      "id",
+      "label",
+      "coord_x",
+      "coord_y",
+      "pipe_id",
+      "junction_id",
+      "snap_x",
+      "snap_y",
+      "custom_attributes",
+    ],
+    rows,
+    (row, params) => {
+      params.push(
+        row.id,
+        row.label,
+        row.coord_x,
+        row.coord_y,
+        row.pipe_id,
+        row.junction_id,
+        row.snap_x,
+        row.snap_y,
+        row.custom_attributes,
+      );
+    },
+    BULK_CHUNK_SIZES.customer_points,
+  );
+};
+
+const bulkInsertCustomerPointDemands = (
+  rows: readonly CustomerPointDemandRow[],
+) => {
+  bulkInsert(
+    "customer_point_demands",
+    ["customer_point_id", "ordinal", "base_demand", "pattern_id"],
+    rows,
+    (row, params) => {
+      params.push(
+        row.customer_point_id,
+        row.ordinal,
+        row.base_demand,
+        row.pattern_id,
+      );
+    },
+    BULK_CHUNK_SIZES.customer_point_demands,
+  );
+};
+
+const bulkInsertJunctionDemands = (rows: readonly JunctionDemandRow[]) => {
+  bulkInsert(
+    "junction_demands",
+    ["junction_id", "ordinal", "base_demand", "pattern_id"],
+    rows,
+    (row, params) => {
+      params.push(
+        row.junction_id,
+        row.ordinal,
+        row.base_demand,
+        row.pattern_id,
+      );
+    },
+    BULK_CHUNK_SIZES.junction_demands,
+  );
+};
+
+const bulkInsertZones = (rows: readonly ZoneRow[]) => {
+  bulkInsert(
+    "zones",
+    ["id", "label", "geometry", "bbox", "custom_attributes"],
+    rows,
+    (row, params) => {
+      params.push(
+        row.id,
+        row.label,
+        row.geometry,
+        row.bbox,
+        row.custom_attributes,
+      );
+    },
+    BULK_CHUNK_SIZES.zones,
+  );
+};
+
+const bulkInsertSelectionSetGroups = (
+  rows: readonly SelectionSetGroupRow[],
+) => {
+  bulkInsert(
+    "selection_set_groups",
+    ["id", "label", "parent_id"],
+    rows,
+    (row, params) => {
+      params.push(row.id, row.label, row.parent_id);
+    },
+    BULK_CHUNK_SIZES.selection_set_groups,
+  );
+};
+
+const replaceSelectionSetGroups = (rows: readonly SelectionSetGroupRow[]) => {
+  db!.exec("DELETE FROM selection_set_groups");
+  bulkInsertSelectionSetGroups(rows);
+};
+
+const bulkInsertSelectionSets = (rows: readonly SelectionSetRow[]) => {
+  bulkInsert(
+    "selection_sets",
+    ["id", "label", "assets", "customer_points", "zones", "group_id"],
+    rows,
+    (row, params) => {
+      params.push(
+        row.id,
+        row.label,
+        row.assets,
+        row.customer_points,
+        row.zones,
+        row.group_id,
+      );
+    },
+    BULK_CHUNK_SIZES.selection_sets,
+  );
+};
+
+const replaceSelectionSets = (rows: readonly SelectionSetRow[]) => {
+  db!.exec("DELETE FROM selection_sets");
+  bulkInsertSelectionSets(rows);
+};
+
+const SCRIPT_COLUMNS = [
+  "id",
+  "name",
+  "source",
+  "api_version",
+  "updated_at",
+] as const;
+
+const appendScriptParams = (row: ScriptRow, params: unknown[]) => {
+  params.push(row.id, row.name, row.source, row.api_version, row.updated_at);
+};
+
+const replaceScripts = (rows: readonly ScriptRow[]) => {
+  db!.exec("DELETE FROM scripts");
+  bulkInsert(
+    "scripts",
+    SCRIPT_COLUMNS,
+    rows,
+    appendScriptParams,
+    BULK_CHUNK_SIZES.scripts,
+  );
+};
+
+const countImportProject = (payload: ImportProjectPayload) => ({
+  newDb: payload.newDb ? 1 : 0,
+  settings: payload.projectSettings !== null ? 1 : 0,
+  pipeLib: payload.pipeLibrary !== null ? 1 : 0,
+  groups: payload.selectionSetGroups?.length ?? 0,
+  selSets: payload.selectionSets?.length ?? 0,
+  bookmarks: payload.bookmarks !== null ? 1 : 0,
+  scripts: payload.scripts?.length ?? 0,
+  j: payload.assets.junctions.length,
+  r: payload.assets.reservoirs.length,
+  t: payload.assets.tanks.length,
+  p: payload.assets.pipes.length,
+  pu: payload.assets.pumps.length,
+  v: payload.assets.valves.length,
+  cp: payload.customerPoints.customerPoints.length,
+  cpDem: payload.customerPoints.demands.length,
+  zones: payload.zones.length,
+  pat: payload.patterns.length,
+  cur: payload.curves.length,
+  jDem: payload.junctionDemands.length,
+});
+
+const countWriteBatch = (payload: WriteBatch) => ({
+  delAssets: payload.assetDeleteIds.length,
+  upJ: payload.assetUpserts.junctions.length,
+  upR: payload.assetUpserts.reservoirs.length,
+  upT: payload.assetUpserts.tanks.length,
+  upP: payload.assetUpserts.pipes.length,
+  upPu: payload.assetUpserts.pumps.length,
+  upV: payload.assetUpserts.valves.length,
+  patJ: payload.assetPatches.junctions.length,
+  patR: payload.assetPatches.reservoirs.length,
+  patT: payload.assetPatches.tanks.length,
+  patP: payload.assetPatches.pipes.length,
+  patPu: payload.assetPatches.pumps.length,
+  patV: payload.assetPatches.valves.length,
+  delCp: payload.customerPointDeleteIds.length,
+  upCp: payload.customerPointUpserts.length,
+  cpDem: payload.customerPointDemandUpdates.length,
+  jDem: payload.junctionDemandUpdates.length,
+  pat: payload.patternsReplacement?.length ?? 0,
+  cur: payload.curvesReplacement?.length ?? 0,
+  delCur: payload.curveDeleteIds.length,
+  upCur: payload.curveUpserts.length,
+  patCur: payload.curvePatches.length,
+  delPat: payload.patternDeleteIds.length,
+  upPat: payload.patternUpserts.length,
+  patPat: payload.patternPatches.length,
+  delZone: payload.zoneDeleteIds.length,
+  upZone: payload.zoneUpserts.length,
+  patZone: payload.zonePatches.length,
+  pipeLib: payload.pipeLibraryReplacement !== null ? 1 : 0,
+  ctrl: payload.rawControlsReplacement !== null ? 1 : 0,
+  ctrls: payload.controlsReplacement !== null ? 1 : 0,
+});
+
+const applyWriteBatch = (label: string, payload: WriteBatch): Promise<void> =>
+  withTransaction(
+    label,
+    (db) => {
+      const touchedAssetIds: number[] = [...payload.assetDeleteIds];
+      for (const r of payload.assetUpserts.junctions)
+        touchedAssetIds.push(r.id);
+      for (const r of payload.assetUpserts.reservoirs)
+        touchedAssetIds.push(r.id);
+      for (const r of payload.assetUpserts.tanks) touchedAssetIds.push(r.id);
+      for (const r of payload.assetUpserts.pipes) touchedAssetIds.push(r.id);
+      for (const r of payload.assetUpserts.pumps) touchedAssetIds.push(r.id);
+      for (const r of payload.assetUpserts.valves) touchedAssetIds.push(r.id);
+
+      bulkDelete(ASSET_TYPE_TABLES, "id", touchedAssetIds);
+
+      bulkInsertJunctions(payload.assetUpserts.junctions);
+      bulkInsertReservoirs(payload.assetUpserts.reservoirs);
+      bulkInsertTanks(payload.assetUpserts.tanks);
+      bulkInsertPipes(payload.assetUpserts.pipes);
+      bulkInsertPumps(payload.assetUpserts.pumps);
+      bulkInsertValves(payload.assetUpserts.valves);
+
+      bulkUpdate("junctions", payload.assetPatches.junctions);
+      bulkUpdate("reservoirs", payload.assetPatches.reservoirs);
+      bulkUpdate("tanks", payload.assetPatches.tanks);
+      bulkUpdate("pipes", payload.assetPatches.pipes);
+      bulkUpdate("pumps", payload.assetPatches.pumps);
+      bulkUpdate("valves", payload.assetPatches.valves);
+
+      applyCustomAttributeValues(
+        "junctions",
+        payload.customAttributeValues.junctions,
+      );
+      applyCustomAttributeValues(
+        "reservoirs",
+        payload.customAttributeValues.reservoirs,
+      );
+      applyCustomAttributeValues("tanks", payload.customAttributeValues.tanks);
+      applyCustomAttributeValues("pipes", payload.customAttributeValues.pipes);
+      applyCustomAttributeValues("pumps", payload.customAttributeValues.pumps);
+      applyCustomAttributeValues(
+        "valves",
+        payload.customAttributeValues.valves,
+      );
+
+      const cpDemandCpIds: number[] = [...payload.customerPointDeleteIds];
+      for (const u of payload.customerPointDemandUpdates) {
+        cpDemandCpIds.push(u.customerPointId);
+      }
+      bulkDelete(
+        ["customer_point_demands"],
+        "customer_point_id",
+        cpDemandCpIds,
+      );
+
+      const cpIds: number[] = [...payload.customerPointDeleteIds];
+      for (const r of payload.customerPointUpserts) cpIds.push(r.id);
+      bulkDelete(["customer_points"], "id", cpIds);
+
+      bulkInsertCustomerPoints(payload.customerPointUpserts);
+
+      bulkUpdate("customer_points", payload.customerPointPatches);
+
+      applyCustomAttributeValues(
+        "customer_points",
+        payload.customerPointCustomAttributeValues,
+      );
+
+      const cpDemandRows: CustomerPointDemandRow[] = [];
+      for (const u of payload.customerPointDemandUpdates) {
+        for (const row of u.demands) cpDemandRows.push(row);
+      }
+      bulkInsertCustomerPointDemands(cpDemandRows);
+
+      const jDemandJunctionIds: number[] = [];
+      for (const u of payload.junctionDemandUpdates) {
+        jDemandJunctionIds.push(u.junctionId);
+      }
+      bulkDelete(["junction_demands"], "junction_id", jDemandJunctionIds);
+
+      const jDemandRows: JunctionDemandRow[] = [];
+      for (const u of payload.junctionDemandUpdates) {
+        for (const row of u.demands) jDemandRows.push(row);
+      }
+      bulkInsertJunctionDemands(jDemandRows);
+
+      if (payload.patternsReplacement !== null) {
+        db.exec("DELETE FROM patterns");
+        for (const row of payload.patternsReplacement) {
+          insertPattern(row);
+        }
+      }
+      if (payload.curvesReplacement !== null) {
+        db.exec("DELETE FROM curves");
+        for (const row of payload.curvesReplacement) {
+          insertCurve(row);
+        }
+      }
+
+      bulkDelete(["curves"], "id", payload.curveDeleteIds);
+      for (const row of payload.curveUpserts) {
+        insertCurve(row);
+      }
+      bulkUpdate("curves", payload.curvePatches);
+
+      bulkDelete(["patterns"], "id", payload.patternDeleteIds);
+      for (const row of payload.patternUpserts) {
+        insertPattern(row);
+      }
+      bulkUpdate("patterns", payload.patternPatches);
+
+      bulkDelete(["zones"], "id", payload.zoneDeleteIds);
+      for (const row of payload.zoneUpserts) {
+        insertZone(row);
+      }
+      bulkUpdate("zones", payload.zonePatches);
+      applyCustomAttributeValues("zones", payload.zoneCustomAttributeValues);
+      if (payload.pipeLibraryReplacement !== null) {
+        updatePipeLibrary(payload.pipeLibraryReplacement);
+      }
+      if (payload.rawControlsReplacement !== null) {
+        upsertRawControls(payload.rawControlsReplacement);
+      }
+      if (payload.controlsReplacement !== null) {
+        upsertControls(payload.controlsReplacement);
+      }
+      if (payload.customAttributesDefinition !== null) {
+        db.exec(
+          "UPDATE project SET custom_attributes_definition = ? WHERE id = 1",
+          { bind: [payload.customAttributesDefinition] },
+        );
+      }
+    },
+    countWriteBatch(payload),
+  );
+
+const writeChangeSetPayload = async (payload: WriteBatch): Promise<void> => {
+  if (isEmptyWriteBatch(payload)) return;
+  return applyWriteBatch("changeSet:write", payload);
+};
+
+export const api = {
+  setPerfLogging(enabled: boolean) {
+    setPerfLogging(enabled, "db [worker]");
+  },
+
+  async configure({
+    mode,
+    sahpoolId,
+  }: {
+    mode: StorageMode;
+    sahpoolId: string;
+  }): Promise<StorageMode> {
+    await ready;
+    storageMode =
+      mode !== "memory" && (await ensureSahpool(sahpoolId)) ? mode : "memory";
+    return storageMode;
+  },
+
+  setFileTagger(tagger: FileTagger): void {
+    fileTagger = tagger;
+  },
+
+  sahpoolFailure(): SahpoolFailure | null {
+    return sahpoolFailure;
+  },
+
+  async reinstallSahpool(appId: string): Promise<StorageMode> {
+    await ready;
+    closeExistingDb();
+    if (poolUtil) {
+      try {
+        await poolUtil.removeVfs();
+      } catch {
+        // The pool is already broken; failing to release it cleanly changes nothing.
+      }
+      poolUtil = null;
+    }
+    storageMode = (await ensureSahpool(appId)) ? "sahpool" : "memory";
+    return storageMode;
+  },
+
+  // Everything here is best-effort and individually guarded: it is called precisely when
+  // the storage layer is misbehaving, so any one probe may itself throw.
+  storageDiagnostics(): DbStorageDiagnostics {
+    const attempt = <T>(fn: () => T): T | null => {
+      try {
+        return fn();
+      } catch {
+        return null;
+      }
+    };
+
+    return {
+      storageMode,
+      dbOpen: db !== null,
+      poolInstalled: poolUtil !== null,
+      poolPaused: attempt(() => poolUtil!.isPaused()),
+      poolCapacity: attempt(() => Number(poolUtil!.getCapacity())),
+      poolFileCount: attempt(() => Number(poolUtil!.getFileCount())),
+      extendedErrcode: attempt(() =>
+        sqlite3!.capi.sqlite3_extended_errcode(db!.pointer!),
+      ),
+      errmsg: attempt(() => sqlite3!.capi.sqlite3_errmsg(db!.pointer!)),
+      sahpoolFailure,
+    };
+  },
+
+  async newDb(): Promise<NewDbResult> {
+    return timed("newDb", async () => {
+      await ready;
+      return createNewDb();
+    });
+  },
+
+  async openDb(fileBytes: Uint8Array): Promise<OpenDbResult> {
+    return timed(
+      "openDb",
+      async () => {
+        await ready;
+        closeExistingDb();
+
+        try {
+          const {
+            body: dbBytes,
+            integrity,
+            label,
+          } = await verifyFile(fileBytes);
+          if (storageMode === "sahpool") {
+            await poolUtil!.importDb(SAHPOOL_DB_PATH, dbBytes);
+            db = new poolUtil!.OpfsSAHPoolDb(
+              SAHPOOL_DB_PATH,
+            ) as unknown as OoDb;
+          } else {
+            db = new sqlite3!.oo1.DB(":memory:", "c");
+            const p = sqlite3!.wasm.allocFromTypedArray(dbBytes);
+            const flags =
+              sqlite3!.capi.SQLITE_DESERIALIZE_FREEONCLOSE |
+              sqlite3!.capi.SQLITE_DESERIALIZE_RESIZEABLE;
+            sqlite3!.capi.sqlite3_deserialize(
+              db.pointer!,
+              "main",
+              p,
+              dbBytes.length,
+              dbBytes.length,
+              flags,
+            );
+          }
+
+          let fileVersion: number;
+          try {
+            fileVersion = readUserVersion();
+          } catch (e) {
+            closeExistingDb();
+            return { status: "corrupt", errorDetails: formatErrorDetails(e) };
+          }
+
+          if (fileVersion > migrations.length) {
+            closeExistingDb();
+            return { status: "too-new", fileVersion, appVersion: APP_VERSION };
+          }
+
+          let migrated = false;
+          if (fileVersion < migrations.length) {
+            try {
+              runMigrations();
+            } catch (e) {
+              closeExistingDb();
+              return {
+                status: "migration-failed",
+                errorDetails: formatErrorDetails(e),
+                fileVersion,
+                appVersion: APP_VERSION,
+              };
+            }
+            migrated = true;
+          }
+
+          return {
+            status: migrated ? "migrated" : "ok",
+            fileVersion,
+            appVersion: APP_VERSION,
+            integrity,
+            label,
+          };
+        } catch (e) {
+          closeExistingDb();
+          return { status: "internal", errorDetails: formatErrorDetails(e) };
+        }
+      },
+      { bytes: fileBytes.length },
+    );
+  },
+
+  async exportDbFromPool(poolId: string): Promise<Uint8Array | null> {
+    return timed("exportDbFromPool", async () => {
+      await ready;
+      if (!sqlite3) return null;
+      let pool: SAHPoolUtil | null = null;
+      try {
+        pool = await sqlite3.installOpfsSAHPoolVfs({
+          name: sahpoolPoolName(poolId),
+          directory: sahpoolDirectory(poolId),
+          initialCapacity: 6,
+        });
+        const bytes = await pool.exportFile(SAHPOOL_DB_PATH);
+        if (bytes.length === 0) return null;
+        return await tagFile(bytes);
+      } catch {
+        return null;
+      } finally {
+        if (pool) {
+          try {
+            await pool.removeVfs();
+          } catch {}
+        }
+      }
+    });
+  },
+
+  async getProjectSettings(): Promise<string | null> {
+    return timed("getProjectSettings", async () => {
+      await ready;
+      if (!db) throw new Error("No database open");
+      const rows = db.exec("SELECT settings FROM project WHERE id = 1", {
+        returnValue: "resultRows",
+      }) as string[][];
+      if (rows.length === 0) return null;
+      return rows[0][0];
+    });
+  },
+
+  async saveProjectSettings(json: string) {
+    return withTransaction("saveProjectSettings", () => {
+      upsertProjectSettings(json);
+    });
+  },
+
+  async getPipeLibrary(): Promise<string | null> {
+    return timed("getPipeLibrary", async () => {
+      await ready;
+      if (!db) throw new Error("No database open");
+      const rows = db.exec("SELECT pipe_library FROM project WHERE id = 1", {
+        returnValue: "resultRows",
+      }) as string[][];
+      if (rows.length === 0) return null;
+      return rows[0][0];
+    });
+  },
+
+  async getCustomAttributesDefinition(): Promise<string | null> {
+    return timed("getCustomAttributesDefinition", async () => {
+      await ready;
+      if (!db) throw new Error("No database open");
+      const rows = db.exec(
+        "SELECT custom_attributes_definition FROM project WHERE id = 1",
+        {
+          returnValue: "resultRows",
+        },
+      ) as (string | null)[][];
+      if (rows.length === 0) return null;
+      return rows[0][0];
+    });
+  },
+
+  async saveCustomAttributesDefinition(json: string) {
+    return withTransaction("saveCustomAttributesDefinition", (db) => {
+      db.exec(
+        "UPDATE project SET custom_attributes_definition = ? WHERE id = 1",
+        {
+          bind: [json],
+        },
+      );
+    });
+  },
+
+  async getJunctions(): Promise<unknown[]> {
+    return timed("getJunctions", () => readAll("SELECT * FROM junctions"));
+  },
+
+  async getReservoirs(): Promise<unknown[]> {
+    return timed("getReservoirs", () => readAll("SELECT * FROM reservoirs"));
+  },
+
+  async getTanks(): Promise<unknown[]> {
+    return timed("getTanks", () => readAll("SELECT * FROM tanks"));
+  },
+
+  async getPipes(): Promise<unknown[]> {
+    return timed("getPipes", () => readAll("SELECT * FROM pipes"));
+  },
+
+  async getPumps(): Promise<unknown[]> {
+    return timed("getPumps", () => readAll("SELECT * FROM pumps"));
+  },
+
+  async getValves(): Promise<unknown[]> {
+    return timed("getValves", () => readAll("SELECT * FROM valves"));
+  },
+
+  async getCustomerPoints(): Promise<unknown[]> {
+    return timed("getCustomerPoints", () =>
+      readAll("SELECT * FROM customer_points"),
+    );
+  },
+
+  async getCustomerPointDemands(): Promise<unknown[]> {
+    return timed("getCustomerPointDemands", () =>
+      readAll(
+        "SELECT * FROM customer_point_demands ORDER BY customer_point_id, ordinal",
+      ),
+    );
+  },
+
+  async getPatterns(): Promise<unknown[]> {
+    return timed("getPatterns", () =>
+      readAll("SELECT * FROM patterns ORDER BY id"),
+    );
+  },
+
+  async getCurves(): Promise<unknown[]> {
+    return timed("getCurves", () =>
+      readAll("SELECT * FROM curves ORDER BY id"),
+    );
+  },
+
+  async getRawControls(): Promise<string | null> {
+    return timed("getRawControls", async () => {
+      await ready;
+      if (!db) throw new Error("No database open");
+      const rows = db.exec("SELECT data FROM raw_controls WHERE id = 1", {
+        returnValue: "resultRows",
+      }) as string[][];
+      if (rows.length === 0) return null;
+      return rows[0][0];
+    });
+  },
+
+  async getControls(): Promise<string | null> {
+    return timed("getControls", async () => {
+      await ready;
+      if (!db) throw new Error("No database open");
+      const rows = db.exec("SELECT data FROM controls WHERE id = 1", {
+        returnValue: "resultRows",
+      }) as string[][];
+      if (rows.length === 0) return null;
+      return rows[0][0];
+    });
+  },
+
+  async getSimulationSettings(): Promise<string | null> {
+    return timed("getSimulationSettings", async () => {
+      await ready;
+      if (!db) throw new Error("No database open");
+      const rows = db.exec(
+        "SELECT data FROM simulation_settings WHERE id = 1",
+        {
+          returnValue: "resultRows",
+        },
+      ) as string[][];
+      if (rows.length === 0) return null;
+      return rows[0][0];
+    });
+  },
+
+  async getJunctionDemands(): Promise<unknown[]> {
+    return timed("getJunctionDemands", () =>
+      readAll("SELECT * FROM junction_demands ORDER BY junction_id, ordinal"),
+    );
+  },
+
+  async getZones(): Promise<unknown[]> {
+    return timed("getZones", () => readAll("SELECT * FROM zones"));
+  },
+
+  async getSelectionSets(): Promise<unknown[]> {
+    return timed("getSelectionSets", () =>
+      readAll("SELECT * FROM selection_sets ORDER BY rowid"),
+    );
+  },
+
+  async insertSelectionSet(row: SelectionSetRow): Promise<void> {
+    return withTransaction("insertSelectionSet", () => {
+      bulkInsertSelectionSets([row]);
+    });
+  },
+
+  async renameSelectionSet(id: string, label: string): Promise<void> {
+    return withTransaction("renameSelectionSet", (db) => {
+      db.exec("UPDATE selection_sets SET label = ? WHERE id = ?", {
+        bind: [label, id],
+      });
+    });
+  },
+
+  async deleteSelectionSet(id: string): Promise<void> {
+    return withTransaction("deleteSelectionSet", (db) => {
+      db.exec("DELETE FROM selection_sets WHERE id = ?", { bind: [id] });
+    });
+  },
+
+  async replaceSelectionSetMembers(
+    id: string,
+    assets: Uint8Array | null,
+    customerPoints: Uint8Array | null,
+    zones: Uint8Array | null,
+  ): Promise<void> {
+    return withTransaction("replaceSelectionSetMembers", (db) => {
+      db.exec(
+        "UPDATE selection_sets SET assets = ?, customer_points = ?, zones = ? WHERE id = ?",
+        { bind: [assets, customerPoints, zones, id] },
+      );
+    });
+  },
+
+  async moveSelectionSet(id: string, groupId: string | null): Promise<void> {
+    return withTransaction("moveSelectionSet", (db) => {
+      db.exec("UPDATE selection_sets SET group_id = ? WHERE id = ?", {
+        bind: [groupId, id],
+      });
+    });
+  },
+
+  async setAllSelectionSets(rows: SelectionSetRow[]): Promise<void> {
+    return withTransaction(
+      "setAllSelectionSets",
+      () => {
+        replaceSelectionSets(rows);
+      },
+      { rows: rows.length },
+    );
+  },
+
+  async getSelectionSetGroups(): Promise<unknown[]> {
+    return timed("getSelectionSetGroups", () =>
+      readAll("SELECT * FROM selection_set_groups ORDER BY rowid"),
+    );
+  },
+
+  async insertSelectionSetGroup(row: SelectionSetGroupRow): Promise<void> {
+    return withTransaction("insertSelectionSetGroup", () => {
+      bulkInsertSelectionSetGroups([row]);
+    });
+  },
+
+  async renameSelectionSetGroup(id: string, label: string): Promise<void> {
+    return withTransaction("renameSelectionSetGroup", (db) => {
+      db.exec("UPDATE selection_set_groups SET label = ? WHERE id = ?", {
+        bind: [label, id],
+      });
+    });
+  },
+
+  async moveSelectionSetGroup(
+    id: string,
+    parentId: string | null,
+  ): Promise<void> {
+    return withTransaction("moveSelectionSetGroup", (db) => {
+      db.exec("UPDATE selection_set_groups SET parent_id = ? WHERE id = ?", {
+        bind: [parentId, id],
+      });
+    });
+  },
+
+  async deleteSelectionSetGroups(ids: string[]): Promise<void> {
+    return withTransaction(
+      "deleteSelectionSetGroups",
+      (db) => {
+        if (ids.length === 0) return;
+        const placeholders = ids.map(() => "?").join(", ");
+        db.exec(
+          `DELETE FROM selection_sets WHERE group_id IN (${placeholders})`,
+          { bind: ids },
+        );
+        db.exec(
+          `DELETE FROM selection_set_groups WHERE id IN (${placeholders})`,
+          { bind: ids },
+        );
+      },
+      { groups: ids.length },
+    );
+  },
+
+  async getBookmarks(): Promise<string | null> {
+    return timed("getBookmarks", async () => {
+      await ready;
+      if (!db) throw new Error("No database open");
+      const rows = db.exec("SELECT bookmarks FROM project WHERE id = 1", {
+        returnValue: "resultRows",
+      }) as (string | null)[][];
+      if (rows.length === 0) return null;
+      return rows[0][0];
+    });
+  },
+
+  async saveBookmarks(json: string): Promise<void> {
+    return withTransaction("saveBookmarks", () => {
+      updateBookmarks(json);
+    });
+  },
+
+  async getScripts(): Promise<unknown[]> {
+    return timed("getScripts", () =>
+      readAll("SELECT * FROM scripts ORDER BY updated_at DESC, rowid DESC"),
+    );
+  },
+
+  async saveScript(row: ScriptRow): Promise<void> {
+    return withTransaction("saveScript", (db) => {
+      const params: unknown[] = [];
+      appendScriptParams(row, params);
+      db.exec(
+        `INSERT OR REPLACE INTO scripts (${SCRIPT_COLUMNS.join(", ")}) VALUES (?, ?, ?, ?, ?)`,
+        { bind: params },
+      );
+    });
+  },
+
+  async deleteScript(id: string): Promise<void> {
+    return withTransaction("deleteScript", (db) => {
+      db.exec("DELETE FROM scripts WHERE id = ?", { bind: [id] });
+    });
+  },
+
+  async getIdPools(): Promise<IdPoolMaxima> {
+    return timed("getIdPools", async () => {
+      await ready;
+      if (!db) throw new Error("No database open");
+      const rows = db.exec(
+        `SELECT
+           (SELECT MAX(m) FROM (
+              SELECT MAX(id) AS m FROM junctions UNION ALL
+              SELECT MAX(id) FROM reservoirs UNION ALL
+              SELECT MAX(id) FROM tanks UNION ALL
+              SELECT MAX(id) FROM pipes UNION ALL
+              SELECT MAX(id) FROM pumps UNION ALL
+              SELECT MAX(id) FROM valves
+            )),
+           (SELECT MAX(id) FROM customer_points),
+           (SELECT MAX(id) FROM patterns),
+           (SELECT MAX(id) FROM curves),
+           (SELECT MAX(id) FROM zones)`,
+        { returnValue: "resultRows" },
+      ) as Array<Array<number | null>>;
+      const [asset, customerPoint, pattern, curve, zone] = rows[0];
+      return {
+        asset: asset ?? 0,
+        customerPoint: customerPoint ?? 0,
+        pattern: pattern ?? 0,
+        curve: curve ?? 0,
+        zone: zone ?? 0,
+      };
+    });
+  },
+
+  async applyChangeSet(bytes: Uint8Array, direction: Direction): Promise<void> {
+    const changeSet = ChangeSet.fromBytes(bytes);
+    const payload = timedSync(
+      "changeSet:toRows",
+      () => buildChangeSetPayload(changeSet, direction),
+      {
+        direction,
+        bytes: bytes.byteLength,
+        records: changeSet.size,
+      },
+    );
+    return writeChangeSetPayload(payload);
+  },
+
+  async importProject(payload: ImportProjectPayload): Promise<NewDbResult> {
+    await ready;
+    if (payload.newDb) {
+      const result = await timed("importProject:newDb", createNewDb);
+      if (result.status !== "ok") return result;
+    }
+    await withTransaction(
+      "importProject",
+      (db) => {
+        if (payload.projectSettings !== null) {
+          upsertProjectSettings(payload.projectSettings);
+        }
+        if (payload.pipeLibrary !== null) {
+          updatePipeLibrary(payload.pipeLibrary);
+        }
+        if (payload.selectionSetGroups !== null) {
+          replaceSelectionSetGroups(payload.selectionSetGroups);
+        }
+        if (payload.selectionSets !== null) {
+          replaceSelectionSets(payload.selectionSets);
+        }
+        if (payload.bookmarks !== null) {
+          updateBookmarks(payload.bookmarks);
+        }
+        if (payload.scripts !== null) {
+          replaceScripts(payload.scripts);
+        }
+
+        for (const table of ASSET_TYPE_TABLES) {
+          db.exec(`DELETE FROM ${table}`);
+        }
+        bulkInsertJunctions(payload.assets.junctions);
+        bulkInsertReservoirs(payload.assets.reservoirs);
+        bulkInsertTanks(payload.assets.tanks);
+        bulkInsertPipes(payload.assets.pipes);
+        bulkInsertPumps(payload.assets.pumps);
+        bulkInsertValves(payload.assets.valves);
+
+        db.exec("DELETE FROM customer_point_demands");
+        db.exec("DELETE FROM customer_points");
+        bulkInsertCustomerPoints(payload.customerPoints.customerPoints);
+        bulkInsertCustomerPointDemands(payload.customerPoints.demands);
+
+        db.exec("DELETE FROM zones");
+        bulkInsertZones(payload.zones);
+
+        db.exec("DELETE FROM patterns");
+        for (const row of payload.patterns) insertPattern(row);
+
+        db.exec("DELETE FROM curves");
+        for (const row of payload.curves) insertCurve(row);
+
+        upsertRawControls(payload.rawControls);
+        upsertControls(payload.controls);
+        upsertSimulationSettings(payload.simulationSettings);
+
+        db.exec("DELETE FROM junction_demands");
+        bulkInsertJunctionDemands(payload.junctionDemands);
+      },
+      countImportProject(payload),
+    );
+    return { status: "ok" };
+  },
+
+  async setAllAssets(payload: AssetRows): Promise<void> {
+    return withTransaction(
+      "setAllAssets",
+      (db) => {
+        for (const table of ASSET_TYPE_TABLES) {
+          db.exec(`DELETE FROM ${table}`);
+        }
+
+        bulkInsertJunctions(payload.junctions);
+        bulkInsertReservoirs(payload.reservoirs);
+        bulkInsertTanks(payload.tanks);
+        bulkInsertPipes(payload.pipes);
+        bulkInsertPumps(payload.pumps);
+        bulkInsertValves(payload.valves);
+      },
+      {
+        j: payload.junctions.length,
+        r: payload.reservoirs.length,
+        t: payload.tanks.length,
+        p: payload.pipes.length,
+        pu: payload.pumps.length,
+        v: payload.valves.length,
+      },
+    );
+  },
+
+  async setAllCustomerPoints(payload: CustomerPointsData): Promise<void> {
+    return withTransaction(
+      "setAllCustomerPoints",
+      (db) => {
+        db.exec("DELETE FROM customer_point_demands");
+        db.exec("DELETE FROM customer_points");
+
+        bulkInsertCustomerPoints(payload.customerPoints);
+        bulkInsertCustomerPointDemands(payload.demands);
+      },
+      {
+        cp: payload.customerPoints.length,
+        dem: payload.demands.length,
+      },
+    );
+  },
+
+  async setAllPatterns(rows: PatternRow[]): Promise<void> {
+    return withTransaction(
+      "setAllPatterns",
+      (db) => {
+        db.exec("DELETE FROM patterns");
+        for (const row of rows) insertPattern(row);
+      },
+      { rows: rows.length },
+    );
+  },
+
+  async setAllCurves(rows: CurveRow[]): Promise<void> {
+    return withTransaction(
+      "setAllCurves",
+      (db) => {
+        db.exec("DELETE FROM curves");
+        for (const row of rows) insertCurve(row);
+      },
+      { rows: rows.length },
+    );
+  },
+
+  async setAllRawControls(data: string): Promise<void> {
+    return withTransaction("setAllRawControls", () => {
+      upsertRawControls(data);
+    });
+  },
+
+  async setAllControls(data: string): Promise<void> {
+    return withTransaction("setAllControls", () => {
+      upsertControls(data);
+    });
+  },
+
+  async setAllSimulationSettings(data: string): Promise<void> {
+    return withTransaction("setAllSimulationSettings", () => {
+      upsertSimulationSettings(data);
+    });
+  },
+
+  async setAllJunctionDemands(rows: JunctionDemandRow[]): Promise<void> {
+    return withTransaction(
+      "setAllJunctionDemands",
+      (db) => {
+        db.exec("DELETE FROM junction_demands");
+        bulkInsertJunctionDemands(rows);
+      },
+      { rows: rows.length },
+    );
+  },
+
+  async exportDb(): Promise<Uint8Array> {
+    return timed("exportDb", async () => {
+      await ready;
+      if (!db) throw new Error("No database open");
+      db.exec(`PRAGMA application_id = ${APP_VERSION}`);
+      const bytes = sqlite3!.capi.sqlite3_js_db_export(db.pointer!);
+      return tagFile(bytes);
+    });
+  },
+
+  async closeDb() {
+    return timed("closeDb", async () => {
+      await ready;
+      closeExistingDb();
+    });
+  },
+};
+
+export type DbWorkerApi = typeof api;

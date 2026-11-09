@@ -1,96 +1,15 @@
-import React, { memo } from "react";
+import { memo } from "react";
 import { dialogAtom } from "src/state/dialog";
-import { splitsAtom, TabOption, tabAtom } from "src/state/layout";
-import { useAtom, useAtomValue } from "jotai";
-import clsx from "clsx";
+import { splitsAtom } from "src/state/layout";
+import { useAtomValue } from "jotai";
 
-import FeatureEditor from "./feature-editor";
-import { DefaultErrorBoundary } from "src/components/elements";
-import { useTranslate } from "src/hooks/use-translate";
-import { MapStylingEditor } from "./map-styling-editor";
-import { NetworkReview } from "./network-review";
-import { BottomResizer } from "src/components/resizer";
-import { BottomZoneTabs } from "./bottom-zone/bottom-zone-tabs";
+import { BottomResizer, VerticalResizer } from "src/components/resizer";
+import { BottomDock } from "./bottom-dock/bottom-dock";
+import { LeftDock } from "./left-dock/left-dock";
+import { RightDock } from "./right-dock/right-dock";
+import { VerticalDock } from "./vertical-dock/vertical-dock";
 
-function Tab({
-  onClick,
-  active,
-  label,
-  ...attributes
-}: {
-  onClick: () => void;
-  active: boolean;
-  label: React.ReactNode;
-} & React.HTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      role="tab"
-      onClick={onClick}
-      aria-selected={active}
-      className={clsx(
-        "text-left text-sm py-1 px-3 focus:outline-hidden",
-        active
-          ? "text-black dark:text-white"
-          : `
-          bg-gray-100 dark:bg-gray-900
-          border-b
-          border-gray-200 dark:border-black
-          text-gray-500 dark:text-gray-400
-          hover:text-black dark:hover:text-gray-200
-          focus:text-black`,
-      )}
-      {...attributes}
-    >
-      {label}
-    </button>
-  );
-}
-
-const ActiveTab = memo(function ActiveTab({
-  activeTab,
-}: {
-  activeTab: TabOption;
-}) {
-  switch (activeTab) {
-    case TabOption.Asset:
-      return <FeatureEditor />;
-    case TabOption.Map:
-      return <MapStylingEditor />;
-  }
-});
-
-const TabList = memo(function TabList({
-  setTab,
-  activeTab,
-}: {
-  activeTab: TabOption;
-  setTab: React.Dispatch<React.SetStateAction<TabOption>>;
-}) {
-  const translate = useTranslate();
-  return (
-    <div
-      role="tablist"
-      style={{
-        gridTemplateColumns: `repeat(2, 1fr) min-content`,
-      }}
-      className="flex-0 grid h-8 flex-none
-      sticky top-0 z-10
-      bg-white dark:bg-gray-800
-      divide-x divide-gray-200 dark:divide-black"
-    >
-      <Tab
-        onClick={() => setTab(TabOption.Asset)}
-        active={activeTab === TabOption.Asset}
-        label={translate("asset")}
-      />
-      <Tab
-        onClick={() => setTab(TabOption.Map)}
-        active={activeTab === TabOption.Map}
-        label={translate("map")}
-      />
-    </div>
-  );
-});
+export { ActivityBar } from "./activity-bar/activity-bar";
 
 export const SidePanel = memo(function SidePanelInner() {
   const splits = useAtomValue(splitsAtom);
@@ -100,19 +19,43 @@ export const SidePanel = memo(function SidePanelInner() {
       style={{
         width: splits.right,
       }}
-      className="bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-900 relative"
+      className="bg-popover border-l relative shrink-0"
     >
-      <Panel />
+      <RightSide />
     </div>
   );
 });
 
-export const RelocatedSidePanel = memo(function RelocatedSidePanelInner() {
+const RightSide = memo(function RightSideInner() {
+  const dialog = useAtomValue(dialogAtom);
+
+  if (dialog && dialog.type === "welcome") return null;
+  return <RightDock />;
+});
+
+export const VerticalPanel = memo(function VerticalPanelInner() {
+  const splits = useAtomValue(splitsAtom);
+
+  if (!splits.verticalOpen) return null;
+
   return (
-    <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-900 relative flex-auto min-h-0">
-      <Panel />
+    <div
+      style={{ height: splits.vertical }}
+      className="relative shrink-0 bg-popover border-t flex flex-col"
+    >
+      <VerticalResizer />
+      <div className="flex-1 min-h-0 min-w-0 relative overflow-hidden">
+        <VerticalSide />
+      </div>
     </div>
   );
+});
+
+const VerticalSide = memo(function VerticalSideInner() {
+  const dialog = useAtomValue(dialogAtom);
+
+  if (dialog && dialog.type === "welcome") return null;
+  return <VerticalDock />;
 });
 
 export const BottomPanel = memo(function BottomPanelInner() {
@@ -123,36 +66,12 @@ export const BottomPanel = memo(function BottomPanelInner() {
   return (
     <div
       style={{ height: splits.bottom }}
-      className="relative shrink-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-900 flex flex-col"
+      className="relative shrink-0 bg-popover border-t flex flex-col"
     >
       <BottomResizer />
-      <div className="flex-1 min-h-0 relative">
-        <BottomZoneTabs />
+      <div className="flex-1 min-h-0 min-w-0 relative overflow-hidden">
+        <BottomDock />
       </div>
-    </div>
-  );
-});
-
-export const FullPanel = memo(function FullPanelInner() {
-  return (
-    <div className="flex flex-auto bg-white dark:bg-gray-800 relative">
-      <Panel />
-    </div>
-  );
-});
-
-export const Panel = memo(function PanelInner() {
-  const [activeTab, setTab] = useAtom(tabAtom);
-  const dialog = useAtomValue(dialogAtom);
-
-  if (dialog && dialog.type === "welcome") return null;
-
-  return (
-    <div className="absolute inset-0 flex flex-col">
-      <TabList activeTab={activeTab} setTab={setTab} />
-      <DefaultErrorBoundary>
-        <ActiveTab activeTab={activeTab} />
-      </DefaultErrorBoundary>
     </div>
   );
 });
@@ -165,9 +84,9 @@ export const LeftSidePanel = memo(function LeftSidePanelInner() {
       style={{
         width: splits.left,
       }}
-      className="bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-900 relative"
+      className="bg-popover border-r relative shrink-0"
     >
-      <NetworkReview />
+      <LeftDock />
     </div>
   );
 });

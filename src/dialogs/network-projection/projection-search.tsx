@@ -1,19 +1,21 @@
 import { useCallback, useRef } from "react";
 import { MapPin, Sparkles } from "lucide-react";
-import { env } from "src/lib/env-client";
 import { captureError } from "src/infra/error-tracking";
 import {
   SearchableSelector,
   type SearchableSelectorOption,
-} from "src/components/form/searchable-selector";
+} from "@epanet-js/ui-kit";
 import type { LocationData } from "src/components/form/location-search";
-import type { Proj4Projection } from "src/lib/projections";
+import { GeocodingError, searchLocations } from "src/lib/geocoding";
+import type { Proj4Projection } from "@epanet-js/projections";
 import { useTranslate } from "src/hooks/use-translate";
 import {
   matchesProjection,
   hasExactProjectionMatch,
   projectionMatchRank,
 } from "./match-projection";
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 type SearchResultData =
   | { type: "location"; location: LocationData }
@@ -34,11 +36,13 @@ export const ProjectionSearch = ({
   onLocationSelect,
   onProjectionSelect,
   onSearched,
+  onSearchError,
 }: {
   projections: Proj4Projection[];
   onLocationSelect: (location: LocationData) => void;
   onProjectionSelect: (projection: Proj4Projection) => void;
   onSearched: (metadata: SearchMetadata) => void;
+  onSearchError: (hasError: boolean) => void;
 }) => {
   const t = useTranslate();
   const lastSearchRef = useRef<{ query: string; resultsCount: number }>({
@@ -59,53 +63,25 @@ export const ProjectionSearch = ({
         .slice(0, 5)
         .map((p) => ({
           id: `proj-${p.id}`,
-          label: `${p.name}  ${p.id}`,
+          label: `${p.name} ${p.id}`,
           data: { type: "projection" as const, projection: p },
         }));
 
       let locationResults: SearchResult[] = [];
       if (!hasExactProjectionMatch(projections, query)) {
-        try {
-          const response = await fetch(
-            `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(
-              query,
-            )}.json?access_token=${env.NEXT_PUBLIC_MAPBOX_TOKEN}&types=place,locality&limit=5`,
-          );
-
-          if (response.ok) {
-            const data = (await response.json()) as { features?: unknown[] };
-            const features = (data.features || []).filter(isValidMapboxFeature);
-
-            locationResults = features.map(
-              (f: {
-                place_name?: string;
-                text?: string;
-                center: number[];
-                bbox: number[];
-              }) => ({
-                id: `loc-${f.place_name || f.text}`,
-                label: f.place_name || f.text || "",
-                data: {
-                  type: "location" as const,
-                  location: {
-                    name: f.place_name || f.text || "",
-                    coordinates: f.center as [number, number],
-                    bbox: f.bbox as [number, number, number, number],
-                  },
-                },
-              }),
-            );
-          }
-        } catch (error) {
-          captureError(error as Error);
-        }
+        const locations = await doSearchLocations(query, onSearchError);
+        locationResults = locations.map((location) => ({
+          id: `loc-${location.name}`,
+          label: location.name,
+          data: { type: "location" as const, location },
+        }));
       }
 
       const allResults = [...locationResults, ...projectionResults];
       lastSearchRef.current = { query, resultsCount: allResults.length };
       return allResults;
     },
-    [projections],
+    [projections, onSearchError],
   );
 
   const handleChange = useCallback(
@@ -128,17 +104,17 @@ export const ProjectionSearch = ({
     if (option.data.type === "location") {
       return (
         <div className="flex items-center gap-2">
-          <MapPin className="w-4 h-4 text-gray-400 shrink-0" />
+          <MapPin className="w-4 h-4 text-subtle shrink-0" />
           <span>{option.data.location.name}</span>
         </div>
       );
     }
     return (
       <div className="flex items-start gap-2">
-        <Sparkles className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
+        <Sparkles className="w-4 h-4 text-subtle shrink-0 mt-0.5" />
         <div>
           <span className="block">{option.data.projection.name}</span>
-          <span className="block text-xs text-gray-400">
+          <span className="block text-size-small text-subtle">
             {option.data.projection.id}
           </span>
         </div>
@@ -154,25 +130,27 @@ export const ProjectionSearch = ({
       wrapperClassName="block"
       autoFocus
       renderOption={renderOption}
+      searchDebounceMs={SEARCH_DEBOUNCE_MS}
     />
   );
 };
 
-const isValidMapboxFeature = (
-  feature: unknown,
-): feature is {
-  center: number[];
-  bbox: number[];
-  place_name?: string;
-  text?: string;
-} => {
-  if (!feature || typeof feature !== "object") return false;
-  const obj = feature as Record<string, unknown>;
-  return (
-    "center" in obj &&
-    "bbox" in obj &&
-    Array.isArray(obj.center) &&
-    Array.isArray(obj.bbox) &&
-    ("place_name" in obj || "text" in obj)
-  );
+const doSearchLocations = async (
+  query: string,
+  onSearchError: (hasError: boolean) => void,
+): Promise<LocationData[]> => {
+  try {
+    const locations = await searchLocations(query);
+    onSearchError(false);
+    return locations;
+  } catch (error) {
+    captureError(error as Error, {
+      geocoding:
+        error instanceof GeocodingError
+          ? { query, status: error.status, responseBody: error.responseBody }
+          : { query },
+    });
+    onSearchError(true);
+    return [];
+  }
 };

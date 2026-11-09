@@ -3,14 +3,17 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
 } from "react";
-import {
-  type ColumnDef,
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
-} from "@tanstack/react-table";
+import { type ColumnDef, useReactTable } from "@tanstack/react-table";
+import { getLazyCoreRowModel } from "./models/lazy-core-row-model";
+import { getLazyStickySortedRowModel } from "./models/lazy-sticky-sorted-row-model";
+import { GridBusyProvider } from "./shared/grid-busy";
+import { RingSpinner } from "src/components/ring-spinner";
+import { notify } from "src/components/notifications";
+import { useTranslate } from "src/hooks/use-translate";
+import { WarningIcon } from "src/icons";
 import {
   DataGridVariant,
   RowAction,
@@ -19,19 +22,30 @@ import {
   GutterContextAction,
   GridColumn,
 } from "./types";
-import { useGridEditing, useMouseSelection } from "./hooks";
+import { useGridBusyState, useGridEditing, useMouseSelection } from "./hooks";
 import {
   CellEditingFeature,
   CellRangeSelectionFeature,
   CellRenderingFeature,
   ClipboardFeature,
   ColumnSizingFeature,
+  CustomHeaderActionsFeature,
+  DefaultValueFeature,
+  LazyRowModelFeature,
   type ClipboardCopyInfo,
   type ClipboardPasteInfo,
   type CopySelectionOptions,
 } from "./features";
 import type { CellPosition } from "./types";
 import { InlineGrid, GridRef, VirtualGrid, AddRowButton } from "./shared";
+import { defaultPatchRow, type PatchRowFn } from "./utils/patch-row";
+import { resolveDataIndex } from "./utils/data-index";
+import type { DataGridState } from "./types";
+import {
+  captureGridState,
+  restoreGridScroll,
+  toInitialTableState,
+} from "./utils/grid-state";
 
 export type DataGridRef = {
   selectCells: (options?: {
@@ -41,13 +55,14 @@ export type DataGridRef = {
   }) => void;
   clearSelection: () => void;
   copySelection: (options?: CopySelectionOptions) => Promise<void>;
+  captureState: () => DataGridState;
   selection: GridSelection | null;
 };
 
 type DataGridProps<TData extends Record<string, unknown>> = {
   data: TData[];
   columns: GridColumn<TData>[];
-  onChange: (data: TData[]) => void;
+  onChange: (data: TData[]) => void | Promise<void>;
   createRow: () => TData;
   readOnly?: boolean;
   resizable?: boolean;
@@ -63,11 +78,17 @@ type DataGridProps<TData extends Record<string, unknown>> = {
   cellHasWarning?: (rowIndex: number, columnId: string) => boolean;
   autoAddNewRows?: boolean;
   sortable?: boolean;
+  getRowId?: (row: TData, index: number) => string;
   onColumnSort?: (columnId: string, direction: "asc" | "desc") => void;
   includeHeadersOnCopy?: boolean;
   onCopy?: (info: ClipboardCopyInfo) => void;
   onPaste?: (info: ClipboardPasteInfo) => void;
   onDelete?: (rowsToDelete: TData[]) => void;
+  pinnedColumns?: { left?: string[] };
+  // Optional cap on how many rows a single copy or paste handles. Unset = no cap.
+  maxClipboardRows?: number;
+  patchRow?: PatchRowFn;
+  initialGridState?: DataGridState;
 };
 
 export const DataGrid = forwardRef(function DataGrid<
@@ -92,29 +113,52 @@ export const DataGrid = forwardRef(function DataGrid<
     cellHasWarning,
     autoAddNewRows = false,
     sortable = false,
+    getRowId,
     onColumnSort,
     includeHeadersOnCopy = false,
     onCopy,
     onPaste,
     onDelete,
+    pinnedColumns,
+    patchRow,
+    maxClipboardRows,
+    initialGridState,
   }: DataGridProps<TData>,
   ref: React.ForwardedRef<DataGridRef>,
 ) {
   const gridRef = useRef<HTMLDivElement>(null);
   const rowsRef = useRef<GridRef>(null);
+  const focusFromPointerRef = useRef(false);
   const dataRef = useRef(data);
   dataRef.current = data;
+  const patchRowFn: PatchRowFn = patchRow ?? defaultPatchRow;
+
+  const scrollElementRef = useRef<HTMLDivElement | null>(null);
+  const scrollOffsetRef = useRef({ top: 0, left: 0 });
+  const trackScrollOffset = useCallback(
+    (offset: { top: number; left: number }) => {
+      scrollOffsetRef.current = offset;
+    },
+    [],
+  );
+
+  const { isBusy, busyApi } = useGridBusyState();
+  const translate = useTranslate();
 
   const table = useReactTable<TData>({
     data,
     columns: columns as ColumnDef<TData>[],
-    getCoreRowModel: getCoreRowModel(),
+    getRowId,
+    getCoreRowModel: getLazyCoreRowModel(),
     _features: [
       CellEditingFeature,
       CellRangeSelectionFeature,
       ClipboardFeature,
       CellRenderingFeature,
       ColumnSizingFeature,
+      CustomHeaderActionsFeature,
+      DefaultValueFeature,
+      LazyRowModelFeature,
     ],
     // Clipboard feature options
     onDataChange: onChange,
@@ -125,6 +169,24 @@ export const DataGrid = forwardRef(function DataGrid<
     autoExtendOnPaste: autoAddNewRows,
     onClipboardCopy: onCopy,
     onClipboardPaste: onPaste,
+    onCopyPermissionDenied: () =>
+      notify({
+        variant: "warning",
+        size: "md",
+        title: translate("clipboardPermissionDeniedTitle"),
+        description: translate("clipboardPermissionDenied"),
+        Icon: WarningIcon,
+      }),
+    onPastePermissionDenied: () =>
+      notify({
+        variant: "warning",
+        size: "md",
+        title: translate("clipboardPasteDeniedTitle"),
+        description: translate("clipboardPermissionDenied"),
+        Icon: WarningIcon,
+      }),
+    maxClipboardRows,
+    patchRow: patchRowFn,
     // Column sizing options
     defaultColumn: {
       minSize: minColumnSizePx,
@@ -133,12 +195,26 @@ export const DataGrid = forwardRef(function DataGrid<
     },
     columnResizeMode: "onChange",
     enableColumnResizing: resizable,
+    initialState: {
+      columnPinning: { left: pinnedColumns?.left ?? [] },
+      ...toInitialTableState(initialGridState, data.length),
+    },
     // Data sorting options
-    getSortedRowModel: getSortedRowModel(),
+    getSortedRowModel: getLazyStickySortedRowModel(),
     enableSorting: sortable,
     enableSortingRemoval: true,
     enableMultiSort: false,
   });
+
+  useLayoutEffect(function restoreScroll() {
+    restoreGridScroll(scrollElementRef.current, initialGridState);
+    scrollOffsetRef.current = {
+      top: scrollElementRef.current?.scrollTop ?? 0,
+      left: scrollElementRef.current?.scrollLeft ?? 0,
+    };
+    // Restores once, from the state the panel was last closed with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const activeCell = table.getActiveCell();
   const selection = table.getSelection();
@@ -208,8 +284,9 @@ export const DataGrid = forwardRef(function DataGrid<
     (rowIndex: number) => {
       const leafColumns = table.getVisibleLeafColumns();
       if (leafColumns.length === 0) return;
+      const dataIndex = resolveDataIndex(table, rowIndex);
       const firstEditableCol = leafColumns.findIndex(
-        (col) => !col.isReadOnly(rowIndex),
+        (col) => !col.isReadOnly(dataIndex),
       );
       const colIndex = firstEditableCol !== -1 ? firstEditableCol : 0;
       gridRef.current?.focus();
@@ -221,7 +298,7 @@ export const DataGrid = forwardRef(function DataGrid<
   const handleAddRow = useCallback(() => {
     const currentData = dataRef.current;
     const newRow = createRow();
-    onChange([...currentData, newRow]);
+    void onChange([...currentData, newRow]);
     focusRow(currentData.length);
   }, [createRow, onChange, focusRow]);
 
@@ -273,6 +350,7 @@ export const DataGrid = forwardRef(function DataGrid<
       selectCells,
       clearSelection,
       copySelection: table.copySelection,
+      captureState: () => captureGridState(table, scrollOffsetRef.current),
       selection,
     }),
     [selectCells, clearSelection, table, selection],
@@ -282,7 +360,7 @@ export const DataGrid = forwardRef(function DataGrid<
     (col: number) => {
       const column = table.getVisibleLeafColumns()[col];
       const rowIndex = table.getActiveCell()?.row ?? 0;
-      if (column && !column.isReadOnly(rowIndex)) {
+      if (column && !column.isReadOnly(resolveDataIndex(table, rowIndex))) {
         table.startEditing("full");
       }
     },
@@ -322,17 +400,22 @@ export const DataGrid = forwardRef(function DataGrid<
 
   const handleCellChange = useCallback(
     (rowIndex: number, columnId: string, value: unknown) => {
-      const newData = dataRef.current.map((row, idx) => {
-        if (idx === rowIndex) {
-          return { ...row, [columnId]: value };
-        }
-        return row;
-      });
+      const newData = dataRef.current.slice();
+      newData[rowIndex] = patchRowFn(newData[rowIndex], { [columnId]: value });
       dataRef.current = newData;
-      onChange(newData);
+      void onChange(newData);
     },
-    [onChange],
+    [onChange, patchRowFn],
   );
+
+  const handleGridMouseDown = useCallback(() => {
+    // The focus this pointer press triggers fires synchronously right after,
+    // so handleFocus sees the flag set; the rAF resets it afterwards.
+    focusFromPointerRef.current = true;
+    requestAnimationFrame(() => {
+      focusFromPointerRef.current = false;
+    });
+  }, []);
 
   const handleFocus = useCallback(
     (e: React.FocusEvent) => {
@@ -342,9 +425,35 @@ export const DataGrid = forwardRef(function DataGrid<
       // the cell's own focus management; stealing it back to row 0 would
       // race with the click that just selected a cell.
       if (e.target !== gridRef.current) return;
+      // A pointer press focuses the grid before its own click/mousedown
+      // handler selects the target cell or column. Auto-selecting row 0 here
+      // would scroll the grid, moving the target out from under the pending
+      // click so it never lands. Let the pointer handlers do the selecting;
+      // only keyboard Tab-in falls through to focusRow.
+      if (focusFromPointerRef.current) return;
       focusRow(0);
     },
     [activeCell, data.length, focusRow],
+  );
+
+  const handleCopy = useCallback(
+    (e: React.ClipboardEvent) => {
+      if (!table.getSelection()) return;
+      e.preventDefault();
+      // A big selection builds a large clipboard payload across frames, so show
+      // the busy overlay through it (instant for small tables).
+      busyApi.runBusyAsync(() => table.copySelection());
+    },
+    [table, busyApi],
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent) => {
+      if (!table.getSelection()) return;
+      e.preventDefault();
+      busyApi.runBusyAsync(() => table.pasteSelection());
+    },
+    [table, busyApi],
   );
 
   const handleEmptyAreaMouseDown = useCallback(
@@ -354,9 +463,16 @@ export const DataGrid = forwardRef(function DataGrid<
       const onScrollbar =
         e.clientX > rect.left + e.currentTarget.clientWidth ||
         e.clientY > rect.top + e.currentTarget.clientHeight;
-      if (!onScrollbar) {
-        clearSelection();
+      if (onScrollbar) {
+        // Clicking/dragging the native scrollbar would otherwise blur the
+        // grid container, which owns keyboard nav, copy/paste and Escape.
+        // Prevent the default focus shift so the current cell range stays
+        // usable while scrolling. preventDefault does not block the native
+        // scrollbar drag itself.
+        e.preventDefault();
+        return;
       }
+      clearSelection();
     },
     [clearSelection],
   );
@@ -400,44 +516,62 @@ export const DataGrid = forwardRef(function DataGrid<
   };
 
   return (
-    <div
-      className={
-        isSpreadsheet ? "flex flex-col h-full text-sm" : "flex flex-col text-sm"
-      }
-    >
+    <GridBusyProvider value={busyApi}>
       <div
-        ref={gridRef}
-        role="grid"
-        aria-rowcount={data.length}
-        aria-colcount={columns.length}
-        aria-multiselectable={true}
-        tabIndex={0}
-        onKeyDown={handleKeyDown}
-        onFocus={handleFocus}
-        onCopy={table.handleCopyEvent}
-        onPaste={table.handlePasteEvent}
         className={
           isSpreadsheet
-            ? "relative flex flex-col flex-1 min-h-0 outline-hidden"
-            : "relative flex flex-col outline-hidden"
+            ? "flex flex-col h-full text-size-base"
+            : "flex flex-col text-size-base"
         }
-        data-capture-escape-key
       >
-        {isSpreadsheet ? (
-          <VirtualGrid ref={rowsRef} {...rowsProps} />
-        ) : (
-          <InlineGrid ref={rowsRef} {...rowsProps} />
+        <div
+          ref={gridRef}
+          role="grid"
+          aria-rowcount={data.length}
+          aria-colcount={columns.length}
+          aria-multiselectable={true}
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          onMouseDown={handleGridMouseDown}
+          onFocus={handleFocus}
+          onCopy={handleCopy}
+          onPaste={handlePaste}
+          className={
+            isSpreadsheet
+              ? "relative flex flex-col flex-1 min-h-0 outline-hidden"
+              : "relative flex flex-col outline-hidden"
+          }
+          data-capture-escape-key
+        >
+          {isSpreadsheet ? (
+            <VirtualGrid
+              ref={rowsRef}
+              scrollElementRef={scrollElementRef}
+              onScrollOffset={trackScrollOffset}
+              {...rowsProps}
+            />
+          ) : (
+            <InlineGrid ref={rowsRef} {...rowsProps} />
+          )}
+          {isBusy && (
+            <div
+              className="absolute inset-0 z-30 flex items-center justify-center bg-base/50"
+              aria-hidden="true"
+            >
+              <RingSpinner size="lg" />
+            </div>
+          )}
+        </div>
+
+        {!readOnly && (
+          <AddRowButton
+            label={addRowLabel}
+            onClick={handleAddRow}
+            variant={variant}
+          />
         )}
       </div>
-
-      {!readOnly && (
-        <AddRowButton
-          label={addRowLabel}
-          onClick={handleAddRow}
-          variant={variant}
-        />
-      )}
-    </div>
+    </GridBusyProvider>
   );
 }) as <TData extends Record<string, unknown>>(
   props: DataGridProps<TData> & {

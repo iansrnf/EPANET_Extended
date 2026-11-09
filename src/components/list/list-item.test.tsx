@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react";
+import { TooltipProvider } from "@epanet-js/ui-kit";
 import { render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ListItem } from "./list-item";
@@ -53,6 +54,49 @@ describe("ListItem", () => {
     expect(
       screen.getByRole("button", { name: /actions/i }),
     ).toBeInTheDocument();
+  });
+
+  it("names the actions menu button with the label the caller provides", () => {
+    render(
+      <ul>
+        <ListItem
+          {...defaultProps}
+          actions={actions}
+          actionsLabel="Más acciones"
+          onAction={vi.fn()}
+        />
+      </ul>,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Más acciones" }),
+    ).toBeInTheDocument();
+  });
+
+  it("runs the secondary action without selecting the item", async () => {
+    const user = setupUser();
+    const onSelect = vi.fn();
+    const onSecondary = vi.fn();
+    render(
+      <TooltipProvider>
+        <ul>
+          <ListItem
+            {...defaultProps}
+            onSelect={onSelect}
+            secondaryAction={{
+              label: "Select only",
+              icon: <span />,
+              onClick: onSecondary,
+            }}
+          />
+        </ul>
+      </TooltipProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Select only" }));
+
+    expect(onSecondary).toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it("hides actions menu button when no actions are provided", () => {

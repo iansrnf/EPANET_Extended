@@ -1,12 +1,13 @@
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { ResultsReader } from "src/simulation";
 import { exportAssetData } from "./export-asset-data";
 import { AssetExporters } from "./asset-exporters";
-import { FileSystemHelpers } from "./file-system-helpers";
-import { WGS84 } from "src/lib/projections";
+import { FileSystemHelpers } from "src/infra/storage";
+import { WGS84 } from "@epanet-js/projections";
 
 const mockHandle = {} as FileSystemFileHandle;
 const model = HydraulicModelBuilder.empty();
+const translate = (key: string) => key;
 
 describe("export-asset-data", () => {
   beforeEach(() => {
@@ -24,7 +25,7 @@ describe("export-asset-data", () => {
   it("generates ZIP file from exported files", async () => {
     const exportedFiles = mockGeoJsonExporter();
 
-    await exportAssetData("export", "geojson", model, WGS84);
+    await exportAssetData("export", "geojson", model, WGS84, translate);
 
     expect(AssetExporters.exportZip).toHaveBeenCalledWith(
       mockHandle,
@@ -38,7 +39,7 @@ describe("export-asset-data", () => {
     );
     mockGeoJsonExporter();
 
-    await exportAssetData("export", "geojson", model, WGS84);
+    await exportAssetData("export", "geojson", model, WGS84, translate);
 
     expect(FileSystemHelpers.openFileInFileSystem).toHaveBeenCalledWith(
       "export.zip",
@@ -53,12 +54,26 @@ describe("export-asset-data", () => {
   it("uses OPFS and triggers download when native file system is not supported", async () => {
     mockGeoJsonExporter();
 
-    await exportAssetData("export", "geojson", model, WGS84);
+    await exportAssetData("export", "geojson", model, WGS84, translate);
 
     expect(FileSystemHelpers.openFileInOpfs).toHaveBeenCalledWith("export.zip");
     expect(FileSystemHelpers.openFileInFileSystem).not.toHaveBeenCalled();
     expect(FileSystemHelpers.triggerDownload).toHaveBeenCalledWith(
       "export.zip",
+      mockHandle,
+    );
+  });
+
+  it("opens the xlsx OPFS file with the xlsx extension", async () => {
+    vi.spyOn(AssetExporters, "exportXlsx").mockResolvedValue(undefined);
+
+    await exportAssetData("export", "xlsx", model, WGS84, translate);
+
+    expect(FileSystemHelpers.openFileInOpfs).toHaveBeenCalledWith(
+      "export.xlsx",
+    );
+    expect(FileSystemHelpers.triggerDownload).toHaveBeenCalledWith(
+      "export.xlsx",
       mockHandle,
     );
   });
@@ -72,11 +87,19 @@ describe("export-asset-data", () => {
       resultsReader,
     };
 
-    await exportAssetData("export", "geojson", model, WGS84, options);
+    await exportAssetData(
+      "export",
+      "geojson",
+      model,
+      WGS84,
+      translate,
+      options,
+    );
 
     expect(AssetExporters.exportGeoJson).toHaveBeenCalledWith(
       model,
       WGS84,
+      translate,
       options,
     );
   });
@@ -90,11 +113,12 @@ describe("export-asset-data", () => {
       resultsReader,
     };
 
-    await exportAssetData("export", "csv", model, WGS84, options);
+    await exportAssetData("export", "csv", model, WGS84, translate, options);
 
     expect(AssetExporters.exportCsv).toHaveBeenCalledWith(
       model,
       WGS84,
+      translate,
       options,
     );
   });

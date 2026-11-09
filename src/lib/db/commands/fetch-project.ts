@@ -1,24 +1,49 @@
-import type { ProjectSettings } from "src/lib/project-settings";
-import type { SimulationSettings } from "src/simulation/simulation-settings";
+import type { ProjectSettings } from "@epanet-js/project-settings";
+import type { CustomAttributesDefinition } from "@epanet-js/hydraulic-model";
+import type {
+  Bookmark,
+  SelectionSet,
+  SelectionSetGroup,
+} from "src/lib/collections";
+import type { UserScript } from "src/state/scripts";
+import {
+  defaultSimulationSettings,
+  type SimulationSettings,
+} from "src/simulation/simulation-settings";
 import { HydraulicModel, initializeHydraulicModel } from "src/hydraulic-model";
 import {
   ModelFactories,
   initializeModelFactories,
-} from "src/hydraulic-model/factories";
-import { LabelManager } from "src/hydraulic-model/label-manager";
-import { ConsecutiveIdsGenerator } from "src/lib/id-generator";
-import { getWorker, timed } from "src/lib/ejsdb";
-import { buildAssetsData } from "../mappers/assets/builders";
-import { buildCustomerPointsData } from "../mappers/customer-points/builders";
-import { buildPatternsData } from "../mappers/patterns/builders";
-import { buildCurvesData } from "../mappers/curves/builders";
-import { buildControlsData } from "../mappers/controls/builders";
-import { buildSimulationSettingsData } from "../mappers/simulation-settings/builders";
-import { buildProjectSettingsData } from "../mappers/project-settings/builders";
-import { buildJunctionDemandsData } from "../mappers/junction-demands/builders";
+  LabelManager,
+} from "@epanet-js/hydraulic-model";
+import { IdPoolsGenerator, type IdPoolSeeds } from "@epanet-js/id-generator";
+import { getWorker, timed } from "@epanet-js/ejsdb";
+import {
+  buildAssetsData,
+  buildCustomerPointsData,
+  buildPatternsData,
+  buildCurvesData,
+  buildRawControlsData,
+  buildControlsData,
+  buildJunctionDemandsData,
+  buildCustomAttributesDefinition,
+  buildPipeLibraryData,
+  buildProjectSettingsData,
+  buildSimulationSettingsData,
+  buildZonesData,
+} from "@epanet-js/ejsdb-mappers";
+import { buildSelectionSetsData } from "../mappers/selection-sets/builders";
+import { buildSelectionSetGroupsData } from "../mappers/selection-set-groups/builders";
+import { buildBookmarksData } from "../mappers/bookmarks/builders";
+import { buildScriptsData } from "../mappers/scripts/builders";
 
 export type Project = {
   projectSettings: ProjectSettings;
+  customAttributes: CustomAttributesDefinition;
+  selectionSetGroups: SelectionSetGroup[];
+  selectionSets: SelectionSet[];
+  bookmarks: Bookmark[];
+  scripts: UserScript[];
   hydraulicModel: HydraulicModel;
   factories: ModelFactories;
   simulationSettings: SimulationSettings;
@@ -33,6 +58,12 @@ export type FetchProjectPhase =
 export type FetchProjectOptions = {
   onProgress?: (phase: FetchProjectPhase) => void;
 };
+
+const buildFactories = (maxima: IdPoolSeeds): ModelFactories =>
+  initializeModelFactories({
+    idPools: new IdPoolsGenerator(maxima),
+    labelManager: new LabelManager(),
+  });
 
 export const fetchProject = async (
   options: FetchProjectOptions = {},
@@ -73,21 +104,37 @@ export const fetchProject = async (
     onProgress?.("reading-settings");
     const [
       settingsJson,
+      pipeLibraryJson,
+      customAttributesJson,
+      zonesRaw,
+      selectionSetGroupsRaw,
+      selectionSetsRaw,
+      bookmarksJson,
+      scriptsRaw,
       patternsRaw,
       junctionDemandsRaw,
       curvesRaw,
+      rawControlsData,
       controlsData,
       simulationSettingsData,
-      maxId,
+      idMaxima,
     ] = await timed("fetchProject.readSettings", () =>
       Promise.all([
         worker.getProjectSettings(),
+        worker.getPipeLibrary(),
+        worker.getCustomAttributesDefinition(),
+        worker.getZones(),
+        worker.getSelectionSetGroups(),
+        worker.getSelectionSets(),
+        worker.getBookmarks(),
+        worker.getScripts(),
         worker.getPatterns(),
         worker.getJunctionDemands(),
         worker.getCurves(),
+        worker.getRawControls(),
         worker.getControls(),
         worker.getSimulationSettings(),
-        worker.getMaxId(),
+        worker.getIdPools(),
       ]),
     );
     if (!settingsJson) {
@@ -99,13 +146,21 @@ export const fetchProject = async (
       "fetchProject.build",
       () => {
         const projectSettings = buildProjectSettingsData(settingsJson);
+        const pipeLibrary = buildPipeLibraryData(pipeLibraryJson);
+        const customAttributes =
+          buildCustomAttributesDefinition(customAttributesJson);
+        const selectionSetGroups = buildSelectionSetGroupsData(
+          selectionSetGroupsRaw,
+        );
+        const selectionSets = buildSelectionSetsData(
+          selectionSetsRaw,
+          selectionSetGroups,
+        );
+        const bookmarks = buildBookmarksData(bookmarksJson);
+        const scripts = buildScriptsData(scriptsRaw);
 
-        const idGenerator = new ConsecutiveIdsGenerator(maxId);
-        const factories = initializeModelFactories({
-          idGenerator,
-          labelManager: new LabelManager(),
-          defaults: projectSettings.defaults,
-        });
+        const factories = buildFactories(idMaxima);
+        const { idGenerator } = factories;
 
         const { assets, assetIndex, topology } = buildAssetsData(
           {
@@ -126,11 +181,14 @@ export const fetchProject = async (
             },
             factories,
           );
+        const zones = buildZonesData(zonesRaw, factories);
         const patterns = buildPatternsData(patternsRaw);
         const curves = buildCurvesData(curvesRaw);
+        const rawControls = buildRawControlsData(rawControlsData);
         const controls = buildControlsData(controlsData);
         const simulationSettings = buildSimulationSettingsData(
           simulationSettingsData,
+          defaultSimulationSettings,
         );
         const junctionDemands = buildJunctionDemandsData(junctionDemandsRaw);
 
@@ -143,15 +201,24 @@ export const fetchProject = async (
           customerPointsLookup,
           patterns,
           curves,
+          pipeMaterials: pipeLibrary,
+          rawControls,
           controls,
           demands: {
             junctions: junctionDemands,
             customerPoints: customerDemands,
           },
+          customAttributes,
+          zones,
         });
 
         return {
           projectSettings,
+          customAttributes,
+          selectionSetGroups,
+          selectionSets,
+          bookmarks,
+          scripts,
           hydraulicModel,
           factories,
           simulationSettings,

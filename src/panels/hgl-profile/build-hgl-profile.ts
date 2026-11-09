@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 import { AssetId, HydraulicModel } from "src/hydraulic-model";
-import { PathData } from "src/hydraulic-model/topology/types";
-import { ResultsReader } from "src/simulation/results-reader";
+import { PathData } from "@epanet-js/hydraulic-model";
+import { ResultsReader } from "@epanet-js/simulation";
 import { HglProfile } from "src/state/hgl-profile";
 import { deriveProfilePath } from "./path-finding";
 

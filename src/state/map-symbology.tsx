@@ -6,11 +6,13 @@ import {
   LinkSymbology,
   NodeSymbology,
   CustomerPointsSymbology,
+  ZoneSymbology,
 } from "src/map/symbology";
 import {
   SupportedProperty,
   nullSymbologySpec,
 } from "src/map/symbology/symbology-types";
+import { defaultNodeSizeConfig, type NodeSizeConfig } from "src/map/symbology";
 import { type ColorRuleConfig } from "src/map/symbology/range-color-rule";
 
 export type { SymbologySpec };
@@ -121,10 +123,19 @@ export const savedSymbologiesAtom = atom<SymbologiesMap>(new Map());
 
 export const nodeSymbologyAtom = atom<NodeSymbology>(nullSymbologySpec.node);
 export const linkSymbologyAtom = atom<LinkSymbology>(nullSymbologySpec.link);
+export const nodeSizeAtom = atom<NodeSizeConfig>(defaultNodeSizeConfig);
 
 const customerPointsSymbologyAtom = atom<CustomerPointsSymbology>(
   nullSymbologySpec.customerPoints,
 );
+
+export const customerPointsVisibleAtom = atom(
+  (get) => get(customerPointsSymbologyAtom).visible,
+);
+
+const zoneSymbologyAtom = atom<ZoneSymbology>(nullSymbologySpec.zone);
+
+export const zonesVisibleAtom = atom((get) => get(zoneSymbologyAtom).visible);
 
 /**
  * Write-only atom: clears the active node/link symbology when its color rule
@@ -168,8 +179,9 @@ export const symbologyAtom = atom((get) => {
   const node = get(nodeSymbologyAtom);
   const link = get(linkSymbologyAtom);
   const customerPoints = get(customerPointsSymbologyAtom);
+  const zone = get(zoneSymbologyAtom);
 
-  return { node, link, customerPoints };
+  return { node, link, customerPoints, zone };
 });
 
 export const useSymbologyState = () => {
@@ -179,6 +191,7 @@ export const useSymbologyState = () => {
   const [customerPointsSymbology, setCustomerPointsSymbology] = useAtom(
     customerPointsSymbologyAtom,
   );
+  const [zoneSymbology, setZoneSymbology] = useAtom(zoneSymbologyAtom);
   const switchNodeSymbologyTo = (
     property: SupportedProperty | null,
     initializeFn: () => NodeSymbology,
@@ -277,6 +290,10 @@ export const useSymbologyState = () => {
     });
   };
 
+  const updateZoneSymbology = (updates: Partial<ZoneSymbology>) => {
+    setZoneSymbology({ ...zoneSymbology, ...updates });
+  };
+
   return {
     linkSymbology,
     nodeSymbology,
@@ -286,7 +303,9 @@ export const useSymbologyState = () => {
     updateNodeSymbology,
     updateLinkSymbology,
     updateCustomerPointsSymbology,
+    zoneSymbology,
     updateNodeDefaultColor,
     updateLinkDefaultColor,
+    updateZoneSymbology,
   };
 };

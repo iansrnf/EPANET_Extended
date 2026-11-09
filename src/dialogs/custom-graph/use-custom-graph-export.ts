@@ -19,6 +19,9 @@ interface UseCustomGraphExportOptions {
   onExportProgress?: (progress: number) => void;
 }
 
+const isWaterQualityProperty = (property: string) =>
+  GraphDefaultOptions.WATER_QUALITY_PROPERTIES.includes(property);
+
 export function useCustomGraphExport({
   chartContainerRef,
   networkName,
@@ -151,42 +154,45 @@ export function useCustomGraphExport({
           return ["flow"];
         }
 
+        if (isWaterQualityProperty(linkProperty)) {
+          return ["waterQuality"];
+        }
+
         return [linkProperty];
-      })();
+      })() as ExportSimulationResultsProperties[];
 
       const mappedNodeProperty = (() => {
         if (nodeIds.length === 0) {
           return [];
         }
 
-        const hasWaterQuality =
-          GraphDefaultOptions.WATER_QUALITY_PROPERTIES.includes(nodeProperty);
-        if (hasWaterQuality) {
+        if (isWaterQualityProperty(nodeProperty)) {
           return ["waterQuality"];
         }
 
         return [nodeProperty];
-      })();
+      })() as ExportSimulationResultsProperties[];
 
-      const properties = [
-        ...mappedNodeProperty,
-        ...mappedLinkProperty,
-      ] as ExportSimulationResultsProperties[];
-
-      await exportSimulationResults({
-        format,
-        fileName,
-        onProgress: (progress) => {
-          onExportProgress?.(progress);
-          if (performance.now() - lastYield >= 100) {
-            lastYield = performance.now();
-            return new Promise<void>((resolve) => setTimeout(resolve, 0));
-          }
-          return Promise.resolve();
-        },
-        properties,
-        selectedAssets,
-      });
+      try {
+        await exportSimulationResults({
+          format,
+          fileName,
+          onProgress: (progress) => {
+            onExportProgress?.(progress);
+            if (performance.now() - lastYield >= 100) {
+              lastYield = performance.now();
+              return new Promise<void>((resolve) => setTimeout(resolve, 0));
+            }
+            return Promise.resolve();
+          },
+          nodeProperties: mappedNodeProperty,
+          linkProperties: mappedLinkProperty,
+          selectedAssets,
+        });
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        throw err;
+      }
 
       trackExport(format);
       notifyExportSucceeded();

@@ -7,12 +7,13 @@ import { DraftPath, ephemeralStateAtom } from "src/state/drawing";
 import { cursorStyleAtom } from "src/state/map";
 import { Mode, modeAtom } from "src/state/mode";
 import { selectionAtom } from "src/state/selection";
+import { USelection } from "src/selection";
 import { Asset, AssetId, LinkAsset } from "src/hydraulic-model";
 import { deriveProfilePath } from "src/panels/hgl-profile/path-finding";
 import { buildHglProfile } from "src/panels/hgl-profile/build-hgl-profile";
-import { findClosestEndpointNode } from "src/hydraulic-model/spatial-queries";
+import { findClosestEndpointNode } from "@epanet-js/hydraulic-model";
 import { isUnprojectedAtom } from "src/state/map-projection";
-import { useClickedAsset, useGetMapCoord } from "src/map/mode-handlers/utils";
+import { useClickedAsset, getMapCoord } from "src/map/mode-handlers/utils";
 import {
   simulationDerivedAtom,
   simulationResultsDerivedAtom,
@@ -24,7 +25,6 @@ export function useHglProfileHandlers(
 ): Handlers {
   const { hydraulicModel, map } = handlerContext;
   const { getClickedAsset } = useClickedAsset(map, hydraulicModel.assets);
-  const getMapCoord = useGetMapCoord();
 
   const store = useStore();
   const isUnprojected = useAtomValue(isUnprojectedAtom);
@@ -113,10 +113,9 @@ export function useHglProfileHandlers(
 
     setHglProfile(built.hglProfile);
     setEphemeralState({ type: "hglProfile" });
-    setSelection({
-      type: "multi",
-      ids: [...built.path.nodeIds, ...built.path.linkIds],
-    });
+    setSelection(
+      USelection.fromAssetIds([...built.path.nodeIds, ...built.path.linkIds]),
+    );
   };
 
   const double: Handlers["double"] = (e) => {
@@ -166,18 +165,19 @@ export function useHglProfileHandlers(
       }
     }
 
+    const isExtendForbidden =
+      extendable && currentAnchors.length >= 1 && previewPath === undefined;
+
     const ephemeral = store.get(ephemeralStateAtom);
     const stagedAnchorIds =
       ephemeral.type === "hglProfile" ? ephemeral.anchorIds : undefined;
     setEphemeralState({
       type: "hglProfile",
       anchorIds: stagedAnchorIds,
-      hoveredNodeId,
+      hoveredNodeId: isExtendForbidden ? undefined : hoveredNodeId,
       path: previewPath,
     });
 
-    const isExtendForbidden =
-      extendable && currentAnchors.length >= 1 && previewPath === undefined;
     setCursor(isExtendForbidden ? "not-allowed" : "");
   }, 16);
 

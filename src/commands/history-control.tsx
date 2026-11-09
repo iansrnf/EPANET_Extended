@@ -13,15 +13,15 @@ export const useHistoryControl = () => {
   const setMode = useSetAtom(modeAtom);
 
   const undo = useCallback(() => {
-    historyControl("undo");
     setEphemeralState({ type: "none" });
     setMode({ mode: Mode.NONE });
+    historyControl("undo");
   }, [setEphemeralState, setMode, historyControl]);
 
   const redo = useCallback(() => {
-    historyControl("redo");
     setEphemeralState({ type: "none" });
     setMode({ mode: Mode.NONE });
+    historyControl("redo");
   }, [setEphemeralState, setMode, historyControl]);
 
   return { undo, redo };

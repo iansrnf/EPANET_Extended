@@ -1,17 +1,21 @@
 import * as Comlink from "comlink";
 
-import { HydraulicModel } from "src/hydraulic-model";
 import {
-  OrphanAsset,
-  OrphanAssets,
+  ActiveAssetIndex,
+  ActiveTopology,
+  AssetId,
+} from "@epanet-js/hydraulic-model";
+import {
   buildOrphanAssets,
-  encodeData,
-} from "./data";
-import { topologyTransferables } from "src/hydraulic-model/topology/types";
-import { assetIndexTransferables } from "src/hydraulic-model/asset-index";
-import { findOrphanAssets } from "./find-orphan-assets";
-import type { OrphanAssetsWorkerAPI } from "./worker-api";
-import { BufferType } from "src/lib/buffers";
+  findOrphanAssets,
+  type OrphanAssets,
+} from "@epanet-js/network-review";
+import { HydraulicModel } from "src/hydraulic-model";
+import { encodeData } from "./data";
+import { topologyTransferables } from "src/hydraulic-model/topology/topology-transferable";
+import { assetIndexTransferables } from "src/hydraulic-model/asset-index-transferable";
+import { getOrphanAssetsWorker } from "./get-worker";
+import { BufferType } from "@epanet-js/buffers";
 import { canUseWorker, enrichWorkerError } from "src/infra/worker";
 
 export const runCheck = async (
@@ -19,14 +23,17 @@ export const runCheck = async (
   signal: AbortSignal | undefined = undefined,
   bufferType: BufferType = "array",
   runInWorker: boolean = true,
-): Promise<OrphanAsset[]> => {
+): Promise<AssetId[]> => {
   if (signal?.aborted) {
     throw new DOMException("Operation cancelled", "AbortError");
   }
 
   const encodedOrphanAssets = runInWorker
     ? await runWithWorker(hydraulicModel, bufferType, signal)
-    : findOrphanAssets(hydraulicModel.topology, hydraulicModel.assetIndex);
+    : findOrphanAssets(
+        new ActiveTopology(hydraulicModel.topology, hydraulicModel.assets),
+        new ActiveAssetIndex(hydraulicModel.assetIndex, hydraulicModel.assets),
+      );
 
   return buildOrphanAssets(hydraulicModel, encodedOrphanAssets);
 };
@@ -47,27 +54,20 @@ const runWithWorker = async (
     return fallbackWorkerAPI.findOrphanAssets(data);
   }
 
-  const worker = new Worker(new URL("./worker.ts", import.meta.url), {
-    type: "module",
-  });
+  const transferData = Comlink.transfer(data, [
+    ...topologyTransferables(data.topologyBuffers),
+    ...assetIndexTransferables(data.assetIndexBuffers),
+  ]);
 
-  const workerAPI = Comlink.wrap<OrphanAssetsWorkerAPI>(worker);
-
-  const abortHandler = () => worker.terminate();
-  signal?.addEventListener("abort", abortHandler);
-
+  const workerAPI = getOrphanAssetsWorker();
   try {
-    const data = encodeData(model, bufferType);
-    return await workerAPI.findOrphanAssets(
-      Comlink.transfer(data, [
-        ...topologyTransferables(data.topologyBuffers),
-        ...assetIndexTransferables(data.assetIndexBuffers),
-      ]),
-    );
+    const result = await workerAPI.findOrphanAssets(transferData);
+    if (signal?.aborted) {
+      throw new DOMException("Operation cancelled", "AbortError");
+    }
+    return result;
   } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
     throw enrichWorkerError("orphan-assets", e);
-  } finally {
-    signal?.removeEventListener("abort", abortHandler);
-    worker.terminate();
   }
 };

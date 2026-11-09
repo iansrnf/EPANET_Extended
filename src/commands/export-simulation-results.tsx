@@ -1,19 +1,23 @@
 import { useAtomCallback } from "jotai/utils";
 import { useCallback } from "react";
 import { Export } from "src/lib/export";
-import { FileSystemHelpers } from "src/lib/export/file-system-helpers";
+import { FileSystemHelpers } from "src/infra/storage";
 import {
   stagingModelDerivedAtom,
   simulationDerivedAtom,
 } from "src/state/derived-branch-state";
-import type { ExportSimulationResultsProperties } from "src/lib/export/types";
+import {
+  combineMetrics,
+  type ExportSimulationResultsProperties,
+} from "src/lib/export/types";
 import { currentFileNameAtom } from "src/state";
 import { useUserTracking } from "src/infra/user-tracking";
 
 export type ExportSimulationResultsOptions = {
   format: "csv" | "xlsx";
   selectedAssets: Set<number>;
-  properties: ExportSimulationResultsProperties[];
+  nodeProperties: ExportSimulationResultsProperties[];
+  linkProperties: ExportSimulationResultsProperties[];
   onProgress: (
     progress: number,
     property: ExportSimulationResultsProperties,
@@ -78,7 +82,10 @@ export const useExportSimulationResults = () => {
         capture({
           name: "simulationResults.exported",
           format: options.format,
-          properties: options.properties,
+          properties: combineMetrics(
+            options.nodeProperties,
+            options.linkProperties,
+          ),
           hasSelection: options.selectedAssets.size > 0,
         });
       },

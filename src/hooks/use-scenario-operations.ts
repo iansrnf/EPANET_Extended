@@ -1,18 +1,23 @@
 import { useSetAtom } from "jotai";
 import { useAtomCallback } from "jotai/utils";
 import { useCallback } from "react";
+import type { Worktree } from "@epanet-js/worktree";
 import { useInitializeBranch } from "src/hooks/persistence/use-initialize-branch";
 import { useSwitchBranch } from "src/hooks/persistence/use-switch-branch";
 import { useDeleteBranch } from "src/hooks/persistence/use-delete-branch";
-import { worktreeAtom } from "src/state/scenarios";
+import { useLoadBranch } from "src/hooks/persistence/use-load-branch";
+import { unloadBranch } from "src/hooks/persistence/use-initialize-branch";
+import { SessionHistory } from "src/lib/persistence/session-history";
+import { captureError } from "src/infra/error-tracking";
+import { startTrace } from "src/infra/trace";
+import { isTraceScenarioSwitchOn } from "src/infra/debug-mode";
+import { getBranchingRules, getBranchStore } from "src/lib/branching";
+import { writeQueue } from "src/lib/persistence/write-queue";
+import { useWriteFailureHandler } from "src/hooks/persistence/use-write-failure-handler";
+import { branchSwitchInFlightAtom, worktreeAtom } from "src/state/scenarios";
+import { branchStateAtom, isBranchLoaded } from "src/state/branch-state";
+import { dialogAtom } from "src/state/dialog";
 import { modeAtom, Mode } from "src/state/mode";
-import {
-  createScenario,
-  switchToBranch as switchToBranchFn,
-  deleteScenario,
-  renameScenario,
-} from "src/lib/worktree";
-import type { Worktree } from "src/lib/worktree";
 
 const DRAWING_MODES: Mode[] = [
   Mode.DRAW_JUNCTION,
@@ -29,15 +34,17 @@ export const useScenarioOperations = () => {
   const { initializeBranch } = useInitializeBranch();
   const { switchBranch } = useSwitchBranch();
   const { deleteBranch } = useDeleteBranch();
+  const { loadBranch } = useLoadBranch();
   const setWorktree = useSetAtom(worktreeAtom);
   const setMode = useSetAtom(modeAtom);
+  const onWriteFailure = useWriteFailureHandler();
 
   const performSwitch = useCallback(
     (worktree: Worktree, branchId: string) => {
-      const result = switchToBranchFn(worktree, branchId);
+      const result = getBranchingRules().switchToBranch(worktree, branchId);
 
-      if (result.branch) {
-        switchBranch(result.branch.id);
+      if (result.activated) {
+        switchBranch(result.activated.id);
       }
 
       setWorktree(result.worktree);
@@ -57,13 +64,47 @@ export const useScenarioOperations = () => {
     [switchBranch, setWorktree, setMode],
   );
 
+  const withBranchLoaded = useAtomCallback(
+    useCallback(
+      async (get, set, branchId: string, then: () => void) => {
+        if (get(branchSwitchInFlightAtom)) return;
+
+        set(branchSwitchInFlightAtom, true);
+        const state = get(branchStateAtom).get(branchId);
+        if (state && !isBranchLoaded(state)) {
+          set(dialogAtom, {
+            type: "loadingScenario",
+            scenarioName: get(worktreeAtom).branches.get(branchId)?.name ?? "",
+          });
+        }
+        const trace = startTrace("switch-scenario", isTraceScenarioSwitchOn);
+        try {
+          await loadBranch(branchId, trace);
+        } catch (error) {
+          trace.end();
+          captureError(error as Error);
+          return;
+        } finally {
+          set(branchSwitchInFlightAtom, false);
+          set(dialogAtom, (dialog) =>
+            dialog?.type === "loadingScenario" ? null : dialog,
+          );
+        }
+        trace.measure("activate", then);
+        trace.end();
+      },
+      [loadBranch],
+    ),
+  );
+
   const switchToBranch = useAtomCallback(
     useCallback(
       (get, _set, branchId: string) => {
-        const worktree = get(worktreeAtom);
-        void performSwitch(worktree, branchId);
+        void withBranchLoaded(branchId, () =>
+          performSwitch(get(worktreeAtom), branchId),
+        );
       },
-      [performSwitch],
+      [performSwitch, withBranchLoaded],
     ),
   );
 
@@ -81,34 +122,96 @@ export const useScenarioOperations = () => {
     useCallback(
       (get, _set) => {
         const worktree = get(worktreeAtom);
-        const created = createScenario(worktree);
+        const { worktree: withScenario, created: scenario } =
+          getBranchingRules().createBranch(worktree);
+        if (!scenario) return null;
 
-        initializeBranch(created.branch);
-        switchBranch(created.branch.id);
+        writeQueue.enqueue(
+          () => getBranchStore().createBranch(withScenario, scenario),
+          onWriteFailure,
+        );
 
-        const result = switchToBranchFn(created.worktree, created.branch.id);
-        setWorktree(result.worktree);
+        initializeBranch(scenario);
+        switchBranch(scenario.id);
 
-        return {
-          scenarioId: created.branch.id,
-          scenarioName: created.branch.name,
-        };
+        const switched = getBranchingRules().switchToBranch(
+          withScenario,
+          scenario.id,
+        );
+        setWorktree(switched.worktree);
+
+        return { scenarioId: scenario.id, scenarioName: scenario.name };
       },
-      [initializeBranch, switchBranch, setWorktree],
+      [initializeBranch, switchBranch, setWorktree, onWriteFailure],
+    ),
+  );
+
+  const duplicateScenarioById = useAtomCallback(
+    useCallback(
+      (get, set, scenarioId: string) => {
+        const sourceState = get(branchStateAtom).get(scenarioId);
+        if (!sourceState) return null;
+
+        const { worktree: withCopy, created: copy } =
+          getBranchingRules().duplicateBranch(get(worktreeAtom), scenarioId);
+        if (!copy) return null;
+
+        writeQueue.enqueue(
+          () => getBranchStore().duplicateBranch(scenarioId, copy),
+          onWriteFailure,
+        );
+
+        set(branchStateAtom, (previous) =>
+          new Map(previous).set(copy.id, {
+            ...unloadBranch(sourceState),
+            sessionHistory: new SessionHistory(sourceState.version),
+          }),
+        );
+        setWorktree(withCopy);
+
+        void withBranchLoaded(copy.id, () =>
+          performSwitch(get(worktreeAtom), copy.id),
+        );
+
+        return { scenarioId: copy.id, scenarioName: copy.name };
+      },
+      [setWorktree, onWriteFailure, withBranchLoaded, performSwitch],
+    ),
+  );
+
+  const performDelete = useAtomCallback(
+    useCallback(
+      (get, _set, scenarioId: string) => {
+        const worktree = get(worktreeAtom);
+        const result = getBranchingRules().deleteBranch(worktree, scenarioId);
+
+        writeQueue.enqueue(
+          () => getBranchStore().deleteBranch(scenarioId),
+          onWriteFailure,
+        );
+
+        deleteBranch(scenarioId, result.nextActive?.id ?? null);
+
+        setWorktree(result.worktree);
+      },
+      [deleteBranch, setWorktree, onWriteFailure],
     ),
   );
 
   const deleteScenarioById = useAtomCallback(
     useCallback(
-      (get, set, scenarioId: string) => {
-        const worktree = get(worktreeAtom);
-        const result = deleteScenario(worktree, scenarioId);
-
-        deleteBranch(scenarioId, result.branch?.id ?? null);
-
-        setWorktree(result.worktree);
+      (get, _set, scenarioId: string) => {
+        const { nextActive } = getBranchingRules().deleteBranch(
+          get(worktreeAtom),
+          scenarioId,
+        );
+        if (!nextActive) {
+          performDelete(scenarioId);
+          return;
+        }
+        void withBranchLoaded(nextActive.id, () => performDelete(scenarioId));
       },
-      [deleteBranch, setWorktree],
+      [performDelete, withBranchLoaded],
     ),
   );
 
@@ -116,17 +219,25 @@ export const useScenarioOperations = () => {
     useCallback(
       (get, _set, scenarioId: string, newName: string) => {
         const worktree = get(worktreeAtom);
-        setWorktree(renameScenario(worktree, scenarioId, newName));
+        setWorktree(
+          getBranchingRules().renameBranch(worktree, scenarioId, newName),
+        );
+        writeQueue.enqueue(
+          () => getBranchStore().renameBranch(scenarioId, newName),
+          onWriteFailure,
+        );
       },
-      [setWorktree],
+      [setWorktree, onWriteFailure],
     ),
   );
 
   return {
+    scenariosAvailable: getBranchingRules().isAvailable,
     switchToBranch,
     switchToMain,
     createNewScenario,
     deleteScenarioById,
+    duplicateScenarioById,
     renameScenarioById,
   };
 };

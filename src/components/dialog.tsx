@@ -1,4 +1,4 @@
-import { useCallback, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import {
   Button,
@@ -13,6 +13,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useSetAtom } from "jotai";
 import { dialogAtom } from "src/state/dialog";
 import { CloseIcon, RefreshIcon } from "src/icons";
+import { SelectorPortalContainer } from "@epanet-js/ui-kit";
 
 export const useDialogState = () => {
   const setDialogState = useSetAtom(dialogAtom);
@@ -41,9 +42,9 @@ export const DialogCloseX = () => {
   return (
     <Dialog.Close
       aria-label="Close"
-      className="text-gray-500 shrink-0
-                  focus:bg-gray-200 dark:focus:bg-black
-                  hover:text-black dark:hover:text-white"
+      className="text-subtle shrink-0
+                  focus:bg-base-hover
+                  hover:text-default"
     >
       <CloseIcon />
     </Dialog.Close>
@@ -65,14 +66,14 @@ export function DialogHeader({
         flex items-center gap-x-2
         px-4 py-3
         text-base
-        text-black dark:text-white
-        border-b border-gray-200
+        text-default
+        border-b
       "
     >
       {children && children}
       {title && (
         <div className="flex items-center gap-3 flex-auto min-w-0">
-          <Dialog.Title className="text-md font-semibold text-gray-900 wrap-break-word sm:truncate">
+          <Dialog.Title className="text-md font-semibold text-default wrap-break-word sm:truncate">
             {title}
           </Dialog.Title>
           {badge && badge}
@@ -108,6 +109,8 @@ export const BaseDialog = ({
   badge,
   preventClose = false,
 }: BaseDialogProps) => {
+  const [contentEl, setContentEl] = useState<HTMLElement | null>(null);
+
   return (
     <Dialog.Root
       open={isOpen}
@@ -117,24 +120,34 @@ export const BaseDialog = ({
         <StyledDialogOverlay />
         <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
           <StyledDialogContent
+            ref={setContentEl}
             size={size}
             height={height}
             onOpenAutoFocus={(e) => e.preventDefault()}
             onEscapeKeyDown={
               preventClose ? (e) => e.preventDefault() : undefined
             }
+            onPointerDownOutside={(e) => {
+              const target = e.detail.originalEvent
+                .target as HTMLElement | null;
+              if (target?.closest?.("[data-notification]")) {
+                e.preventDefault();
+              }
+            }}
             aria-describedby={undefined}
           >
-            <DefaultErrorBoundary>
-              <div className="modal-container flex flex-col flex-nowrap flex-1 min-h-0">
-                {!title && <Dialog.Title className="sr-only" />}
-                {title && <DialogHeader title={title} badge={badge} />}
-                <div className="modal-content flex flex-col flex-1 overflow-y-auto min-h-0">
-                  {children}
+            <SelectorPortalContainer container={contentEl}>
+              <DefaultErrorBoundary>
+                <div className="modal-container flex flex-col flex-nowrap flex-1 min-h-0">
+                  {!title && <Dialog.Title className="sr-only" />}
+                  {title && <DialogHeader title={title} badge={badge} />}
+                  <div className="modal-content flex flex-col flex-1 overflow-y-auto min-h-0">
+                    {children}
+                  </div>
+                  {footer && <DialogFooter>{footer}</DialogFooter>}
                 </div>
-                {footer && <DialogFooter>{footer}</DialogFooter>}
-              </div>
-            </DefaultErrorBoundary>
+              </DefaultErrorBoundary>
+            </SelectorPortalContainer>
           </StyledDialogContent>
         </div>
       </Dialog.Portal>
@@ -154,7 +167,7 @@ export const AckDialogAction = ({
     <div
       className={clsx(
         "relative",
-        "px-4 py-3 border-t border-gray-200",
+        "px-4 py-3 border-t",
         "flex flex-col sm:items-center sm:flex-row-reverse space-y-2 sm:space-y-0 sm:gap-x-3",
       )}
     >
@@ -193,6 +206,7 @@ export function SimpleDialogActions({
   tertiary?: {
     action: string;
     onClick: () => void;
+    variant?: "default" | "danger";
   };
   isDisabled?: boolean;
   isSubmitting?: boolean;
@@ -205,7 +219,7 @@ export function SimpleDialogActions({
         "relative",
         fullWidthSubmit
           ? "flex items-stretch justify-stretch"
-          : `flex flex-col sm:items-center sm:flex-row-reverse gap-3 px-4 py-3 border-t border-gray-200`,
+          : `flex flex-col sm:items-center sm:flex-row-reverse gap-3 px-4 py-3 border-t`,
       )}
     >
       {action ? (
@@ -234,7 +248,8 @@ export function SimpleDialogActions({
         <Button
           type="button"
           disabled={isSubmitting}
-          variant="default"
+          variant={tertiary.variant ?? "default"}
+          className={tertiary.variant === "danger" ? "sm:mr-auto" : undefined}
           onClick={tertiary.onClick}
         >
           {tertiary.action}

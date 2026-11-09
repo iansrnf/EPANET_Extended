@@ -62,7 +62,8 @@ describe("useCustomGraphExport", () => {
         format: "csv",
         fileName: "test-network-J1-pressure",
         onProgress: expect.any(Function),
-        properties: ["pressure", "flow"],
+        nodeProperties: ["pressure"],
+        linkProperties: ["flow"],
         selectedAssets: new Set([1, 2]),
       });
     });
@@ -80,7 +81,8 @@ describe("useCustomGraphExport", () => {
       expect(mockExport).toHaveBeenCalledWith(
         expect.objectContaining({
           format: "xlsx",
-          properties: ["pressure", "unitHeadloss"],
+          nodeProperties: ["pressure"],
+          linkProperties: ["unitHeadloss"],
         }),
       );
     });
@@ -97,7 +99,8 @@ describe("useCustomGraphExport", () => {
 
       expect(mockExport).toHaveBeenCalledWith(
         expect.objectContaining({
-          properties: ["pressure", "flow"],
+          nodeProperties: ["pressure"],
+          linkProperties: ["flow"],
         }),
       );
     });
@@ -114,7 +117,8 @@ describe("useCustomGraphExport", () => {
 
       expect(mockExport).toHaveBeenCalledWith(
         expect.objectContaining({
-          properties: ["pressure", "status"],
+          nodeProperties: ["pressure"],
+          linkProperties: ["status"],
         }),
       );
     });
@@ -131,7 +135,26 @@ describe("useCustomGraphExport", () => {
 
       expect(mockExport).toHaveBeenCalledWith(
         expect.objectContaining({
-          properties: ["waterQuality", "flow"],
+          nodeProperties: ["waterQuality"],
+          linkProperties: ["flow"],
+        }),
+      );
+    });
+
+    it("maps water quality link properties to waterQuality", async () => {
+      const mockExport = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(useExportSimulationResults).mockReturnValue(mockExport);
+
+      const opts = defaultOptions();
+      opts.linkProperty = "waterAge";
+      const { result } = renderHook(() => useCustomGraphExport(opts));
+
+      await act(() => result.current.exportTabular("xlsx"));
+
+      expect(mockExport).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nodeProperties: ["pressure"],
+          linkProperties: ["waterQuality"],
         }),
       );
     });
@@ -148,7 +171,8 @@ describe("useCustomGraphExport", () => {
 
       expect(mockExport).toHaveBeenCalledWith(
         expect.objectContaining({
-          properties: ["pressure"],
+          nodeProperties: ["pressure"],
+          linkProperties: [],
         }),
       );
     });
@@ -165,7 +189,8 @@ describe("useCustomGraphExport", () => {
 
       expect(mockExport).toHaveBeenCalledWith(
         expect.objectContaining({
-          properties: ["flow"],
+          nodeProperties: [],
+          linkProperties: ["flow"],
         }),
       );
     });
@@ -189,6 +214,39 @@ describe("useCustomGraphExport", () => {
       expect(notify).toHaveBeenCalledWith(
         expect.objectContaining({ variant: "success" }),
       );
+    });
+
+    it("stays silent when the save picker is dismissed", async () => {
+      const mockExport = vi
+        .fn()
+        .mockRejectedValue(
+          new DOMException("The user aborted a request.", "AbortError"),
+        );
+      vi.mocked(useExportSimulationResults).mockReturnValue(mockExport);
+
+      const { result } = renderHook(() =>
+        useCustomGraphExport(defaultOptions()),
+      );
+
+      await act(() => result.current.exportTabular("csv"));
+
+      expect(tracking.capture).not.toHaveBeenCalled();
+      expect(notify).not.toHaveBeenCalled();
+    });
+
+    it("propagates failures other than a dismissed picker", async () => {
+      const mockExport = vi.fn().mockRejectedValue(new Error("disk full"));
+      vi.mocked(useExportSimulationResults).mockReturnValue(mockExport);
+
+      const { result } = renderHook(() =>
+        useCustomGraphExport(defaultOptions()),
+      );
+
+      await expect(
+        act(() => result.current.exportTabular("csv")),
+      ).rejects.toThrow("disk full");
+
+      expect(notify).not.toHaveBeenCalled();
     });
   });
 

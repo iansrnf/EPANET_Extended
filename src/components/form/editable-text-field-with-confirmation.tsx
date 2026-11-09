@@ -23,8 +23,7 @@ type EditableTextFieldWithConfirmationProps = {
   onReset?: () => void;
   hasError?: boolean;
   placeholder?: string;
-  allowedChars?: RegExp;
-  maxByteLength?: number;
+  sanitize?: (raw: string) => string;
   styleOptions?: Partial<StyleOptions>;
   autoFocus?: boolean;
   forceValidation?: boolean;
@@ -41,8 +40,7 @@ export const EditableTextFieldWithConfirmation = forwardRef<
     onReset,
     hasError = false,
     placeholder,
-    allowedChars,
-    maxByteLength,
+    sanitize,
     styleOptions = {},
     autoFocus = false,
     forceValidation = false,
@@ -127,19 +125,7 @@ export const EditableTextFieldWithConfirmation = forwardRef<
   };
 
   const handleInputChange: ChangeEventHandler<HTMLInputElement> = (e) => {
-    let newValue = e.target.value;
-    if (allowedChars) {
-      newValue = newValue
-        .split("")
-        .filter((char) => allowedChars.test(char))
-        .join("");
-    }
-    if (maxByteLength !== undefined) {
-      const encoder = new TextEncoder();
-      while (encoder.encode(newValue).length > maxByteLength) {
-        newValue = newValue.slice(0, -1);
-      }
-    }
+    const newValue = sanitize ? sanitize(e.target.value) : e.target.value;
     setInputValue(newValue);
     setDirty(true);
   };
@@ -196,25 +182,23 @@ function styledInput({
   textSize = "xs",
 }: StyleOptions & { variant?: "default" | "warning" } = {}) {
   return clsx(
-    "text-gray-700 dark:text-gray-100",
+    "text-default",
     {
       "p-1": padding === "sm",
       "p-2": padding === "md",
     },
     "border focus-visible:border-transparent",
-    variant === "warning"
-      ? "border-orange-500 dark:border-orange-700"
-      : "border-gray-300 hover:border-gray-200",
-    "bg-white dark:bg-gray-800",
+    variant === "warning" ? "border-warning" : "border-strong hover:border",
+    "bg-popover",
     {
-      "focus-visible:bg-purple-300/10 dark:focus-visible:bg-purple-700/40 dark:focus-visible:ring-purple-700 focus-visible:ring-purple-500":
+      "focus-visible:bg-purple-300/10 dark:focus-visible:bg-purple-700/40 focus-visible:ring-accent":
         variant === "default",
-      "focus-visible:bg-orange-300/10 dark:focus-visible:bg-orange-700/40 dark:focus-visible:ring-orange-700 focus-visible:ring-orange-500":
+      "focus-visible:bg-warning-subtle focus-visible:ring-warning":
         variant === "warning",
     },
     {
-      "text-xs": textSize === "xs",
-      "text-sm": textSize === "sm",
+      "text-size-small": textSize === "xs",
+      "text-size-base": textSize === "sm",
       "text-md": textSize === "md",
     },
     "rounded-xs block overflow-hidden whitespace-nowrap text-ellipsis w-full placeholder:italic",

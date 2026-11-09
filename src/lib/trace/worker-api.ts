@@ -1,9 +1,14 @@
-import { AssetIndexView } from "src/hydraulic-model/asset-index";
-import { TopologyView } from "src/hydraulic-model/topology/topologyView";
+import { AssetIndexView } from "src/hydraulic-model/asset-index-transferable";
+import { TopologyView } from "src/hydraulic-model/topology/topology-transferable";
 import { TraceRunData } from "./encode-trace-buffers";
 import { FlowDirectionView, AllowedFlowDirectionView } from "./trace-buffers";
-import { TraceMode, TraceStart, TraceResult } from "./types";
-import { boundaryTrace } from "./boundary-trace";
+import {
+  boundaryBarriers,
+  trace,
+  type TraceResult,
+  type TraceStart,
+} from "@epanet-js/hydraulic-model";
+import { TraceMode } from "./types";
 import { upstreamTrace } from "./upstream-trace";
 import { downstreamTrace } from "./downstream-trace";
 
@@ -30,7 +35,12 @@ export const workerAPI: TraceWorkerAPI = {
 
     switch (mode) {
       case "boundary":
-        return boundaryTrace(start, topology, assetIndex, allowedFlowDirection);
+        return trace(
+          start,
+          topology,
+          allowedFlowDirection,
+          boundaryBarriers(assetIndex, allowedFlowDirection),
+        );
       case "upstream":
         return upstreamTrace(start, topology, flowDirection);
       case "downstream":

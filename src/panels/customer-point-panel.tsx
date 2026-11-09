@@ -5,10 +5,12 @@ import { projectSettingsAtom } from "src/state/project-settings";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import { selectionAtom } from "src/state/selection";
+import { USelection } from "src/selection";
 import type { PropertyComparison } from "src/hooks/use-asset-comparison";
 import { useCustomerPointComparison } from "src/hooks/use-customer-point-comparison";
 import { useCustomerPointActions } from "src/components/context-actions/customer-point-actions";
-import { ActionButton } from "src/components/action-button";
+import { Action } from "src/components/action-button";
+import { ActionsBar } from "src/components/actions-bar";
 import { SectionList } from "src/components/form/fields";
 import { SectionWrapper } from "./asset-panel/ui-components";
 import { useZoomTo } from "src/hooks/use-zoom-to";
@@ -16,7 +18,10 @@ import { ZoomToIcon } from "src/icons";
 import { BBox } from "src/types";
 import { TextRow, QuantityRow } from "./asset-panel/ui-components";
 import { DemandCategoriesEditor } from "./asset-panel/demands-editor";
+import { CustomerPointCustomAttributesSection } from "./customer-point-custom-attributes-section";
 import { EditableTextField } from "src/components/form/editable-text-field";
+import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
+import { useLabelMaxLength } from "src/hooks/use-label-max-length";
 import { useTranslate } from "src/hooks/use-translate";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
@@ -24,26 +29,29 @@ import {
   getCustomerPointDemands,
   calculateAverageDemand,
   Demand,
-} from "src/hydraulic-model/demands";
+  LabelManager,
+} from "@epanet-js/hydraulic-model";
 import {
   changeDemandAssignment,
   changeCustomerPointLabel,
-} from "src/hydraulic-model/model-operations";
-import { MAX_CUSTOMER_POINT_LABEL_LENGTH } from "src/hydraulic-model/customer-points";
-import { convertTo } from "src/quantity";
+} from "@epanet-js/hydraulic-model-operations";
+import { convertTo } from "@epanet-js/quantity";
 
 export function CustomerPointPanel() {
   const selection = useAtomValue(selectionAtom);
   const { labelManager } = useAtomValue(modelFactoriesAtom);
   const translate = useTranslate();
+  const labelMaxLength = useLabelMaxLength();
   const userTracking = useUserTracking();
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
   const { transact } = useModelTransaction();
   const zoomTo = useZoomTo();
   const { units } = useAtomValue(projectSettingsAtom);
+  const isEditionBlocked = useIsEditionBlocked();
+  const selectedCustomerPointId = USelection.singleCustomerPointId(selection);
   const customerPoint =
-    selection.type === "singleCustomerPoint"
-      ? hydraulicModel.customerPoints.get(selection.id)
+    selectedCustomerPointId !== null
+      ? hydraulicModel.customerPoints.get(selectedCustomerPointId)
       : undefined;
 
   const customerPointId = customerPoint?.id;
@@ -118,10 +126,10 @@ export function CustomerPointPanel() {
           flowUnit,
         ),
       }));
-      const moment = changeDemandAssignment(hydraulicModel, [
+      const assignments = [
         { customerPointId: customerPoint.id, demands: newDemands },
-      ]);
-      transact(moment);
+      ];
+      transact(() => changeDemandAssignment(hydraulicModel, assignments));
       userTracking.capture({
         name: "customerPointDemands.edited",
         oldCount,
@@ -163,11 +171,8 @@ export function CustomerPointPanel() {
         return true;
       }
 
-      const moment = changeCustomerPointLabel(hydraulicModel, {
-        customerPointId: customerPoint.id,
-        newLabel,
-      });
-      transact(moment);
+      const data = { customerPointId: customerPoint.id, newLabel };
+      transact(() => changeCustomerPointLabel(hydraulicModel, data));
       userTracking.capture({
         name: "customerPointActions.labelChanged",
         oldLabel,
@@ -198,11 +203,23 @@ export function CustomerPointPanel() {
     ? hydraulicModel.assets.get(connection.junctionId)
     : null;
 
+  const zoomToAction: Action = {
+    icon: <ZoomToIcon />,
+    applicable: true,
+    priority: 2,
+    label: translate("zoomTo"),
+    onSelect: function doZoomTo() {
+      const [lng, lat] = customerPoint.coordinates;
+      userTracking.capture({ name: "customerPointPanel.zoomTo" });
+      return Promise.resolve(zoomTo(Maybe.of([lng, lat, lng, lat] as BBox)));
+    },
+  };
+
   return (
     <div className="flex flex-col grow overflow-hidden">
       <div className="px-3 pt-4 pb-3 relative">
         {isNew && (
-          <div className="absolute left-0 top-0 bottom-0 w-1 bg-purple-500 rounded-full" />
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-accent rounded-full" />
         )}
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0 flex-1">
@@ -213,8 +230,9 @@ export function CustomerPointPanel() {
               onReset={clearLabelError}
               onDirty={clearLabelError}
               hasError={!!labelError}
-              allowedChars={/(?![\s;])[\x00-\xFF]/}
-              maxByteLength={MAX_CUSTOMER_POINT_LABEL_LENGTH}
+              sanitize={(raw) =>
+                LabelManager.sanitizeLabel(raw, "customerPoint", labelMaxLength)
+              }
               styleOptions={{
                 padding: "sm",
                 ghostBorder: true,
@@ -223,38 +241,18 @@ export function CustomerPointPanel() {
               }}
             />
           </div>
-          <div className="flex gap-1 h-8 shrink-0">
-            <ActionButton
-              action={{
-                icon: <ZoomToIcon />,
-                applicable: true,
-                label: translate("zoomTo"),
-                onSelect: function doZoomTo() {
-                  const [lng, lat] = customerPoint.coordinates;
-                  userTracking.capture({ name: "customerPointPanel.zoomTo" });
-                  return Promise.resolve(
-                    zoomTo(Maybe.of([lng, lat, lng, lat] as BBox)),
-                  );
-                },
-              }}
-            />
-            {actions
-              .filter((action) => action.applicable)
-              .map((action, i) => (
-                <ActionButton key={i} action={action} />
-              ))}
-          </div>
+          <ActionsBar actions={[zoomToAction, ...actions]} className="h-8" />
         </div>
         {labelError && (
-          <span className="text-xs text-orange-600 dark:text-orange-400 block mt-1 pl-1">
+          <span className="text-size-small text-warning block mt-1 pl-1">
             {labelError}
           </span>
         )}
-        <span className="text-sm text-gray-500 pl-1">
+        <span className="text-size-base text-subtle pl-1">
           {translate("customer")}
         </span>
       </div>
-      <SectionList padding={3}>
+      <SectionList padding={3} overflow={true}>
         {connection && (
           <SectionWrapper
             title={translate("connections")}
@@ -283,6 +281,10 @@ export function CustomerPointPanel() {
             readOnly={true}
           />
         </SectionWrapper>
+        <CustomerPointCustomAttributesSection
+          customerPoint={customerPoint}
+          readOnly={isEditionBlocked}
+        />
       </SectionList>
     </div>
   );

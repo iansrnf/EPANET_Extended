@@ -3,27 +3,22 @@ import {
   BaseDialog,
   SimpleDialogActions,
 } from "src/components/dialog";
-import { SignInButton as ClerkSignInButton } from "@clerk/nextjs";
+import { SignInButton } from "src/components/auth/sign-in-button";
 import { isAuthEnabled } from "src/global-config";
-import { buildAfterSignupUrl } from "src/hooks/use-early-access";
 import { Button } from "src/components/elements";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
 
 export const EarlyAccessDialog = ({
   onContinue: _onContinue,
-  afterSignupDialog,
+  afterSignupUrl,
 }: {
   onContinue: () => void;
-  afterSignupDialog?: string;
+  afterSignupUrl?: string;
 }) => {
   const { closeDialog } = useDialogState();
   const userTracking = useUserTracking();
   const translate = useTranslate();
-
-  const redirectUrl = afterSignupDialog
-    ? buildAfterSignupUrl(afterSignupDialog)
-    : undefined;
 
   return (
     <BaseDialog
@@ -33,13 +28,13 @@ export const EarlyAccessDialog = ({
       onClose={closeDialog}
       footer={
         isAuthEnabled ? (
-          <div className="flex gap-3 justify-end px-4 py-3 border-t border-gray-200">
+          <div className="flex gap-3 justify-end px-4 py-3 border-t">
             <Button variant="default" onClick={closeDialog}>
               {translate("dialog.cancel")}
             </Button>
-            <ClerkSignInButton
-              signUpForceRedirectUrl={redirectUrl}
-              forceRedirectUrl={redirectUrl}
+            <SignInButton
+              signUpForceRedirectUrl={afterSignupUrl}
+              forceRedirectUrl={afterSignupUrl}
             >
               <Button
                 variant="primary"
@@ -52,7 +47,7 @@ export const EarlyAccessDialog = ({
               >
                 {translate("earlyAccessDialog.getAccess")}
               </Button>
-            </ClerkSignInButton>
+            </SignInButton>
           </div>
         ) : (
           <SimpleDialogActions onClose={closeDialog} />
@@ -60,7 +55,7 @@ export const EarlyAccessDialog = ({
       }
     >
       <div className="p-4">
-        <p className="text-sm text-gray">
+        <p className="text-size-base text-gray">
           {translate("earlyAccessDialog.description")}
         </p>
       </div>

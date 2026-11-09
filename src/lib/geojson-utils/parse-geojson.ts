@@ -1,13 +1,13 @@
 import { Feature, FeatureCollection } from "geojson";
-import type { Proj4Projection } from "src/lib/projections";
+import type { Proj4Projection } from "@epanet-js/projections";
 import {
   extractEPSGFromGeoJSON,
   findProjectionByCode,
   convertGeoJsonToWGS84,
   isLikelyLatLng,
-} from "./coordinate-transform";
+} from "@epanet-js/projections";
 
-type GeoJsonValidationErrorCode =
+export type GeoJsonValidationErrorCode =
   | "invalid-projection"
   | "coordinates-missing"
   | "geometry-collection-not-supported"

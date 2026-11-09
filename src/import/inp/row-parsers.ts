@@ -1,18 +1,28 @@
 import {
-  EpanetUnitSystem,
   defaultAccuracy,
   defaultUnbalanced,
   defaultCustomersPatternId,
 } from "src/simulation/build-inp";
+import {
+  EpanetUnitSystem,
+  epanetUnitSystems,
+} from "@epanet-js/project-settings";
 import { InpData, TankData } from "./inp-data";
 import { IssuesAccumulator } from "./issues";
 import { HeadlossFormula } from "src/hydraulic-model";
-import { CurveType } from "src/hydraulic-model/curves";
-import { PatternType } from "src/hydraulic-model/patterns";
-import { ValveKind, valveKinds } from "src/hydraulic-model/asset-types/valve";
-import { PipeStatus } from "src/hydraulic-model/asset-types/pipe";
-import { tankMixingModels } from "src/hydraulic-model/asset-types/tank";
+import {
+  CurveType,
+  PatternType,
+  ValveKind,
+  valveKinds,
+  PipeStatus,
+  tankMixingModels,
+  ChemicalSourceType,
+  chemicalSourceTypes,
+  headlossFormulas,
+} from "@epanet-js/hydraulic-model";
 import { ParseInpOptions } from "./parse-inp";
+import type { Position } from "geojson";
 
 export type RowParser = (params: {
   sectionName: string;
@@ -53,9 +63,11 @@ const epanetDefaultOptions = {
   FLOWCHANGE: 0,
 };
 
+const defaultUnitSystem: EpanetUnitSystem = "LPS";
+
 const defaultOptions = {
   ...epanetDefaultOptions,
-  UNITS: "LPS",
+  UNITS: defaultUnitSystem,
   ACCURACY: defaultAccuracy,
   UNBALANCED: defaultUnbalanced,
 };
@@ -65,6 +77,9 @@ const parseOptionalFloat = (input: string | undefined): number | undefined => {
   const parsed = parseFloat(input);
   return Number.isNaN(parsed) ? undefined : parsed;
 };
+
+const isFinitePosition = (position: Position): boolean =>
+  Number.isFinite(position[0]) && Number.isFinite(position[1]);
 
 export const ignore: RowParser = () => {};
 
@@ -91,18 +106,17 @@ export const parseSource: RowParser = ({ trimmedRow, inpData }) => {
     inpData.sourcePatterns.add(patternId);
   }
 
-  const upperType = type?.toUpperCase();
-  const validTypes = ["CONCEN", "MASS", "FLOWPACED", "SETPOINT"] as const;
+  const lowerType = type?.toLowerCase();
   if (
     !nodeId ||
-    !upperType ||
-    !validTypes.includes(upperType as (typeof validTypes)[number])
+    !lowerType ||
+    !(chemicalSourceTypes as readonly string[]).includes(lowerType)
   ) {
     return;
   }
 
   inpData.sources.set(nodeId, {
-    type: upperType as (typeof validTypes)[number],
+    type: lowerType as ChemicalSourceType,
     strength: parseFloat(strength) || 0,
     patternId: patternId || undefined,
   });
@@ -331,10 +345,12 @@ export const parseValve: RowParser = ({
     curveId,
   ] = readValues(trimmedRow);
 
-  const rawKind = type.toLowerCase();
-  const isValidKind = (valveKinds as readonly string[]).includes(rawKind);
+  const rawKind = type?.toLowerCase();
+  const isValidKind =
+    rawKind !== undefined &&
+    (valveKinds as readonly string[]).includes(rawKind);
   if (!isValidKind) {
-    issues.addInvalidValveKind(id, type);
+    issues.addInvalidValveKind(id, type ?? "");
   }
   const kind: ValveKind = isValidKind ? (rawKind as ValveKind) : "tcv";
 
@@ -410,7 +426,11 @@ export const parseCurve: RowParser = ({
   const normalizedLabel = curveId.toUpperCase();
   const existing = inpData.curves.get(normalizedLabel);
   const points = existing?.points || [];
-  points.push({ x: parseFloat(x), y: parseFloat(y) });
+  const parsedX = parseFloat(x);
+  const parsedY = parseFloat(y);
+  if (Number.isFinite(parsedX) && Number.isFinite(parsedY)) {
+    points.push({ x: parsedX, y: parsedY });
+  }
   const fallbackType = existing
     ? existing.fallbackType
     : detectCurveTypeFromComment(previousComment);
@@ -512,9 +532,13 @@ export const parseDemand: RowParser = ({ trimmedRow, inpData }) => {
   inpData.demands.set(nodeId, demands);
 };
 
-export const parsePosition: RowParser = ({ trimmedRow, inpData }) => {
+export const parsePosition: RowParser = ({ trimmedRow, inpData, issues }) => {
   const [nodeId, lng, lat] = readValues(trimmedRow);
-  inpData.coordinates.set(nodeId, [parseFloat(lng), parseFloat(lat)]);
+  const position: Position = [parseFloat(lng), parseFloat(lat)];
+  if (!isFinitePosition(position)) {
+    issues.addMalformedCoordinates(nodeId);
+  }
+  inpData.coordinates.set(nodeId, position);
 };
 
 export const parsePattern: RowParser = ({
@@ -526,7 +550,9 @@ export const parsePattern: RowParser = ({
   const normalizedLabel = patternId.toUpperCase();
   const existing = inpData.patterns.get(normalizedLabel);
   const multipliers = existing?.multipliers || [];
-  multipliers.push(...values.map((v) => parseFloat(v)));
+  multipliers.push(
+    ...values.map((v) => parseFloat(v)).filter((n) => Number.isFinite(n)),
+  );
   const fallbackType = existing
     ? existing.fallbackType
     : detectPatternTypeFromComment(previousComment);
@@ -537,10 +563,14 @@ export const parsePattern: RowParser = ({
   });
 };
 
-export const parseVertex: RowParser = ({ trimmedRow, inpData }) => {
+export const parseVertex: RowParser = ({ trimmedRow, inpData, issues }) => {
   const [linkId, lng, lat] = readValues(trimmedRow);
+  const position: Position = [parseFloat(lng), parseFloat(lat)];
+  if (!isFinitePosition(position)) {
+    issues.addMalformedVertices(linkId);
+  }
   const vertices = inpData.vertices.get(linkId) || [];
-  vertices.push([parseFloat(lng), parseFloat(lat)]);
+  vertices.push(position);
   inpData.vertices.set(linkId, vertices);
 };
 
@@ -715,12 +745,27 @@ export const parseOption: RowParser = ({
   const { name, value, defaultValue } = option;
 
   if (name === "UNITS") {
-    inpData.options.units = value as EpanetUnitSystem;
+    if (typeof value !== "string" || value === "") return;
+
+    if ((epanetUnitSystems as readonly string[]).includes(value)) {
+      inpData.options.units = value as EpanetUnitSystem;
+    } else {
+      inpData.options.units = defaultUnitSystem;
+      issues.addUsedOption(name, defaultUnitSystem);
+    }
     return;
   }
 
   if (name === "HEADLOSS") {
-    inpData.options.headlossFormula = value as HeadlossFormula;
+    if (
+      typeof value === "string" &&
+      (headlossFormulas as readonly string[]).includes(value)
+    ) {
+      inpData.options.headlossFormula = value as HeadlossFormula;
+    } else {
+      inpData.options.headlossFormula = "H-W";
+      issues.addUsedOption(name, "H-W");
+    }
     return;
   }
 

@@ -2,34 +2,66 @@ import { useCallback } from "react";
 import { useAtomCallback } from "jotai/utils";
 import type { Getter, Setter } from "jotai";
 import * as db from "src/lib/db";
-import { captureWarning } from "src/infra/error-tracking";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import type { HydraulicModel } from "src/hydraulic-model";
-import type { ModelFactories } from "src/hydraulic-model/factories";
-import type { ProjectSettings } from "src/lib/project-settings";
+import {
+  captureWarning,
+  setProjectFileContext,
+} from "src/infra/error-tracking";
+import {
+  type HydraulicModel,
+  initializeHydraulicModel,
+} from "src/hydraulic-model";
+import {
+  type ModelFactories,
+  initializeModelFactories,
+  LabelManager,
+} from "@epanet-js/hydraulic-model";
+import { buildIdPools } from "src/lib/id-pools";
+import {
+  type ProjectSettings,
+  defaultProjectSettings,
+} from "@epanet-js/project-settings";
+import { defaultSimulationSettings } from "src/simulation/simulation-settings";
+import { inpFileInfoAtom, projectFileInfoAtom } from "src/state/file-system";
 import type { SimulationSettings } from "src/simulation/simulation-settings";
 import { OPFSStorage } from "src/infra/storage";
 import { getAppId } from "src/infra/app-instance";
-import { MomentLog } from "src/lib/persistence/moment-log";
-import { initializeWorktree } from "src/lib/worktree";
+import { SessionHistory } from "src/lib/persistence/session-history";
+import { MapEditionsTracker } from "src/map/map-editions-tracker";
+import { writeQueue } from "src/lib/persistence/write-queue";
+import {
+  dbAvailabilityAtom,
+  rebuildAttemptsAtom,
+  writesSucceededAtRebuildAtom,
+  opfsReinstallFailedAtom,
+} from "src/state/session-recovery";
+import { initializeWorktree } from "@epanet-js/worktree";
 import { dialogAtom } from "src/state/dialog";
-import { stagingModelAtom, baseModelAtom } from "src/state/hydraulic-model";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import { projectSettingsAtom } from "src/state/project-settings";
-import { momentLogAtom } from "src/state/model-changes";
-import { simulationSettingsAtom } from "src/state/simulation-settings";
+import { resetProjectRevision } from "src/state/project-revision";
+import {
+  archivedNetworkReviewItemsAtom,
+  proximityDistanceAtom,
+  reviewResultsAtom,
+} from "src/state/network-review";
+import {
+  simulationDerivedAtom,
+  simulationSettingsDerivedAtom,
+  stagingModelDerivedAtom,
+} from "src/state/derived-branch-state";
+import { initialSimulationState } from "src/state/simulation";
 import { worktreeAtom } from "src/state/scenarios";
 import { splitsAtom, defaultSplits } from "src/state/layout";
-import { dataAtom, nullData } from "src/state/data";
-import { mapSyncMomentAtom } from "src/state/map";
+import { mapEditionsTrackerAtom } from "src/state/map";
 import {
   nodeSymbologyAtom,
   linkSymbologyAtom,
   savedSymbologiesAtom,
   propertyColorConfigAtom,
   defaultPropertyColorConfigs,
+  nodeSizeAtom,
 } from "src/state/map-symbology";
-import { nullSymbologySpec } from "src/map/symbology";
+import { nullSymbologySpec, defaultNodeSizeConfig } from "src/map/symbology";
 import { modeAtom, Mode } from "src/state/mode";
 import {
   ephemeralStateAtom,
@@ -37,7 +69,8 @@ import {
   autoElevationsAtom,
 } from "src/state/drawing";
 import { selectionAtom } from "src/state/selection";
-import { branchStateAtom } from "src/state/branch-state";
+import { USelection } from "src/selection";
+import { branchStateAtom, type BranchState } from "src/state/branch-state";
 import {
   sourceRebuildDurationsAtom,
   resultsFetchDurationsAtom,
@@ -46,48 +79,106 @@ import {
   initialPlaybackState,
   simulationPlaybackAtom,
 } from "src/state/simulation-playback";
+import {
+  bookmarksAtom,
+  selectionSetGroupsAtom,
+  selectionSetsAtom,
+} from "src/state/collections";
+import {
+  type Bookmark,
+  type SelectionSet,
+  type SelectionSetGroup,
+  initializeBookmarks,
+  initializeSelectionSetGroups,
+  initializeSelectionSets,
+} from "src/lib/collections";
+import { hglProfileAtom } from "src/state/hgl-profile";
+import {
+  scriptDraftAtom,
+  userScriptsAtom,
+  type UserScript,
+} from "src/state/scripts";
+import { resetPanelsAtom } from "src/state/panels";
+import type { Panel } from "src/panels/panel";
+import { useDefaultPanels } from "src/panels/use-default-panels";
+import { contentViewAtom } from "src/state/content-view";
 
 export type ProjectLoadInput = {
   hydraulicModel: HydraulicModel;
   factories: ModelFactories;
   projectSettings: ProjectSettings;
+  selectionSetGroups?: SelectionSetGroup[];
+  selectionSets?: SelectionSet[];
+  bookmarks?: Bookmark[];
+  scripts?: UserScript[];
   simulationSettings: SimulationSettings;
   autoElevations?: boolean;
 };
 
-export const resetAppState = (set: Setter) => {
+export const resetAppState = (set: Setter, panels: Panel[]) => {
   set(splitsAtom, defaultSplits);
-  set(dataAtom, nullData);
-  set(mapSyncMomentAtom, { pointer: -1, version: 0 });
+  set(selectionAtom, USelection.none());
+  set(mapEditionsTrackerAtom, new MapEditionsTracker());
   set(nodeSymbologyAtom, nullSymbologySpec.node);
   set(linkSymbologyAtom, nullSymbologySpec.link);
   set(savedSymbologiesAtom, new Map());
   set(propertyColorConfigAtom, defaultPropertyColorConfigs);
+  set(nodeSizeAtom, defaultNodeSizeConfig);
   set(modeAtom, { mode: Mode.NONE });
+  set(hglProfileAtom, null);
+  set(resetPanelsAtom, panels);
   set(ephemeralStateAtom, { type: "none" });
-  set(selectionAtom, { type: "none" });
   set(pipeDrawingDefaultsAtom, {});
   set(autoElevationsAtom, true);
   set(sourceRebuildDurationsAtom, []);
   set(resultsFetchDurationsAtom, []);
   set(simulationPlaybackAtom, initialPlaybackState);
+  set(selectionSetGroupsAtom, initializeSelectionSetGroups());
+  set(selectionSetsAtom, initializeSelectionSets());
+  set(bookmarksAtom, initializeBookmarks());
+  set(userScriptsAtom, []);
+  set(scriptDraftAtom, null);
+  set(reviewResultsAtom, {});
+  set(archivedNetworkReviewItemsAtom, {});
+  set(proximityDistanceAtom, null);
 };
+
+export const buildMainBranchState = ({
+  hydraulicModel,
+  factories,
+  simulationSettings,
+}: ProjectLoadInput): BranchState => ({
+  version: hydraulicModel.version,
+  hydraulicModel,
+  labelManager: factories.labelManager,
+  sessionHistory: new SessionHistory(hydraulicModel.version),
+  simulation: null,
+  simulationSourceId: "main",
+  simulationSettings,
+});
 
 export const loadModel = (
   set: Setter,
   input: ProjectLoadInput,
 ): ProjectSettings => {
   const {
-    hydraulicModel,
     factories,
     projectSettings,
+    selectionSetGroups,
+    selectionSets,
+    bookmarks,
+    scripts,
     simulationSettings,
     autoElevations,
   } = input;
-  const momentLog = new MomentLog(hydraulicModel.version);
 
-  set(stagingModelAtom, hydraulicModel);
-  set(baseModelAtom, hydraulicModel);
+  writeQueue.reset();
+  set(contentViewAtom, null);
+  set(dbAvailabilityAtom, "available");
+  set(rebuildAttemptsAtom, 0);
+  set(writesSucceededAtRebuildAtom, 0);
+  set(opfsReinstallFailedAtom, false);
+
   set(modelFactoriesAtom, factories);
   const mergedProjectSettings: ProjectSettings = {
     ...projectSettings,
@@ -97,32 +188,22 @@ export const loadModel = (
     },
   };
   set(projectSettingsAtom, mergedProjectSettings);
-  set(momentLogAtom, momentLog);
-  set(simulationSettingsAtom, simulationSettings);
+  set(
+    selectionSetGroupsAtom,
+    selectionSetGroups ?? initializeSelectionSetGroups(),
+  );
+  set(selectionSetsAtom, selectionSets ?? initializeSelectionSets());
+  set(bookmarksAtom, bookmarks ?? initializeBookmarks());
+  set(userScriptsAtom, scripts ?? []);
   if (autoElevations !== undefined) {
     set(autoElevationsAtom, autoElevations);
   }
 
-  set(worktreeAtom, initializeWorktree());
-
-  set(
-    branchStateAtom,
-    new Map([
-      [
-        "main",
-        {
-          version: hydraulicModel.version,
-          hydraulicModel,
-          labelManager: factories.labelManager,
-          momentLog,
-          simulation: null,
-          simulationSourceId: "main",
-          simulationSettings,
-          simulationResults: null,
-        },
-      ],
-    ]),
-  );
+  const worktree = initializeWorktree();
+  const branchStates = new Map([["main", buildMainBranchState(input)]]);
+  set(worktreeAtom, worktree);
+  set(branchStateAtom, branchStates);
+  resetProjectRevision(set, worktree, branchStates);
 
   return mergedProjectSettings;
 };
@@ -132,51 +213,168 @@ export const clearSimulationStorage = async () => {
   await storage.clear();
 };
 
-export const useStartNewProject = () => {
-  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
+let isDatabaseBusy = false;
 
+export const withDatabaseBusy = async <T>(
+  run: () => Promise<T>,
+): Promise<T | null> => {
+  if (isDatabaseBusy) return null;
+  isDatabaseBusy = true;
+  try {
+    return await run();
+  } finally {
+    isDatabaseBusy = false;
+  }
+};
+
+const replaceProject = async (
+  set: Setter,
+  panels: Panel[],
+  input: ProjectLoadInput,
+) => {
+  set(simulationDerivedAtom, initialSimulationState);
+  setProjectFileContext({ isTampered: false });
+  await clearSimulationStorage();
+  const mergedProjectSettings: ProjectSettings = {
+    ...input.projectSettings,
+    ...{ uniqueId: db.newUniqueId() },
+    units: {
+      ...input.projectSettings.units,
+      chemicalConcentration: input.simulationSettings.qualityMassUnit,
+    },
+  };
+  await db.importProject({
+    newDb: true,
+    projectSettings: mergedProjectSettings,
+    hydraulicModel: input.hydraulicModel,
+    simulationSettings: input.simulationSettings,
+    selectionSetGroups: input.selectionSetGroups,
+    selectionSets: input.selectionSets,
+    bookmarks: input.bookmarks,
+    scripts: input.scripts,
+  });
+  resetAppState(set, panels);
+  loadModel(set, { ...input, projectSettings: mergedProjectSettings });
+};
+
+const buildBlankProject = ({
+  projectSettings = defaultProjectSettings,
+  autoElevations,
+}: BlankProjectOptions): ProjectLoadInput => {
+  const idPools = buildIdPools();
+  const factories = initializeModelFactories({
+    idPools,
+    labelManager: new LabelManager(),
+  });
+  const hydraulicModel = initializeHydraulicModel({
+    idGenerator: factories.idGenerator,
+  });
+  return {
+    hydraulicModel,
+    factories,
+    projectSettings,
+    simulationSettings: defaultSimulationSettings,
+    autoElevations,
+  };
+};
+
+type BlankProjectOptions = {
+  projectSettings?: ProjectSettings;
+  autoElevations?: boolean;
+};
+
+export const useStartNewProject = () => {
+  const defaultPanelsFor = useDefaultPanels();
   const startNewProject = useAtomCallback(
     useCallback(
-      async (_get: Getter, set: Setter, input: ProjectLoadInput) => {
-        await clearSimulationStorage();
-        if (isOurFileOn) {
-          const mergedProjectSettings: ProjectSettings = {
-            ...input.projectSettings,
-            units: {
-              ...input.projectSettings.units,
-              chemicalConcentration: input.simulationSettings.qualityMassUnit,
-            },
-          };
-          await db.importProject({
-            newDb: true,
-            projectSettings: mergedProjectSettings,
-            hydraulicModel: input.hydraulicModel,
-            simulationSettings: input.simulationSettings,
-          });
-        }
-        resetAppState(set);
-        loadModel(set, input);
+      async (
+        _get: Getter,
+        set: Setter,
+        input: ProjectLoadInput,
+      ): Promise<boolean> => {
+        const started = await withDatabaseBusy(async () => {
+          await replaceProject(set, defaultPanelsFor(), input);
+          return true;
+        });
+
+        return started ?? false;
       },
-      [isOurFileOn],
+      [defaultPanelsFor],
     ),
   );
 
   return { startNewProject };
 };
 
-export const useSeedDefaultProjectDb = () => {
-  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
-
+export const useClearProject = () => {
+  const defaultPanelsFor = useDefaultPanels();
   return useAtomCallback(
     useCallback(
-      (get: Getter, set: Setter) => {
-        if (!isOurFileOn) return;
-        void db
+      async (
+        _get: Getter,
+        set: Setter,
+        options: BlankProjectOptions = {},
+      ): Promise<void> => {
+        await replaceProject(
+          set,
+          defaultPanelsFor(),
+          buildBlankProject(options),
+        );
+        set(inpFileInfoAtom, null);
+        set(projectFileInfoAtom, null);
+      },
+      [defaultPanelsFor],
+    ),
+  );
+};
+
+export const useStartBlankProject = () => {
+  const clearProject = useClearProject();
+  return useCallback(
+    async (options: BlankProjectOptions = {}): Promise<boolean> => {
+      const started = await withDatabaseBusy(async () => {
+        await clearProject(options);
+        return true;
+      });
+      return started ?? false;
+    },
+    [clearProject],
+  );
+};
+
+const withIdPools = (factories: ModelFactories): ModelFactories =>
+  initializeModelFactories({
+    idPools: buildIdPools(),
+    labelManager: factories.labelManager,
+    labelCounters: factories.labelCounters,
+  });
+
+export const useSeedDefaultProjectDb = () => {
+  const defaultPanelsFor = useDefaultPanels();
+  return useAtomCallback(
+    useCallback(
+      (get: Getter, set: Setter): Promise<void> => {
+        const projectSettings: ProjectSettings = {
+          ...get(projectSettingsAtom),
+          ...{ uniqueId: db.newUniqueId() },
+        };
+        const hydraulicModel = get(stagingModelDerivedAtom);
+        const simulationSettings = get(simulationSettingsDerivedAtom);
+
+        resetAppState(set, defaultPanelsFor());
+        loadModel(set, {
+          hydraulicModel,
+          factories: withIdPools(get(modelFactoriesAtom)),
+          projectSettings,
+          simulationSettings,
+        });
+
+        return db
           .importProject({
             newDb: true,
-            projectSettings: get(projectSettingsAtom),
-            hydraulicModel: get(stagingModelAtom),
-            simulationSettings: get(simulationSettingsAtom),
+            projectSettings,
+            hydraulicModel,
+            simulationSettings,
           })
           .catch((e: unknown) => {
             const error = e instanceof Error ? e : new Error(String(e));
@@ -187,7 +385,7 @@ export const useSeedDefaultProjectDb = () => {
             });
           });
       },
-      [isOurFileOn],
+      [defaultPanelsFor],
     ),
   );
 };

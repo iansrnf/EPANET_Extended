@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Table, flexRender, Header } from "@tanstack/react-table";
 import * as DD from "@radix-ui/react-dropdown-menu";
 import clsx from "clsx";
+import { Tooltip } from "@epanet-js/ui-kit";
 import {
   MoreActionsIcon,
   SortAscendingIcon,
@@ -11,6 +12,9 @@ import {
 import { Button, DDContent, StyledItem } from "src/components/elements";
 import { useTranslate } from "src/hooks/use-translate";
 import { DataGridVariant } from "../types";
+import { resolveVisibleHeaderActions } from "../features";
+import { FIXED_COLUMN_SIZE } from "./dimensions";
+import { useGridBusy } from "./grid-busy";
 
 type GridHeaderProps<T> = {
   showGutterColumn: boolean;
@@ -56,36 +60,30 @@ export function GridHeader<T>({
   return (
     <div
       role="row"
-      className={clsx(
-        "flex shrink-0 min-w-full w-max",
-        "border border-transparent",
-        className,
-        {
-          "bg-gray-100 border-t-gray-200 border-x-gray-200":
-            variant === "spreadsheet",
-          "bg-gray-50": variant === "inline",
-        },
-      )}
+      className={clsx("flex shrink-0 min-w-full w-max bg-panel", className)}
       style={style}
     >
       {showGutterColumn && (
         <div
           role="columnheader"
           className={clsx(
-            "relative flex items-center justify-center font-semibold text-sm shrink-0 cursor-pointer select-none h-8 sticky left-0 z-10",
+            "relative flex items-center justify-center font-semibold text-size-base shrink-0 cursor-pointer select-none h-8 sticky left-0 z-10",
             "border border-transparent w-8",
-            "text-gray-600",
-            variant === "spreadsheet" ? "bg-gray-100" : "bg-gray-50",
+            "text-subtle",
+            "bg-panel",
           )}
           onClick={onSelectAll}
         >
           <TableSelectAllIcon className="absolute bottom-1 right-1" />
         </div>
       )}
-      {table
-        .getHeaderGroups()
-        .map((headerGroup) =>
-          headerGroup.headers.map((header, colIndex) => (
+      {table.getHeaderGroups().map((headerGroup) => {
+        let pinnedLeftCursor = showGutterColumn ? FIXED_COLUMN_SIZE : 0;
+        return headerGroup.headers.map((header, colIndex) => {
+          const isPinnedLeft = header.column.getIsPinned() === "left";
+          const pinnedLeftOffset = isPinnedLeft ? pinnedLeftCursor : undefined;
+          if (isPinnedLeft) pinnedLeftCursor += header.getSize();
+          return (
             <HeaderCell
               key={header.id}
               header={header}
@@ -94,9 +92,11 @@ export function GridHeader<T>({
               onColumnHeaderClick={onColumnHeaderClick}
               translate={translate}
               onColumnSort={onColumnSort}
+              pinnedLeftOffset={pinnedLeftOffset}
             />
-          )),
-        )}
+          );
+        });
+      })}
       {showActionsColumn && (
         <div
           role="columnheader"
@@ -119,6 +119,7 @@ function HeaderCell<T>({
   onColumnHeaderClick,
   translate,
   onColumnSort,
+  pinnedLeftOffset,
 }: {
   header: Header<T, unknown>;
   colIndex: number;
@@ -126,26 +127,48 @@ function HeaderCell<T>({
   onColumnHeaderClick: (colIndex: number, e: React.MouseEvent) => void;
   translate: (key: string) => string;
   onColumnSort?: (columnId: string, direction: "asc" | "desc") => void;
+  pinnedLeftOffset?: number;
 }) {
   const cellRef = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { runBusy } = useGridBusy();
   const hasActions = header.column.getCanSort();
   const sortDirection = header.column.getIsSorted();
-  const showActionsMenu = (isHovered || isMenuOpen) && hasActions;
+  const customHeaderActions = header.column.getCustomHeaderActions?.();
+  const visibleCustomActions = resolveVisibleHeaderActions(
+    customHeaderActions,
+    isHovered,
+  );
+  const hasCustomActions = visibleCustomActions.length > 0;
+  const showActionsMenu =
+    !hasCustomActions && (isHovered || isMenuOpen) && hasActions;
+  // Mirror the pinned-left treatment from grid-data-cell so the header
+  // sticks at the same offset as its column.
+  const isPinnedLeft = header.column.getIsPinned() === "left";
 
   return (
     <div
       ref={cellRef}
       role="columnheader"
       className={clsx(
-        "group relative flex items-center px-2 font-semibold text-sm cursor-pointer select-none h-8 border border-transparent overflow-visible",
+        "group relative flex items-center px-2 font-semibold text-size-base cursor-pointer select-none h-8 border border-transparent overflow-visible",
         { grow: !header.column.getCanResize() },
-        isSelected ? "bg-purple-500 text-white" : "text-gray-600",
+        isPinnedLeft && "sticky z-5",
+        !isSelected && "bg-panel",
+        isSelected ? "bg-accent text-white" : "text-subtle",
       )}
       style={{
         width: header.getSize(),
         minWidth: header.getSize(),
+        ...(isPinnedLeft
+          ? {
+              left: pinnedLeftOffset ?? 0,
+              ...(isSelected
+                ? undefined
+                : { borderRightColor: "var(--color-border)" }),
+            }
+          : undefined),
       }}
       onClick={(e) => onColumnHeaderClick(colIndex, e)}
       onMouseEnter={() => setIsHovered(true)}
@@ -154,7 +177,7 @@ function HeaderCell<T>({
       <span className="truncate">
         {flexRender(header.column.columnDef.header, header.getContext())}
       </span>
-      {sortDirection && !showActionsMenu && (
+      {sortDirection && !showActionsMenu && !hasCustomActions && (
         <span className="ml-auto shrink-0 -mr-1 h-6 w-6 flex items-center justify-center">
           {sortDirection === "asc" ? (
             <SortAscendingIcon size="md" />
@@ -163,16 +186,52 @@ function HeaderCell<T>({
           )}
         </span>
       )}
+      {hasCustomActions && (
+        <span className="ml-auto shrink-0 -mr-1 flex items-center">
+          {visibleCustomActions.map((action, idx) => {
+            const button = (
+              <button
+                type="button"
+                aria-label={action.ariaLabel}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  action.onClick();
+                }}
+                className={clsx(
+                  "h-6 w-6 flex items-center justify-center rounded-xs",
+                  isSelected
+                    ? "text-white hover:bg-white/20"
+                    : "text-gray-600 hover:bg-gray-200",
+                )}
+              >
+                {action.icon}
+              </button>
+            );
+            return action.tooltip ? (
+              <Tooltip key={idx} content={action.tooltip} side="top">
+                {button}
+              </Tooltip>
+            ) : (
+              <span key={idx}>{button}</span>
+            );
+          })}
+        </span>
+      )}
       {showActionsMenu && (
         <HeaderActionsButton
-          onSortAscending={() => {
-            header.column.toggleSorting(false);
-            onColumnSort?.(header.column.id, "asc");
-          }}
-          onSortDescending={() => {
-            header.column.toggleSorting(true);
-            onColumnSort?.(header.column.id, "desc");
-          }}
+          onSortAscending={() =>
+            runBusy(() => {
+              header.column.toggleSorting(false);
+              onColumnSort?.(header.column.id, "asc");
+            })
+          }
+          onSortDescending={() =>
+            runBusy(() => {
+              header.column.toggleSorting(true);
+              onColumnSort?.(header.column.id, "desc");
+            })
+          }
           onOpenChange={(open) => {
             setIsMenuOpen(open);
             if (!open) {
@@ -219,7 +278,7 @@ function ColumnResizer({
       className={clsx(
         "absolute right-[-3px] top-0 h-full w-1 cursor-col-resize select-none touch-none z-10",
         isResizing
-          ? "bg-purple-500"
+          ? "bg-accent"
           : "bg-gray-300 opacity-0 group-hover:opacity-100",
       )}
     />
@@ -250,7 +309,7 @@ function HeaderActionsButton({
             "ml-auto -mr-1 h-6 w-6 shrink-0",
             isSelected
               ? "text-white hover:bg-white/20 data-[state=open]:bg-white/20"
-              : "hover:bg-gray-200",
+              : "hover:bg-base-hover",
           )}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}

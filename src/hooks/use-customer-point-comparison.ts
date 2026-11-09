@@ -1,12 +1,13 @@
 import { useAtomValue } from "jotai";
+import isEqual from "lodash/isEqual";
 import { worktreeAtom } from "src/state/scenarios";
 import { baseModelDerivedAtom } from "src/state/derived-branch-state";
 import type { PropertyComparison } from "./use-asset-comparison";
-import type { CustomerPointId } from "src/hydraulic-model/customer-points";
+import { type CustomerPointId } from "@epanet-js/hydraulic-model";
 import {
   calculateAverageDemand,
   getCustomerPointDemands,
-} from "src/hydraulic-model/demands";
+} from "@epanet-js/hydraulic-model";
 
 export function useCustomerPointComparison(
   customerPointId: CustomerPointId | undefined,
@@ -19,6 +20,25 @@ export function useCustomerPointComparison(
     isInScenario &&
     customerPointId != null &&
     !baseModel.customerPoints.has(customerPointId);
+
+  const getComparison = <T>(
+    propertyName: string,
+    currentValue: T,
+  ): PropertyComparison<T> => {
+    if (!isInScenario || customerPointId == null || isNew) {
+      return { hasChanged: false };
+    }
+
+    const baseCustomerPoint = baseModel.customerPoints.get(customerPointId);
+    if (!baseCustomerPoint) {
+      return { hasChanged: false };
+    }
+
+    const baseValue = baseCustomerPoint.getProperty(propertyName) as T;
+    const hasChanged = !isEqual(currentValue ?? null, baseValue ?? null);
+
+    return { hasChanged, baseValue };
+  };
 
   const getDemandComparison = (
     currentAverageDemand: number,
@@ -36,5 +56,5 @@ export function useCustomerPointComparison(
     };
   };
 
-  return { isInScenario, isNew, getDemandComparison };
+  return { isInScenario, isNew, getComparison, getDemandComparison };
 }

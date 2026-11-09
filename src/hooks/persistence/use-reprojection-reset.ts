@@ -1,27 +1,29 @@
 import { useCallback } from "react";
 import { useAtomCallback } from "jotai/utils";
 import type { Getter, Setter } from "jotai";
+import { nanoid } from "nanoid";
 import * as db from "src/lib/db";
-import { captureError } from "src/infra/error-tracking";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { handleError } from "src/infra/errors";
 import type { HydraulicModel } from "src/hydraulic-model";
-import type { ProjectSettings } from "src/lib/project-settings";
-import { mapSyncMomentAtom } from "src/state/map";
+import type { ProjectSettings } from "@epanet-js/project-settings";
+import { mapEditionsTrackerAtom } from "src/state/map";
 import { initialSimulationState } from "src/state/simulation";
 import {
   stagingModelDerivedAtom,
-  momentLogDerivedAtom,
+  sessionHistoryDerivedAtom,
   simulationDerivedAtom,
+  simulationSettingsDerivedAtom,
 } from "src/state/derived-branch-state";
 import { selectionAtom } from "src/state/selection";
+import { USelection } from "src/selection";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { modeAtom, Mode } from "src/state/mode";
 import { ephemeralStateAtom, autoElevationsAtom } from "src/state/drawing";
-import { simulationSettingsAtom } from "src/state/simulation-settings";
-import { OPFSStorage } from "src/infra/storage";
+import { OPFSStorage, opfsUnavailableErrors } from "src/infra/storage";
 import { getAppId } from "src/infra/app-instance";
-import { MomentLog } from "src/lib/persistence/moment-log";
-import { initializeWorktree } from "src/lib/worktree";
+import { SessionHistory } from "src/lib/persistence/session-history";
+import { MapEditionsTracker } from "src/map/map-editions-tracker";
+import { initializeWorktree } from "@epanet-js/worktree";
 import { worktreeAtom } from "src/state/scenarios";
 
 type ReprojectionResetInput = {
@@ -31,11 +33,11 @@ type ReprojectionResetInput = {
 };
 
 const resetAppState = (set: Setter) => {
-  set(mapSyncMomentAtom, { pointer: -1, version: 0 });
+  set(mapEditionsTrackerAtom, new MapEditionsTracker());
   set(simulationDerivedAtom, initialSimulationState);
   set(modeAtom, { mode: Mode.NONE });
   set(ephemeralStateAtom, { type: "none" });
-  set(selectionAtom, { type: "none" });
+  set(selectionAtom, USelection.none());
 };
 
 const clearSimulationStorage = async () => {
@@ -47,22 +49,26 @@ const loadModel = (
   get: Getter,
   set: Setter,
   { hydraulicModel, projectSettings, autoElevations }: ReprojectionResetInput,
-  isOurFileOn: boolean,
 ) => {
-  const momentLog = new MomentLog(hydraulicModel.version);
+  const reprojectedModel = { ...hydraulicModel, version: nanoid() };
+  const sessionHistory = new SessionHistory(reprojectedModel.version);
 
-  set(stagingModelDerivedAtom, hydraulicModel);
+  set(stagingModelDerivedAtom, reprojectedModel);
   set(projectSettingsAtom, projectSettings);
-  if (isOurFileOn) {
-    void db
-      .importProject({
-        projectSettings,
-        hydraulicModel,
-        simulationSettings: get(simulationSettingsAtom),
-      })
-      .catch(captureError);
-  }
-  set(momentLogDerivedAtom, momentLog);
+  void db
+    .importProject({
+      projectSettings,
+      hydraulicModel: reprojectedModel,
+      simulationSettings: get(simulationSettingsDerivedAtom),
+    })
+    .catch((error) =>
+      handleError(error, {
+        as: "Reprojection reset: project import failed",
+        warn: opfsUnavailableErrors,
+        onUnexpected: "capture",
+      }),
+    );
+  set(sessionHistoryDerivedAtom, sessionHistory);
   if (autoElevations !== undefined) {
     set(autoElevationsAtom, autoElevations);
   }
@@ -71,15 +77,14 @@ const loadModel = (
 };
 
 export const useReprojectionReset = () => {
-  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
   const reprojectionReset = useAtomCallback(
     useCallback(
       async (get: Getter, set: Setter, input: ReprojectionResetInput) => {
-        await clearSimulationStorage();
         resetAppState(set);
-        loadModel(get, set, input, isOurFileOn);
+        await clearSimulationStorage();
+        loadModel(get, set, input);
       },
-      [isOurFileOn],
+      [],
     ),
   );
 

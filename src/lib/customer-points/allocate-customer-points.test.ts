@@ -1,0 +1,1228 @@
+import { describe, it, expect } from "vitest";
+import { CustomerPointAllocationRule } from "@epanet-js/hydraulic-model";
+import { allocateCustomerPoints } from "./main";
+import {
+  HydraulicModelBuilder,
+  buildCustomerPoint,
+} from "@epanet-js/hydraulic-model-testing";
+import { CustomerPoints } from "@epanet-js/hydraulic-model";
+import { Zone } from "@epanet-js/hydraulic-model";
+
+const TURF_EARTH_RADIUS_IN_METERS = 6371008.8;
+const PIPE_LATITUDE = 29.7;
+const PIPE_WEST_LONGITUDE = -95.41;
+const PIPE_EAST_LONGITUDE = -95.39;
+
+const latitudeMetersNorth = (meters: number): number =>
+  PIPE_LATITUDE + (meters * 180) / (Math.PI * TURF_EARTH_RADIUS_IN_METERS);
+
+const aPipeAlongLatitude = (
+  IDS: { J1: number; J2: number; P1: number },
+  pipeData: { diameter?: number | null; isActive?: boolean } = {},
+) =>
+  HydraulicModelBuilder.with()
+    .aJunction(IDS.J1, { coordinates: [PIPE_WEST_LONGITUDE, PIPE_LATITUDE] })
+    .aJunction(IDS.J2, { coordinates: [PIPE_EAST_LONGITUDE, PIPE_LATITUDE] })
+    .aPipe(IDS.P1, {
+      startNodeId: IDS.J1,
+      endNodeId: IDS.J2,
+      diameter: 12,
+      coordinates: [
+        [PIPE_WEST_LONGITUDE, PIPE_LATITUDE],
+        [PIPE_EAST_LONGITUDE, PIPE_LATITUDE],
+      ],
+      ...pipeData,
+    })
+    .build();
+
+const aCustomerPointMetersFromPipe = (id: number, meters: number) =>
+  buildCustomerPoint(id, {
+    coordinates: [PIPE_WEST_LONGITUDE, latitudeMetersNorth(meters)],
+  });
+
+describe("allocateCustomerPoints", () => {
+  it("allocates customer points based on single rule", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4, CP2: 5 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, {
+          coordinates: [-95.4084, 29.7019],
+        }),
+      ],
+      [
+        IDS.CP2,
+        buildCustomerPoint(IDS.CP2, {
+          coordinates: [-95.4082, 29.7018],
+        }),
+      ],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(2);
+    expect(result.disconnectedCustomerPoints.size).toBe(0);
+    expect(result.ruleMatches).toEqual([2]);
+
+    const allocatedCP1 = result.allocatedCustomerPoints.get(IDS.CP1);
+    expect(allocatedCP1?.connection?.pipeId).toBe(IDS.P1);
+    expect(allocatedCP1?.connection?.junctionId).toBe(IDS.J1);
+  });
+
+  it("applies rules in order with first match wins", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 8,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 10 },
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(1);
+    expect(result.disconnectedCustomerPoints.size).toBe(0);
+    expect(result.ruleMatches).toEqual([1, 0]);
+  });
+
+  it("filters by maximum distance", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4, CP2: 5 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+      [IDS.CP2, buildCustomerPoint(IDS.CP2, { coordinates: [-95.4, 29.8] })],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(1);
+    expect(result.allocatedCustomerPoints.has(IDS.CP1)).toBe(true);
+    expect(result.allocatedCustomerPoints.has(IDS.CP2)).toBe(false);
+    expect(result.disconnectedCustomerPoints.size).toBe(1);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP2)).toBe(true);
+    expect(result.ruleMatches).toEqual([1]);
+  });
+
+  it("honours a maxDistance that is not a multiple of the search increment", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4, CP2: 5 } as const;
+    const hydraulicModel = aPipeAlongLatitude(IDS);
+
+    const customerPoints: CustomerPoints = new Map([
+      [IDS.CP1, aCustomerPointMetersFromPipe(IDS.CP1, 95)],
+      [IDS.CP2, aCustomerPointMetersFromPipe(IDS.CP2, 105)],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 100, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.has(IDS.CP1)).toBe(true);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP2)).toBe(true);
+    expect(result.ruleMatches).toEqual([1]);
+  });
+
+  it("honours a maxDistance smaller than the search increment", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4, CP2: 5 } as const;
+    const hydraulicModel = aPipeAlongLatitude(IDS);
+
+    const customerPoints: CustomerPoints = new Map([
+      [IDS.CP1, aCustomerPointMetersFromPipe(IDS.CP1, 10)],
+      [IDS.CP2, aCustomerPointMetersFromPipe(IDS.CP2, 25)],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 20, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.has(IDS.CP1)).toBe(true);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP2)).toBe(true);
+    expect(result.ruleMatches).toEqual([1]);
+  });
+
+  it("filters by maximum diameter", async () => {
+    const IDS = {
+      J1: 1,
+      J2: 2,
+      J3: 3,
+      J4: 4,
+      P1: 5,
+      P2: 6,
+      CP1: 7,
+      CP2: 8,
+    } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aJunction(IDS.J3, { coordinates: [-95.4089633, 29.710228] })
+      .aJunction(IDS.J4, { coordinates: [-95.4077939, 29.711706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 8,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .aPipe(IDS.P2, {
+        startNodeId: IDS.J3,
+        endNodeId: IDS.J4,
+        diameter: 16,
+        coordinates: [
+          [-95.4089633, 29.710228],
+          [-95.4077939, 29.711706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+      [
+        IDS.CP2,
+        buildCustomerPoint(IDS.CP2, { coordinates: [-95.4084, 29.7109] }),
+      ],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 10 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(1);
+    const allocatedCP1 = result.allocatedCustomerPoints.get(IDS.CP1);
+    expect(allocatedCP1?.connection?.pipeId).toBe(IDS.P1);
+    expect(result.allocatedCustomerPoints.has(IDS.CP2)).toBe(false);
+    expect(result.disconnectedCustomerPoints.size).toBe(1);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP2)).toBe(true);
+    expect(result.ruleMatches).toEqual([1]);
+  });
+
+  it("handles multiple rules with different constraints", async () => {
+    const IDS = {
+      J1: 1,
+      J2: 2,
+      J3: 3,
+      J4: 4,
+      P1: 5,
+      P2: 6,
+      CP1: 7,
+      CP2: 8,
+    } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aJunction(IDS.J3, { coordinates: [-95.4089633, 29.710228] })
+      .aJunction(IDS.J4, { coordinates: [-95.4077939, 29.711706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 8,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .aPipe(IDS.P2, {
+        startNodeId: IDS.J3,
+        endNodeId: IDS.J4,
+        diameter: 16,
+        coordinates: [
+          [-95.4089633, 29.710228],
+          [-95.4077939, 29.711706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+      [
+        IDS.CP2,
+        buildCustomerPoint(IDS.CP2, { coordinates: [-95.4084, 29.7109] }),
+      ],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 10 },
+      { maxDistance: 200, maxDiameter: 20 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(2);
+    expect(result.disconnectedCustomerPoints.size).toBe(0);
+    expect(result.ruleMatches).toEqual([1, 1]);
+
+    const allocatedCP1 = result.allocatedCustomerPoints.get(IDS.CP1);
+    const allocatedCP2 = result.allocatedCustomerPoints.get(IDS.CP2);
+    expect(allocatedCP1?.connection?.pipeId).toBe(IDS.P1);
+    expect(allocatedCP2?.connection?.pipeId).toBe(IDS.P2);
+  });
+
+  it("handles empty customer points", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map();
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(0);
+    expect(result.disconnectedCustomerPoints.size).toBe(0);
+    expect(result.ruleMatches).toEqual([0]);
+  });
+
+  it("handles no pipes in hydraulic model", async () => {
+    const IDS = { J1: 1, CP1: 2 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(0);
+    expect(result.disconnectedCustomerPoints.size).toBe(1);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP1)).toBe(true);
+    expect(result.ruleMatches).toEqual([0]);
+  });
+
+  it("handles customer points that match no rules", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 20,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 10 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(0);
+    expect(result.disconnectedCustomerPoints.size).toBe(1);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP1)).toBe(true);
+    expect(result.ruleMatches).toEqual([0]);
+  });
+
+  it("preserves immutability of input customer points", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .build();
+
+    const originalCustomerPoint = buildCustomerPoint(IDS.CP1, {
+      coordinates: [-95.4084, 29.7019],
+    });
+    const customerPoints: CustomerPoints = new Map([
+      [IDS.CP1, originalCustomerPoint],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(originalCustomerPoint.connection).toBeNull();
+  });
+
+  it("excludes tanks and reservoirs from junction assignment", async () => {
+    const IDS = { T1: 1, R1: 2, P1: 3, CP1: 4 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aTank(IDS.T1, { coordinates: [-95.4089633, 29.701228] })
+      .aReservoir(IDS.R1, { coordinates: [-95.4077939, 29.702706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.T1,
+        endNodeId: IDS.R1,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(0);
+    expect(result.disconnectedCustomerPoints.size).toBe(1);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP1)).toBe(true);
+    expect(result.ruleMatches).toEqual([0]);
+  });
+
+  it("allocates to a farther pipe when the closest one has no junctions", async () => {
+    const IDS = { T1: 1, R1: 2, J1: 3, J2: 4, P1: 5, P2: 6, CP1: 7 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aTank(IDS.T1, { coordinates: [-95.41, 29.7] })
+      .aReservoir(IDS.R1, { coordinates: [-95.39, 29.7] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.T1,
+        endNodeId: IDS.R1,
+        diameter: 12,
+        coordinates: [
+          [-95.41, 29.7],
+          [-95.39, 29.7],
+        ],
+      })
+      .aJunction(IDS.J1, { coordinates: [-95.41, latitudeMetersNorth(80)] })
+      .aJunction(IDS.J2, { coordinates: [-95.39, latitudeMetersNorth(80)] })
+      .aPipe(IDS.P2, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 12,
+        coordinates: [
+          [-95.41, latitudeMetersNorth(80)],
+          [-95.39, latitudeMetersNorth(80)],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [IDS.CP1, aCustomerPointMetersFromPipe(IDS.CP1, 20)],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 120, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    const allocatedCP1 = result.allocatedCustomerPoints.get(IDS.CP1);
+    expect(allocatedCP1?.connection?.pipeId).toBe(IDS.P2);
+    expect(allocatedCP1?.connection?.junctionId).toBe(IDS.J1);
+    expect(result.ruleMatches).toEqual([1]);
+  });
+
+  it("assigns to closest junction when pipe has multiple junctions", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4078, 29.7026] }),
+      ],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(1);
+    const allocatedCP1 = result.allocatedCustomerPoints.get(IDS.CP1);
+    expect(allocatedCP1?.connection?.junctionId).toBe(IDS.J2);
+  });
+
+  it("creates independent customer point copies", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .build();
+
+    const originalCustomerPoint = buildCustomerPoint(IDS.CP1, {
+      coordinates: [-95.4084, 29.7019],
+    });
+    const customerPoints: CustomerPoints = new Map([
+      [IDS.CP1, originalCustomerPoint],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    const allocatedCP1 = result.allocatedCustomerPoints.get(IDS.CP1);
+    expect(allocatedCP1).not.toBe(originalCustomerPoint);
+    expect(allocatedCP1?.id).toBe(originalCustomerPoint.id);
+  });
+
+  it("creates independent copies for disconnected customer points", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 8,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .build();
+
+    const originalCustomerPoint = buildCustomerPoint(IDS.CP1, {
+      coordinates: [-95.4084, 29.7019],
+    });
+    const customerPoints: CustomerPoints = new Map([
+      [IDS.CP1, originalCustomerPoint],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 6 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(0);
+    expect(result.disconnectedCustomerPoints.size).toBe(1);
+
+    const disconnectedCP1 = result.disconnectedCustomerPoints.get(IDS.CP1);
+    expect(disconnectedCP1).not.toBe(originalCustomerPoint);
+    expect(disconnectedCP1?.id).toBe(originalCustomerPoint.id);
+    expect(disconnectedCP1?.connection).toBeNull();
+    expect(originalCustomerPoint.connection).toBeNull();
+  });
+
+  it("preserves total customer points count across allocated and disconnected", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4, CP2: 5, CP3: 6 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+      [IDS.CP2, buildCustomerPoint(IDS.CP2, { coordinates: [-95.4, 29.8] })],
+      [
+        IDS.CP3,
+        buildCustomerPoint(IDS.CP3, { coordinates: [-95.4082, 29.7018] }),
+      ],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    const totalProcessed =
+      result.allocatedCustomerPoints.size +
+      result.disconnectedCustomerPoints.size;
+    expect(totalProcessed).toBe(customerPoints.size);
+    expect(totalProcessed).toBe(3);
+    expect(result.allocatedCustomerPoints.size).toBe(2);
+    expect(result.disconnectedCustomerPoints.size).toBe(1);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP2)).toBe(true);
+  });
+});
+
+describe("findNearestPipeConnectionWithWorkerData optimization", () => {
+  it("returns same results as original implementation", async () => {
+    const IDS = {
+      J1: 1,
+      J2: 2,
+      J3: 3,
+      J4: 4,
+      P1: 5,
+      P2: 6,
+      CP1: 7,
+      CP2: 8,
+    } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aJunction(IDS.J3, { coordinates: [-95.4089633, 29.710228] })
+      .aJunction(IDS.J4, { coordinates: [-95.4077939, 29.711706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 8,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .aPipe(IDS.P2, {
+        startNodeId: IDS.J3,
+        endNodeId: IDS.J4,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.710228],
+          [-95.4077939, 29.711706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+      [
+        IDS.CP2,
+        buildCustomerPoint(IDS.CP2, { coordinates: [-95.4084, 29.7109] }),
+      ],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 10 },
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(2);
+    expect(result.disconnectedCustomerPoints.size).toBe(0);
+    expect(result.ruleMatches).toEqual([1, 1]);
+
+    const allocatedCP1 = result.allocatedCustomerPoints.get(IDS.CP1);
+    const allocatedCP2 = result.allocatedCustomerPoints.get(IDS.CP2);
+
+    expect(allocatedCP1?.connection?.pipeId).toBe(IDS.P1);
+    expect(allocatedCP1?.connection?.junctionId).toBeTruthy();
+
+    expect(allocatedCP2?.connection?.pipeId).toBe(IDS.P2);
+    expect(allocatedCP2?.connection?.junctionId).toBeTruthy();
+  });
+
+  it("demonstrates early termination with close match", async () => {
+    const IDS = { J1: 1, J2: 2, J3: 3, J4: 4, P1: 5, P2: 6, CP1: 7 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aJunction(IDS.J3, { coordinates: [-95.4089633, 29.75] })
+      .aJunction(IDS.J4, { coordinates: [-95.4077939, 29.75] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .aPipe(IDS.P2, {
+        startNodeId: IDS.J3,
+        endNodeId: IDS.J4,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.75],
+          [-95.4077939, 29.75],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 100, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(1);
+    expect(result.disconnectedCustomerPoints.size).toBe(0);
+    const allocatedCP1 = result.allocatedCustomerPoints.get(IDS.CP1);
+    expect(allocatedCP1?.connection?.pipeId).toBe(IDS.P1);
+  });
+});
+
+describe("pipes excluded from allocation", () => {
+  const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4 } as const;
+
+  const allocateAgainst = async (
+    hydraulicModel: ReturnType<typeof aPipeAlongLatitude>,
+  ) =>
+    allocateCustomerPoints(hydraulicModel, {
+      allocationRules: [{ maxDistance: 120, maxDiameter: 300 }],
+      customerPoints: new Map([
+        [IDS.CP1, aCustomerPointMetersFromPipe(IDS.CP1, 20)],
+      ]) as CustomerPoints,
+    });
+
+  it("excludes pipes without a diameter", async () => {
+    const result = await allocateAgainst(
+      aPipeAlongLatitude(IDS, { diameter: null }),
+    );
+
+    expect(result.allocatedCustomerPoints.size).toBe(0);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP1)).toBe(true);
+    expect(result.ruleMatches).toEqual([0]);
+  });
+
+  it("excludes pipes with a zero diameter", async () => {
+    const result = await allocateAgainst(
+      aPipeAlongLatitude(IDS, { diameter: 0 }),
+    );
+
+    expect(result.allocatedCustomerPoints.size).toBe(0);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP1)).toBe(true);
+    expect(result.ruleMatches).toEqual([0]);
+  });
+
+  it("excludes inactive pipes", async () => {
+    const result = await allocateAgainst(
+      aPipeAlongLatitude(IDS, { isActive: false }),
+    );
+
+    expect(result.allocatedCustomerPoints.size).toBe(0);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP1)).toBe(true);
+    expect(result.ruleMatches).toEqual([0]);
+  });
+
+  it("allocates to an active pipe with a valid diameter", async () => {
+    const result = await allocateAgainst(aPipeAlongLatitude(IDS));
+
+    expect(result.allocatedCustomerPoints.has(IDS.CP1)).toBe(true);
+    expect(result.ruleMatches).toEqual([1]);
+  });
+});
+
+describe("selected pipes allocation", () => {
+  it("only allocates to selected pipes", async () => {
+    const IDS = {
+      J1: 1,
+      J2: 2,
+      J3: 3,
+      J4: 4,
+      P1: 5,
+      P2: 6,
+      CP1: 7,
+      CP2: 8,
+    } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aJunction(IDS.J3, { coordinates: [-95.4089633, 29.710228] })
+      .aJunction(IDS.J4, { coordinates: [-95.4077939, 29.711706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .aPipe(IDS.P2, {
+        startNodeId: IDS.J3,
+        endNodeId: IDS.J4,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.710228],
+          [-95.4077939, 29.711706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+      [
+        IDS.CP2,
+        buildCustomerPoint(IDS.CP2, { coordinates: [-95.4084, 29.7109] }),
+      ],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+      options: { selectedPipes: new Set([IDS.P1]) },
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(1);
+    expect(result.allocatedCustomerPoints.has(IDS.CP1)).toBe(true);
+    expect(
+      result.allocatedCustomerPoints.get(IDS.CP1)?.connection?.pipeId,
+    ).toBe(IDS.P1);
+    expect(result.disconnectedCustomerPoints.size).toBe(1);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP2)).toBe(true);
+  });
+
+  it("disconnects all customer points when no selected pipes match", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+    ]);
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+      options: { selectedPipes: new Set([999]) },
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(0);
+    expect(result.disconnectedCustomerPoints.size).toBe(1);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP1)).toBe(true);
+  });
+});
+
+describe("zone-based allocation", () => {
+  const buildZone = (
+    coordinates: number[][][][],
+    bbox: [number, number, number, number],
+  ): Zone =>
+    new Zone(1, { type: "MultiPolygon", coordinates }, bbox, {
+      label: "Test Zone",
+    });
+
+  it("excludes customer points outside the selected zone", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4, CP2: 5 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+      [
+        IDS.CP2,
+        buildCustomerPoint(IDS.CP2, { coordinates: [-95.4082, 29.7018] }),
+      ],
+    ]);
+
+    // Zone covers only CP1's area, not CP2's
+    const selectedZone = buildZone(
+      [
+        [
+          [
+            [-95.409, 29.7018],
+            [-95.4083, 29.7018],
+            [-95.4083, 29.702],
+            [-95.409, 29.702],
+            [-95.409, 29.7018],
+          ],
+        ],
+      ],
+      [-95.409, 29.7018, -95.4083, 29.702],
+    );
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+      options: { selectedZone },
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(1);
+    expect(result.allocatedCustomerPoints.has(IDS.CP1)).toBe(true);
+    expect(result.disconnectedCustomerPoints.size).toBe(1);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP2)).toBe(true);
+  });
+
+  it("supports multi-polygon zones with disjoint areas", async () => {
+    const IDS = {
+      J1: 1,
+      J2: 2,
+      J3: 3,
+      J4: 4,
+      P1: 5,
+      P2: 6,
+      CP1: 7,
+      CP2: 8,
+      CP3: 9,
+    } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aJunction(IDS.J3, { coordinates: [-95.4089633, 29.710228] })
+      .aJunction(IDS.J4, { coordinates: [-95.4077939, 29.711706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .aPipe(IDS.P2, {
+        startNodeId: IDS.J3,
+        endNodeId: IDS.J4,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.710228],
+          [-95.4077939, 29.711706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+      [
+        IDS.CP2,
+        buildCustomerPoint(IDS.CP2, { coordinates: [-95.4084, 29.7109] }),
+      ],
+      [
+        IDS.CP3,
+        buildCustomerPoint(IDS.CP3, { coordinates: [-95.4084, 29.706] }),
+      ],
+    ]);
+
+    // Two disjoint polygons — one around CP1, one around CP2, neither covers CP3
+    const selectedZone = buildZone(
+      [
+        [
+          [
+            [-95.41, 29.701],
+            [-95.407, 29.701],
+            [-95.407, 29.703],
+            [-95.41, 29.703],
+            [-95.41, 29.701],
+          ],
+        ],
+        [
+          [
+            [-95.41, 29.71],
+            [-95.407, 29.71],
+            [-95.407, 29.712],
+            [-95.41, 29.712],
+            [-95.41, 29.71],
+          ],
+        ],
+      ],
+      [-95.41, 29.701, -95.407, 29.712],
+    );
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+      options: { selectedZone },
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(2);
+    expect(result.allocatedCustomerPoints.has(IDS.CP1)).toBe(true);
+    expect(result.allocatedCustomerPoints.has(IDS.CP2)).toBe(true);
+    expect(result.disconnectedCustomerPoints.size).toBe(1);
+    expect(result.disconnectedCustomerPoints.has(IDS.CP3)).toBe(true);
+  });
+
+  it("marks all customer points as disconnected when none are in the zone", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, CP1: 4, CP2: 5 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [-95.4089633, 29.701228] })
+      .aJunction(IDS.J2, { coordinates: [-95.4077939, 29.702706] })
+      .aPipe(IDS.P1, {
+        startNodeId: IDS.J1,
+        endNodeId: IDS.J2,
+        diameter: 12,
+        coordinates: [
+          [-95.4089633, 29.701228],
+          [-95.4077939, 29.702706],
+        ],
+      })
+      .build();
+
+    const customerPoints: CustomerPoints = new Map([
+      [
+        IDS.CP1,
+        buildCustomerPoint(IDS.CP1, { coordinates: [-95.4084, 29.7019] }),
+      ],
+      [
+        IDS.CP2,
+        buildCustomerPoint(IDS.CP2, { coordinates: [-95.4082, 29.7018] }),
+      ],
+    ]);
+
+    // Zone far away from all customer points
+    const selectedZone = buildZone(
+      [
+        [
+          [
+            [-95.5, 29.8],
+            [-95.49, 29.8],
+            [-95.49, 29.81],
+            [-95.5, 29.81],
+            [-95.5, 29.8],
+          ],
+        ],
+      ],
+      [-95.5, 29.8, -95.49, 29.81],
+    );
+
+    const allocationRules: CustomerPointAllocationRule[] = [
+      { maxDistance: 200, maxDiameter: 15 },
+    ];
+
+    const result = await allocateCustomerPoints(hydraulicModel, {
+      allocationRules,
+      customerPoints,
+      options: { selectedZone },
+    });
+
+    expect(result.allocatedCustomerPoints.size).toBe(0);
+    expect(result.disconnectedCustomerPoints.size).toBe(2);
+    expect(result.ruleMatches).toEqual([0]);
+  });
+});

@@ -1,0 +1,212 @@
+import type { Feature, Position } from "geojson";
+import { readZonesWithImporter } from "./read-zones";
+
+const aSquare = (x: number, y: number, size: number): Position[] => [
+  [x, y],
+  [x + size, y],
+  [x + size, y + size],
+  [x, y + size],
+  [x, y],
+];
+
+const aZone = (
+  ring: Position[],
+  properties: Record<string, unknown>,
+): Feature => ({
+  type: "Feature",
+  geometry: { type: "Polygon", coordinates: [ring] },
+  properties,
+});
+
+const aPoint = (coordinates: Position): Feature => ({
+  type: "Feature",
+  geometry: { type: "Point", coordinates },
+  properties: {},
+});
+
+const aFile = (features: Feature[], crs?: unknown) =>
+  new File(
+    [
+      JSON.stringify({
+        type: "FeatureCollection",
+        ...(crs === undefined ? {} : { crs }),
+        features,
+      }),
+    ],
+    "zones.geojson",
+    { type: "application/json" },
+  );
+
+/** The smallest DXF we can write by hand: an ENTITIES section whose records
+ *  are already in lng/lat, so no projection has to be picked. */
+const aDxf = (entities: string[]): string =>
+  [
+    "0",
+    "SECTION",
+    "2",
+    "ENTITIES",
+    ...entities,
+    "0",
+    "ENDSEC",
+    "0",
+    "EOF",
+  ].join("\n");
+
+const aDxfSquare = (layer: string, [x, y]: [number, number], size: number) => [
+  "0",
+  "LWPOLYLINE",
+  "8",
+  layer,
+  "90",
+  "4",
+  "70",
+  "1",
+  "10",
+  String(x),
+  "20",
+  String(y),
+  "10",
+  String(x + size),
+  "20",
+  String(y),
+  "10",
+  String(x + size),
+  "20",
+  String(y + size),
+  "10",
+  String(x),
+  "20",
+  String(y + size),
+];
+
+const options = {};
+
+describe("readZonesWithImporter", () => {
+  it("reads the polygons of a DXF drawing", async () => {
+    const dxf = new File(
+      [aDxf([...aDxfSquare("DMA", [0.001, 0.001], 0.001)])],
+      "zones.dxf",
+    );
+
+    const result = await readZonesWithImporter({ dxf }, options);
+
+    expect(result.error).toBeUndefined();
+    expect(result.features).toHaveLength(1);
+    expect([...(result.uniqueProperties ?? [])]).toContain("Layer");
+  });
+
+  it("reads the polygons and the properties to map", async () => {
+    const result = await readZonesWithImporter(
+      {
+        geojson: aFile([
+          aZone(aSquare(0.001, 0.001, 0.001), { DMA: "North" }),
+          aZone(aSquare(0.003, 0.003, 0.001), { DMA: "South" }),
+        ]),
+      },
+      options,
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.features).toHaveLength(2);
+    expect([...result.uniqueProperties]).toEqual(["DMA"]);
+  });
+
+  it("assumes a coordinate system only for a file that names none", async () => {
+    const zones = [aZone(aSquare(0.001, 0.001, 0.001), { DMA: "North" })];
+
+    const stated = await readZonesWithImporter(
+      {
+        geojson: aFile(zones, {
+          type: "name",
+          properties: { name: "urn:ogc:def:crs:OGC:1.3:CRS84" },
+        }),
+      },
+      options,
+    );
+    const silent = await readZonesWithImporter(
+      { geojson: aFile(zones) },
+      options,
+    );
+
+    expect(stated.assumedCoordinateSystem).toBe(false);
+    expect(silent.assumedCoordinateSystem).toBe(true);
+  });
+
+  it("counts the records it will not import as zones", async () => {
+    const mixed = await readZonesWithImporter(
+      {
+        geojson: aFile([
+          aZone(aSquare(0.001, 0.001, 0.001), { DMA: "North" }),
+          aPoint([0.002, 0.002]),
+          aPoint([0.003, 0.003]),
+        ]),
+      },
+      options,
+    );
+    const onlyZones = await readZonesWithImporter(
+      {
+        geojson: aFile([aZone(aSquare(0.001, 0.001, 0.001), { DMA: "North" })]),
+      },
+      options,
+    );
+
+    expect(mixed.skippedRecordCount).toBe(2);
+    expect(onlyZones.skippedRecordCount).toBe(0);
+  });
+
+  it("keeps only the polygons of a mixed file", async () => {
+    const result = await readZonesWithImporter(
+      {
+        geojson: aFile([
+          aPoint([0.001, 0.001]),
+          aZone(aSquare(0.001, 0.001, 0.001), { DMA: "North" }),
+        ]),
+      },
+      options,
+    );
+
+    expect(result.features).toHaveLength(1);
+  });
+
+  it("reports a file with no polygons at all", async () => {
+    const result = await readZonesWithImporter(
+      { geojson: aFile([aPoint([0.001, 0.001])]) },
+      options,
+    );
+
+    expect(result.error).toBe("noPolygons");
+  });
+
+  it("refuses coordinates it cannot place, whatever the project", async () => {
+    const result = await readZonesWithImporter(
+      { geojson: aFile([aZone(aSquare(432000, 5812000, 100), {})]) },
+      options,
+    );
+
+    expect(result.error).toBe("invalidProjection");
+  });
+
+  it("refuses a CRS it has no definition for", async () => {
+    const stated = {
+      type: "name",
+      properties: { name: "EPSG:27700" },
+    };
+
+    const result = await readZonesWithImporter(
+      { geojson: aFile([aZone(aSquare(432000, 181000, 100), {})], stated) },
+      options,
+    );
+
+    expect(result.error).toBe("unsupportedProjection");
+  });
+
+  it("reports a file it could not read", async () => {
+    const broken = new File(["{"], "zones.geojson", {
+      type: "application/json",
+    });
+
+    const result = await readZonesWithImporter({ geojson: broken }, options);
+
+    expect(result.error).toBe("invalidFile");
+  });
+});

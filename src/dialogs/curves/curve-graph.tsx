@@ -1,5 +1,10 @@
 import { forwardRef } from "react";
-import { CurvePoint, CurvePointsType } from "src/hydraulic-model/curves";
+import {
+  CurvePoint,
+  CurvePointsType,
+  CurveType,
+  getCurveErrors,
+} from "@epanet-js/hydraulic-model";
 import {
   fitCurve,
   synthesizeThreePoints,
@@ -7,12 +12,11 @@ import {
 } from "src/hydraulic-model/curve-fitting";
 import { LineGraph, StyledPointValue } from "src/components/graphs/line-graph";
 import { colors } from "src/lib/constants";
-import { CurveType } from "src/hydraulic-model/curves";
 import { getCurveTypeConfig } from "./curve-type-config";
 import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import { InlineField } from "src/components/form/fields";
-import type { UnitsSpec } from "src/lib/project-settings/quantities-spec";
+import type { UnitsSpec } from "@epanet-js/project-settings";
 
 interface CurveGraphProps {
   points: CurvePoint[];
@@ -84,7 +88,9 @@ export const CurveGraph = forwardRef<HTMLDivElement, CurveGraphProps>(
         {curveType === "pump" && (
           <div className="mb-[.25rem] w-full">
             <InlineField name={translate("curveType")} layout="label-flex-none">
-              <span className="text-sm">{translate(curvePointsType)}</span>
+              <span className="text-size-base">
+                {translate(curvePointsType)}
+              </span>
             </InlineField>
           </div>
         )}
@@ -108,8 +114,7 @@ const getErrorIndices = (
   curveType: CurveType | undefined,
   points: CurvePoint[],
 ): Set<number> => {
-  const config = getCurveTypeConfig(curveType);
-  const errors = config.getErrors(points);
+  const errors = getCurveErrors(curveType, points);
   const indices = new Set<number>();
   for (const e of errors) {
     indices.add(e.index);

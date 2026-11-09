@@ -1,2 +1,3 @@
 export { runCheck as findConnectivityTrace } from "./run-check";
-export type { SubNetwork } from "./data";
+export { unsuppliedSubNetworks } from "@epanet-js/network-review";
+export type { SubNetwork } from "@epanet-js/network-review";

@@ -1,40 +1,56 @@
-import { SymbologySpec, LinkSymbology, NodeSymbology } from "src/map/symbology";
+import {
+  resolveAssetDefault,
+  type RenderSymbology,
+  type RenderAssetSymbology,
+  type DefaultsResolvers,
+} from "@epanet-js/map";
 import { AssetsMap, Junction, Pipe, Pump } from "src/hydraulic-model";
-import { Unit, convertTo } from "src/quantity";
+import { Unit, convertTo } from "@epanet-js/quantity";
 import { Feature } from "src/types";
-import { Asset, AssetId, Valve } from "src/hydraulic-model/asset-types";
+import { Asset, AssetId, Valve } from "@epanet-js/hydraulic-model";
 import { colorFor } from "src/map/symbology/range-color-rule";
-import { strokeColorFor } from "src/lib/color";
-import { localizeDecimal } from "src/infra/i18n/numbers";
+import { strokeColorFor } from "@epanet-js/map";
+import { localizeDecimal } from "@epanet-js/i18n";
 import {
   FormattingSpec,
   UnitsSpec,
   QuantityProperty,
   getDecimals,
-} from "src/lib/project-settings/quantities-spec";
+} from "@epanet-js/project-settings";
 import {
   type ResultsReader,
   type PipeSimulation,
   type JunctionSimulation,
-} from "src/simulation/results-reader";
+} from "@epanet-js/simulation";
 import { isSimulationProperty } from "src/map/symbology/symbology-data-source";
 import { assetLabelRule } from "src/map/symbology/labeling";
 import { LabelRule } from "src/map/symbology/symbology-types";
+import { createTimeSlicer } from "src/infra/yield-to-main";
 
 export const buildFeatureId = (assetId: AssetId) => assetId;
 
-export const buildOptimizedAssetsSource = (
+// Budget per synchronous slice of the asset loop before yielding. Small enough
+// to leave most of a frame for rendering/input so a large network's build
+// (100k+ assets) doesn't freeze pan/zoom; yieldToMain resumes immediately when
+// nothing else is pending, so an idle build stays near full speed.
+const BUILD_SLICE_MS = 8;
+
+export const buildOptimizedAssetsSource = async (
   assets: AssetsMap,
-  symbology: SymbologySpec,
+  symbology: RenderSymbology,
   units: UnitsSpec,
   formatting: FormattingSpec,
   translateUnit: (unit: Unit) => string,
   simulationResults?: ResultsReader | null,
-): Feature[] => {
+  selectedIds?: Set<AssetId>,
+  defaultsResolvers?: DefaultsResolvers,
+): Promise<Feature[]> => {
   const strippedFeatures = [];
   const keepProperties: string[] = ["type", "isActive"];
+  const yieldIfSliceElapsed = createTimeSlicer(BUILD_SLICE_MS);
 
   for (const asset of assets.values()) {
+    await yieldIfSliceElapsed();
     if (asset.feature.properties?.visibility === false) {
       continue;
     }
@@ -45,6 +61,10 @@ export const buildOptimizedAssetsSource = (
       properties: pick(asset.feature.properties, keepProperties),
       geometry: asset.feature.geometry,
     };
+
+    if (selectedIds) {
+      feature.properties!.selected = selectedIds.has(asset.id);
+    }
 
     const isLink =
       asset.type === "pipe" || asset.type === "pump" || asset.type === "valve";
@@ -68,9 +88,8 @@ export const buildOptimizedAssetsSource = (
           feature,
           symbology.link,
           units,
-          formatting,
-          translateUnit,
           simulationResults,
+          defaultsResolvers,
         );
         break;
       case "junction":
@@ -78,10 +97,8 @@ export const buildOptimizedAssetsSource = (
           asset as Junction,
           feature,
           symbology.node,
-          units,
-          formatting,
-          translateUnit,
           simulationResults,
+          defaultsResolvers,
         );
         break;
       case "pump":
@@ -103,11 +120,10 @@ export const buildOptimizedAssetsSource = (
 const appendPipeProps = (
   pipe: Pipe,
   feature: Feature,
-  linkSymbology: LinkSymbology,
+  linkSymbology: RenderAssetSymbology,
   units: UnitsSpec,
-  formatting: FormattingSpec,
-  translateUnit: (unit: Unit) => string,
   simulationResults?: ResultsReader | null,
+  defaultsResolvers?: DefaultsResolvers,
 ) => {
   appendPipeStatus(pipe, feature, simulationResults);
   appendPipeSymbologyProps(
@@ -115,29 +131,24 @@ const appendPipeProps = (
     feature,
     linkSymbology,
     units,
-    formatting,
-    translateUnit,
     simulationResults,
+    defaultsResolvers,
   );
 };
 
 const appendJunctionProps = (
   junction: Junction,
   feature: Feature,
-  nodeSymbology: NodeSymbology,
-  units: UnitsSpec,
-  formatting: FormattingSpec,
-  translateUnit: (unit: Unit) => string,
+  nodeSymbology: RenderAssetSymbology,
   simulationResults?: ResultsReader | null,
+  defaultsResolvers?: DefaultsResolvers,
 ) => {
   appendJunctionSymbologyProps(
     junction,
     feature,
     nodeSymbology,
-    units,
-    formatting,
-    translateUnit,
     simulationResults,
+    defaultsResolvers,
   );
 };
 
@@ -195,10 +206,11 @@ export const appendPipeArrowProps = (
 ) => {
   const pipeSimulation = simulationResults?.getPipe(pipe.id);
   const status = pipeSimulation?.status ?? null;
-  const flow = pipeSimulation?.flow ?? null;
+  const simulatedFlow = pipeSimulation?.flow ?? null;
+  const flow = Number.isNaN(simulatedFlow) ? null : simulatedFlow;
   const isReverse = flow && flow < 0;
   feature.properties!.length = convertTo(
-    { value: pipe.length, unit: units.length },
+    { value: pipe.length ?? 0, unit: units.length },
     "m",
   );
   feature.properties!.hasArrow =
@@ -209,28 +221,30 @@ export const appendPipeArrowProps = (
 const appendPipeSymbologyProps = (
   pipe: Pipe,
   feature: Feature,
-  linkSymbology: LinkSymbology,
+  linkSymbology: RenderAssetSymbology,
   units: UnitsSpec,
-  formatting: FormattingSpec,
-  translateUnit: (unit: Unit) => string,
   simulationResults?: ResultsReader | null,
+  defaultsResolvers?: DefaultsResolvers,
 ) => {
   if (!linkSymbology.colorRule) return;
 
   const property = linkSymbology.colorRule.property;
+  const isSimProperty = isSimulationProperty(property);
 
   let value: number | null;
-  if (isSimulationProperty(property)) {
+  if (isSimProperty) {
     const pipeSimulation = simulationResults?.getPipe(pipe.id);
     value = pipeSimulation
       ? (pipeSimulation[property as keyof PipeSimulation] as number)
       : null;
   } else {
-    value = pipe[property as keyof Pipe] as number | null;
+    value =
+      (pipe[property as keyof Pipe] as number | null) ??
+      resolveAssetDefault(defaultsResolvers, pipe, property);
   }
-  const numericValue = value !== null ? value : 0;
-
-  feature.properties!.color = colorFor(linkSymbology.colorRule, numericValue);
+  if (!Number.isNaN(value) && (isSimProperty || value !== null)) {
+    feature.properties!.color = colorFor(linkSymbology.colorRule, value ?? 0);
+  }
   appendPipeArrowProps(pipe, feature, units, simulationResults);
 };
 
@@ -243,33 +257,32 @@ const getJunctionSimProperty = (property: string): keyof JunctionSimulation => {
 const appendJunctionSymbologyProps = (
   junction: Junction,
   feature: Feature,
-  nodeSymbology: NodeSymbology,
-  units: UnitsSpec,
-  formatting: FormattingSpec,
-  translateUnit: (unit: Unit) => string,
+  nodeSymbology: RenderAssetSymbology,
   simulationResults?: ResultsReader | null,
+  defaultsResolvers?: DefaultsResolvers,
 ) => {
   if (!nodeSymbology.colorRule) return;
 
   const property = nodeSymbology.colorRule.property;
+  const isSimProperty = isSimulationProperty(property);
 
   let value: number | null;
-  if (isSimulationProperty(property)) {
+  if (isSimProperty) {
     const junctionSimulation = simulationResults?.getJunction(junction.id);
     const simProperty = getJunctionSimProperty(property);
     value = junctionSimulation
       ? (junctionSimulation[simProperty] as number)
       : null;
   } else {
-    value = junction[property as keyof Junction] as number | null;
+    value =
+      (junction[property as keyof Junction] as number | null) ??
+      resolveAssetDefault(defaultsResolvers, junction, property);
   }
-  const numericValue = value !== null ? value : 0;
-
-  const fillColor = colorFor(nodeSymbology.colorRule, numericValue);
-  const strokeColor = strokeColorFor(fillColor);
-
-  feature.properties!.color = fillColor;
-  feature.properties!.strokeColor = strokeColor;
+  if (!Number.isNaN(value) && (isSimProperty || value !== null)) {
+    const fillColor = colorFor(nodeSymbology.colorRule, value ?? 0);
+    feature.properties!.color = fillColor;
+    feature.properties!.strokeColor = strokeColorFor(fillColor);
+  }
 };
 
 const appendLabel = (
@@ -305,9 +318,10 @@ const appendLabel = (
       (asset as unknown as Record<string, number | null>)[property] ?? null;
   }
 
-  const numericValue = value !== null ? value : 0;
+  if (value === null || Number.isNaN(value)) return;
+
   const unit = units[property as QuantityProperty];
-  const localizedNumber = localizeDecimal(numericValue, {
+  const localizedNumber = localizeDecimal(value, {
     decimals: getDecimals(formatting, property as QuantityProperty),
   });
   const unitText = unit ? translateUnit(unit) : "";

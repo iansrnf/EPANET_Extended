@@ -1,0 +1,78 @@
+import {
+  valveKinds,
+  valveStatuses,
+  type ValveKind,
+  type ValveStatus,
+} from "@epanet-js/model-schema";
+import { CurveId } from "../curves";
+import { AssetId } from "./base-asset";
+import { Link, LinkProperties } from "./link";
+
+export { valveStatuses };
+export type { ValveStatus };
+export type ValveStatusWarning =
+  | "cannot-deliver-flow"
+  | "cannot-deliver-pressure";
+
+export { valveKinds };
+export type { ValveKind };
+
+export const controlKinds = ["prv", "psv", "fcv", "pbv", "gpv"];
+
+export type ValveProperties = {
+  type: "valve";
+  diameter: number | null;
+  minorLoss?: number;
+  kind: ValveKind;
+  setting: number | null;
+  initialStatus: ValveStatus;
+  curveId?: CurveId;
+  targetNodeId?: AssetId;
+} & LinkProperties;
+
+export const valveQuantities = ["diameter", "minorLoss", "setting"];
+export type ValveQuantity = (typeof valveQuantities)[number];
+
+export class Valve extends Link<ValveProperties> {
+  get diameter() {
+    return this.properties.diameter;
+  }
+
+  get minorLoss() {
+    return this.properties.minorLoss;
+  }
+
+  get kind() {
+    return this.properties.kind;
+  }
+
+  get setting() {
+    return this.properties.setting;
+  }
+
+  get initialStatus() {
+    return this.properties.initialStatus;
+  }
+
+  get curveId() {
+    return this.properties.curveId;
+  }
+
+  get targetNodeId() {
+    return this.properties.targetNodeId;
+  }
+
+  copy() {
+    return new Valve(this.id, [...this.coordinates], {
+      ...this.properties,
+    });
+  }
+}
+
+export const valveCurveTypeFrom = (
+  valveKind: ValveKind,
+): "headloss" | "valve" | undefined => {
+  if (valveKind === "gpv") return "headloss";
+  if (valveKind === "pcv") return "valve";
+  return;
+};

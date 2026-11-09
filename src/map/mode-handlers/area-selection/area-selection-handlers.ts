@@ -5,11 +5,11 @@ import { cursorStyleAtom } from "src/state/map";
 import { modeAtom, Mode } from "src/state/mode";
 import noop from "lodash/noop";
 import { useAtom, useSetAtom } from "jotai";
-import { useGetMapCoord } from "../utils";
+import { getMapCoord } from "../utils";
 import {
   isLastPolygonSegmentIntersecting,
   polygonCoordinatesFromPositions,
-} from "src/lib/geometry";
+} from "@epanet-js/geometry";
 import { useAreaSelection } from "./use-area-selection";
 import type { EphemeralEditingStateAreaSelection } from "./ephemeral-area-selection-state";
 import { useKeyboardState } from "src/keyboard/use-keyboard-state";
@@ -31,7 +31,6 @@ export function useAreaSelectionHandlers({
   const { selectAssetsInArea, abort: abortSelection } =
     useAreaSelection(context);
   const { isShiftHeld, isAltHeld } = useKeyboardState();
-  const getMapCoord = useGetMapCoord();
 
   const drawingState = ephemeralState as EphemeralEditingStateAreaSelection;
 

@@ -1,6 +1,6 @@
 import type { HandlerContext, DragTarget } from "src/types";
-import type { Sel } from "src/selection/types";
-import type { FlatbushLike } from "src/lib/generate-flatbush-instance";
+import type { Sel } from "src/selection";
+import { USelection } from "src/selection";
 import React, {
   useRef,
   useEffect,
@@ -13,55 +13,44 @@ import React, {
 import clsx from "clsx";
 import throttle from "lodash/throttle";
 import mapboxgl /*, { LngLatBoundsLike } */ from "mapbox-gl";
-import { dataAtom, Data } from "src/state/data";
+import { selectionAtom } from "src/state/selection";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { ephemeralStateAtom, EphemeralEditingState } from "src/state/drawing";
 import {
   stagingModelDerivedAtom,
-  selectedFeaturesDerivedAtom,
+  selectedAssetsDerivedAtom,
+  selectedCustomerPointsDerivedAtom,
 } from "src/state/derived-branch-state";
 import {
   cursorStyleAtom,
-  satelliteModeOnAtom,
   currentZoomAtom,
   mapViewportAtom,
 } from "src/state/map";
 import { useSetAtom } from "jotai";
 import { modeAtom, Mode } from "src/state/mode";
-import { MapEngine } from "./map-engine";
-import { EmptyIndex } from "src/lib/generate-flatbush-instance";
+import { MapEngine } from "@epanet-js/map";
 import * as CM from "@radix-ui/react-context-menu";
 import { env } from "src/lib/env-client";
-import { ContextInfo, MapContextMenu } from "src/map/ContextMenu";
+import { ContextInfo, MapContextMenu } from "src/map/context-menu";
 import { useModeHandlers } from "./mode-handlers";
 import { wrappedFeaturesFromMapFeatures } from "src/lib/map-component-utils";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { usePersistence } from "src/lib/persistence";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtomValue } from "jotai";
 import { useHotkeys } from "src/keyboard/hotkeys";
 import { useAtomCallback } from "jotai/utils";
 import { isDebugAppStateOn, isDebugOn } from "src/infra/debug-mode";
 import { useMapStateUpdates } from "./state-updates";
 import { clickableLayers } from "./layers/layer";
-import { SatelliteToggle } from "./SatelliteToggle";
+import { BasemapSelector } from "./basemap-selector";
+import { GoogleMapsAttribution } from "./google-maps-attribution";
 import { useFitToExtent } from "./use-fit-to-extent";
-import {
-  CustomMapControlClick,
-  FIT_TO_EXTENT_CONTROL,
-} from "./custom-map-control";
+import { CustomMapControlClick, FIT_TO_EXTENT_CONTROL } from "@epanet-js/map";
 import { Hints } from "src/components/hints";
-import { useAuth } from "src/hooks/use-auth";
-import { satelliteLimitedZoom } from "src/commands/toggle-satellite";
 import { useTranslate } from "src/hooks/use-translate";
 import { supportEmail } from "src/global-config";
-import { MapHandlers } from "./types";
-import { PipeDrawingFloatingPanel } from "src/components/pipe-drawing-floating-panel";
+import { MapHandlers } from "@epanet-js/map";
 import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
-import type { PressureLogger } from "src/hydraulic-model/pressure-loggers";
-import {
-  loggerTelemetryAtom,
-  type LoggerTelemetryReading,
-} from "src/state/logger-telemetry";
 mapboxgl.accessToken = env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 mapboxgl.setRTLTextPlugin(
@@ -73,21 +62,15 @@ mapboxgl.setRTLTextPlugin(
 );
 
 const exposeAppStateInWindow = (
-  data: Data,
+  selection: Sel,
   ephemeralState: EphemeralEditingState,
 ) => {
   if (typeof window === "undefined") return;
 
-  (window as any).appData = data;
+  (window as any).appData = { selection };
   (window as any).appEphemeralState = ephemeralState;
 };
-
 const noop = () => null;
-type HoveredPressureLogger = {
-  logger: PressureLogger;
-  point: { x: number; y: number };
-};
-
 const debug = isDebugOn
   ? (
       e: mapboxgl.MapboxEvent<any>,
@@ -101,13 +84,18 @@ const debug = isDebugOn
         `MODE_HANDLDER@${method} ${JSON.stringify({
           event: e.type,
           mode,
-          selection: selection.type,
+          selection: USelection.describe(selection),
           dragTargetRef,
           method,
         })}`,
       );
     }
   : noop;
+
+const MapStateUpdates = ({ map }: { map: MapEngine | null }) => {
+  useMapStateUpdates(map);
+  return null;
+};
 
 export const MapCanvas = memo(function MapCanvas({
   setMap,
@@ -120,23 +108,17 @@ export const MapCanvas = memo(function MapCanvas({
     useCallback((get) => get(mapViewportAtom), []),
   );
 
-  const data = useAtomValue(dataAtom);
+  const selection = useAtomValue(selectionAtom);
   const { units } = useAtomValue(projectSettingsAtom);
   const ephemeralState = useAtomValue(ephemeralStateAtom);
-  const [currentZoom, setCurrentZoom] = useAtom(currentZoomAtom);
+  const setCurrentZoom = useSetAtom(currentZoomAtom);
 
-  if (isDebugAppStateOn) exposeAppStateInWindow(data, ephemeralState);
+  if (isDebugAppStateOn) exposeAppStateInWindow(selection, ephemeralState);
 
-  const { folderMap } = data;
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
-  const loggerTelemetry = useAtomValue(loggerTelemetryAtom);
 
   // State
-  const [flatbushInstance, setFlatbushInstance] =
-    useState<FlatbushLike>(EmptyIndex);
   const [contextInfo, setContextInfo] = useState<ContextInfo | null>(null);
-  const [hoveredPressureLogger, setHoveredPressureLogger] =
-    useState<HoveredPressureLogger | null>(null);
 
   const lastCursor = useRef<{
     cursorLatitude: number;
@@ -147,7 +129,6 @@ export const MapCanvas = memo(function MapCanvas({
   });
 
   // Atom state
-  const selection = data.selection;
   const mode = useAtomValue(modeAtom);
   const cursor = useAtomValue(cursorStyleAtom);
   const isEditionBlocked = useIsEditionBlocked();
@@ -174,8 +155,6 @@ export const MapCanvas = memo(function MapCanvas({
     },
     [fitToExtent],
   );
-
-  useMapStateUpdates(mapRef.current);
 
   useEffect(() => {
     if (mapRef.current) return;
@@ -209,13 +188,10 @@ export const MapCanvas = memo(function MapCanvas({
   if (isDebugOn) (window as any).mapEngine = mapRef.current;
 
   const handlerContext: HandlerContext = {
-    flatbushInstance,
-    setFlatbushInstance,
     mode,
     dragTargetRef,
     hydraulicModel,
     units,
-    folderMap,
     selection,
     map: mapRef.current!,
     rep,
@@ -223,35 +199,6 @@ export const MapCanvas = memo(function MapCanvas({
   };
 
   const HANDLERS = useModeHandlers(handlerContext);
-
-  const updateHoveredPressureLogger = useCallback(
-    (e: mapboxgl.MapMouseEvent | mapboxgl.MapTouchEvent) => {
-      const map = mapRef.current;
-      if (!map) return;
-
-      const pickedObjects = map.pickOverlayObjects({
-        x: e.point.x,
-        y: e.point.y,
-        radius: 10,
-      });
-
-      const pickedLogger = pickedObjects.find(
-        (pickInfo) =>
-          pickInfo.layer?.id === "pressure-loggers-layer" && pickInfo.object,
-      );
-
-      if (!pickedLogger) {
-        setHoveredPressureLogger(null);
-        return;
-      }
-
-      setHoveredPressureLogger({
-        logger: pickedLogger.object as PressureLogger,
-        point: { x: e.point.x, y: e.point.y },
-      });
-    },
-    [],
-  );
 
   const leftClick = 0;
   const newHandlers: MapHandlers = {
@@ -300,7 +247,6 @@ export const MapCanvas = memo(function MapCanvas({
       debug(e, mode.mode, selection, dragTargetRef, "onMapMouseMove");
 
       HANDLERS[mode.mode].move(e);
-      updateHoveredPressureLogger(e);
       const map = mapRef.current?.map;
       if (!map) return;
       lastCursor.current = {
@@ -397,12 +343,16 @@ export const MapCanvas = memo(function MapCanvas({
             ])
             .toArray() as Pos2;
 
-          const selectedFeatures = get(selectedFeaturesDerivedAtom);
+          const selectedAssets = get(selectedAssetsDerivedAtom);
+          const selectedCustomerPoints = get(selectedCustomerPointsDerivedAtom);
+          const selectedZoneIds = USelection.getZoneIds(get(selectionAtom));
 
           setContextInfo({
             features: wrappedFeaturesFromMapFeatures(featureUnderMouse, assets),
             position,
-            selectedFeatures,
+            selectedFeatures: selectedAssets,
+            selectedCustomerPoints,
+            selectedZoneIds,
           });
         }
       },
@@ -426,6 +376,7 @@ export const MapCanvas = memo(function MapCanvas({
     if (cursor === "grab") return "placemark-cursor-grab";
     if (cursor === "not-allowed") return "placemark-cursor-not-allowed";
     if (cursor === "replace") return "placemark-cursor-replace";
+    if (cursor === "wait") return "cursor-wait";
 
     if (cursor === "crosshair") return "cursor-crosshair";
     if (cursor === "crosshair-add") return "cursor-crosshair-add";
@@ -452,6 +403,7 @@ export const MapCanvas = memo(function MapCanvas({
 
   return (
     <CM.Root modal={false} onOpenChange={onOpenChange}>
+      <MapStateUpdates map={mapRef.current} />
       <CM.Trigger asChild onContextMenu={onContextMenu}>
         <div
           className={clsx("w-full h-full mapboxgl-map", cursorStyle)}
@@ -461,69 +413,11 @@ export const MapCanvas = memo(function MapCanvas({
       </CM.Trigger>
       <MapContextMenu contextInfo={contextInfo} />
       <Hints />
-      <SatelliteToggle />
-      <SatelliteResolutionMessage zoom={currentZoom} />
-      <PipeDrawingFloatingPanel />
-      <PressureLoggerHoverTooltip
-        hoveredPressureLogger={hoveredPressureLogger}
-        reading={
-          hoveredPressureLogger
-            ? loggerTelemetry.readingsByDeviceId[
-                hoveredPressureLogger.logger.label
-              ]
-            : undefined
-        }
-      />
+      <BasemapSelector />
+      <GoogleMapsAttribution map={mapRef.current} />
     </CM.Root>
   );
 });
-
-const PressureLoggerHoverTooltip = ({
-  hoveredPressureLogger,
-  reading,
-}: {
-  hoveredPressureLogger: HoveredPressureLogger | null;
-  reading?: LoggerTelemetryReading;
-}) => {
-  if (!hoveredPressureLogger) return null;
-
-  const { logger, point } = hoveredPressureLogger;
-  const pressureText =
-    typeof reading?.psi === "number" ? `${reading.psi.toFixed(3)} psi` : "-";
-  const statusText = reading?.status ?? "no data";
-  const timestampText = reading?.timestamp
-    ? new Date(reading.timestamp).toLocaleString()
-    : "-";
-
-  return (
-    <div
-      className="pointer-events-none absolute z-30 min-w-48 rounded-md bg-gray-900/90 px-3 py-2 text-xs text-white shadow-lg"
-      style={{
-        left: point.x + 14,
-        top: point.y - 12,
-      }}
-    >
-      <div className="mb-1 flex items-center justify-between gap-4">
-        <span className="font-semibold">{logger.label}</span>
-        <span className="rounded-sm bg-white/15 px-1.5 py-0.5 uppercase">
-          {statusText}
-        </span>
-      </div>
-      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 tabular-nums">
-        <span className="text-gray-300">Pressure</span>
-        <span>{pressureText}</span>
-        <span className="text-gray-300">Battery</span>
-        <span>{reading?.batteryVoltage ?? "-"} V</span>
-        <span className="text-gray-300">External</span>
-        <span>{reading?.externalVoltage ?? "-"} V</span>
-        <span className="text-gray-300">GSM</span>
-        <span>{reading?.gsmPercent ?? "-"}%</span>
-        <span className="text-gray-300">Updated</span>
-        <span>{timestampText}</span>
-      </div>
-    </div>
-  );
-};
 
 const MapError = () => {
   const translate = useTranslate();
@@ -540,27 +434,4 @@ const MapError = () => {
       </div>
     </div>
   );
-};
-
-const SatelliteResolutionMessage = ({ zoom }: { zoom: number | undefined }) => {
-  const translate = useTranslate();
-  const isSatelliteModeOn = useAtomValue(satelliteModeOnAtom);
-  const { isSignedIn } = useAuth();
-
-  if (isSatelliteModeOn && !isSignedIn && zoom && zoom > satelliteLimitedZoom) {
-    return (
-      <div
-        className={clsx(
-          "absolute mx-auto mb-2 flex items-center justify-center w-full",
-          "top-[60px] sm:top-1/2",
-        )}
-      >
-        <div className="bg-gray-800 text-white rounded-sm shadow-md py-1 px-2 m-2">
-          {translate("signUpToUnlockResolution")}
-        </div>
-      </div>
-    );
-  }
-
-  return null;
 };

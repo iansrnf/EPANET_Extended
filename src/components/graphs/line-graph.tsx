@@ -2,7 +2,7 @@ import { useMemo, useRef, useEffect, useCallback } from "react";
 import ReactECharts, { EChartsInstance } from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import { useTranslate } from "src/hooks/use-translate";
-import { localizeDecimal } from "src/infra/i18n/numbers";
+import { localizeDecimal } from "@epanet-js/i18n";
 import { colors } from "src/lib/constants";
 
 export interface StyledPointValue {
@@ -214,7 +214,7 @@ export function LineGraph({
 
   if (points.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center text-gray-400 text-xs">
+      <div className="h-full flex items-center justify-center text-subtle text-xs">
         {translate("noDataAvailable")}
       </div>
     );

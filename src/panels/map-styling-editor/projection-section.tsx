@@ -10,11 +10,11 @@ import { Button } from "src/components/elements";
 import { CollapsibleSection } from "src/components/form/fields";
 import { mapStylingPanelSectionsExpandedAtom } from "src/state/layout";
 import { MapPinnedIcon } from "src/icons";
-import type { Projection } from "src/lib/projections/projection";
+import type { Projection } from "@epanet-js/projections";
 import {
   inverseProjectGeoJson,
   createProjectionMapper,
-} from "src/lib/projections";
+} from "@epanet-js/projections";
 import { transformCoordinates } from "src/hydraulic-model/mutations/transform-coordinates";
 import { chooseUnitSystem } from "src/simulation/build-inp";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
@@ -106,7 +106,7 @@ export const ProjectionSection = () => {
   const isReadonly = hasScenarios || isPlaying;
   return (
     <CollapsibleSection
-      title="Projection"
+      title={t("projection")}
       open={sections.projection}
       onOpenChange={(open) =>
         setSections((prev) => ({ ...prev, projection: open }))
@@ -128,9 +128,9 @@ export const ProjectionSection = () => {
         )
       ) : (
         <div className="flex items-start gap-2 -mr-1">
-          <div className="flex flex-col min-w-0 flex-1 text-sm">
+          <div className="flex flex-col min-w-0 flex-1 text-size-base">
             <div className="truncate">{projectionName}</div>
-            <div className="text-gray-500 truncate">{projectionCode}</div>
+            <div className="text-subtle truncate">{projectionCode}</div>
           </div>
           {(projection.type === "proj4" ||
             (projection.type === "wgs84" && isReprojectWgs84On)) &&

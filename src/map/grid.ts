@@ -33,12 +33,21 @@ export class Grid {
   private lastMinorOpacity = -1;
   private lastMinorWidth = -1;
   private rAfPending = false;
+  private rAfId: number | null = null;
   private moveHandler: (() => void) | null = null;
 
   constructor(map: mapboxgl.Map, lengthUnit: LengthUnit) {
     this.map = map;
     this.unitsPerDegree =
       lengthUnit === "ft" ? FEET_PER_DEGREE : METERS_PER_DEGREE;
+  }
+
+  isBoundTo(map: mapboxgl.Map): boolean {
+    return this.map === map;
+  }
+
+  private get isMapAlive(): boolean {
+    return !!(this.map && (this.map as any).style);
   }
 
   setLengthUnit(lengthUnit: LengthUnit) {
@@ -57,6 +66,11 @@ export class Grid {
   }
 
   detach() {
+    if (this.rAfId !== null) {
+      cancelAnimationFrame(this.rAfId);
+      this.rAfId = null;
+      this.rAfPending = false;
+    }
     if (this.moveHandler) {
       this.map.off("move", this.moveHandler);
       this.moveHandler = null;
@@ -75,13 +89,16 @@ export class Grid {
   private scheduleFrame() {
     if (this.rAfPending) return;
     this.rAfPending = true;
-    requestAnimationFrame(() => {
+    this.rAfId = requestAnimationFrame(() => {
       this.rAfPending = false;
+      this.rAfId = null;
       this.updateFrame();
     });
   }
 
   private updateFrame() {
+    if (!this.isMapAlive || !this.map.getLayer(MINOR_LAYER_ID)) return;
+
     const { bounds, stepUnits, fraction } = calcGridParams(
       this.map,
       this.unitsPerDegree,
@@ -210,6 +227,8 @@ export class Grid {
   }
 
   private clearSource() {
+    if (!this.isMapAlive) return;
+
     const source = this.map.getSource("grid") as
       | mapboxgl.GeoJSONSource
       | undefined;

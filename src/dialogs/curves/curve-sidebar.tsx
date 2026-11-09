@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useTranslate } from "src/hooks/use-translate";
+import { useLabelMaxLength } from "src/hooks/use-label-max-length";
 import {
   Curves,
   ICurve,
@@ -7,7 +8,8 @@ import {
   CurvePoint,
   CurveType,
   defaultCurvePoints,
-} from "src/hydraulic-model/curves";
+  LabelManager,
+} from "@epanet-js/hydraulic-model";
 import {
   AddIcon,
   ChevronRightIcon,
@@ -16,7 +18,6 @@ import {
   RenameIcon,
   WarningIcon,
 } from "src/icons";
-import { LabelManager } from "src/hydraulic-model/label-manager";
 import {
   ListItem,
   ItemAction,
@@ -26,6 +27,7 @@ import {
   NavigableList,
 } from "src/components/list";
 import type { NavItem, NavigableListHandle } from "src/components/list";
+import { CURVE_TYPE_TRANSLATION_KEYS } from "./curve-type-labels";
 
 type CurveSectionType = "volume" | "valve" | "headloss";
 type SidebarSectionType = CurveSectionType | "uncategorized";
@@ -39,11 +41,7 @@ type ActionState =
 
 const SECTION_TYPES: CurveSectionType[] = ["volume", "valve", "headloss"];
 
-const SECTION_TRANSLATION_KEYS: Record<CurveSectionType, string> = {
-  volume: "curves.volumeCurves",
-  valve: "curves.valveCurves",
-  headloss: "curves.headlossCurves",
-};
+const SECTION_TRANSLATION_KEYS = CURVE_TYPE_TRANSLATION_KEYS;
 
 type CurveSidebarProps = {
   width: number;
@@ -81,6 +79,8 @@ export const CurveSidebar = ({
   readOnly = false,
 }: CurveSidebarProps) => {
   const translate = useTranslate();
+  const moreActionsLabel = translate("moreActions");
+  const labelMaxLength = useLabelMaxLength();
   const listRef = useRef<NavigableListHandle>(null);
   const [actionState, setActionState] = useState<ActionState | undefined>(
     undefined,
@@ -317,7 +317,11 @@ export const CurveSidebar = ({
                     }
                     actions={itemActions}
                     onAction={handleAction}
+                    actionsLabel={moreActionsLabel}
                     editLabelMode={getEditMode(actionState, curve.id)}
+                    sanitize={(raw) =>
+                      LabelManager.sanitizeLabel(raw, "curve", labelMaxLength)
+                    }
                     onLabelChange={handleCurveLabelChange}
                     placeholder={translate("curves.curveName")}
                     onCancel={clearActionState}
@@ -330,6 +334,9 @@ export const CurveSidebar = ({
                   label="New curve name"
                   value=""
                   placeholder={translate("curves.curveName")}
+                  sanitize={(raw) =>
+                    LabelManager.sanitizeLabel(raw, "curve", labelMaxLength)
+                  }
                   onCommit={handleCurveLabelChange}
                   onCancel={clearActionState}
                 />
@@ -355,6 +362,7 @@ export const CurveSidebar = ({
                   }
                   actions={uncategorizedItemActions}
                   onAction={handleAction}
+                  actionsLabel={moreActionsLabel}
                   readOnly={readOnly}
                 />
               );
@@ -387,7 +395,7 @@ const isCreatingInSection = (
 };
 
 const InvalidCurveIcon = () => (
-  <span className="text-orange-500 shrink-0">
-    <WarningIcon size="sm" />
+  <span className="text-warning shrink-0">
+    <WarningIcon size="md" />
   </span>
 );

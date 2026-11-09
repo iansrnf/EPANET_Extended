@@ -1,50 +1,51 @@
+import clsx from "clsx";
 import { ChevronLeftIcon } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Button, Loading } from "src/components/elements";
+import { Button } from "src/components/elements";
+import { RingSpinner } from "src/components/ring-spinner";
+import { Action, ActionButton } from "src/components/action-button";
 import { useTranslate } from "src/hooks/use-translate";
 import { useZoom } from "src/hooks/use-zoom";
 import { useUserTracking } from "src/infra/user-tracking";
-import { NoIssuesIcon } from "src/icons";
-
-export const enum CheckType {
-  connectivityTrace = "connectivityTrace",
-  orphanAssets = "orphanAssets",
-  proximityAnomalies = "proximityAnomalies",
-  crossingPipes = "crossingPipes",
-}
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ArchiveIcon,
+  NoIssuesIcon,
+  UndoIcon,
+} from "src/icons";
+import { CheckType } from "src/lib/network-review";
+import { FixButton } from "./fixes/fix-button";
 
 export const ToolHeader = ({
   onGoBack,
-  itemsCount,
-  checkType,
+  title,
+  summary,
+  actions,
   autoFocus = false,
 }: {
   onGoBack: () => void;
-  itemsCount: number;
-  checkType: CheckType;
+  title: string;
+  summary?: string;
+  actions?: Action[];
   autoFocus?: boolean;
 }) => {
   const translate = useTranslate();
-  const userTracking = useUserTracking();
   const headerRef = useRef<HTMLDivElement>(null);
 
-  const goBack = useCallback(() => {
-    userTracking.capture({
-      name: `networkReview.${checkType}.back`,
-      count: itemsCount,
-    });
-    onGoBack();
-  }, [onGoBack, userTracking, itemsCount, checkType]);
+  const applicableActions = (actions ?? []).filter(
+    (action) => action.applicable,
+  );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        goBack();
+        onGoBack();
       }
     },
-    [goBack],
+    [onGoBack],
   );
 
   useEffect(() => {
@@ -59,46 +60,67 @@ export const ToolHeader = ({
   return (
     <div
       ref={headerRef}
-      className="grid grid-cols-[auto_1fr] gap-x-1 items-start w-full border-b border-gray-200 pl-1 py-3"
+      className="grid grid-cols-[auto_1fr] gap-x-1 items-start w-full border-b pl-1 py-2"
       tabIndex={autoFocus ? 0 : undefined}
       onKeyDown={autoFocus ? handleKeyDown : undefined}
     >
       <Button
-        className="mt-[-.25rem] py-1.5"
-        size="xs"
+        className="h-6 w-6 justify-center -my-0.5"
+        size="xxs"
         variant={"quiet"}
-        role="button"
         aria-label={translate("back")}
-        onClick={goBack}
+        onClick={onGoBack}
       >
         <ChevronLeftIcon size={16} />
       </Button>
-      <div className="w-full flex-col">
-        <p className="text-sm font-bold text-gray-900 dark:text-white">
-          {translate(`networkReview.${checkType}.title`)}
-        </p>
-        <Summary checkType={checkType} count={itemsCount} />
+      <div className="w-full pr-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-size-base font-bold text-default">{title}</p>
+          {applicableActions.length > 0 && (
+            <div className="flex gap-1 -my-1.5">
+              {applicableActions.map((action, i) => (
+                <ActionButton key={i} action={action} />
+              ))}
+            </div>
+          )}
+        </div>
+        {summary !== undefined && (
+          <p className="text-subtle text-size-base">{summary}</p>
+        )}
       </div>
     </div>
   );
 };
 
-const Summary = ({
-  count,
-  checkType,
-}: {
-  count: number;
-  checkType: CheckType;
-}) => {
+// Network-review-specific bridge: derives the ToolHeader props from a check
+// type and owns the "back" tracking, keeping ToolHeader a generic component.
+export const useCheckHeader = (
+  checkType: CheckType,
+  itemsCount: number,
+  onGoBack: () => void,
+) => {
   const translate = useTranslate();
-  const message = translate(`networkReview.${checkType}.summary`, count);
-  return <p className="text-gray-500 text-sm">{message}</p>;
+  const userTracking = useUserTracking();
+
+  const goBack = useCallback(() => {
+    userTracking.capture({
+      name: `networkReview.${checkType}.back`,
+      count: itemsCount,
+    });
+    onGoBack();
+  }, [checkType, itemsCount, onGoBack, userTracking]);
+
+  return {
+    title: translate(`networkReview.${checkType}.title`),
+    summary: translate(`networkReview.${checkType}.summary`, itemsCount),
+    onGoBack: goBack,
+  };
 };
 
 export const ToolDescription = ({ checkType }: { checkType: CheckType }) => {
   const translate = useTranslate();
   return (
-    <p className="text-sm w-full p-3">
+    <p className="text-size-base w-full p-3">
       {translate(`networkReview.${checkType}.description`)}
     </p>
   );
@@ -108,10 +130,10 @@ export const EmptyState = ({ checkType }: { checkType: CheckType }) => {
   const translate = useTranslate();
   return (
     <div className="grow flex flex-col items-center justify-center px-4 pb-4">
-      <div className="text-gray-400">
-        <NoIssuesIcon size={96} />
+      <div className="text-subtle">
+        <NoIssuesIcon size="2xl" />
       </div>
-      <p className="text-sm text-center py-4 text-gray-600 max-w-48">
+      <p className="text-size-base text-center py-4 text-subtle max-w-48">
         {translate(`networkReview.${checkType}.emptyMessage`)}
       </p>
     </div>
@@ -134,15 +156,15 @@ export const useLoadingStatus = () => {
 export const LoadingState = ({ overlay = false }: { overlay?: boolean }) => {
   if (overlay) {
     return (
-      <div className="absolute bottom-px inset-0 flex flex-col items-center justify-center bg-white/80 dark:bg-gray-900/80 backdrop-blur-xs z-10">
-        <Loading />
+      <div className="absolute bottom-px inset-0 flex flex-col items-center justify-center bg-base/80/80 backdrop-blur-xs z-10">
+        <RingSpinner size="lg" />
       </div>
     );
   }
 
   return (
     <div className="grow flex flex-col items-center justify-center px-4 pb-4">
-      <Loading />
+      <RingSpinner size="lg" />
     </div>
   );
 };
@@ -211,15 +233,102 @@ const useListAutoFocus = (options: {
   return { listRef, focusList };
 };
 
+export type Archiving<I> = {
+  isArchived: (itemId: I) => boolean;
+  onArchive: (itemId: I) => void;
+  onRestore: (itemId: I) => void;
+};
+
+type ListRow<T> =
+  | { kind: "item"; item: T; itemIndex: number; isArchived: boolean }
+  | { kind: "archivedHeader"; count: number };
+
+// Archived rows are dropped from the array entirely while the section is closed,
+// so every arrow/Page/Home/End calculation skips them without knowing they exist.
+const buildListRows = <T, I>(
+  items: T[],
+  getItemId: (item: T) => I,
+  archiving: Archiving<I> | undefined,
+  isSectionOpen: boolean,
+): ListRow<T>[] => {
+  if (!archiving) {
+    return items.map((item, itemIndex) => ({
+      kind: "item",
+      item,
+      itemIndex,
+      isArchived: false,
+    }));
+  }
+
+  const active: ListRow<T>[] = [];
+  const archived: ListRow<T>[] = [];
+
+  items.forEach((item, itemIndex) => {
+    const row = {
+      kind: "item",
+      item,
+      itemIndex,
+      isArchived: archiving.isArchived(getItemId(item)),
+    } as const;
+
+    (row.isArchived ? archived : active).push(row);
+  });
+
+  if (archived.length === 0) return active;
+
+  return [
+    ...active,
+    { kind: "archivedHeader", count: archived.length },
+    ...(isSectionOpen ? archived : []),
+  ];
+};
+
+const ArchivedSectionHeader = ({
+  count,
+  isOpen,
+  isFocused,
+  onToggle,
+}: {
+  count: number;
+  isOpen: boolean;
+  isFocused: boolean;
+  onToggle: () => void;
+}) => {
+  const translate = useTranslate();
+
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      aria-expanded={isOpen}
+      onClick={onToggle}
+      onMouseDown={(e) => e.preventDefault()}
+      className={clsx(
+        "w-full flex items-center gap-1 h-8 px-1 rounded-sm",
+        "text-size-base font-semibold text-default",
+        isFocused ? "bg-accent-tint" : "hover:bg-base-hover",
+      )}
+    >
+      {isOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}
+      <span className="truncate">{translate("archived")}</span>
+      <span className="shrink-0">({count})</span>
+    </button>
+  );
+};
+
 export const VirtualizedIssuesList = <T, I>({
   items,
   selectedItemId,
   onSelect,
   getItemId: getIdFromIssue,
   renderItem,
+  renderItemAction,
+  onItemAction,
+  archiving,
   checkType,
-  estimateSize = 35,
+  estimateSize = 32,
   autoFocus = true,
+  showDescription = true,
   onGoBack,
 }: {
   items: T[];
@@ -231,15 +340,22 @@ export const VirtualizedIssuesList = <T, I>({
     item: T,
     selectedId: I | null,
     onClick: (item: T) => void,
+    isArchived: boolean,
   ) => React.ReactNode;
+  renderItemAction?: (item: T, isSelected: boolean) => React.ReactNode;
+  onItemAction?: (itemId: I) => void;
+  archiving?: Archiving<I>;
   checkType: CheckType;
   estimateSize?: number;
   autoFocus?: boolean;
+  showDescription?: boolean;
   onGoBack: () => void;
 }) => {
-  const headerRows = 1;
+  const translate = useTranslate();
   const lastKeyboardNavigatedIndexRef = useRef<number | null>(null);
   const lastProcessedSelectedIdRef = useRef<I | null>(null);
+  const [isHeaderFocused, setHeaderFocused] = useState(false);
+  const [isArchivedSectionOpen, setArchivedSectionOpen] = useState(false);
 
   const { zoomIn, zoomOut } = useZoom();
 
@@ -248,16 +364,63 @@ export const VirtualizedIssuesList = <T, I>({
     itemsCount: items.length,
   });
 
+  const listRows = useMemo(
+    () =>
+      buildListRows(items, getIdFromIssue, archiving, isArchivedSectionOpen),
+    [items, getIdFromIssue, archiving, isArchivedSectionOpen],
+  );
+
   const rowVirtualizer = useVirtualizer({
-    count: items.length + headerRows,
+    count: listRows.length,
     getScrollElement: () => listRef.current,
     estimateSize: () => estimateSize,
   });
+
+  // Focus and selection diverge only for the section header, which is focusable
+  // but not selectable — so it must not touch the map selection.
+  const focusRow = useCallback(
+    (index: number) => {
+      const row = listRows[index];
+      if (!row) return;
+
+      lastKeyboardNavigatedIndexRef.current = index;
+
+      if (row.kind === "archivedHeader") {
+        setHeaderFocused(true);
+        lastProcessedSelectedIdRef.current = null;
+        onSelect(null);
+        return;
+      }
+
+      setHeaderFocused(false);
+      lastProcessedSelectedIdRef.current = getIdFromIssue(row.item);
+      onSelect(row.item);
+    },
+    [listRows, getIdFromIssue, onSelect],
+  );
+
+  const toggleArchivedSection = useCallback(() => {
+    const headerIndex = listRows.findIndex(
+      (row) => row.kind === "archivedHeader",
+    );
+    setArchivedSectionOpen((open) => !open);
+
+    const focusedIndex = lastKeyboardNavigatedIndexRef.current;
+    if (
+      headerIndex !== -1 &&
+      focusedIndex !== null &&
+      focusedIndex > headerIndex
+    ) {
+      lastKeyboardNavigatedIndexRef.current = headerIndex;
+      setHeaderFocused(true);
+    }
+  }, [listRows]);
 
   const handleItemClick = useCallback(
     (item: T, index: number) => {
       lastKeyboardNavigatedIndexRef.current = index;
       lastProcessedSelectedIdRef.current = getIdFromIssue(item);
+      setHeaderFocused(false);
 
       onSelect(item);
       focusList();
@@ -268,7 +431,7 @@ export const VirtualizedIssuesList = <T, I>({
   const ensureItemIsVisible = useCallback(() => {
     if (lastKeyboardNavigatedIndexRef.current === null) return;
 
-    const rowIndex = lastKeyboardNavigatedIndexRef.current + headerRows;
+    const rowIndex = lastKeyboardNavigatedIndexRef.current;
     const range = rowVirtualizer.range;
 
     if (!range) return;
@@ -284,77 +447,111 @@ export const VirtualizedIssuesList = <T, I>({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (items.length === 0) return;
+      if (listRows.length === 0) return;
 
       const range = rowVirtualizer.range;
       if (!range) return;
 
       const currentIndex = lastKeyboardNavigatedIndexRef.current ?? -1;
+      const focusedRow = listRows[currentIndex];
 
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
-          const nextIndex = Math.min(currentIndex + 1, items.length - 1);
-          onSelect(items[nextIndex]);
-          lastKeyboardNavigatedIndexRef.current = nextIndex;
-          lastProcessedSelectedIdRef.current = getIdFromIssue(items[nextIndex]);
+          focusRow(Math.min(currentIndex + 1, listRows.length - 1));
           break;
         case "ArrowUp":
           e.preventDefault();
-          const prevIndex = currentIndex <= 0 ? 0 : currentIndex - 1;
-          onSelect(items[prevIndex]);
-          lastKeyboardNavigatedIndexRef.current = prevIndex;
-          lastProcessedSelectedIdRef.current = getIdFromIssue(items[prevIndex]);
+          focusRow(currentIndex <= 0 ? 0 : currentIndex - 1);
           break;
         case "PageDown":
           e.preventDefault();
-          const { endIndex } = range;
-          const nextPageIndex = Math.min(
-            Math.max(endIndex - headerRows, 0),
-            items.length - 1,
-          );
-          onSelect(items[nextPageIndex]);
-          lastKeyboardNavigatedIndexRef.current = nextPageIndex;
-          lastProcessedSelectedIdRef.current = getIdFromIssue(
-            items[nextPageIndex],
-          );
+          focusRow(Math.min(range.endIndex, listRows.length - 1));
           break;
         case "PageUp":
           e.preventDefault();
-          const { startIndex } = range;
-          const previousPageIndex = Math.max(startIndex - headerRows - 1, 0);
-          onSelect(items[previousPageIndex]);
-          lastKeyboardNavigatedIndexRef.current = previousPageIndex;
-          lastProcessedSelectedIdRef.current = getIdFromIssue(
-            items[previousPageIndex],
-          );
+          focusRow(Math.max(range.startIndex - 1, 0));
           break;
         case "Home":
           e.preventDefault();
-          const firstIndex = 0;
-          onSelect(items[firstIndex]);
-          lastKeyboardNavigatedIndexRef.current = firstIndex;
-          lastProcessedSelectedIdRef.current = getIdFromIssue(
-            items[firstIndex],
-          );
+          focusRow(0);
           break;
         case "End":
           e.preventDefault();
-          const lastIndex = items.length - 1;
-          onSelect(items[lastIndex]);
-          lastKeyboardNavigatedIndexRef.current = lastIndex;
-          lastProcessedSelectedIdRef.current = getIdFromIssue(items[lastIndex]);
+          focusRow(listRows.length - 1);
           break;
         case "Escape":
           e.preventDefault();
           if (lastKeyboardNavigatedIndexRef.current !== null) {
             lastKeyboardNavigatedIndexRef.current = null;
             lastProcessedSelectedIdRef.current = null;
+            setHeaderFocused(false);
             onSelect(null);
           } else if (onGoBack) {
             onGoBack();
           }
           break;
+        case "Delete":
+        case "Backspace": {
+          if (!archiving) break;
+          // Claims the key before the global asset-delete shortcut sees it.
+          e.preventDefault();
+
+          if (
+            !focusedRow ||
+            focusedRow.kind !== "item" ||
+            focusedRow.isArchived
+          )
+            break;
+
+          const remaining = listRows.filter(
+            (row) =>
+              row.kind === "item" && !row.isArchived && row !== focusedRow,
+          );
+          const activeIndex = listRows
+            .filter((row) => row.kind === "item" && !row.isArchived)
+            .indexOf(focusedRow);
+
+          archiving.onArchive(getIdFromIssue(focusedRow.item));
+
+          const next = remaining[activeIndex % remaining.length];
+          onSelect(
+            next && next.kind === "item" && remaining.length > 0
+              ? next.item
+              : null,
+          );
+          break;
+        }
+        case "Enter": {
+          if (focusedRow?.kind === "archivedHeader") {
+            e.preventDefault();
+            toggleArchivedSection();
+            break;
+          }
+
+          if (
+            archiving &&
+            focusedRow?.kind === "item" &&
+            focusedRow.isArchived
+          ) {
+            e.preventDefault();
+            archiving.onRestore(getIdFromIssue(focusedRow.item));
+            onSelect(focusedRow.item);
+            break;
+          }
+
+          if (!onItemAction || selectedItemId === null) break;
+          e.preventDefault();
+
+          const actedIndex = items.findIndex(
+            (item) => getIdFromIssue(item) === selectedItemId,
+          );
+          const nextIssue = nextIssueToSelect(items, actedIndex);
+
+          onItemAction(selectedItemId);
+          onSelect(nextIssue);
+          break;
+        }
         case "+":
         case "=":
           e.preventDefault();
@@ -371,6 +568,10 @@ export const VirtualizedIssuesList = <T, I>({
     },
     [
       items,
+      listRows,
+      focusRow,
+      archiving,
+      toggleArchivedSection,
       rowVirtualizer.range,
       ensureItemIsVisible,
       onSelect,
@@ -378,6 +579,8 @@ export const VirtualizedIssuesList = <T, I>({
       onGoBack,
       zoomIn,
       zoomOut,
+      onItemAction,
+      selectedItemId,
     ],
   );
 
@@ -387,78 +590,147 @@ export const VirtualizedIssuesList = <T, I>({
         selectedItemId !== lastProcessedSelectedIdRef.current &&
         selectedItemId !== null
       ) {
-        const newIndex = items.findIndex(
-          (item) => getIdFromIssue(item) === selectedItemId,
+        const newIndex = listRows.findIndex(
+          (row) =>
+            row.kind === "item" && getIdFromIssue(row.item) === selectedItemId,
         );
         if (newIndex !== -1) {
           lastKeyboardNavigatedIndexRef.current = newIndex;
           lastProcessedSelectedIdRef.current = selectedItemId;
+          setHeaderFocused(false);
         }
       }
       ensureItemIsVisible();
     },
-    [selectedItemId, items, getIdFromIssue, ensureItemIsVisible],
+    [selectedItemId, listRows, getIdFromIssue, ensureItemIsVisible],
   );
 
   const rows = rowVirtualizer.getVirtualItems();
 
   return (
-    <div
-      ref={listRef}
-      className="group flex-auto pb-1 overflow-y-auto placemark-scrollbar"
-      style={{ contain: "strict" }}
-      tabIndex={0}
-      onKeyDown={handleKeyDown}
-    >
+    <div className="flex-auto flex flex-col min-h-0">
+      {showDescription && <ToolDescription checkType={checkType} />}
       <div
-        className="w-full relative"
-        style={{ height: rowVirtualizer.getTotalSize() }}
+        ref={listRef}
+        className="group flex-auto pb-1 overflow-y-auto placemark-scrollbar"
+        style={{ contain: "strict" }}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
       >
         <div
-          className="absolute top-0 left-0 w-full"
-          style={{
-            transform: `translateY(${rows[0]?.start ?? 0}px)`,
-          }}
+          className="w-full relative"
+          style={{ height: rowVirtualizer.getTotalSize() }}
         >
-          {rows.map((virtualRow) => {
-            if (virtualRow.index === 0) {
-              return (
-                <div
-                  key="description"
-                  data-index={virtualRow.index}
-                  className="w-full"
-                  ref={rowVirtualizer.measureElement}
-                  role="listItem"
-                >
-                  <ToolDescription checkType={checkType} />
-                </div>
+          <ul
+            role="list"
+            className="absolute top-0 left-0 w-full"
+            style={{
+              transform: `translateY(${rows[0]?.start ?? 0}px)`,
+            }}
+          >
+            {rows.map((virtualRow) => {
+              const row = listRows[virtualRow.index];
+              if (!row) return null;
+
+              if (row.kind === "archivedHeader") {
+                return (
+                  <li
+                    key="archived-header"
+                    data-index={virtualRow.index}
+                    className="w-full px-1"
+                    ref={rowVirtualizer.measureElement}
+                  >
+                    <ArchivedSectionHeader
+                      count={row.count}
+                      isOpen={isArchivedSectionOpen}
+                      isFocused={
+                        isHeaderFocused &&
+                        lastKeyboardNavigatedIndexRef.current ===
+                          virtualRow.index
+                      }
+                      onToggle={() => {
+                        focusRow(virtualRow.index);
+                        toggleArchivedSection();
+                        focusList();
+                      }}
+                    />
+                  </li>
+                );
+              }
+
+              const { item, itemIndex, isArchived } = row;
+              const handleClickWithIndex = (clickedIssue: T) =>
+                handleItemClick(clickedIssue, virtualRow.index);
+
+              const isItemSelected = getIdFromIssue(item) === selectedItemId;
+              const itemContent = renderItem(
+                itemIndex,
+                item,
+                selectedItemId,
+                handleClickWithIndex,
+                isArchived,
               );
-            }
 
-            const item = items[virtualRow.index - headerRows];
-            const itemIndex = virtualRow.index - headerRows;
-            const handleClickWithIndex = (clickedIssue: T) =>
-              handleItemClick(clickedIssue, itemIndex);
+              const rowAction = isArchived ? (
+                <FixButton
+                  label={translate("restore")}
+                  icon={<UndoIcon size="md" />}
+                  onFix={() => archiving?.onRestore(getIdFromIssue(item))}
+                />
+              ) : (
+                <>
+                  {renderItemAction?.(item, isItemSelected)}
+                  {archiving ? (
+                    <FixButton
+                      label={translate("archive")}
+                      icon={<ArchiveIcon size="md" />}
+                      onFix={() => archiving.onArchive(getIdFromIssue(item))}
+                    />
+                  ) : null}
+                </>
+              );
 
-            return (
-              <div
-                key={String(getIdFromIssue(item))}
-                data-index={virtualRow.index}
-                className="w-full px-1"
-                ref={rowVirtualizer.measureElement}
-                role="listItem"
-              >
-                {renderItem(
-                  virtualRow.index,
-                  item,
-                  selectedItemId,
-                  handleClickWithIndex,
-                )}
-              </div>
-            );
-          })}
+              const hasAction = isArchived || !!archiving || !!renderItemAction;
+
+              return (
+                <li
+                  key={String(getIdFromIssue(item))}
+                  data-index={virtualRow.index}
+                  className={clsx("w-full", isArchived ? "pl-5 pr-1" : "px-1")}
+                  ref={rowVirtualizer.measureElement}
+                >
+                  <div
+                    className={clsx(
+                      "group/item flex items-center w-full rounded-sm",
+                      isItemSelected ? "bg-accent-tint" : "hover:bg-base-hover",
+                    )}
+                  >
+                    <div className="min-w-0 flex-auto">{itemContent}</div>
+                    {hasAction ? (
+                      <div
+                        className={clsx(
+                          "flex-none self-stretch flex items-center gap-x-1 pr-1",
+                          isItemSelected
+                            ? ""
+                            : "invisible group-hover/item:visible",
+                        )}
+                      >
+                        {rowAction}
+                      </div>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       </div>
     </div>
   );
+};
+
+const nextIssueToSelect = <T,>(items: T[], index: number): T | null => {
+  if (index < 0 || items.length === 0) return null;
+
+  return items[(index + 1) % items.length] ?? null;
 };

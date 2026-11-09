@@ -1,7 +1,7 @@
 import { Junction } from "src/hydraulic-model";
 import { parseInp } from "./parse-inp";
 import { getByLabel } from "src/__helpers__/asset-queries";
-import { Valve } from "src/hydraulic-model/asset-types";
+import { Valve } from "@epanet-js/hydraulic-model";
 
 describe("parse valves", () => {
   it("parses a valve", () => {
@@ -87,6 +87,38 @@ describe("parse valves", () => {
     expect(v3.initialStatus).toEqual("active");
   });
 
+  it("keeps valve active when status section has a setting or ACTIVE", () => {
+    const anyNumber = 10;
+    const inp = `
+    [JUNCTIONS]
+    j1\t${anyNumber}
+    j2\t${anyNumber}
+    j3\t${anyNumber}
+
+    [VALVES]
+    v1\tj1\tj2\t10\tPRV\t30\t0
+    v2\tj2\tj3\t10\tPRV\t30\t0
+
+    [STATUS]
+    v1\t45
+    v2\tActive
+
+    [COORDINATES]
+    j1\t${10}\t${20}
+    j2\t${30}\t${40}
+    j3\t${30}\t${40}
+    `;
+
+    const { hydraulicModel } = parseInp(inp);
+
+    const v1 = getByLabel(hydraulicModel.assets, "v1") as Valve;
+    expect(v1.initialStatus).toEqual("active");
+    expect(v1.setting).toEqual(45);
+    const v2 = getByLabel(hydraulicModel.assets, "v2") as Valve;
+    expect(v2.initialStatus).toEqual("active");
+    expect(v2.setting).toEqual(30);
+  });
+
   it("is case insensitive", () => {
     const anyNumber = 10;
     const inp = `
@@ -150,7 +182,7 @@ describe("parse valves", () => {
     expect(v1.curveId).toBeDefined();
   });
 
-  it("defaults missing minor loss to zero", () => {
+  it("leaves minor loss undefined when omitted and null values are allowed", () => {
     const valveId = "v1";
     const inp = `
     [JUNCTIONS]
@@ -168,7 +200,7 @@ describe("parse valves", () => {
     const { hydraulicModel } = parseInp(inp);
 
     const valve = getByLabel(hydraulicModel.assets, valveId) as Valve;
-    expect(valve.minorLoss).toEqual(0);
+    expect(valve.minorLoss).toBeUndefined();
   });
 
   it("stores curveId on PCV valve", () => {

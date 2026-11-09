@@ -1,0 +1,137 @@
+import type { ComponentType } from "react";
+import type { Getter, Setter } from "jotai";
+import type { TranslateFn } from "src/hooks/use-translate";
+import type { HydraulicModel } from "src/hydraulic-model";
+import type { useUserTracking } from "src/infra/user-tracking";
+import type { Dock, HorizontalDock } from "./docks";
+import { PanelDockContext } from "./panel-dock-context";
+import type { Panel, PanelOfType, PanelType } from "./panel";
+import type { DataGridState } from "src/components/data-grid";
+import {
+  assetTablePanel,
+  customerPointTablePanel,
+  zoneTablePanel,
+} from "./data-tables/panel";
+import { hglProfilePanel } from "./hgl-profile/panel";
+import { networkReviewPanel } from "./network-review/panel";
+import { collectionsPanel } from "./collections/panel";
+import { assetPanel } from "./asset-panel/panel";
+import { mapStylingPanel } from "./map-styling-editor/panel";
+import { scriptsPanel } from "./scripts/panel";
+import { scriptOutputPanel } from "./script-output/panel";
+
+export type PanelLifecycleContext = {
+  get: Getter;
+  set: Setter;
+  userTracking: ReturnType<typeof useUserTracking>;
+};
+
+export type PanelLabelContext = {
+  translate: TranslateFn;
+};
+
+// Descriptions report on model contents (a scoped table's row count), so they
+// need the model; labels never do.
+export type PanelDescriptionContext = PanelLabelContext & {
+  hydraulicModel: HydraulicModel;
+};
+
+export type PanelTemplate<T extends PanelType> = {
+  component: ComponentType<{ panel: PanelOfType<T> }>;
+  icon: ComponentType<{ panel: PanelOfType<T> }>;
+  buildLabel: (panel: PanelOfType<T>, context: PanelLabelContext) => string;
+  buildDescription?: (
+    panel: PanelOfType<T>,
+    context: PanelDescriptionContext,
+  ) => string | undefined;
+  onDeactivate?: (
+    context: PanelLifecycleContext,
+    panel: PanelOfType<T>,
+  ) => void;
+  onClose?: (context: PanelLifecycleContext, panel: PanelOfType<T>) => void;
+};
+
+export type PanelLayout = {
+  movedToDock?: HorizontalDock;
+  renamedTo?: string;
+};
+
+export type PanelContentStateByType = {
+  "asset-table": DataGridState;
+  "customer-point-table": DataGridState;
+  "zone-table": DataGridState;
+  "hgl-profile": undefined;
+  "network-review": undefined;
+  collections: undefined;
+  asset: undefined;
+  "map-styling": undefined;
+  scripts: undefined;
+  "script-output": { sidebarWidth: number };
+};
+
+export type PanelContentState =
+  PanelContentStateByType[keyof PanelContentStateByType];
+
+const panelTemplates = {
+  "asset-table": assetTablePanel,
+  "customer-point-table": customerPointTablePanel,
+  "zone-table": zoneTablePanel,
+  "hgl-profile": hglProfilePanel,
+  "network-review": networkReviewPanel,
+  collections: collectionsPanel,
+  asset: assetPanel,
+  "map-styling": mapStylingPanel,
+  scripts: scriptsPanel,
+  "script-output": scriptOutputPanel,
+} satisfies { [K in PanelType]: PanelTemplate<K> };
+
+export const panelFor = (panel: Panel): PanelTemplate<PanelType> =>
+  panelTemplates[panel.type] as PanelTemplate<PanelType>;
+
+export const panelLabel = (
+  panel: Panel,
+  renamedTo: string | undefined,
+  context: PanelLabelContext,
+): string => renamedTo ?? panelFor(panel).buildLabel(panel, context);
+
+export const panelDescription = (
+  panel: Panel,
+  context: PanelDescriptionContext,
+): string | undefined => panelFor(panel).buildDescription?.(panel, context);
+
+export const PanelContent = ({
+  panel,
+  dock,
+}: {
+  panel: Panel;
+  dock?: Dock;
+}) => {
+  const Component = panelFor(panel).component;
+  return (
+    <PanelDockContext.Provider value={dock}>
+      <Component panel={panel} />
+    </PanelDockContext.Provider>
+  );
+};
+
+export const PanelIcon = ({ panel }: { panel: Panel }) => {
+  const Icon = panelFor(panel).icon;
+  return <Icon panel={panel} />;
+};
+
+export const contentStateFor = <T extends PanelType>(
+  states: Record<string, PanelContentState>,
+  panelId: string,
+  _panelType: T,
+): PanelContentStateByType[T] | undefined =>
+  states[panelId] as PanelContentStateByType[T] | undefined;
+
+export const withContentState = <T extends PanelType>(
+  states: Record<string, PanelContentState>,
+  panelId: string,
+  _panelType: T,
+  contentState: PanelContentStateByType[T],
+): Record<string, PanelContentState> => ({
+  ...states,
+  [panelId]: contentState,
+});

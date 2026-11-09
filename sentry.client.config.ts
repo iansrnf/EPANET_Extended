@@ -6,14 +6,76 @@ const tunnel =
 
 Sentry.init({
   dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+  maxValueLength: 8192,
   environment: process.env.NODE_ENV || "development",
   release: process.env.SENTRY_RELEASE,
   tracesSampleRate: 1,
   debug: false,
   tunnel,
-  beforeSend: (event) => {
+  denyUrls: [/chrome-extension:\/\//, /^app:\/\/\/scripts\/inpage\.js/],
+  beforeSend: (event, hint) => {
     const privacySettings = readRawPrivacySettings();
     if (privacySettings?.skipErrorReporting === true) return null;
+
+    const error = hint?.originalException;
+
+    const isPosthogNetworkError =
+      error instanceof Error &&
+      error.message === "Failed to fetch" &&
+      event.exception?.values?.some((value) =>
+        value.stacktrace?.frames?.some((frame) =>
+          frame.filename?.includes("posthog-js"),
+        ),
+      );
+    if (isPosthogNetworkError) return null;
+
+    const isCssChunkLoadError = event.exception?.values?.some((value) =>
+      /Loading CSS chunk .* failed/.test(value.value ?? ""),
+    );
+    if (isCssChunkLoadError) return null;
+
+    const isAbortedRequest = event.exception?.values?.some(
+      (value) =>
+        value.type === "NS_BINDING_ABORTED" ||
+        /NS_BINDING_ABORTED/.test(value.value ?? ""),
+    );
+    if (isAbortedRequest) return null;
+
+    // mapbox-gl cancels in-flight tile requests on every pan, zoom and style swap,
+    // and never catches the resulting AbortError, so it surfaces as an unhandled
+    // rejection. Scoped to mapbox frames so app-level aborts still report.
+    const isMapboxTileAbort = event.exception?.values?.some(
+      (value) =>
+        value.type === "AbortError" &&
+        value.stacktrace?.frames?.some((frame) =>
+          frame.filename?.includes("mapbox-gl"),
+        ),
+    );
+    if (isMapboxTileAbort) return null;
+
+    // A SyntaxError reaching window.onerror is caused by JS engines without
+    // full ES2020 support failing to parse features like ?.
+    // A good number of Sentry issues are from crawlers behind spoofed user agents,
+    // adding noise. This prevents these issues from reaching Sentry
+    const isScriptParseError = event.exception?.values?.some(
+      (value) =>
+        value.type === "SyntaxError" &&
+        value.mechanism?.type === "onerror" &&
+        /Unexpected token/.test(value.value ?? ""),
+    );
+    if (isScriptParseError) return null;
+
+    if (
+      error instanceof Error &&
+      "details" in error &&
+      typeof (error as { details: unknown }).details === "object" &&
+      (error as { details: unknown }).details !== null
+    ) {
+      event.contexts = {
+        ...event.contexts,
+        [error.name]: (error as { details: Record<string, unknown> }).details,
+      };
+    }
 
     return event;
   },

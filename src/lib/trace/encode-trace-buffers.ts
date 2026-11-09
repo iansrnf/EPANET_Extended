@@ -1,23 +1,25 @@
 import { HydraulicModel } from "src/hydraulic-model";
-import { ResultsReader } from "src/simulation/results-reader";
-import { BufferType, createBuffer } from "src/lib/buffers";
+import { ResultsReader } from "@epanet-js/simulation";
+import { BufferType, createBuffer } from "@epanet-js/buffers";
 import {
   AssetIndexEncoder,
   AssetIndexBuffers,
+} from "src/hydraulic-model/asset-index-transferable";
+import {
+  type AllowedFlowDirectionQueries,
   type AssetIndexQueries,
-} from "src/hydraulic-model/asset-index";
-import { TopologyEncoder } from "src/hydraulic-model/topology/topologyEncoder";
-import { TopologyBuffers } from "src/hydraulic-model/topology/types";
+} from "@epanet-js/hydraulic-model";
+import {
+  TopologyEncoder,
+  TopologyBuffers,
+} from "src/hydraulic-model/topology/topology-transferable";
 import {
   FlowDirectionBuffers,
   AllowedFlowDirectionBuffers,
 } from "./trace-buffers";
 import { FlowDirection } from "./flow-direction";
 import { AllowedFlowDirection } from "./allowed-flow-direction";
-import type {
-  FlowDirectionQueries,
-  AllowedFlowDirectionQueries,
-} from "./types";
+import type { FlowDirectionQueries } from "./types";
 
 export type TraceRunData = {
   topologyBuffers: TopologyBuffers;

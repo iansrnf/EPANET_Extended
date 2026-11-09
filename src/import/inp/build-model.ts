@@ -7,7 +7,24 @@ import {
   CustomerPointFactory,
   ModelFactories,
   initializeModelFactories,
-} from "src/hydraulic-model/factories";
+  type TankMixingModel,
+  PumpStatus,
+  ValveStatus,
+  AssetId,
+  Pump,
+  CurveId,
+  CurvePoint,
+  CurveType,
+  Curves,
+  defaultCurvePoints,
+  ICurve,
+  isValidCurve,
+  getCurvePointsType,
+  LabelManager,
+  LabelType,
+  AssetFactory,
+  PumpBuildData,
+} from "@epanet-js/hydraulic-model";
 import {
   InpData,
   ItemData,
@@ -22,37 +39,22 @@ import {
   CurveData,
 } from "./inp-data";
 import { IssuesAccumulator } from "./issues";
-import type { TankMixingModel } from "src/hydraulic-model/asset-types/tank";
-import { ProjectSettings } from "src/lib/project-settings";
+import { ProjectSettings } from "@epanet-js/project-settings";
 import {
   presets,
   withPressureUnit,
   withHeadlossDefaults,
-} from "src/lib/project-settings/quantities-spec";
-import type { Unit } from "src/quantity";
+} from "@epanet-js/project-settings";
+import type { Unit } from "@epanet-js/quantity";
 import { Position } from "geojson";
-import { PumpStatus } from "src/hydraulic-model/asset-types/pump";
-import { ValveStatus } from "src/hydraulic-model/asset-types/valve";
 import { ParseInpOptions } from "./parse-inp";
-import { AssetId } from "src/hydraulic-model/asset-types/base-asset";
-import { Pump } from "src/hydraulic-model/asset-types/pump";
-import { ConsecutiveIdsGenerator, IdGenerator } from "src/lib/id-generator";
-import {
-  CurveId,
-  CurvePoint,
-  CurveType,
-  Curves,
-  defaultCurvePoints,
-  ICurve,
-  isValidCurve,
-  getCurvePointsType,
-} from "src/hydraulic-model/curves";
+import { IdGenerator } from "@epanet-js/id-generator";
+import { buildIdPools } from "src/lib/id-pools";
 import {
   LabelResolver,
   parseSimpleControlsFromText,
   parseRulesFromText,
-} from "src/hydraulic-model/controls";
-import { LabelManager } from "src/hydraulic-model/label-manager";
+} from "@epanet-js/hydraulic-model";
 import {
   createEmptyDemands,
   Pattern,
@@ -61,10 +63,6 @@ import {
   PatternMultipliers,
   PatternType,
 } from "src/hydraulic-model";
-import {
-  AssetFactory,
-  PumpBuildData,
-} from "src/hydraulic-model/factories/asset-factory";
 
 type PatternsContext = {
   patterns: Patterns;
@@ -105,20 +103,20 @@ export const buildModel = (
   );
   const skipWgs84Validation = options?.skipWgs84Validation ?? false;
   const populateAssetIndex = options?.populateAssetIndex ?? false;
+  const labelMaxLength = options?.labelMaxLength;
   const nodeIds = new ItemData<AssetId>();
   const linkIds = new ItemData<AssetId>();
 
-  const idGenerator = new ConsecutiveIdsGenerator();
+  const idPools = buildIdPools();
   const labelManager = new LabelManager();
+  const factories = initializeModelFactories({
+    idPools,
+    labelManager,
+  });
+  const idGenerator = factories.idGenerator;
   const hydraulicModel = initializeHydraulicModel({
     demands: createEmptyDemands(),
     idGenerator,
-  });
-
-  const factories = initializeModelFactories({
-    idGenerator,
-    labelManager,
-    defaults,
   });
 
   const { assetFactory } = factories;
@@ -126,11 +124,13 @@ export const buildModel = (
   const curvesContext: CurvesContext = initializeCurvesContext(
     labelManager,
     inpData.curves,
+    idPools.forPool("curve"),
   );
 
   const patternContext: PatternsContext = initializeBuildPatternContext(
     labelManager,
     inpData.patterns,
+    idPools.forPool("pattern"),
     inpData.options.defaultPattern,
   );
 
@@ -142,6 +142,7 @@ export const buildModel = (
       patternContext,
       skipWgs84Validation,
       populateAssetIndex,
+      labelMaxLength,
     });
   }
 
@@ -153,6 +154,7 @@ export const buildModel = (
       patternContext,
       skipWgs84Validation,
       populateAssetIndex,
+      labelMaxLength,
     });
   }
 
@@ -164,6 +166,7 @@ export const buildModel = (
       patternContext,
       skipWgs84Validation,
       populateAssetIndex,
+      labelMaxLength,
     });
   }
 
@@ -181,6 +184,7 @@ export const buildModel = (
         linkIds,
         skipWgs84Validation,
         populateAssetIndex,
+        labelMaxLength,
       },
     );
   }
@@ -193,6 +197,7 @@ export const buildModel = (
       linkIds,
       skipWgs84Validation,
       populateAssetIndex,
+      labelMaxLength,
     });
   }
 
@@ -204,6 +209,7 @@ export const buildModel = (
       linkIds,
       skipWgs84Validation,
       populateAssetIndex,
+      labelMaxLength,
     });
   }
 
@@ -233,7 +239,7 @@ export const buildModel = (
     inpData.patterns,
   );
 
-  addControls(hydraulicModel, inpData.controls, nodeIds, linkIds);
+  addRawControls(hydraulicModel, inpData.controls, nodeIds, linkIds);
 
   return {
     hydraulicModel,
@@ -251,12 +257,13 @@ export const buildModel = (
 const initializeCurvesContext = (
   labelManager: LabelManager,
   rawCurves: ItemData<CurveData>,
+  idGenerator: IdGenerator,
 ): CurvesContext => {
   const curveContext: CurvesContext = {
     curves: new Map(),
     pumpCurves: new Map(),
     labelManager: labelManager,
-    idGenerator: new ConsecutiveIdsGenerator(),
+    idGenerator,
     duplicates: new Map(),
   };
 
@@ -290,12 +297,13 @@ const addCurve = (
 const initializeBuildPatternContext = (
   labelManager: LabelManager,
   rawPatterns: ItemData<PatternData>,
+  idGenerator: IdGenerator,
   defaultPatternOption?: string,
 ): PatternsContext => {
   const patternContext: PatternsContext = {
     patterns: new Map(),
     labelManager: labelManager,
-    idGenerator: new ConsecutiveIdsGenerator(),
+    idGenerator,
     duplicates: new Map(),
   };
 
@@ -373,6 +381,7 @@ const buildDemand = (
         patternId: effectiveId,
       };
     }
+    return { baseDemand };
   }
 
   if (fallbackPatternId !== undefined) {
@@ -393,6 +402,15 @@ const isConstantPattern = (pattern: PatternMultipliers): boolean => {
   return pattern.every((value) => value === 1);
 };
 
+const resolveImportLabel = (
+  rawId: string,
+  type: LabelType,
+  labelMaxLength?: number,
+): string =>
+  labelMaxLength !== undefined
+    ? LabelManager.sanitizeLabel(rawId, type, labelMaxLength)
+    : rawId;
+
 const addJunction = (
   assetFactory: AssetFactory,
   hydraulicModel: HydraulicModel,
@@ -404,6 +422,7 @@ const addJunction = (
     patternContext,
     skipWgs84Validation,
     populateAssetIndex,
+    labelMaxLength,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
@@ -411,6 +430,7 @@ const addJunction = (
     patternContext: PatternsContext;
     skipWgs84Validation: boolean;
     populateAssetIndex: boolean;
+    labelMaxLength?: number;
   },
 ) => {
   const coordinates = getNodeCoordinates(
@@ -459,7 +479,7 @@ const addJunction = (
   }
 
   const junction = assetFactory.createJunction({
-    label: junctionData.id,
+    label: resolveImportLabel(junctionData.id, "junction", labelMaxLength),
     coordinates,
     elevation: junctionData.elevation,
     emitterCoefficient,
@@ -486,6 +506,7 @@ const addReservoir = (
     patternContext,
     skipWgs84Validation,
     populateAssetIndex,
+    labelMaxLength,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
@@ -493,6 +514,7 @@ const addReservoir = (
     patternContext: PatternsContext;
     skipWgs84Validation: boolean;
     populateAssetIndex: boolean;
+    labelMaxLength?: number;
   },
 ) => {
   const coordinates = getNodeCoordinates(
@@ -537,7 +559,7 @@ const addReservoir = (
   }
 
   const reservoir = assetFactory.createReservoir({
-    label: reservoirData.id,
+    label: resolveImportLabel(reservoirData.id, "reservoir", labelMaxLength),
     coordinates,
     head: reservoirData.baseHead,
     elevation: reservoirData.elevation,
@@ -565,6 +587,7 @@ const addTank = (
     patternContext,
     skipWgs84Validation,
     populateAssetIndex,
+    labelMaxLength,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
@@ -572,6 +595,7 @@ const addTank = (
     patternContext: PatternsContext;
     skipWgs84Validation: boolean;
     populateAssetIndex: boolean;
+    labelMaxLength?: number;
   },
 ) => {
   const coordinates = getNodeCoordinates(
@@ -617,7 +641,7 @@ const addTank = (
   const mixingModel = mixingData?.model as TankMixingModel | undefined;
 
   const tank = assetFactory.createTank({
-    label: tankData.id,
+    label: resolveImportLabel(tankData.id, "tank", labelMaxLength),
     coordinates,
     elevation: tankData.elevation,
     initialLevel: tankData.initialLevel,
@@ -654,6 +678,7 @@ const addPump = (
     linkIds,
     skipWgs84Validation,
     populateAssetIndex,
+    labelMaxLength,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
@@ -661,6 +686,7 @@ const addPump = (
     linkIds: ItemData<AssetId>;
     skipWgs84Validation: boolean;
     populateAssetIndex: boolean;
+    labelMaxLength?: number;
   },
 ) => {
   const linkProperties = getLinkProperties(
@@ -717,7 +743,7 @@ const addPump = (
   }
 
   let initialStatus: PumpStatus = "on";
-  let speed = pumpData.speed !== undefined ? pumpData.speed : 1;
+  let speed: number | undefined = pumpData.speed;
 
   if (inpData.status.has(pumpData.id)) {
     const statusValue = inpData.status.get(pumpData.id) as string;
@@ -773,7 +799,7 @@ const addPump = (
   const energyPrice = pumpEnergyData?.price;
 
   const pump = assetFactory.createPump({
-    label: pumpData.id,
+    label: resolveImportLabel(pumpData.id, "pump", labelMaxLength),
     connections,
     ...definitionProps,
     initialStatus,
@@ -809,6 +835,7 @@ const addValve = (
     linkIds,
     skipWgs84Validation,
     populateAssetIndex,
+    labelMaxLength,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
@@ -816,6 +843,7 @@ const addValve = (
     linkIds: ItemData<AssetId>;
     skipWgs84Validation: boolean;
     populateAssetIndex: boolean;
+    labelMaxLength?: number;
   },
 ) => {
   const linkProperties = getLinkProperties(
@@ -829,9 +857,16 @@ const addValve = (
   const { connections, coordinates } = linkProperties;
 
   let initialStatus: ValveStatus = "active";
+  let setting = valveData.setting;
   if (inpData.status.has(valveData.id)) {
     const statusValue = inpData.status.get(valveData.id) as string;
-    initialStatus = statusValue === "CLOSED" ? "closed" : "open";
+    if (statusValue === "CLOSED") {
+      initialStatus = "closed";
+    } else if (statusValue === "OPEN") {
+      initialStatus = "open";
+    } else if (!isNaN(parseFloat(statusValue))) {
+      setting = parseFloat(statusValue);
+    }
   }
 
   let resolvedCurveId: CurveId | undefined;
@@ -847,11 +882,11 @@ const addValve = (
     }
   }
   const valve = assetFactory.createValve({
-    label: valveData.id,
+    label: resolveImportLabel(valveData.id, "valve", labelMaxLength),
     diameter: valveData.diameter,
     minorLoss: valveData.minorLoss,
     kind: valveData.kind,
-    setting: valveData.kind === "gpv" ? undefined : valveData.setting,
+    setting: valveData.kind === "gpv" ? undefined : setting,
     initialStatus,
     connections,
     coordinates,
@@ -875,6 +910,7 @@ const addPipe = (
     linkIds,
     skipWgs84Validation,
     populateAssetIndex,
+    labelMaxLength,
   }: {
     inpData: InpData;
     issues: IssuesAccumulator;
@@ -882,6 +918,7 @@ const addPipe = (
     linkIds: ItemData<AssetId>;
     skipWgs84Validation: boolean;
     populateAssetIndex: boolean;
+    labelMaxLength?: number;
   },
 ) => {
   const linkProperties = getLinkProperties(
@@ -908,7 +945,7 @@ const addPipe = (
   const bulkReactionCoeff = inpData.reactions.pipeBulk.get(pipeData.id);
   const wallReactionCoeff = inpData.reactions.pipeWall.get(pipeData.id);
   const pipe = assetFactory.createPipe({
-    label: pipeData.id,
+    label: resolveImportLabel(pipeData.id, "pipe", labelMaxLength),
     length: pipeData.length,
     diameter: pipeData.diameter,
     minorLoss: pipeData.minorLoss,
@@ -1060,7 +1097,7 @@ export const isWgs84 = (coordinates: Position) =>
   coordinates[1] >= -90 &&
   coordinates[1] <= 90;
 
-const addControls = (
+const addRawControls = (
   hydraulicModel: HydraulicModel,
   rawControls: InpData["controls"],
   nodeIds: ItemData<AssetId>,
@@ -1070,7 +1107,7 @@ const addControls = (
     return assetType === "link" ? linkIds.get(label) : nodeIds.get(label);
   };
 
-  hydraulicModel.controls = {
+  hydraulicModel.rawControls = {
     simple: parseSimpleControlsFromText(rawControls.simple, resolveLabel),
     rules: parseRulesFromText(rawControls.ruleBased, resolveLabel),
   };

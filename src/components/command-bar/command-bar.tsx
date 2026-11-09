@@ -6,10 +6,11 @@ import { SearchIcon } from "src/icons";
 import { useTranslate } from "src/hooks/use-translate";
 import { useZoomTo } from "src/hooks/use-zoom-to";
 import { Asset, AssetId } from "src/hydraulic-model";
-import { LabelType } from "src/hydraulic-model/label-manager";
+import { LabelType } from "@epanet-js/hydraulic-model";
 import { USelection } from "src/selection";
-import { useSelection } from "src/selection/use-selection";
-import { customerPointsAtom } from "src/state/hydraulic-model";
+import { useSelection } from "src/selection";
+import { customerPointsDerivedAtom } from "src/state/derived-branch-state";
+import { zonesAtom } from "src/state/zones";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import { selectionAtom } from "src/state/selection";
 import { currentFileNameAtom } from "src/state/file-system";
@@ -23,7 +24,8 @@ type SearchOption = {
   label: string;
   data:
     | { kind: "asset"; rawId: AssetId; type: Asset["type"] }
-    | { kind: "customerPoint"; rawId: number };
+    | { kind: "customerPoint"; rawId: number }
+    | { kind: "zone"; rawId: number };
 };
 
 const searchableAssetTypes: ReadonlySet<LabelType> = new Set<LabelType>([
@@ -34,18 +36,6 @@ const searchableAssetTypes: ReadonlySet<LabelType> = new Set<LabelType>([
   "pump",
   "valve",
 ]);
-
-const typeLabel = (type: Asset["type"]): string => {
-  const prefixes: Record<Asset["type"], string> = {
-    pipe: "Pipe",
-    junction: "Junction",
-    reservoir: "Reservoir",
-    tank: "Tank",
-    pump: "Pump",
-    valve: "Valve",
-  };
-  return prefixes[type];
-};
 
 const MAX_RECENTS = 10;
 const MAX_RESULTS = 200;
@@ -80,10 +70,12 @@ export const CommandBar = () => {
 const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
   const translate = useTranslate();
   const { labelManager } = useAtomValue(modelFactoriesAtom);
-  const customerPoints = useAtomValue(customerPointsAtom);
+  const customerPoints = useAtomValue(customerPointsDerivedAtom);
+  const zones = useAtomValue(zonesAtom);
   const selection = useAtomValue(selectionAtom);
   const currentFileName = useAtomValue(currentFileNameAtom);
-  const { selectAsset, selectCustomerPoint } = useSelection(selection);
+  const { selectAsset, selectCustomerPoint, selectZone } =
+    useSelection(selection);
   const zoomTo = useZoomTo();
   const userTracking = useUserTracking();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -99,13 +91,16 @@ const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
       if (option.data.kind === "customerPoint") {
         return customerPoints.has(option.data.rawId);
       }
+      if (option.data.kind === "zone") {
+        return zones.has(option.data.rawId);
+      }
       const assetData = option.data;
       const results = labelManager.search(option.label, 1);
       return results.some(
         (r) => r.id === assetData.rawId && r.type === assetData.type,
       );
     });
-  }, [networkKey, labelManager, customerPoints]);
+  }, [networkKey, labelManager, customerPoints, zones]);
 
   const addRecent = useCallback(
     (option: SearchOption) => {
@@ -125,6 +120,7 @@ const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
         .filter(
           (entry) =>
             entry.type === "customerPoint" ||
+            entry.type === "zone" ||
             searchableAssetTypes.has(entry.type),
         )
         .map((entry): SearchOption => {
@@ -133,6 +129,13 @@ const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
               id: `c:${entry.id}`,
               label: entry.label,
               data: { kind: "customerPoint", rawId: entry.id },
+            };
+          }
+          if (entry.type === "zone") {
+            return {
+              id: `z:${entry.id}`,
+              label: entry.label,
+              data: { kind: "zone", rawId: entry.id },
             };
           }
           return {
@@ -188,7 +191,10 @@ const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
     addRecent(option);
     if (option.data.kind === "asset") {
       selectAsset(option.data.rawId);
-      zoomTo(USelection.single(option.data.rawId), 18);
+      zoomTo(USelection.singleAsset(option.data.rawId), 18);
+    } else if (option.data.kind === "zone") {
+      selectZone(option.data.rawId);
+      zoomTo(USelection.singleZone(option.data.rawId));
     } else {
       const customerPoint = customerPoints.get(option.data.rawId);
       selectCustomerPoint(option.data.rawId);
@@ -263,8 +269,8 @@ const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
         className="absolute inset-0 bg-black/30 dark:bg-black/50"
         onClick={() => finish("dismissed")}
       />
-      <div className="relative z-10 w-[560px] max-w-[90vw] bg-white dark:bg-gray-800 rounded-lg shadow-2xl border border-gray-200 dark:border-gray-600 overflow-hidden">
-        <div className="flex items-center px-3 border-b border-gray-200 dark:border-gray-700">
+      <div className="relative z-10 w-[560px] max-w-[90vw] bg-popover rounded-lg shadow-2xl border border-gray-200 dark:border-gray-600 overflow-hidden">
+        <div className="flex items-center px-3 border-b">
           <span className="text-gray-400 dark:text-gray-500" aria-hidden>
             <SearchIcon size="lg" />
           </span>
@@ -311,15 +317,17 @@ const CommandBarModal = ({ onClose }: { onClose: () => void }) => {
                   className={clsx(
                     "flex items-center justify-between gap-2 px-3 py-2 text-sm rounded-sm cursor-pointer text-gray-900 dark:text-gray-100",
                     index === activeIndex
-                      ? "bg-purple-300/40"
-                      : "hover:bg-gray-100 dark:hover:bg-gray-700",
+                      ? "bg-base-hover"
+                      : "hover:bg-base-hover",
                   )}
                 >
                   <span className="truncate">{option.label}</span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                  <span className="text-xs text-subtle shrink-0">
                     {option.data.kind === "asset"
-                      ? typeLabel(option.data.type)
-                      : "Customer Point"}
+                      ? translate(option.data.type)
+                      : option.data.kind === "zone"
+                        ? translate("zone")
+                        : translate("customerPoint")}
                   </span>
                 </div>
               ))}

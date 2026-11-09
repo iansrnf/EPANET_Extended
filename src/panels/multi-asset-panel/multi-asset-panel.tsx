@@ -1,55 +1,61 @@
 import { useMemo, useCallback } from "react";
 import { useTranslate } from "src/hooks/use-translate";
 import { pluralize } from "src/lib/utils";
-import { IWrappedFeature } from "src/types";
 import { CollapsibleSection, SectionList } from "src/components/form/fields";
 import { MultiAssetActions } from "./actions";
 import { Asset, AssetId } from "src/hydraulic-model";
-import { Tank } from "src/hydraulic-model/asset-types/tank";
-import { AssetTypeSections } from "./asset-type-sections";
+import {
+  Tank,
+  type CurveType,
+  type PatternType,
+} from "@epanet-js/hydraulic-model";
+import { AssetTypeSections } from "./sections";
+import { MultiCustomAttributesSection } from "./multi-custom-attributes-section";
+import { CustomerPointPanelSection } from "./customer-point-panel-section";
+import { ZonePanelSection } from "./zone-panel-section";
 import { SelectOnlyButton } from "./select-only-button";
 import { useAtom, useAtomValue } from "jotai";
 import { projectSettingsAtom } from "src/state/project-settings";
-import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
-import { modelFactoriesAtom } from "src/state/model-factories";
-import { multiAssetPanelCollapseAtom } from "src/state/layout";
-import { selectionAtom } from "src/state/selection";
 import {
   simulationDerivedAtom,
   simulationResultsDerivedAtom,
+  simulationSettingsDerivedAtom,
+  stagingModelDerivedAtom,
 } from "src/state/derived-branch-state";
-import {
-  computeMultiAssetData,
-  computeMultiAssetDataWithPipeAttributes,
-} from "./data";
-import {
-  BATCH_EDITABLE_PROPERTIES,
-  PIPE_BATCH_EDITABLE_PROPERTIES_WITH_ATTRIBUTES,
-} from "./batch-edit-property-config";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import type { CustomerPoint } from "@epanet-js/hydraulic-model";
+import { modelFactoriesAtom } from "src/state/model-factories";
+import { multiAssetPanelCollapseAtom } from "src/state/layout";
+import { selectionAtom } from "src/state/selection";
+import { computeAssetsStats } from "./asset-stats";
+import { computeAssetsStatsDeprecated } from "./asset-stats-deprecated";
+import { BATCH_EDITABLE_PROPERTIES } from "./batch-edit-property-config";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
+import { useRoughnessInferrer } from "src/hooks/use-roughness-inferrer";
 import { useUserTracking } from "src/infra/user-tracking";
-import { changeProperty } from "src/hydraulic-model/model-operations";
-import type { ChangeableProperty } from "src/hydraulic-model/model-operations/change-property";
-import { activateAssets } from "src/hydraulic-model/model-operations/activate-assets";
-import { deactivateAssets } from "src/hydraulic-model/model-operations/deactivate-assets";
-import { useSelection } from "src/selection/use-selection";
+import { changeProperty } from "@epanet-js/hydraulic-model-operations";
+import type { ChangeableProperty } from "@epanet-js/hydraulic-model-operations";
+import { activateAssets } from "@epanet-js/hydraulic-model-operations";
+import { deactivateAssets } from "@epanet-js/hydraulic-model-operations";
+import { USelection, useSelection } from "src/selection";
 import { useShowPumpLibrary } from "src/commands/show-pump-library";
 import { useShowPatternsLibrary } from "src/commands/show-patterns-library";
-import type { CurveType } from "src/hydraulic-model/curves";
-import type { PatternType } from "src/hydraulic-model/patterns";
 
 export function MultiAssetPanel({
-  selectedFeatures,
+  selectedAssets,
+  selectedCustomerPoints,
+  zoneCount = 0,
   readonly = false,
 }: {
-  selectedFeatures: IWrappedFeature[];
+  selectedAssets: Asset[];
+  selectedCustomerPoints: CustomerPoint[];
+  zoneCount?: number;
   readonly?: boolean;
 }) {
   const { formatting, units } = useAtomValue(projectSettingsAtom);
   const translate = useTranslate();
   const simulationState = useAtomValue(simulationDerivedAtom);
   const simulationResults = useAtomValue(simulationResultsDerivedAtom);
+  const simulationSettings = useAtomValue(simulationSettingsDerivedAtom);
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
   const { labelManager } = useAtomValue(modelFactoriesAtom);
   const hasSimulation = simulationState.status !== "idle";
@@ -60,29 +66,25 @@ export function MultiAssetPanel({
   const userTracking = useUserTracking();
   const showPumpLibrary = useShowPumpLibrary();
   const showPatternsLibrary = useShowPatternsLibrary();
-  const pipeAttributesOn = useFeatureFlag("FLAG_PIPE_ATTRIBUTES");
-  const computeData = pipeAttributesOn
-    ? computeMultiAssetDataWithPipeAttributes
-    : computeMultiAssetData;
-  const pipeEditableProperties = pipeAttributesOn
-    ? PIPE_BATCH_EDITABLE_PROPERTIES_WITH_ATTRIBUTES
-    : BATCH_EDITABLE_PROPERTIES.pipe;
+  const inferRoughness = useRoughnessInferrer();
   const { data: multiAssetData, counts: assetCounts } = useMemo(() => {
-    const assets = selectedFeatures as Asset[];
-    return computeData(
-      assets,
+    return computeAssetsStats(
+      selectedAssets,
       units,
       formatting,
       hydraulicModel,
+      simulationSettings,
       simulationResults,
+      inferRoughness,
     );
   }, [
-    selectedFeatures,
+    selectedAssets,
     units,
     formatting,
     hydraulicModel,
     simulationResults,
-    computeData,
+    simulationSettings,
+    inferRoughness,
   ]);
 
   const assetIdsByType = useMemo(() => {
@@ -94,52 +96,66 @@ export function MultiAssetPanel({
       reservoir: [],
       tank: [],
     };
-    for (const feature of selectedFeatures) {
-      const asset = feature as Asset;
+    for (const asset of selectedAssets) {
       map[asset.type].push(asset.id);
     }
     return map;
-  }, [selectedFeatures]);
+  }, [selectedAssets]);
+
+  const junctionEditableProperties = BATCH_EDITABLE_PROPERTIES.junction;
+  const pipeEditableProperties = BATCH_EDITABLE_PROPERTIES.pipe;
+  const pumpEditableProperties = BATCH_EDITABLE_PROPERTIES.pump;
+
+  const valveEditableProperties = useMemo(() => {
+    const base = BATCH_EDITABLE_PROPERTIES.valve;
+    const hasValvesWithControls = assetIdsByType.valve.some((id) =>
+      hydraulicModel.controlsLookup.hasControls(id),
+    );
+    return hasValvesWithControls
+      ? { ...base, setting: { ...base.setting, disabled: true } }
+      : base;
+  }, [assetIdsByType.valve, hydraulicModel.controlsLookup]);
+  const reservoirEditableProperties = BATCH_EDITABLE_PROPERTIES.reservoir;
 
   const tankEditableProperties = useMemo(() => {
+    const base = BATCH_EDITABLE_PROPERTIES.tank;
     const hasCurveTanks = assetIdsByType.tank.some((id) => {
       const tank = hydraulicModel.assets.get(id) as Tank;
       return !!tank.volumeCurveId;
     });
     if (hasCurveTanks) {
-      const { minLevel, maxLevel, diameter, minVolume, ...rest } =
-        BATCH_EDITABLE_PROPERTIES.tank;
+      const { minLevel, maxLevel, diameter, minVolume, ...rest } = base;
       return rest;
     }
-    return BATCH_EDITABLE_PROPERTIES.tank;
+    return base;
   }, [assetIdsByType.tank, hydraulicModel.assets]);
 
-  const showSelectOnly =
-    Object.values(assetCounts).filter((c) => c > 0).length > 1;
+  const distinctKindsSelected =
+    Object.values(assetCounts).filter((c) => c > 0).length +
+    (selectedCustomerPoints.length > 0 ? 1 : 0) +
+    (zoneCount > 0 ? 1 : 0);
+  const showSelectOnly = distinctKindsSelected > 1;
 
   const handleBatchPropertyChange = useCallback(
     (
       assetType: Asset["type"],
       modelProperty: ChangeableProperty,
-      value: number | string | boolean,
+      value: number | string | boolean | null | undefined,
     ) => {
       const assetIds = assetIdsByType[assetType];
-      const moment =
+      const data = { assetIds, property: modelProperty, value };
+      transact(() =>
         modelProperty === "isActive"
           ? value
             ? activateAssets(hydraulicModel, { assetIds })
             : deactivateAssets(hydraulicModel, { assetIds })
-          : changeProperty(hydraulicModel, {
-              assetIds,
-              property: modelProperty,
-              value,
-            });
-      transact(moment);
+          : changeProperty(hydraulicModel, data),
+      );
       userTracking.capture({
         name: "assetProperty.batchEdited",
         type: assetType,
         property: modelProperty,
-        newValue: typeof value === "boolean" ? Number(value) : value,
+        newValue: typeof value === "boolean" ? Number(value) : (value ?? null),
         count: assetIds.length,
       });
     },
@@ -160,6 +176,35 @@ export function MultiAssetPanel({
       selectAssets(assetIds);
     },
     [selectAssets, userTracking],
+  );
+
+  const computeDetailedStats = useCallback(
+    (assetType: Asset["type"], property: string) => {
+      const assetsOfType = selectedAssets.filter((a) => a.type === assetType);
+      const { data } = computeAssetsStatsDeprecated(
+        assetsOfType,
+        units,
+        formatting,
+        hydraulicModel,
+        simulationSettings,
+        simulationResults,
+        inferRoughness,
+      );
+      for (const stats of Object.values(data[assetType])) {
+        const found = stats.find((s) => s.property === property);
+        if (found) return found;
+      }
+      return null;
+    },
+    [
+      selectedAssets,
+      units,
+      formatting,
+      hydraulicModel,
+      simulationSettings,
+      simulationResults,
+      inferRoughness,
+    ],
   );
 
   const handleOpenLibrary = useCallback(
@@ -185,7 +230,13 @@ export function MultiAssetPanel({
   return (
     <SectionList
       padding={3}
-      header={<Header selectedCount={selectedFeatures.length} />}
+      header={
+        <Header
+          assetCount={selectedAssets.length}
+          customerPointCount={selectedCustomerPoints.length}
+          zoneCount={zoneCount}
+        />
+      }
       overflow={true}
     >
       {assetCounts.junction > 0 && (
@@ -206,13 +257,27 @@ export function MultiAssetPanel({
         >
           <AssetTypeSections
             sections={multiAssetData.junction}
-            editableProperties={BATCH_EDITABLE_PROPERTIES.junction}
+            onRequestDetails={(p) => computeDetailedStats("junction", p)}
+            editableProperties={junctionEditableProperties}
             hasSimulation={hasSimulation}
             onPropertyChange={(p, v) =>
               handleBatchPropertyChange("junction", p, v)
             }
             readonly={readonly}
             onSelectAssets={(ids, p) => handleSelectAssets(ids, p, "junction")}
+            patterns={hydraulicModel.patterns}
+            labelManager={labelManager}
+            onOpenLibrary={handleOpenLibrary}
+            customAttributes={
+              <MultiCustomAttributesSection
+                assetType="junction"
+                assetIds={assetIdsByType.junction}
+                readonly={readonly}
+                onSelectAssets={(ids, p) =>
+                  handleSelectAssets(ids, p, "junction")
+                }
+              />
+            }
           />
         </CollapsibleSection>
       )}
@@ -235,11 +300,20 @@ export function MultiAssetPanel({
         >
           <AssetTypeSections
             sections={multiAssetData.pipe}
+            onRequestDetails={(p) => computeDetailedStats("pipe", p)}
             editableProperties={pipeEditableProperties}
             hasSimulation={hasSimulation}
             onPropertyChange={(p, v) => handleBatchPropertyChange("pipe", p, v)}
             readonly={readonly}
             onSelectAssets={(ids, p) => handleSelectAssets(ids, p, "pipe")}
+            customAttributes={
+              <MultiCustomAttributesSection
+                assetType="pipe"
+                assetIds={assetIdsByType.pipe}
+                readonly={readonly}
+                onSelectAssets={(ids, p) => handleSelectAssets(ids, p, "pipe")}
+              />
+            }
           />
         </CollapsibleSection>
       )}
@@ -262,7 +336,8 @@ export function MultiAssetPanel({
         >
           <AssetTypeSections
             sections={multiAssetData.pump}
-            editableProperties={BATCH_EDITABLE_PROPERTIES.pump}
+            onRequestDetails={(p) => computeDetailedStats("pump", p)}
+            editableProperties={pumpEditableProperties}
             hasSimulation={hasSimulation}
             onPropertyChange={(p, v) => handleBatchPropertyChange("pump", p, v)}
             readonly={readonly}
@@ -271,6 +346,14 @@ export function MultiAssetPanel({
             patterns={hydraulicModel.patterns}
             labelManager={labelManager}
             onOpenLibrary={handleOpenLibrary}
+            customAttributes={
+              <MultiCustomAttributesSection
+                assetType="pump"
+                assetIds={assetIdsByType.pump}
+                readonly={readonly}
+                onSelectAssets={(ids, p) => handleSelectAssets(ids, p, "pump")}
+              />
+            }
           />
         </CollapsibleSection>
       )}
@@ -293,13 +376,22 @@ export function MultiAssetPanel({
         >
           <AssetTypeSections
             sections={multiAssetData.valve}
-            editableProperties={BATCH_EDITABLE_PROPERTIES.valve}
+            onRequestDetails={(p) => computeDetailedStats("valve", p)}
+            editableProperties={valveEditableProperties}
             hasSimulation={hasSimulation}
             onPropertyChange={(p, v) =>
               handleBatchPropertyChange("valve", p, v)
             }
             readonly={readonly}
             onSelectAssets={(ids, p) => handleSelectAssets(ids, p, "valve")}
+            customAttributes={
+              <MultiCustomAttributesSection
+                assetType="valve"
+                assetIds={assetIdsByType.valve}
+                readonly={readonly}
+                onSelectAssets={(ids, p) => handleSelectAssets(ids, p, "valve")}
+              />
+            }
           />
         </CollapsibleSection>
       )}
@@ -322,12 +414,26 @@ export function MultiAssetPanel({
         >
           <AssetTypeSections
             sections={multiAssetData.reservoir}
-            editableProperties={BATCH_EDITABLE_PROPERTIES.reservoir}
+            onRequestDetails={(p) => computeDetailedStats("reservoir", p)}
+            editableProperties={reservoirEditableProperties}
             onPropertyChange={(p, v) =>
               handleBatchPropertyChange("reservoir", p, v)
             }
             readonly={readonly}
             onSelectAssets={(ids, p) => handleSelectAssets(ids, p, "reservoir")}
+            patterns={hydraulicModel.patterns}
+            labelManager={labelManager}
+            onOpenLibrary={handleOpenLibrary}
+            customAttributes={
+              <MultiCustomAttributesSection
+                assetType="reservoir"
+                assetIds={assetIdsByType.reservoir}
+                readonly={readonly}
+                onSelectAssets={(ids, p) =>
+                  handleSelectAssets(ids, p, "reservoir")
+                }
+              />
+            }
           />
         </CollapsibleSection>
       )}
@@ -350,28 +456,65 @@ export function MultiAssetPanel({
         >
           <AssetTypeSections
             sections={multiAssetData.tank}
+            onRequestDetails={(p) => computeDetailedStats("tank", p)}
             editableProperties={tankEditableProperties}
             hasSimulation={hasSimulation}
             onPropertyChange={(p, v) => handleBatchPropertyChange("tank", p, v)}
             readonly={readonly}
             onSelectAssets={(ids, p) => handleSelectAssets(ids, p, "tank")}
+            curves={hydraulicModel.curves}
+            patterns={hydraulicModel.patterns}
+            labelManager={labelManager}
+            onOpenLibrary={handleOpenLibrary}
+            customAttributes={
+              <MultiCustomAttributesSection
+                assetType="tank"
+                assetIds={assetIdsByType.tank}
+                readonly={readonly}
+                onSelectAssets={(ids, p) => handleSelectAssets(ids, p, "tank")}
+              />
+            }
           />
         </CollapsibleSection>
+      )}
+
+      {selectedCustomerPoints.length > 0 && (
+        <CustomerPointPanelSection
+          customerPoints={selectedCustomerPoints}
+          readonly={readonly}
+        />
+      )}
+
+      {zoneCount > 0 && (
+        <ZonePanelSection
+          zoneIds={USelection.getZoneIds(selection)}
+          showSelectOnly={showSelectOnly}
+          readonly={readonly}
+        />
       )}
     </SectionList>
   );
 }
 
-const Header = ({ selectedCount }: { selectedCount: number }) => {
+const Header = ({
+  assetCount,
+  customerPointCount,
+  zoneCount,
+}: {
+  assetCount: number;
+  customerPointCount: number;
+  zoneCount: number;
+}) => {
   const translate = useTranslate();
+  const totalCount = assetCount + customerPointCount + zoneCount;
 
   return (
     <div className="px-4 pt-4 pb-3">
-      <div className="flex items-start justify-between">
-        <span className="font-semibold mt-1">
+      <div className="flex items-start justify-between gap-2">
+        <span className="font-semibold mt-1 shrink-0">
           {translate("selection")} (
           <span className="text-nowrap">
-            {pluralize(translate, "asset", selectedCount)})
+            {pluralize(translate, "asset", totalCount)})
           </span>
         </span>
         <MultiAssetActions />

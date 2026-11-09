@@ -1,5 +1,7 @@
 import React, { useCallback } from "react";
 import { useAtomValue } from "jotai";
+import { Callout } from "@epanet-js/ui-kit";
+import { ErrorIcon } from "src/icons";
 import {
   WizardContainer,
   WizardHeader,
@@ -7,12 +9,12 @@ import {
   WizardActions,
   type Step,
 } from "src/components/wizard";
-import { useWizardState } from "./use-wizard-state";
+import { awaitsCoordinates, useWizardState } from "./use-wizard-state";
 import { DataInputStep } from "./data-input-step";
 import { DataMappingStep } from "./data-mapping-step";
 import { DemandOptionsStep } from "./demand-options-step";
-import { AllocationStep } from "./allocation-step";
 import { useTranslate } from "src/hooks/use-translate";
+import { useAuth } from "src/hooks/use-auth";
 import { useUserTracking } from "src/infra/user-tracking";
 import { EarlyAccessBadge } from "src/components/early-access-badge";
 import { useProjections } from "src/hooks/use-projections";
@@ -25,7 +27,6 @@ const stepNames = {
   1: "dataInput",
   2: "dataMapping",
   3: "demandOptions",
-  4: "allocation",
 } as const;
 
 type ImportCustomerPointsWizardProps = {
@@ -39,6 +40,8 @@ export const ImportCustomerPointsWizard: React.FC<
   const userTracking = useUserTracking();
   const wizardState = useWizardState();
   const translate = useTranslate();
+  const { isSignedIn, isLoaded } = useAuth();
+  const showEarlyAccess = isLoaded && !isSignedIn;
   const {
     projections,
     loading: projectionsLoading,
@@ -84,32 +87,22 @@ export const ImportCustomerPointsWizard: React.FC<
   }, [userTracking, handleClose, wizardState.currentStep]);
 
   const handleFinish = useCallback(async () => {
-    const {
-      allocationResult,
-      allocationRules,
-      keepDemands,
-      parsedDataSummary,
-      setProcessing,
-      setError,
-    } = wizardState;
-    if (!allocationResult) return;
+    const { parsedDataSummary, keepDemands, setProcessing, setError } =
+      wizardState;
+    if (!parsedDataSummary) return;
 
     setProcessing(true);
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     try {
-      const customerPointsToAdd = [
-        ...allocationResult.allocatedCustomerPoints.values(),
-        ...allocationResult.disconnectedCustomerPoints.values(),
-      ];
+      const customerPointsToAdd = parsedDataSummary.validCustomerPoints;
 
       const updatedHydraulicModel = addCustomerPoints(
         hydraulicModel,
         customerPointsToAdd,
         {
           preserveJunctionDemands: keepDemands,
-          overrideExisting: true,
-          customerPointDemands: parsedDataSummary?.customerPointDemands,
+          customerPointDemands: parsedDataSummary.customerPointDemands,
         },
       );
 
@@ -117,14 +110,15 @@ export const ImportCustomerPointsWizard: React.FC<
 
       void customerPointsImportReset({
         hydraulicModel: updatedHydraulicModel,
+        idGenerator: parsedDataSummary.idGenerator,
       });
 
       userTracking.capture({
         name: "importCustomerPoints.completed",
         count: importedCount,
-        allocatedCount: allocationResult.allocatedCustomerPoints.size,
-        disconnectedCount: allocationResult.disconnectedCustomerPoints.size,
-        rulesCount: allocationRules.length,
+        allocatedCount: 0,
+        disconnectedCount: importedCount,
+        rulesCount: 0,
       });
 
       notify({
@@ -174,23 +168,15 @@ export const ImportCustomerPointsWizard: React.FC<
       label: translate("importCustomerPoints.wizard.demandOptionsStep"),
       ariaLabel: "Step 3: Demand Options",
     },
-    {
-      number: 4,
-      label: translate("importCustomerPoints.wizard.allocationStepLabel"),
-      ariaLabel: "Step 4: Customers Allocation",
-    },
   ];
 
   const {
     currentStep,
     inputData,
     isLoading,
-    selectedDemandProperty,
     parsedDataSummary,
     isProcessing,
-    isAllocating,
-    isEditingRules,
-    allocationResult,
+    error,
   } = wizardState;
 
   const footer = (() => {
@@ -209,10 +195,11 @@ export const ImportCustomerPointsWizard: React.FC<
               onClick: handleNext,
               disabled:
                 isLoading ||
-                !selectedDemandProperty ||
+                awaitsCoordinates(wizardState) ||
+                !!error ||
                 (parsedDataSummary
                   ? parsedDataSummary.validCustomerPoints.length === 0
-                  : false),
+                  : !inputData),
             }}
           />
         );
@@ -220,30 +207,16 @@ export const ImportCustomerPointsWizard: React.FC<
         return (
           <WizardActions
             backAction={{ onClick: handleBack }}
-            nextAction={{ onClick: handleNext }}
-          />
-        );
-      case 4:
-        return (
-          <WizardActions
-            backAction={{
-              onClick: handleBack,
-              disabled: isProcessing || isAllocating || isEditingRules,
+            finishAction={{
+              onClick: handleFinish,
+              disabled: isProcessing,
+              loading: isProcessing,
+              label: isProcessing
+                ? translate("wizard.processing")
+                : translate(
+                    "importCustomerPoints.wizard.allocationStep.applyChanges",
+                  ),
             }}
-            finishAction={
-              isEditingRules || isAllocating
-                ? undefined
-                : {
-                    onClick: handleFinish,
-                    disabled: isProcessing || !allocationResult,
-                    loading: isProcessing,
-                    label: isProcessing
-                      ? translate("wizard.processing")
-                      : translate(
-                          "importCustomerPoints.wizard.allocationStep.applyChanges",
-                        ),
-                  }
-            }
           />
         );
     }
@@ -260,25 +233,28 @@ export const ImportCustomerPointsWizard: React.FC<
         steps={steps}
         currentStep={wizardState.currentStep}
         onClose={handleCancel}
-        badge={<EarlyAccessBadge />}
+        badge={showEarlyAccess ? <EarlyAccessBadge /> : undefined}
       />
 
       <WizardContent>
         {projectionsLoading && (
           <div className="flex items-center justify-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-            <span className="ml-3 text-gray-600">
+            <span className="ml-3 text-subtle">
               {translate("importCustomerPoints.wizard.loading")}
             </span>
           </div>
         )}
 
         {projectionsError && (
-          <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-6">
-            <p className="text-red-700 text-sm">
-              {translate("importCustomerPoints.wizard.somethingWentWrong")}
-            </p>
-          </div>
+          <Callout
+            variant="error"
+            description={translate(
+              "importCustomerPoints.wizard.somethingWentWrong",
+            )}
+            Icon={ErrorIcon}
+            className="mb-6 border rounded-md"
+          />
         )}
 
         {!projectionsLoading && !projectionsError && (
@@ -297,20 +273,13 @@ export const ImportCustomerPointsWizard: React.FC<
                 onBack={handleBack}
                 renderActions={false}
                 wizardState={wizardState}
+                projections={projections}
               />
             )}
             {currentStep === 3 && (
               <DemandOptionsStep
                 onNext={handleNext}
                 onBack={handleBack}
-                renderActions={false}
-                wizardState={wizardState}
-              />
-            )}
-            {currentStep === 4 && (
-              <AllocationStep
-                onBack={handleBack}
-                onFinish={handleClose}
                 renderActions={false}
                 wizardState={wizardState}
               />

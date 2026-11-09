@@ -9,18 +9,15 @@ import type {
   Geometry,
   FeatureCollection as IFeatureCollection,
 } from "geojson";
-import type { FlatbushLike } from "src/lib/generate-flatbush-instance";
 import type { ModeWithOptions } from "src/state/mode";
-import type { Dispatch, SetStateAction } from "react";
 import type { IPersistence } from "src/lib/persistence/ipersistence";
-import type { Sel } from "src/selection/types";
+import type { Sel } from "src/selection";
 import { JsonValue, SetOptional } from "type-fest";
-import { getFoldersInTree } from "src/lib/folder";
 import { colors } from "src/lib/constants";
 import clamp from "lodash/clamp";
 import { HydraulicModel } from "src/hydraulic-model";
 import type { MapEngine } from "src/map";
-import type { UnitsSpec } from "src/lib/project-settings/quantities-spec";
+import type { UnitsSpec } from "@epanet-js/project-settings";
 
 export interface CoordProps {
   x: number;
@@ -56,13 +53,16 @@ export const zLayerConfigCommon = z.object({
   tms: z.optional(z.boolean()).default(false),
   visibility: z.boolean(),
   labelVisibility: z.boolean(),
-  sourceMaxZoom: z.record(z.number()),
   isBasemap: z.optional(z.boolean()).default(false),
 });
 
 const url = z.string().url();
 
 export const zLayerConfig = z.discriminatedUnion("type", [
+  zLayerConfigCommon.extend({
+    type: z.literal("GOOGLE"),
+    mapType: z.enum(["roadmap", "satellite"]),
+  }),
   zLayerConfigCommon.extend({
     type: z.literal("XYZ"),
     token: z.string(),
@@ -92,92 +92,18 @@ export interface IWrappedFeature<T = Feature> {
   id: number;
   at: string;
   ephemeral?: boolean;
-  folderId: string | null;
   feature: T;
 }
 
 export type FeatureMap = Map<number, IWrappedFeature> & { version?: number };
-export type FolderMap = Map<string, IFolder> & { version?: number };
 export type LayerConfigMap = Map<string, ILayerConfig> & { version?: number };
 
 export type IWrappedFeatureInput = SetOptional<IWrappedFeature, "at">;
-
-export const Folder = z.object({
-  id: z.string(),
-  at: z.string(),
-  name: z.string(),
-  expanded: z.boolean(),
-  locked: z.boolean(),
-  folderId: z.nullable(z.string()),
-  visibility: z.boolean(),
-});
-
-export type IFolder = z.infer<typeof Folder>;
-export type IFolderInput = SetOptional<IFolder, "at">;
 
 /**
  * Helpers
  */
 export const UWrappedFeature = {
-  filterMapByFolder(
-    featureMapDeprecated: FeatureMap,
-    folderMap: FolderMap,
-    folderId: string | null,
-  ): {
-    filteredFeatures: FeatureMap;
-    filteredFolders: FolderMap;
-  } {
-    if (!folderId) {
-      return {
-        filteredFeatures: featureMapDeprecated,
-        filteredFolders: folderMap,
-      };
-    }
-
-    const filteredFeatures: FeatureMap = new Map();
-    const folderIds = getFoldersInTree(folderMap, folderId);
-    for (const wrappedFeature of featureMapDeprecated.values()) {
-      if (wrappedFeature.folderId && folderIds.has(wrappedFeature.folderId)) {
-        filteredFeatures.set(wrappedFeature.id, wrappedFeature);
-      }
-    }
-
-    const filteredFolders = new Map(
-      Array.from(folderMap.entries()).filter(([id]) => {
-        return folderIds.has(id);
-      }),
-    );
-
-    filteredFolders.set(folderId, {
-      ...filteredFolders.get(folderId)!,
-      folderId: null,
-    });
-
-    return {
-      filteredFeatures,
-      filteredFolders: filteredFolders,
-    };
-  },
-  mapToFeatureCollection(
-    featureMapDeprecated: FeatureMap,
-    folderMap: FolderMap,
-    folderId: string | null,
-  ): FeatureCollection {
-    const folderIds = folderId && getFoldersInTree(folderMap, folderId);
-    const features: FeatureCollection["features"] = [];
-    for (const wrappedFeature of featureMapDeprecated.values()) {
-      if (
-        !folderIds ||
-        (wrappedFeature.folderId && folderIds.has(wrappedFeature.folderId))
-      ) {
-        features.push(wrappedFeature.feature);
-      }
-    }
-    return {
-      type: "FeatureCollection",
-      features,
-    };
-  },
   toFeatureCollection(features: IWrappedFeature[]): FeatureCollection {
     return {
       type: "FeatureCollection",
@@ -188,7 +114,6 @@ export const UWrappedFeature = {
 
 const WrappedFeatureLocal = z.object({
   id: z.string(),
-  folderId: z.nullable(z.string()),
   at: z.string(),
   feature: z
     .object({
@@ -294,14 +219,11 @@ export const WrappedFeatureWithoutAt: z.ZodSchema<Omit<IWrappedFeature, "at">> =
 export type DragTarget = RawId | IWrappedFeature["id"][];
 
 export interface HandlerContext {
-  setFlatbushInstance: Dispatch<SetStateAction<FlatbushLike>>;
   selection: Sel;
-  flatbushInstance: FlatbushLike;
   dragTargetRef: React.MutableRefObject<DragTarget | null>;
   mode: ModeWithOptions;
   hydraulicModel: HydraulicModel;
   units: UnitsSpec;
-  folderMap: FolderMap;
   rep: IPersistence;
   map: MapEngine;
   readonly?: boolean;
@@ -312,11 +234,7 @@ export interface HandlerContext {
  * that breaks the norm. Everything but it.
  */
 export type CoordinateHavers =
-  | Polygon
-  | LineString
-  | MultiPoint
-  | MultiPolygon
-  | Point;
+  Polygon | LineString | MultiPoint | MultiPolygon | Point;
 
 export type CategoricalValues = {
   property: string;

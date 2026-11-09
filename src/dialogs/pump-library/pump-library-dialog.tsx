@@ -16,20 +16,33 @@ import {
   stripTrailingEmptyPoints,
   deepCloneCurves,
   differentCurvesCount,
-} from "src/hydraulic-model/curves";
+  isCurveInUse,
+  getCurveErrors,
+  LabelManager,
+} from "@epanet-js/hydraulic-model";
 import { PumpLibraryIcon } from "src/icons";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
-import { changeCurves } from "src/hydraulic-model/model-operations/change-curves";
+import { changeCurves } from "@epanet-js/hydraulic-model-operations";
 import { notify } from "src/components/notifications";
 import { useUserTracking } from "src/infra/user-tracking";
-import { LabelManager } from "src/hydraulic-model/label-manager";
-import { getCurveTypeConfig } from "../curves/curve-type-config";
+import { modelFactoriesAtom } from "src/state/model-factories";
 import { DialogActions, DialogActionsHandle } from "../dialog-actions-row";
-import { HydraulicModel, Pump } from "src/hydraulic-model";
+import {
+  ImportExportCurvesToolbar,
+  CURVES_IMPORT_KEYS,
+} from "../curves/import-export-curves-toolbar";
+import type { ImportOutcome } from "src/components/import-outcome";
+import { ImportOutcomeReport } from "src/components/import-outcome-report";
 
 type CurveUpdate = Partial<Pick<ICurve, "label" | "points" | "type">>;
+
+const CODE_OVERRIDES = {
+  wrongDialog: "belongsToCurveLibrary",
+};
+
+const SCOPE: CurveType[] = ["pump", "efficiency"];
 
 export const PumpLibraryDialog = ({
   initialCurveId,
@@ -43,6 +56,7 @@ export const PumpLibraryDialog = ({
   const projectSettings = useAtomValue(projectSettingsAtom);
   const userTracking = useUserTracking();
   const isEditionBlocked = useIsEditionBlocked();
+  const { idPools } = useAtomValue(modelFactoriesAtom);
   const [selectedCurveId, setSelectedCurveId] = useState<CurveId | null>(
     initialCurveId ?? null,
   );
@@ -115,6 +129,7 @@ export const PumpLibraryDialog = ({
         labelManagerRef.current,
         label,
         type,
+        idPools.forPool("curve"),
       );
       newCurve.points = points;
       setEditedCurves((prev) => {
@@ -127,7 +142,7 @@ export const PumpLibraryDialog = ({
       userTracking.capture({ name: "curve.added", source });
       return newCurve.id;
     },
-    [editedCurves, userTracking],
+    [editedCurves, userTracking, idPools],
   );
 
   const handleDeleteCurve = useCallback(
@@ -135,7 +150,7 @@ export const PumpLibraryDialog = ({
       const curve = editedCurves.get(curveId);
       if (!curve) return;
 
-      if (curve.type === "pump" && isPumpCurveInUse(hydraulicModel, curveId)) {
+      if (isCurveInUse(hydraulicModel, curveId)) {
         notify({
           variant: "error",
           title: translate("curves.deleteCurveInUse"),
@@ -178,8 +193,7 @@ export const PumpLibraryDialog = ({
   const invalidCurveIds = useMemo(() => {
     const ids = new Set<CurveId>();
     for (const [id, curve] of cleanedCurves) {
-      const config = getCurveTypeConfig(curve.type);
-      if (config.getErrors(curve.points).length > 0) {
+      if (getCurveErrors(curve.type, curve.points).length > 0) {
         ids.add(id);
       }
     }
@@ -188,10 +202,7 @@ export const PumpLibraryDialog = ({
 
   const handleSave = useCallback(
     (hasWarnings: boolean) => {
-      const moment = changeCurves(hydraulicModel, {
-        curves: cleanedCurves,
-      });
-      transact(moment);
+      transact(() => changeCurves(hydraulicModel, { curves: cleanedCurves }));
       userTracking.capture({
         name: "curves.updated",
         count: cleanedCurves.size,
@@ -208,6 +219,31 @@ export const PumpLibraryDialog = ({
     [userTracking],
   );
 
+  // The report takes over the empty state, so the import clears the selection
+  // to make room for it, and the next selection puts the detail back.
+  const [importOutcome, setImportOutcome] = useState<ImportOutcome | null>(
+    null,
+  );
+
+  const handleImported = useCallback(
+    (imported: Curves | null, outcome: ImportOutcome) => {
+      if (imported) setEditedCurves(imported);
+      setImportOutcome(outcome);
+      setSelectedCurveId(null);
+    },
+    [],
+  );
+
+  const handleSelectCurve = useCallback((curveId: CurveId | null) => {
+    setSelectedCurveId(curveId);
+    setImportOutcome(null);
+  }, []);
+
+  // An import replaces the whole draft from a snapshot taken when it started,
+  // so edits made while it runs would be silently overwritten.
+  const [isImporting, setImporting] = useState(false);
+  const isLocked = isEditionBlocked || isImporting;
+
   return (
     <BaseDialog
       title={translate("pumpLibrary")}
@@ -220,59 +256,78 @@ export const PumpLibraryDialog = ({
           ref={dialogActions}
           onSave={handleSave}
           onClose={handleClose}
-          readOnly={isEditionBlocked}
+          readOnly={isLocked}
           hasChanges={!!unsavedChanges}
           hasWarnings={invalidCurveIds.size > 0}
         />
       }
     >
-      <div className="flex-1 flex min-h-0">
-        <div className="shrink-0 flex">
-          <PumpLibrarySidebar
-            width={sidebarWidth}
-            curves={editedCurves}
-            selectedCurveId={selectedCurveId}
-            initialSection={initialSection}
-            labelManager={labelManagerRef.current}
-            invalidCurveIds={invalidCurveIds}
-            onSelectCurve={setSelectedCurveId}
-            onAddCurve={handleAddCurve}
-            onChangeCurve={handleCurveChange}
-            onDeleteCurve={handleDeleteCurve}
-            readOnly={isEditionBlocked}
-          />
-          <VerticalResizer
-            width={sidebarWidth}
-            onWidthChange={setSidebarWidth}
-          />
-        </div>
-        <div className="flex-1 flex flex-col min-h-0 w-full">
-          {selectedCurveId ? (
-            (() => {
-              const curveType = editedCurves.get(selectedCurveId)?.type;
-              const isUncategorized =
-                curveType !== "pump" && curveType !== "efficiency";
-              return (
-                <CurveDetail
-                  points={getCurvePoints(selectedCurveId)}
-                  onChange={(points) =>
-                    handleCurveChange(selectedCurveId, { points })
-                  }
-                  readOnly={isEditionBlocked || isUncategorized}
-                  curveType={curveType}
-                  units={projectSettings.units}
-                />
-              );
-            })()
-          ) : hasCurves ? (
-            <div className="flex-1 flex items-center justify-center p-2">
-              <NoSelectionState />
-            </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center p-2">
-              <EmptyState readOnly={isEditionBlocked} />
-            </div>
-          )}
+      <div className="flex flex-col flex-1 min-h-0">
+        <ImportExportCurvesToolbar
+          curves={editedCurves}
+          scope={SCOPE}
+          codeOverrides={CODE_OVERRIDES}
+          onImported={handleImported}
+          isImporting={isImporting}
+          onImportingChange={setImporting}
+          fileSuffix={translate("pumpLibrary")}
+          readOnly={isLocked}
+        />
+        <div className="flex-1 flex min-h-0">
+          <div className="shrink-0 flex">
+            <PumpLibrarySidebar
+              width={sidebarWidth}
+              curves={editedCurves}
+              selectedCurveId={selectedCurveId}
+              initialSection={initialSection}
+              labelManager={labelManagerRef.current}
+              invalidCurveIds={invalidCurveIds}
+              onSelectCurve={handleSelectCurve}
+              onAddCurve={handleAddCurve}
+              onChangeCurve={handleCurveChange}
+              onDeleteCurve={handleDeleteCurve}
+              readOnly={isLocked}
+            />
+            <VerticalResizer
+              width={sidebarWidth}
+              onWidthChange={setSidebarWidth}
+            />
+          </div>
+          <div className="flex-1 flex flex-col min-h-0 w-full">
+            {importOutcome && (
+              <ImportOutcomeReport
+                outcome={importOutcome}
+                translationKeys={CURVES_IMPORT_KEYS}
+                onDismiss={() => setImportOutcome(null)}
+              />
+            )}
+            {selectedCurveId ? (
+              (() => {
+                const curveType = editedCurves.get(selectedCurveId)?.type;
+                const isUncategorized =
+                  curveType !== "pump" && curveType !== "efficiency";
+                return (
+                  <CurveDetail
+                    points={getCurvePoints(selectedCurveId)}
+                    onChange={(points) =>
+                      handleCurveChange(selectedCurveId, { points })
+                    }
+                    readOnly={isEditionBlocked || isUncategorized}
+                    curveType={curveType}
+                    units={projectSettings.units}
+                  />
+                );
+              })()
+            ) : hasCurves ? (
+              <div className="flex-1 flex items-center justify-center p-2">
+                <NoSelectionState />
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center p-2">
+                <EmptyState readOnly={isLocked} />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </BaseDialog>
@@ -284,10 +339,10 @@ const NoSelectionState = () => {
 
   return (
     <div className="flex flex-col items-center justify-center px-4">
-      <div className="text-gray-400">
-        <PumpLibraryIcon size={96} />
+      <div className="text-subtle">
+        <PumpLibraryIcon size="2xl" />
       </div>
-      <p className="text-sm text-gray-600 text-center max-w-64 py-4">
+      <p className="text-size-base text-subtle text-center max-w-64 py-4">
         {translate("curves.noSelection")}
       </p>
     </div>
@@ -299,14 +354,14 @@ const EmptyState = ({ readOnly }: { readOnly: boolean }) => {
 
   return (
     <div className="flex flex-col items-center justify-center px-4">
-      <div className="text-gray-400">
-        <PumpLibraryIcon size={96} />
+      <div className="text-subtle">
+        <PumpLibraryIcon size="2xl" />
       </div>
-      <p className="text-sm font-semibold py-4 text-gray-600">
+      <p className="text-size-base font-semibold py-4 text-subtle">
         {translate("curves.emptyTitle")}
       </p>
       {!readOnly && (
-        <p className="text-sm text-gray-600 text-center max-w-64">
+        <p className="text-size-base text-subtle text-center max-w-64">
           {translate("curves.emptyDescription")}
         </p>
       )}
@@ -320,16 +375,4 @@ const createLabelManager = (curves: Curves): LabelManager => {
     lm.register(curve.label, "curve", curve.id);
   }
   return lm;
-};
-
-const isPumpCurveInUse = (
-  hydraulicModel: HydraulicModel,
-  curveId: CurveId,
-): boolean => {
-  for (const asset of hydraulicModel.assets.values()) {
-    if (asset.type === "pump" && (asset as Pump).curveId === curveId) {
-      return true;
-    }
-  }
-  return false;
 };

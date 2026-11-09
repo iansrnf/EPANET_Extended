@@ -1,22 +1,60 @@
 import React from "react";
 import { UserButton as ClerkUserButton, useClerk } from "@clerk/nextjs";
+import { useAuth } from "src/hooks/use-auth";
 import { usePermissions } from "src/hooks/use-permissions";
+import { useTranslate } from "src/hooks/use-translate";
+import { useBillingPortal } from "src/hooks/use-billing-portal";
+import { useSignOut } from "src/commands/sign-out";
+import { useUserTracking } from "src/infra/user-tracking";
+import { hasBillingAccount, resolveTrialCta } from "@epanet-js/account-plans";
 import { isAuthEnabled } from "src/global-config";
-import { Building } from "lucide-react";
+import { Building, CreditCard, LogOut } from "lucide-react";
+
+const hideDefaultSignOut = {
+  elements: {
+    userButtonPopoverActionButton__signOut: { display: "none" },
+  },
+};
 
 const UserButtonWithManageTeam = () => {
   const { openOrganizationProfile } = useClerk();
   const { canManageOrganization } = usePermissions();
+  const { user } = useAuth();
+  const translate = useTranslate();
+  const signOut = useSignOut();
+  const userTracking = useUserTracking();
+  const { openBillingPortal } = useBillingPortal();
 
-  if (!canManageOrganization) return <ClerkUserButton />;
+  const manageBilling = () => {
+    userTracking.capture({
+      name: "billingPortal.opened",
+      source: "userMenu",
+      trial: resolveTrialCta(user).kind,
+    });
+    openBillingPortal();
+  };
 
   return (
-    <ClerkUserButton>
+    <ClerkUserButton appearance={hideDefaultSignOut}>
       <ClerkUserButton.MenuItems>
+        {canManageOrganization ? (
+          <ClerkUserButton.Action
+            label="Manage organization"
+            labelIcon={<Building size={14} />}
+            onClick={() => openOrganizationProfile()}
+          />
+        ) : null}
+        {hasBillingAccount(user) ? (
+          <ClerkUserButton.Action
+            label={translate("billing")}
+            labelIcon={<CreditCard size={14} />}
+            onClick={manageBilling}
+          />
+        ) : null}
         <ClerkUserButton.Action
-          label="Manage organization"
-          labelIcon={<Building size={14} />}
-          onClick={() => openOrganizationProfile()}
+          label={translate("signOut")}
+          labelIcon={<LogOut size={14} />}
+          onClick={() => signOut({ source: "userMenu" })}
         />
       </ClerkUserButton.MenuItems>
     </ClerkUserButton>

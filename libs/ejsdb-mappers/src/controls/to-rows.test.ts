@@ -1,0 +1,113 @@
+import { createEmptyControls, Controls } from "@epanet-js/hydraulic-model";
+import { serializeControls } from "./to-rows";
+
+describe("serializeControls", () => {
+  it("produces a JSON string that round-trips through JSON.parse", () => {
+    const IDS = { P1: 7 } as const;
+    const controls: Controls = [
+      {
+        id: "ctrl-1",
+        type: "timed-setting",
+        linkId: IDS.P1,
+        steps: [
+          { time: 3600, status: "off", setting: 1 },
+          { time: 7200, status: "on", setting: 1.5 },
+        ],
+      },
+    ];
+
+    const data = serializeControls(controls);
+
+    expect(JSON.parse(data)).toEqual(controls);
+  });
+
+  it("round-trips a level-setting control", () => {
+    const controls: Controls = [
+      {
+        id: "ctrl-1",
+        type: "level-setting",
+        linkId: 7,
+        tankId: 12,
+        on: { level: 2, setting: 1.5 },
+        off: { level: 9 },
+      },
+    ];
+
+    const data = serializeControls(controls);
+
+    expect(JSON.parse(data)).toEqual(controls);
+  });
+
+  it("round-trips a variable speed pump control", () => {
+    const IDS = { PU1: 7, PU2: 8, J1: 12 } as const;
+    const controls: Controls = [
+      {
+        id: "ctrl-1",
+        type: "variable-speed-pump",
+        linkId: IDS.PU1,
+        quantity: "pressure",
+        targetId: IDS.J1,
+        target: 30,
+        minSpeed: 0.5,
+        maxSpeed: 1,
+        laggedPumpIds: [IDS.PU2],
+        schedule: [{ time: 3600, target: 35 }],
+      },
+    ];
+
+    const data = serializeControls(controls);
+
+    expect(JSON.parse(data)).toEqual(controls);
+  });
+
+  it("round-trips a flow-modulating valve control", () => {
+    const IDS = { V1: 7, J2: 12 } as const;
+    const controls: Controls = [
+      {
+        id: "ctrl-1",
+        type: "flow-modulating-valve",
+        linkId: IDS.V1,
+        points: [
+          { flow: 0, pressure: 25 },
+          { flow: 5, pressure: 30 },
+        ],
+        interpolate: true,
+        sensorLinkId: IDS.V1,
+        controlNodeId: IDS.J2,
+      },
+    ];
+
+    const data = serializeControls(controls);
+
+    expect(JSON.parse(data)).toEqual(controls);
+  });
+
+  it("serializes empty controls as an empty array", () => {
+    const data = serializeControls(createEmptyControls());
+    expect(JSON.parse(data)).toEqual([]);
+  });
+
+  it("throws when the in-memory shape is malformed", () => {
+    expect(() =>
+      serializeControls([
+        {
+          type: "timed-setting",
+          linkId: 1,
+          steps: [{ time: 0, status: "on" }],
+        } as unknown as Controls[number],
+      ]),
+    ).toThrow(/Controls: data does not match schema/);
+  });
+
+  it("throws when the control type is unknown", () => {
+    expect(() =>
+      serializeControls([
+        {
+          type: "mystery",
+          linkId: 1,
+          steps: [],
+        } as unknown as Controls[number],
+      ]),
+    ).toThrow(/Controls: data does not match schema/);
+  });
+});

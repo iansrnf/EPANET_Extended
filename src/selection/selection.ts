@@ -1,307 +1,306 @@
-import type {
-  Sel,
-  SelFolder,
-  SelSingle,
-  SelSingleCustomerPoint,
-  SelSinglePressureLogger,
-} from "./types";
-import type { FolderMap, IFolder, IWrappedFeature } from "src/types";
-import type { HydraulicModel, AssetsMap } from "src/hydraulic-model";
-import type { CustomerPoints } from "src/hydraulic-model/customer-points";
-import type { PressureLoggers } from "src/hydraulic-model/pressure-loggers";
-import { toggle } from "src/lib/utils";
+import type { Category, Sel } from "./types";
+import type { IWrappedFeature } from "src/types";
+import type { AssetsMap } from "src/hydraulic-model";
+import { type CustomerPoints, type Zones } from "@epanet-js/hydraulic-model";
 import { EMPTY_ARRAY } from "src/lib/constants";
-import { getFoldersInTree } from "src/lib/folder";
 
-type SelectionData = {
-  selection: Sel;
-  hydraulicModel: HydraulicModel;
-  folderMap: FolderMap;
+const EMPTY_NUMBER_ARRAY: readonly number[] = EMPTY_ARRAY;
+
+export const SELECTION_NONE: Sel = {
+  asset: EMPTY_NUMBER_ARRAY,
+  customerPoint: EMPTY_NUMBER_ARRAY,
+  zone: EMPTY_NUMBER_ARRAY,
+};
+
+type KindedIds = {
+  assetIds: readonly number[];
+  customerPointIds: readonly number[];
+  zoneIds?: readonly number[];
+};
+
+const make = (
+  asset: readonly number[],
+  customerPoint: readonly number[],
+  zone: readonly number[],
+): Sel => {
+  if (asset.length === 0 && customerPoint.length === 0 && zone.length === 0)
+    return SELECTION_NONE;
+  return { asset, customerPoint, zone };
+};
+
+const rebuild = (
+  prev: Sel,
+  asset: readonly number[],
+  customerPoint: readonly number[],
+  zone: readonly number[],
+): Sel => {
+  if (
+    asset === prev.asset &&
+    customerPoint === prev.customerPoint &&
+    zone === prev.zone
+  ) {
+    return prev;
+  }
+  return make(asset, customerPoint, zone);
 };
 
 export const USelection = {
   /**
-   * Used when we transition from a "something is selected" mode to a
-   * drawing mode. This preserves the parent folder selection so that
-   * we can place a feature in that.
+   * Return asset ids in the selection. The stored array reference is returned
+   * as-is, so it is stable across updates that don't touch the asset set.
    */
-  selectionToFolder(data: SelectionData): Sel {
-    const { selection } = data;
-
-    switch (selection.type) {
-      case "none":
-        return SELECTION_NONE;
-      case "folder":
-        return selection;
-      case "singleCustomerPoint":
-      case "singlePressureLogger":
-        return SELECTION_NONE;
-      case "multi":
-      case "single": {
-        const wrappedFeature = USelection.getSelectedFeatures(data)[0];
-
-        return wrappedFeature?.folderId
-          ? USelection.folder(wrappedFeature.folderId)
-          : SELECTION_NONE;
-      }
-    }
-  },
-  reduce(selection: Sel): Sel {
-    return selection.type === "single" && selection.parts.length
-      ? USelection.single(selection.id)
-      : USelection.none();
+  getAssetIds(selection: Sel): readonly IWrappedFeature["id"][] {
+    return selection.asset;
   },
   /**
-   * Return **Feature** ids associated with this selection.
-   * Folder selections return an empty list.
+   * Return customer point ids in the selection. Stable reference, as above.
    */
-  toIds(selection: Sel): readonly IWrappedFeature["id"][] {
-    switch (selection.type) {
-      case "none":
-      case "folder":
-      case "singleCustomerPoint":
-      case "singlePressureLogger":
-        return [];
-      case "single":
-        return [selection.id];
-      case "multi":
-        return selection.ids;
-    }
+  getCustomerPointIds(selection: Sel): readonly number[] {
+    return selection.customerPoint;
   },
   /**
-   * Get vertices as an array if they are in the selection.
+   * Return zone ids in the selection. Stable reference, as above.
    */
-
-  getVertexIds(selection: Sel): VertexId[] {
-    if (selection.type === "single" && selection.parts.length) {
-      return selection.parts.flatMap((id) => {
-        return id.type === "vertex" ? [id] : [];
-      });
-    }
-    return EMPTY_ARRAY as VertexId[];
+  getZoneIds(selection: Sel): readonly number[] {
+    return selection.zone;
   },
-
-  // Dangerous: this will throw if given a 'none' selection.
-  // Basically an assertion method.
-  asSingle(selection: Sel): SelSingle {
-    if (
-      selection.type === "none" ||
-      selection.type === "folder" ||
-      selection.type === "singleCustomerPoint" ||
-      selection.type === "singlePressureLogger"
-    ) {
-      throw new Error("Given a none selection");
-    }
-    return selection.type === "single"
-      ? selection
-      : {
-          type: "single",
-          id: selection.ids[0],
-          parts: [],
-        };
+  countByKind(selection: Sel): {
+    assets: number;
+    customerPoints: number;
+    zones: number;
+  } {
+    return {
+      assets: selection.asset.length,
+      customerPoints: selection.customerPoint.length,
+      zones: selection.zone.length,
+    };
   },
-  fromIds(ids: IWrappedFeature["id"][]): Sel {
-    return ids.length === 0
-      ? { type: "none" }
-      : ids.length === 1
-        ? this.single(ids[0])
-        : {
-            type: "multi",
-            ids,
-          };
-  },
-  /**
-   * Get selected features of a single or multi selection.
-   */
-  getSelectedFeatures({
-    selection,
-    hydraulicModel,
-    folderMap,
-  }: SelectionData): IWrappedFeature[] {
-    switch (selection.type) {
-      case "none": {
-        return EMPTY_ARRAY as IWrappedFeature[];
-      }
-      case "folder": {
-        const folders = getFoldersInTree(folderMap, selection.id);
-        const features: IWrappedFeature[] = [];
-        for (const feature of hydraulicModel.assets.values()) {
-          if (feature.folderId && folders.has(feature.folderId)) {
-            features.push(feature);
-          }
-        }
-        return features;
-      }
-      default: {
-        const features: IWrappedFeature[] = [];
-        for (const id of this.toIds(selection)) {
-          const feature = hydraulicModel.assets.get(id);
-          if (feature) features.push(feature);
-        }
-        return features;
-      }
-    }
-  },
-  isSelected(selection: Sel, id: IWrappedFeature["id"]): boolean {
-    switch (selection.type) {
-      case "none":
-      case "folder":
-      case "singleCustomerPoint": {
-        return false;
-      }
-      case "singlePressureLogger": {
-        return false;
-      }
-      case "single": {
-        return selection.id === id;
-      }
-      case "multi": {
-        return selection.ids.includes(id);
-      }
-    }
-  },
-  isFolderSelected(selection: Sel, id: IFolder["id"]): boolean {
-    return selection.type === "folder" && selection.id === id;
-  },
-  isCustomerPointSelected(selection: Sel, id: number): boolean {
-    return selection.type === "singleCustomerPoint" && selection.id === id;
-  },
-  isPressureLoggerSelected(selection: Sel, id: number): boolean {
-    return selection.type === "singlePressureLogger" && selection.id === id;
-  },
-  isVertexSelected(selection: Sel, id: number, vertexId: VertexId): boolean {
+  isEmpty(selection: Sel): boolean {
     return (
-      selection.type === "single" &&
-      selection.id === id &&
-      selection.parts.length === 1 &&
-      selection.parts[0].vertex === vertexId.vertex
+      selection.asset.length === 0 &&
+      selection.customerPoint.length === 0 &&
+      selection.zone.length === 0
     );
   },
+  isNone(selection: Sel): boolean {
+    return this.isEmpty(selection);
+  },
   /**
-   * Note: only deals in top-level uids,
-   * not RawId components.
+   * Short human-readable label for logging/telemetry, e.g.
+   * "none" | "single/asset" | "single/customerPoint" | "single/zone" |
+   * "multi/asset" | "multi/customerPoint" | "multi/zone" | "multi/mixed".
    */
-  toggleSelectionId(selection: Sel, id: IWrappedFeature["id"]): Sel {
-    const ids = this.toIds(selection);
-    const updatedIds = toggle(ids, id);
-    return this.fromIds(updatedIds);
+  describe(selection: Sel): string {
+    const counts: [Category, number][] = [
+      ["asset", selection.asset.length],
+      ["customerPoint", selection.customerPoint.length],
+      ["zone", selection.zone.length],
+    ];
+    const present = counts.filter(([, count]) => count > 0);
+    if (present.length === 0) return "none";
+    if (present.length > 1) return "multi/mixed";
+    const [kind, count] = present[0];
+    return `${count === 1 ? "single" : "multi"}/${kind}`;
   },
-  toggleSingleSelectionId(selection: Sel, id: IWrappedFeature["id"]): Sel {
-    if (selection.type === "single" && this.isSelected(selection, id)) {
-      return this.none();
+  fromAssetIds(ids: readonly IWrappedFeature["id"][]): Sel {
+    return make(dedupIds(ids), EMPTY_NUMBER_ARRAY, EMPTY_NUMBER_ARRAY);
+  },
+  isAssetSelected(selection: Sel, id: IWrappedFeature["id"]): boolean {
+    return selection.asset.includes(id);
+  },
+  isCustomerPointSelected(selection: Sel, id: number): boolean {
+    return selection.customerPoint.includes(id);
+  },
+  isZoneSelected(selection: Sel, id: number): boolean {
+    return selection.zone.includes(id);
+  },
+  isSingleAsset(selection: Sel): boolean {
+    return (
+      selection.asset.length === 1 &&
+      selection.customerPoint.length === 0 &&
+      selection.zone.length === 0
+    );
+  },
+  isSingleCustomerPoint(selection: Sel): boolean {
+    return (
+      selection.customerPoint.length === 1 &&
+      selection.asset.length === 0 &&
+      selection.zone.length === 0
+    );
+  },
+  isSingleZone(selection: Sel): boolean {
+    return (
+      selection.zone.length === 1 &&
+      selection.asset.length === 0 &&
+      selection.customerPoint.length === 0
+    );
+  },
+  /** Id of the single selected asset, or null when not a single-asset selection. */
+  singleAssetId(selection: Sel): IWrappedFeature["id"] | null {
+    return this.isSingleAsset(selection) ? selection.asset[0] : null;
+  },
+  /** Id of the single selected customer point, or null otherwise. */
+  singleCustomerPointId(selection: Sel): number | null {
+    return this.isSingleCustomerPoint(selection)
+      ? selection.customerPoint[0]
+      : null;
+  },
+  /** Id of the single selected zone, or null otherwise. */
+  singleZoneId(selection: Sel): number | null {
+    return this.isSingleZone(selection) ? selection.zone[0] : null;
+  },
+  toggleSingleAsset(selection: Sel, id: IWrappedFeature["id"]): Sel {
+    if (this.isSingleAsset(selection) && selection.asset[0] === id) {
+      return SELECTION_NONE;
     }
-    return this.single(id);
+    return this.singleAsset(id);
   },
-  addSelectionId(selection: Sel, id: IWrappedFeature["id"]): Sel {
-    const ids = this.toIds(selection);
-    if (ids.includes(id)) return selection;
-    return this.fromIds(ids.concat(id));
+  addAssetIds(selection: Sel, newIds: IWrappedFeature["id"][]): Sel {
+    return rebuild(
+      selection,
+      unionIds(selection.asset, newIds),
+      selection.customerPoint,
+      selection.zone,
+    );
   },
-  addSelectionIds(selection: Sel, newIds: IWrappedFeature["id"][]): Sel {
-    const currentIds = this.toIds(selection);
-    const currentSet = new Set(currentIds);
-    const uniqueNewIds = newIds.filter((id) => !currentSet.has(id));
-    if (uniqueNewIds.length === 0) return selection;
-    return this.fromIds([...currentIds, ...uniqueNewIds]);
+  removeAssetIds(selection: Sel, idsToRemove: IWrappedFeature["id"][]): Sel {
+    return rebuild(
+      selection,
+      diffIds(selection.asset, idsToRemove),
+      selection.customerPoint,
+      selection.zone,
+    );
   },
-  removeFeatureFromSelection(selection: Sel, id: IWrappedFeature["id"]): Sel {
-    switch (selection.type) {
-      case "folder":
-      case "none":
-      case "singleCustomerPoint": {
-        return selection;
-      }
-      case "singlePressureLogger": {
-        return selection;
-      }
-      case "single": {
-        if (selection.id === id) {
-          return SELECTION_NONE;
-        } else {
-          return selection;
-        }
-      }
-      case "multi": {
-        if (selection.ids.includes(id)) {
-          const newIds = selection.ids.filter((sid) => sid !== id);
-          return this.fromIds(newIds);
-        } else {
-          return selection;
-        }
-      }
-    }
-  },
-  removeSelectionIds(
-    selection: Sel,
-    idsToRemove: IWrappedFeature["id"][],
+  fromIds(
+    assetIds: readonly number[],
+    customerPointIds: readonly number[],
+    zoneIds: readonly number[] = EMPTY_NUMBER_ARRAY,
   ): Sel {
-    const currentIds = this.toIds(selection);
-    const removeSet = new Set(idsToRemove);
-    const remainingIds = currentIds.filter((id) => !removeSet.has(id));
-    return this.fromIds(remainingIds);
+    return make(
+      dedupIds(assetIds),
+      dedupIds(customerPointIds),
+      dedupIds(zoneIds),
+    );
+  },
+  applyOperation(
+    selection: Sel,
+    next: KindedIds,
+    operation: "add" | "subtract" | undefined,
+  ): Sel {
+    const zoneIds = next.zoneIds ?? EMPTY_NUMBER_ARRAY;
+    if (operation === "add") {
+      return rebuild(
+        selection,
+        unionIds(selection.asset, next.assetIds),
+        unionIds(selection.customerPoint, next.customerPointIds),
+        unionIds(selection.zone, zoneIds),
+      );
+    }
+    if (operation === "subtract") {
+      return rebuild(
+        selection,
+        diffIds(selection.asset, next.assetIds),
+        diffIds(selection.customerPoint, next.customerPointIds),
+        diffIds(selection.zone, zoneIds),
+      );
+    }
+    return this.fromIds(next.assetIds, next.customerPointIds, zoneIds);
+  },
+  addId(selection: Sel, kind: Category, id: number): Sel {
+    if (selection[kind].includes(id)) return selection;
+    return this.applyOperation(selection, kindedSingleton(kind, id), "add");
+  },
+  removeId(selection: Sel, kind: Category, id: number): Sel {
+    if (!selection[kind].includes(id)) return selection;
+    return this.applyOperation(
+      selection,
+      kindedSingleton(kind, id),
+      "subtract",
+    );
+  },
+  toggleId(selection: Sel, kind: Category, id: number): Sel {
+    return selection[kind].includes(id)
+      ? this.removeId(selection, kind, id)
+      : this.addId(selection, kind, id);
   },
   none(): Sel {
     return SELECTION_NONE;
   },
-  /**
-   * Get the folder id from a folder selection,
-   * if there is one.
-   */
-  folderId(selection: Sel): string | null {
-    if (selection.type === "folder") {
-      return selection.id;
-    }
-    return null;
-  },
-  folder(id: IFolder["id"]): SelFolder {
+  singleAsset(id: IWrappedFeature["id"]): Sel {
     return {
-      type: "folder",
-      id,
+      asset: [id],
+      customerPoint: EMPTY_NUMBER_ARRAY,
+      zone: EMPTY_NUMBER_ARRAY,
     };
   },
-  single(id: IWrappedFeature["id"]): SelSingle {
+  singleCustomerPoint(id: number): Sel {
     return {
-      type: "single",
-      id,
-      parts: [],
+      asset: EMPTY_NUMBER_ARRAY,
+      customerPoint: [id],
+      zone: EMPTY_NUMBER_ARRAY,
     };
   },
-  singleCustomerPoint(id: number): SelSingleCustomerPoint {
+  singleZone(id: number): Sel {
     return {
-      type: "singleCustomerPoint",
-      id,
-    };
-  },
-  singlePressureLogger(id: number): SelSinglePressureLogger {
-    return {
-      type: "singlePressureLogger",
-      id,
+      asset: EMPTY_NUMBER_ARRAY,
+      customerPoint: EMPTY_NUMBER_ARRAY,
+      zone: [id],
     };
   },
   clearInvalidIds(
     selection: Sel,
     assets: AssetsMap,
     customerPoints: CustomerPoints,
-    pressureLoggers?: PressureLoggers,
+    zones: Zones,
   ): Sel {
-    switch (selection.type) {
-      case "single":
-        return assets.has(selection.id) ? selection : SELECTION_NONE;
-      case "multi":
-        return selection.ids.every((id) => assets.has(id))
-          ? selection
-          : SELECTION_NONE;
-      case "singleCustomerPoint":
-        return customerPoints.has(selection.id) ? selection : SELECTION_NONE;
-      case "singlePressureLogger":
-        return pressureLoggers?.has(selection.id) ? selection : SELECTION_NONE;
-      case "none":
-      case "folder":
-        return selection;
-    }
+    const assetsValid = selection.asset.every((id) => assets.has(id));
+    const cpsValid = selection.customerPoint.every((id) =>
+      customerPoints.has(id),
+    );
+    const zonesValid = selection.zone.every((id) => zones.has(id));
+    if (assetsValid && cpsValid && zonesValid) return selection;
+    return SELECTION_NONE;
   },
 };
 
-export const SELECTION_NONE: Sel = {
-  type: "none",
+// Returns `current` unchanged when nothing is added, preserving the reference.
+const unionIds = (
+  current: readonly number[],
+  added: readonly number[],
+): readonly number[] => {
+  if (added.length === 0) return current;
+  const seen = new Set(current);
+  const merged = current.slice();
+  let changed = false;
+  for (const id of added) {
+    if (!seen.has(id)) {
+      merged.push(id);
+      changed = true;
+    }
+  }
+  return changed ? merged : current;
 };
+
+// Returns `current` unchanged when nothing is removed, preserving the reference.
+const diffIds = (
+  current: readonly number[],
+  removed: readonly number[],
+): readonly number[] => {
+  if (removed.length === 0 || current.length === 0) return current;
+  const toRemove = new Set(removed);
+  const filtered = current.filter((id) => !toRemove.has(id));
+  return filtered.length === current.length ? current : filtered;
+};
+
+const dedupIds = (ids: readonly number[]): readonly number[] => {
+  if (ids.length <= 1) return ids;
+  const deduped = new Set<number>(ids);
+  if (deduped.size === ids.length) return ids;
+  return Array.from(deduped);
+};
+
+const kindedSingleton = (kind: Category, id: number): KindedIds => ({
+  assetIds: kind === "asset" ? [id] : EMPTY_NUMBER_ARRAY,
+  customerPointIds: kind === "customerPoint" ? [id] : EMPTY_NUMBER_ARRAY,
+  zoneIds: kind === "zone" ? [id] : EMPTY_NUMBER_ARRAY,
+});

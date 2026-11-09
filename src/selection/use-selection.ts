@@ -1,43 +1,43 @@
 import { useSetAtom } from "jotai";
 import { USelection } from "./selection";
 import type { Sel } from "./types";
-import { TabOption, tabAtom } from "src/state/layout";
+import { useActivateAssetPanel } from "src/commands/activate-asset-panel";
 import { selectionAtom } from "src/state/selection";
 import { Asset, AssetId } from "src/hydraulic-model";
 import { useUserTracking } from "src/infra/user-tracking";
 
 export const useSelection = (selection: Sel) => {
   const setSelection = useSetAtom(selectionAtom);
-  const setTab = useSetAtom(tabAtom);
+  const activateAssetPanel = useActivateAssetPanel();
   const userTracking = useUserTracking();
 
   const toggleSingleSelection = (id: AssetId, _type: Asset["type"]) => {
-    setSelection(USelection.toggleSingleSelectionId(selection, id));
-    setTab(TabOption.Asset);
+    setSelection(USelection.toggleSingleAsset(selection, id));
+    activateAssetPanel();
   };
 
   const extendSelection = (assetId: AssetId | AssetId[]) => {
     const newSelection = Array.isArray(assetId)
-      ? USelection.addSelectionIds(selection, assetId)
-      : USelection.addSelectionId(selection, assetId);
+      ? USelection.addAssetIds(selection, assetId)
+      : USelection.addId(selection, "asset", assetId);
 
-    const newCount = USelection.toIds(newSelection).length;
+    const newCount = USelection.getAssetIds(newSelection).length;
     userTracking.capture({
       name: "multiSelect.updated",
       count: newCount,
       operation: Array.isArray(assetId) ? "bulk_add" : "single_add",
     });
     setSelection(newSelection);
-    setTab(TabOption.Asset);
+    activateAssetPanel();
   };
 
   const isSelected = (assetId: AssetId) => {
-    return USelection.isSelected(selection, assetId);
+    return USelection.isAssetSelected(selection, assetId);
   };
 
   const selectAsset = (assetId: AssetId) => {
-    setSelection(USelection.single(assetId));
-    setTab(TabOption.Asset);
+    setSelection(USelection.singleAsset(assetId));
+    activateAssetPanel();
   };
 
   const selectAssets = (assetIds: AssetId[]) => {
@@ -46,26 +46,96 @@ export const useSelection = (selection: Sel) => {
       count: assetIds.length,
       operation: "new",
     });
-    setSelection(USelection.fromIds(assetIds));
-    setTab(TabOption.Asset);
+    setSelection(USelection.fromAssetIds(assetIds));
+    activateAssetPanel();
   };
 
   const selectCustomerPoint = (customerPointId: number) => {
     setSelection(USelection.singleCustomerPoint(customerPointId));
-    setTab(TabOption.Asset);
+    activateAssetPanel();
   };
 
-  const selectPressureLogger = (pressureLoggerId: number) => {
-    setSelection(USelection.singlePressureLogger(pressureLoggerId));
-    setTab(TabOption.Asset);
+  const selectCustomerPoints = (customerPointIds: number[]) => {
+    userTracking.capture({
+      name: "multiSelect.updated",
+      count: customerPointIds.length,
+      operation: "new",
+    });
+    setSelection(USelection.fromIds([], customerPointIds));
+    activateAssetPanel();
+  };
+
+  const extendCustomerPointSelection = (customerPointId: number | number[]) => {
+    const ids = Array.isArray(customerPointId)
+      ? customerPointId
+      : [customerPointId];
+    let next = selection;
+    for (const id of ids) next = USelection.addId(next, "customerPoint", id);
+    const { assets, customerPoints } = USelection.countByKind(next);
+    userTracking.capture({
+      name: "multiSelect.updated",
+      count: assets + customerPoints,
+      operation: Array.isArray(customerPointId) ? "bulk_add" : "single_add",
+    });
+    setSelection(next);
+    activateAssetPanel();
+  };
+
+  const toggleCustomerPointSelection = (customerPointId: number) => {
+    setSelection(
+      USelection.toggleId(selection, "customerPoint", customerPointId),
+    );
+    activateAssetPanel();
+  };
+
+  const removeCustomerPointFromSelection = (
+    customerPointId: number | number[],
+  ) => {
+    const ids = Array.isArray(customerPointId)
+      ? customerPointId
+      : [customerPointId];
+    let next = selection;
+    for (const id of ids) next = USelection.removeId(next, "customerPoint", id);
+    const { assets, customerPoints } = USelection.countByKind(next);
+    userTracking.capture({
+      name: "multiSelect.updated",
+      count: assets + customerPoints,
+      operation: Array.isArray(customerPointId)
+        ? "bulk_remove"
+        : "single_remove",
+    });
+    setSelection(next);
+  };
+
+  const isCustomerPointSelected = (customerPointId: number) =>
+    USelection.isCustomerPointSelected(selection, customerPointId);
+
+  const selectZone = (zoneId: number) => {
+    setSelection(USelection.singleZone(zoneId));
+    activateAssetPanel();
+  };
+
+  const selectZones = (zoneIds: readonly number[]) => {
+    userTracking.capture({
+      name: "multiSelect.updated",
+      count: zoneIds.length,
+      operation: "new",
+    });
+    setSelection(USelection.fromIds([], [], zoneIds));
+    activateAssetPanel();
+  };
+
+  const toggleZoneSelection = (zoneId: number) => {
+    setSelection(USelection.toggleId(selection, "zone", zoneId));
+    activateAssetPanel();
   };
 
   const removeFromSelection = (assetId: AssetId | AssetId[]) => {
     const newSelection = Array.isArray(assetId)
-      ? USelection.removeSelectionIds(selection, assetId)
-      : USelection.removeFeatureFromSelection(selection, assetId);
+      ? USelection.removeAssetIds(selection, assetId)
+      : USelection.removeId(selection, "asset", assetId);
 
-    const newCount = USelection.toIds(newSelection).length;
+    const newCount = USelection.getAssetIds(newSelection).length;
     userTracking.capture({
       name: "multiSelect.updated",
       count: newCount,
@@ -78,19 +148,26 @@ export const useSelection = (selection: Sel) => {
     setSelection(USelection.none());
   };
 
-  const getSelectionIds = () => USelection.toIds(selection);
+  const getSelectionIds = () => USelection.getAssetIds(selection);
 
   return {
     setSelection,
     clearSelection,
-    toggleSingleSelection,
-    extendSelection,
-    isSelected,
-    removeFromSelection,
     selectAsset,
     selectAssets,
+    extendSelection,
+    toggleSingleSelection,
+    removeFromSelection,
     selectCustomerPoint,
-    selectPressureLogger,
+    isSelected,
+    selectCustomerPoints,
+    extendCustomerPointSelection,
+    toggleCustomerPointSelection,
+    removeCustomerPointFromSelection,
+    isCustomerPointSelected,
+    selectZone,
+    selectZones,
+    toggleZoneSelection,
     getSelectionIds,
   };
 };

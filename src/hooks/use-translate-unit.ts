@@ -1,4 +1,4 @@
-import { Unit } from "src/quantity";
+import { Unit } from "@epanet-js/quantity";
 import { useCallback } from "react";
 import { useLocale } from "src/hooks/use-locale";
 
@@ -43,6 +43,7 @@ const UNITS_MAP: Record<Exclude<Unit, null>, string> = {
   h: "h",
   "mg/L": "mg/L",
   "ug/L": "μg/L",
+  px: "px",
 };
 
 export const useTranslateUnit = () => {

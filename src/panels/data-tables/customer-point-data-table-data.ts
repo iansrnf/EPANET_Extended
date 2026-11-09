@@ -1,91 +1,88 @@
-import type { CustomerPointId } from "src/hydraulic-model/customer-points";
+import { type CustomerPointId } from "@epanet-js/hydraulic-model";
 import {
   calculateAverageDemand,
   getCustomerPointDemands,
   type HydraulicModel,
+  type PatternId,
 } from "src/hydraulic-model";
-import { convertTo } from "src/quantity";
-import type { UnitsSpec } from "src/lib/project-settings/quantities-spec";
+import type { UnitsSpec } from "@epanet-js/project-settings";
 
 export type CustomerPointRow = {
   id: CustomerPointId;
   label: string;
   connectedPipeLabel: string | null;
   connectedJunctionLabel: string | null;
+  baseDemand: number;
+  patternId: PatternId | null;
+  demandsCount: number;
   avgDemand: number;
 };
 
-const CHUNK_SIZE = 200;
+export type CpAccessorCtx = {
+  model: HydraulicModel;
+  units: UnitsSpec;
+};
 
-function yieldToMain(): Promise<void> {
-  const scheduler = (globalThis as Record<string, unknown>)["scheduler"] as
-    | {
-        postTask?: (
-          cb: () => void,
-          opts: { priority: string },
-        ) => Promise<void>;
-      }
-    | undefined;
-  if (scheduler?.postTask) {
-    return scheduler.postTask(() => {}, { priority: "user-visible" });
-  }
-  return new Promise((resolve) => setTimeout(resolve, 0));
+const CP_COMPUTED_KEYS = new Set<keyof CustomerPointRow>([
+  "connectedPipeLabel",
+  "connectedJunctionLabel",
+  "baseDemand",
+  "avgDemand",
+  "demandsCount",
+  "patternId",
+]);
+
+export function isCpComputedKey(key: string): boolean {
+  return CP_COMPUTED_KEYS.has(key as keyof CustomerPointRow);
 }
 
-function buildCustomerPointRow(
-  id: CustomerPointId,
-  hydraulicModel: HydraulicModel,
-  units: UnitsSpec,
-): CustomerPointRow | null {
-  const cp = hydraulicModel.customerPoints.get(id);
-  if (!cp) return null;
+export function cpAccessor(
+  key: keyof CustomerPointRow,
+  ctx: CpAccessorCtx,
+): (row: CustomerPointRow) => unknown {
+  return (row) => {
+    const { model } = ctx;
+    const cp = model.customerPoints.get(row.id);
+    if (!cp) return null;
 
-  const connection = cp.connection;
-  const connectedPipeLabel = connection
-    ? (hydraulicModel.assets.get(connection.pipeId)?.label ?? null)
-    : null;
-  const connectedJunctionLabel = connection
-    ? (hydraulicModel.assets.get(connection.junctionId)?.label ?? null)
-    : null;
-
-  const avgDemand = convertTo(
-    {
-      value: calculateAverageDemand(
-        getCustomerPointDemands(hydraulicModel.demands, id),
-        hydraulicModel.patterns,
-      ),
-      unit: units.customerDemand,
-    },
-    units.customerDemandPerDay,
-  );
-
-  return {
-    id,
-    label: cp.label,
-    connectedPipeLabel,
-    connectedJunctionLabel,
-    avgDemand,
+    switch (key) {
+      case "connectedPipeLabel":
+        return cp.connection
+          ? (model.assets.get(cp.connection.pipeId)?.label ?? null)
+          : null;
+      case "connectedJunctionLabel":
+        return cp.connection
+          ? (model.assets.get(cp.connection.junctionId)?.label ?? null)
+          : null;
+      case "demandsCount":
+        return getCustomerPointDemands(model.demands, row.id).length;
+      case "patternId": {
+        const first = getCustomerPointDemands(model.demands, row.id)[0];
+        return first?.patternId ?? null;
+      }
+      case "baseDemand":
+        return (
+          getCustomerPointDemands(model.demands, row.id)[0]?.baseDemand ?? 0
+        );
+      case "avgDemand":
+        return calculateAverageDemand(
+          getCustomerPointDemands(model.demands, row.id),
+          model.patterns,
+        );
+      default:
+        return null;
+    }
   };
 }
 
-export async function buildCustomerPointRowsAsync(
+export function buildCustomerPointModelRows(
   hydraulicModel: HydraulicModel,
-  units: UnitsSpec,
-  signal?: AbortSignal,
-): Promise<CustomerPointRow[]> {
-  const ids = Array.from(hydraulicModel.customerPoints.keys());
-  const result: CustomerPointRow[] = [];
-  for (let chunkStart = 0; chunkStart < ids.length; chunkStart += CHUNK_SIZE) {
-    if (chunkStart > 0) await yieldToMain();
-    if (signal?.aborted) return result;
-    for (
-      let i = chunkStart;
-      i < Math.min(chunkStart + CHUNK_SIZE, ids.length);
-      i++
-    ) {
-      const row = buildCustomerPointRow(ids[i], hydraulicModel, units);
-      if (row) result.push(row);
-    }
+  onlyIds?: ReadonlySet<number>,
+): CustomerPointRow[] {
+  const rows: CustomerPointRow[] = [];
+  for (const cp of hydraulicModel.customerPoints.values()) {
+    if (onlyIds && !onlyIds.has(cp.id)) continue;
+    rows.push(cp as unknown as CustomerPointRow);
   }
-  return result;
+  return rows;
 }

@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useAtomValue } from "jotai";
 import { useTranslate } from "src/hooks/use-translate";
-import { useZoomTo } from "src/hooks/use-zoom-to";
+import { useZoomToSelection } from "src/commands/zoom-to-selection";
 import { useDeleteSelection } from "src/commands/delete-selection";
 import { useSetRedrawMode } from "src/commands/set-redraw-mode";
 import { useReverseLink } from "src/commands/reverse-link";
@@ -13,31 +13,31 @@ import {
   DeactivateTopologyIcon,
   ActivateTopologyIcon,
   ChartLineIcon,
+  BookmarkIcon,
 } from "src/icons";
 import { Mode, modeAtom } from "src/state/mode";
-import { selectedFeaturesDerivedAtom } from "src/state/derived-branch-state";
-import { ActionButton, Action } from "src/components/action-button";
+import { Action } from "src/components/action-button";
+import { ActionsBar } from "src/components/actions-bar";
 import {
   changeActiveTopologyShortcut,
   useChangeSelectedAssetsActiveTopologyStatus,
 } from "src/commands/change-selected-assets-active-topology-status";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useCustomGraph } from "src/hooks/use-custom-graph";
-import { useUserTracking } from "src/infra/user-tracking";
+import { useIsDrawingAvailable } from "src/hooks/use-is-drawing-available";
+import { useStartCollectionDraft } from "src/commands/collection-draft";
 
 export function useLinkActions(readonly = false): Action[] {
   const translate = useTranslate();
-  const zoomTo = useZoomTo();
+  const zoomToSelection = useZoomToSelection();
   const deleteSelection = useDeleteSelection();
   const { mode: currentMode } = useAtomValue(modeAtom);
   const setRedrawMode = useSetRedrawMode();
   const reverseLinkAction = useReverseLink();
-  const selectedWrappedFeatures = useAtomValue(selectedFeaturesDerivedAtom);
   const { changeSelectedAssetsActiveTopologyStatus, allActive } =
     useChangeSelectedAssetsActiveTopologyStatus();
-  const isCustomGraphsOn = useFeatureFlag("FLAG_CUSTOM_GRAPHS");
   const { openCustomGraph } = useCustomGraph();
-  const userTracking = useUserTracking();
+  const startCollectionDraft = useStartCollectionDraft();
+  const isDrawingAvailable = useIsDrawingAvailable();
 
   const onDelete = useCallback(() => {
     deleteSelection({ source: "toolbar" });
@@ -48,6 +48,7 @@ export function useLinkActions(readonly = false): Action[] {
     label: translate("delete"),
     variant: "danger-quiet" as const,
     applicable: true,
+    priority: 1,
     disabled: readonly,
     icon: <DeleteIcon />,
     onSelect: onDelete,
@@ -56,20 +57,18 @@ export function useLinkActions(readonly = false): Action[] {
   const zoomToAction = {
     icon: <ZoomToIcon />,
     applicable: true,
+    priority: 6,
     label: translate("zoomTo"),
     onSelect: function doZoomTo() {
-      userTracking.capture({
-        name: "selection.zoomedTo",
-        source: "asset-panel",
-        count: selectedWrappedFeatures.length,
-      });
-      return Promise.resolve(zoomTo(selectedWrappedFeatures));
+      zoomToSelection({ source: "toolbar" });
+      return Promise.resolve();
     },
   };
 
   const redrawAction = {
     icon: <RedrawIcon />,
-    applicable: true,
+    applicable: isDrawingAvailable,
+    priority: 3,
     disabled: readonly,
     label: translate("redraw"),
     selected: currentMode === Mode.REDRAW_LINK,
@@ -82,6 +81,7 @@ export function useLinkActions(readonly = false): Action[] {
   const reverseAction = {
     icon: <ReverseIcon />,
     applicable: true,
+    priority: 5,
     disabled: readonly,
     label: translate("reverse"),
     onSelect: function reverseLinkActionHandler() {
@@ -93,6 +93,7 @@ export function useLinkActions(readonly = false): Action[] {
   const customGraphAction = {
     icon: <ChartLineIcon />,
     applicable: true,
+    priority: 2,
     label: translate("customGraph.menuTitle"),
     onSelect: openCustomGraph,
   };
@@ -105,6 +106,7 @@ export function useLinkActions(readonly = false): Action[] {
   const changeActiveTopologyActionItem = {
     icon: allActive ? <DeactivateTopologyIcon /> : <ActivateTopologyIcon />,
     applicable: true,
+    priority: 4,
     disabled: readonly,
     label: allActive
       ? translate("deactivateAssets")
@@ -113,34 +115,33 @@ export function useLinkActions(readonly = false): Action[] {
     onSelect: onChangeActiveTopology,
   };
 
-  return isCustomGraphsOn
-    ? [
-        zoomToAction,
-        reverseAction,
-        redrawAction,
-        changeActiveTopologyActionItem,
-        customGraphAction,
-        deleteAssetsAction,
-      ]
-    : [
-        zoomToAction,
-        reverseAction,
-        redrawAction,
-        changeActiveTopologyActionItem,
-        deleteAssetsAction,
-      ];
+  const saveSelectionSetAction = {
+    icon: <BookmarkIcon />,
+    applicable: true,
+    label: translate("collections.selectionSets.save"),
+    onSelect: function saveSelectionSet() {
+      startCollectionDraft({
+        kind: "selectionSets",
+        source: "toolbar",
+        label: "",
+      });
+      return Promise.resolve();
+    },
+  };
+
+  return [
+    zoomToAction,
+    saveSelectionSetAction,
+    reverseAction,
+    redrawAction,
+    changeActiveTopologyActionItem,
+    customGraphAction,
+    deleteAssetsAction,
+  ];
 }
 
 export function LinkActions({ readonly = false }: { readonly?: boolean }) {
   const actions = useLinkActions(readonly);
 
-  return (
-    <div className="flex gap-1 h-8 -my-2">
-      {actions
-        .filter((action) => action.applicable)
-        .map((action, i) => (
-          <ActionButton key={i} action={action} />
-        ))}
-    </div>
-  );
+  return <ActionsBar actions={actions} className="h-8 -my-2" />;
 }

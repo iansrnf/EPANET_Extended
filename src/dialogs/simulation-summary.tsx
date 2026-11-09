@@ -35,7 +35,7 @@ const SimulationSummaryDialogNew = ({
   const config = {
     success: {
       title: translate("simulationSuccess"),
-      iconClass: "text-green-500",
+      iconClass: "text-success",
     },
     warning: {
       title: translate("simulationWarning"),
@@ -47,7 +47,7 @@ const SimulationSummaryDialogNew = ({
     },
     stopped: {
       title: translate("simulationStopped"),
-      iconClass: "text-blue-500",
+      iconClass: "text-info",
     },
   }[modal.status];
 
@@ -86,8 +86,8 @@ const SimulationSummaryDialogNew = ({
         />
       }
     >
-      <div className="p-4 text-sm text-gray-700">
-        <p className="flex items-start gap-2">
+      <div className="p-4 text-size-base text-default">
+        <div className="flex items-start gap-2">
           <div className={`m-width-0 mt-0.5 ${config.iconClass}`}>
             {modal.status === "success" && <SuccessIcon />}
             {modal.status === "warning" && <WarningIcon />}
@@ -106,7 +106,7 @@ const SimulationSummaryDialogNew = ({
                     ? "simulationStoppedExplain"
                     : "simulationFailureExplain",
               )}
-        </p>
+        </div>
       </div>
     </BaseDialog>
   );

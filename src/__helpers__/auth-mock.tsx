@@ -3,10 +3,17 @@ import { createContext, useContext } from "react";
 import { User, nullUser } from "src/auth-types";
 import { UseAuthHook } from "src/hooks/use-auth";
 
-const AuthMockContext = createContext({
+const AuthMockContext = createContext<{
+  user: User;
+  isSignedIn: boolean;
+  signOut: () => Promise<void>;
+  reload: () => Promise<void>;
+  isLoaded: boolean;
+}>({
   user: nullUser,
   isSignedIn: false,
-  signOut: () => {},
+  signOut: async () => {},
+  reload: async () => {},
   isLoaded: true,
 });
 
@@ -20,6 +27,7 @@ export const aUser = (attributes: Partial<User> = {}): User => {
     trialActivatedAt: null,
     trialEndsAt: null,
     hasUsedTrial: false,
+    subscriptionStatus: null,
   };
   return { ...defaults, ...attributes };
 };
@@ -31,23 +39,28 @@ export const AuthMockProvider = ({
   user = aUser(),
   isSignedIn = true,
   isLoaded = true,
-  signOut = vi.fn(),
+  signOut = vi.fn().mockResolvedValue(undefined),
+  reload = vi.fn().mockResolvedValue(undefined),
 }: {
   children: React.ReactNode;
   user?: User;
   isSignedIn?: boolean;
-  signOut?: () => void;
+  signOut?: () => Promise<void>;
+  reload?: () => Promise<void>;
   isLoaded?: boolean;
 }) => {
   return (
-    <AuthMockContext.Provider value={{ isLoaded, user, isSignedIn, signOut }}>
+    <AuthMockContext.Provider
+      value={{ isLoaded, user, isSignedIn, signOut, reload }}
+    >
       {children}
     </AuthMockContext.Provider>
   );
 };
 
 export const useAuthMock: UseAuthHook = () => {
-  const { isSignedIn, user, signOut, isLoaded } = useContext(AuthMockContext);
+  const { isSignedIn, user, signOut, reload, isLoaded } =
+    useContext(AuthMockContext);
 
   return {
     isSignedIn,
@@ -55,6 +68,7 @@ export const useAuthMock: UseAuthHook = () => {
     userId: user.id,
     signOut,
     isLoaded,
-    reload: async () => {},
+    reload,
+    getToken: () => Promise.resolve(isSignedIn ? "session-token" : null),
   };
 };

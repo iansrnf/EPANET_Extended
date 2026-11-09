@@ -1,38 +1,37 @@
-import { render, screen, waitFor, act } from "@testing-library/react";
-import { dataAtom, nullData } from "src/state/data";
+import {
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  act,
+} from "@testing-library/react";
+import { selectionAtom } from "src/state/selection";
 import { projectSettingsAtom } from "src/state/project-settings";
-import { stagingModelAtom } from "src/state/hydraulic-model";
 import {
   SimulationState,
   initialSimulationState,
   simulationStepAtom,
 } from "src/state/simulation";
 import { branchStateAtom } from "src/state/branch-state";
-import { LabelManager } from "src/hydraulic-model/label-manager";
+import { LabelManager, Valve } from "@epanet-js/hydraulic-model";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
-import { MomentLog } from "src/lib/persistence/moment-log";
+import { SessionHistory } from "src/lib/persistence/session-history";
 import { Store } from "src/state";
 import { Provider as JotaiProvider, createStore } from "jotai";
 import { HydraulicModel, Pipe, Pump } from "src/hydraulic-model";
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { createMockResultsReader, SimulationData } from "src/__helpers__/state";
 import { PersistenceContext } from "src/lib/persistence/context";
 import { Persistence } from "src/lib/persistence/persistence";
-import {
-  stagingModelDerivedAtom,
-  momentLogDerivedAtom,
-} from "src/state/derived-branch-state";
-import { mapSyncMomentAtom } from "src/state/map";
-import {
-  applyMoment,
-  computeSyncMoment,
-} from "src/lib/persistence/transaction-helpers";
-import userEvent from "@testing-library/user-event";
-import { AssetId, getLink, getPipe } from "src/hydraulic-model/assets-map";
+import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
+import { useUndoableTransactions } from "src/hooks/persistence/use-undoable-transactions";
+import userEvent, { type UserEvent } from "@testing-library/user-event";
+import { AssetId, getLink, getPipe } from "@epanet-js/hydraulic-model";
 import FeatureEditor from "../feature-editor";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Valve } from "src/hydraulic-model/asset-types";
-import { TooltipProvider } from "@radix-ui/react-tooltip";
+import { TooltipProvider } from "@epanet-js/ui-kit";
+import { USelection } from "src/selection";
+import { stubFeatureOff, stubFeatureOn } from "src/__helpers__/feature-flags";
 
 describe("AssetPanel", () => {
   describe("with a pipe", () => {
@@ -50,6 +49,8 @@ describe("AssetPanel", () => {
           minorLoss: 0.1,
           startNodeId: IDS.j1,
           endNodeId: IDS.j2,
+          year: 2010,
+          material: "iron",
         })
         .build();
       const store = setInitialState({
@@ -76,23 +77,298 @@ describe("AssetPanel", () => {
       expectPropertyDisplayed("roughness", "1");
       expectPropertyDisplayed("length", "10");
       expectPropertyDisplayed("loss coeff. (m)", "0.1");
+      expectPropertyDisplayed("year of installation", "2010");
+      expect(
+        screen.getByRole("combobox", { name: /material/i }),
+      ).toHaveTextContent("iron");
       expect(screen.queryAllByText("Not available").length).toBeGreaterThan(0);
     });
 
-    it("does not show material or year fields when FLAG_PIPE_ATTRIBUTES is off", () => {
-      const IDS = { P1: 1 };
-      const hydraulicModel = HydraulicModelBuilder.with().aPipe(IDS.P1).build();
+    it("clears roughness to empty when validation is enabled", async () => {
+      const IDS = { PIPE1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aPipe(IDS.PIPE1, { roughness: 120 })
+        .build();
       const store = setInitialState({
         hydraulicModel,
-        selectedAssetId: IDS.P1,
+        selectedAssetId: IDS.PIPE1,
       });
+      const user = userEvent.setup();
 
       renderComponent(store);
 
-      expect(screen.queryByLabelText(/material/i)).not.toBeInTheDocument();
+      const field = screen.getByRole("textbox", {
+        name: /value for: roughness/i,
+      });
+      await user.clear(field);
+      await user.keyboard("{Enter}");
+
+      const updated = store.get(stagingModelDerivedAtom);
+      expect((getPipe(updated.assets, IDS.PIPE1) as Pipe).roughness).toBeNull();
+    });
+
+    describe("material options", () => {
+      const IDS = { P1: 1, P2: 2 };
+
+      const openMaterialOptions = async (user: UserEvent) => {
+        await user.click(screen.getByRole("combobox", { name: /material/i }));
+        return screen
+          .getAllByRole("option")
+          .map((option) => option.textContent);
+      };
+
+      it("hides a label that only differs in casing from a library material", async () => {
+        const hydraulicModel = HydraulicModelBuilder.with()
+          .aPipe(IDS.P1, { material: "PVC" })
+          .aPipe(IDS.P2, { material: "cast iron" })
+          .aPipeMaterial({
+            label: "Cast Iron",
+            entries: [{ age: 0, roughness: 120 }],
+          })
+          .build();
+        const store = setInitialState({
+          hydraulicModel,
+          selectedAssetId: IDS.P1,
+        });
+        const user = userEvent.setup();
+
+        renderComponent(store);
+
+        const options = await openMaterialOptions(user);
+        expect(options).toContain("Cast Iron");
+        expect(options).not.toContain("cast iron");
+      });
+
+      it("shows the library label for a material that differs by case", async () => {
+        const hydraulicModel = HydraulicModelBuilder.with()
+          .aPipe(IDS.P1, { material: "cast iron" })
+          .aPipeMaterial({
+            label: "Cast Iron",
+            entries: [{ age: 0, roughness: 120 }],
+          })
+          .build();
+        const store = setInitialState({
+          hydraulicModel,
+          selectedAssetId: IDS.P1,
+        });
+        const user = userEvent.setup();
+
+        renderComponent(store);
+
+        expect(
+          screen.getByRole("combobox", { name: /material/i }),
+        ).toHaveTextContent("Cast Iron");
+        expect(await openMaterialOptions(user)).toEqual(["Cast Iron"]);
+      });
+
+      it("offers a pipe material the library does not cover", async () => {
+        const hydraulicModel = HydraulicModelBuilder.with()
+          .aPipe(IDS.P1, { material: "PVC" })
+          .aPipeMaterial({
+            label: "Cast Iron",
+            entries: [{ age: 0, roughness: 120 }],
+          })
+          .build();
+        const store = setInitialState({
+          hydraulicModel,
+          selectedAssetId: IDS.P1,
+        });
+        const user = userEvent.setup();
+
+        renderComponent(store);
+
+        const options = await openMaterialOptions(user);
+        expect(options).toEqual(["Cast Iron", "PVC"]);
+      });
+    });
+
+    describe("roughness inferred from the pipe library", () => {
+      const IDS = { PIPE1: 1 };
+
+      const modelWithLibraryMaterial = () =>
+        HydraulicModelBuilder.with()
+          .aPipe(IDS.PIPE1, { roughness: null, material: "Cast Iron" })
+          .aPipeMaterial({
+            label: "Cast Iron",
+            entries: [{ age: 0, roughness: 120 }],
+          })
+          .build();
+
+      const roughnessField = () =>
+        screen.getByRole("textbox", { name: /value for: roughness/i });
+
+      it("shows the inferred value as a placeholder without flagging it", () => {
+        const store = setInitialState({
+          hydraulicModel: modelWithLibraryMaterial(),
+          selectedAssetId: IDS.PIPE1,
+        });
+
+        renderComponent(store);
+
+        expect(roughnessField()).toHaveValue("");
+        expect(roughnessField()).toHaveAttribute("placeholder", "120");
+        expect(roughnessField()).not.toHaveAttribute("aria-invalid");
+      });
+
+      it("falls back to the inferred value when an explicit one is cleared", async () => {
+        const hydraulicModel = modelWithLibraryMaterial();
+        (getPipe(hydraulicModel.assets, IDS.PIPE1) as Pipe).setRoughness(90);
+        const store = setInitialState({
+          hydraulicModel,
+          selectedAssetId: IDS.PIPE1,
+        });
+        const user = userEvent.setup();
+
+        renderComponent(store);
+
+        await user.clear(roughnessField());
+        await user.keyboard("{Enter}");
+
+        const updated = store.get(stagingModelDerivedAtom);
+        expect(
+          (getPipe(updated.assets, IDS.PIPE1) as Pipe).roughness,
+        ).toBeNull();
+        await waitFor(() => {
+          expect(roughnessField()).toHaveValue("");
+        });
+        expect(roughnessField()).toHaveAttribute("placeholder", "120");
+        expect(roughnessField()).not.toHaveAttribute("aria-invalid");
+      });
+
+      it("shows the library value as the placeholder while an explicit one is set", () => {
+        const hydraulicModel = modelWithLibraryMaterial();
+        (getPipe(hydraulicModel.assets, IDS.PIPE1) as Pipe).setRoughness(90);
+        const store = setInitialState({
+          hydraulicModel,
+          selectedAssetId: IDS.PIPE1,
+        });
+
+        renderComponent(store);
+
+        expect(roughnessField()).toHaveValue("90");
+        expect(roughnessField()).toHaveAttribute("placeholder", "120");
+      });
+    });
+
+    it("keeps an explicit optional value even when it equals the default", async () => {
+      const IDS = { PIPE1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aPipe(IDS.PIPE1, { minorLoss: 5 })
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.PIPE1,
+      });
+      const user = userEvent.setup();
+
+      renderComponent(store);
+
+      const field = screen.getByRole("textbox", {
+        name: /value for: loss coeff/i,
+      });
+      await user.clear(field);
+      await user.keyboard("0{Enter}");
+
+      const updated = store.get(stagingModelDerivedAtom);
+      expect((getPipe(updated.assets, IDS.PIPE1) as Pipe).minorLoss).toBe(0);
+    });
+
+    it("clears an optional field to undefined when emptied", async () => {
+      const IDS = { PIPE1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aPipe(IDS.PIPE1, { minorLoss: 5 })
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.PIPE1,
+      });
+      const user = userEvent.setup();
+
+      renderComponent(store);
+
+      const field = screen.getByRole("textbox", {
+        name: /value for: loss coeff/i,
+      });
+      await user.clear(field);
+      await user.keyboard("{Enter}");
+
+      const updated = store.get(stagingModelDerivedAtom);
       expect(
-        screen.queryByLabelText(/year of installation/i),
-      ).not.toBeInTheDocument();
+        (getPipe(updated.assets, IDS.PIPE1) as Pipe).minorLoss,
+      ).toBeUndefined();
+    });
+
+    it("commits a negative optional value (informational) when validation is enabled", async () => {
+      const IDS = { PIPE1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aPipe(IDS.PIPE1, { minorLoss: 5 })
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.PIPE1,
+      });
+      const user = userEvent.setup();
+
+      renderComponent(store);
+
+      const field = screen.getByRole("textbox", {
+        name: /value for: loss coeff/i,
+      });
+      await user.clear(field);
+      await user.keyboard("-3{Enter}");
+
+      const updated = store.get(stagingModelDerivedAtom);
+      expect((getPipe(updated.assets, IDS.PIPE1) as Pipe).minorLoss).toBe(-3);
+    });
+
+    it("keeps an optional value that differs from its default", async () => {
+      const IDS = { PIPE1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aPipe(IDS.PIPE1, { minorLoss: 5 })
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.PIPE1,
+      });
+      const user = userEvent.setup();
+
+      renderComponent(store);
+
+      const field = screen.getByRole("textbox", {
+        name: /value for: loss coeff/i,
+      });
+      await user.clear(field);
+      await user.keyboard("3{Enter}");
+
+      const updated = store.get(stagingModelDerivedAtom);
+      expect((getPipe(updated.assets, IDS.PIPE1) as Pipe).minorLoss).toBe(3);
+    });
+
+    it("keeps an explicit value matching a changeable setting default", async () => {
+      // The global bulk reaction coefficient defaults to 0; typing 0 must stay
+      // explicit (not normalized to undefined) so it survives a setting change.
+      const IDS = { PIPE1: 1 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aPipe(IDS.PIPE1)
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.PIPE1,
+      });
+      const user = userEvent.setup();
+
+      renderComponent(store);
+
+      const field = screen.getByRole("textbox", {
+        name: /value for: bulk reaction coefficient/i,
+      });
+      await user.clear(field);
+      await user.keyboard("0{Enter}");
+
+      const updated = store.get(stagingModelDerivedAtom);
+      expect(
+        (getPipe(updated.assets, IDS.PIPE1) as Pipe).bulkReactionCoeff,
+      ).toBe(0);
     });
 
     it("can show simulation results", async () => {
@@ -382,7 +658,7 @@ describe("AssetPanel", () => {
         (getLink(updatedHydraulicModel.assets, IDS.V1) as Valve).initialStatus,
       ).toEqual("closed");
 
-      expect(selector).not.toHaveFocus();
+      expect(selector).toHaveFocus();
       expect(selector).toHaveTextContent("Closed");
 
       historyControl("undo");
@@ -418,14 +694,14 @@ describe("AssetPanel", () => {
 
       await user.click(selector);
 
-      await user.click(screen.getByText(/psv: pressure sustaining valve/i));
+      await user.click(screen.getByText(/pressure sustaining valve/i));
 
       const updatedHydraulicModel = store.get(stagingModelDerivedAtom);
       expect(
         (getLink(updatedHydraulicModel.assets, IDS.V1) as Valve).kind,
       ).toEqual("psv");
 
-      expect(selector).not.toHaveFocus();
+      expect(selector).toHaveFocus();
       expect(selector).toHaveTextContent("PSV");
       expectPropertyDisplayed("setting (m)", "10");
 
@@ -437,6 +713,169 @@ describe("AssetPanel", () => {
         expect(updatedSelector).toHaveTextContent("FCV");
       });
       expectPropertyDisplayed("setting (l/s)", "10");
+    });
+
+    it("sets the target node when a downstream node is selected", async () => {
+      const IDS = { V1: 1, up: 2, down: 3, other: 4, P1: 5 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aJunction(IDS.up, { label: "UPSTREAM" })
+        .aJunction(IDS.down, { label: "DOWNSTREAM" })
+        .aJunction(IDS.other, { label: "OTHER" })
+        .aValve(IDS.V1, {
+          kind: "prv",
+          startNodeId: IDS.up,
+          endNodeId: IDS.down,
+        })
+        .aPipe(IDS.P1, { startNodeId: IDS.down, endNodeId: IDS.other })
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.V1,
+      });
+      const user = userEvent.setup();
+
+      renderComponent(store);
+
+      const selector = screen.getByRole("combobox", {
+        name: /target node/i,
+      });
+      await user.click(selector);
+      await user.click(await screen.findByText("OTHER"));
+
+      const updated = store.get(stagingModelDerivedAtom);
+      const valve = getLink(updated.assets, IDS.V1) as Valve;
+      expect(valve.targetNodeId).toBe(IDS.other);
+    });
+
+    describe("flow-modulating valve controls", () => {
+      const IDS = { V1: 1, up: 2, down: 3, other: 4, P1: 5 };
+      const aPrvModel = () =>
+        HydraulicModelBuilder.with()
+          .aJunction(IDS.up, { label: "UP" })
+          .aJunction(IDS.down, { label: "DOWN" })
+          .aJunction(IDS.other, { label: "OTHER" })
+          .aValve(IDS.V1, {
+            kind: "prv",
+            setting: 30,
+            startNodeId: IDS.up,
+            endNodeId: IDS.down,
+          })
+          .aPipe(IDS.P1, { startNodeId: IDS.down, endNodeId: IDS.other })
+          .build();
+
+      it("locks the target node and setting to the control while a flow-modulated control is set", async () => {
+        stubFeatureOn("FLAG_FLOW_MODULATING_VALVES");
+        const store = setInitialState({
+          hydraulicModel: aPrvModel(),
+          selectedAssetId: IDS.V1,
+        });
+        const user = userEvent.setup();
+
+        renderComponent(store);
+        await waitFor(() =>
+          expect(
+            screen.getByRole("combobox", { name: /target node/i }),
+          ).toBeEnabled(),
+        );
+        expect(screen.getByRole("textbox", { name: /setting/i })).toHaveValue(
+          "30",
+        );
+
+        await user.click(screen.getByRole("combobox", { name: "Type" }));
+        await user.click(
+          await screen.findByRole("option", { name: "Flow modulated" }),
+        );
+
+        expect(store.get(stagingModelDerivedAtom).controls).toEqual([
+          {
+            id: expect.any(String),
+            type: "flow-modulating-valve",
+            linkId: IDS.V1,
+            points: [
+              { flow: 0, pressure: 30 },
+              { flow: 1, pressure: 31 },
+            ],
+            interpolate: true,
+            sensorLinkId: IDS.V1,
+            controlNodeId: IDS.down,
+          },
+        ]);
+        const targetNode = screen.getByRole("combobox", {
+          name: /target node/i,
+        });
+        expect(targetNode).toBeDisabled();
+        expect(targetNode).toHaveTextContent("DOWN");
+        const setting = screen.getByRole("textbox", { name: /setting/i });
+        expect(setting).toBeDisabled();
+        expect(setting).toHaveValue("");
+        expect(setting).toHaveAttribute("placeholder", "Set by control");
+
+        await user.click(screen.getByRole("combobox", { name: "Type" }));
+        await user.click(await screen.findByRole("option", { name: "None" }));
+
+        expect(store.get(stagingModelDerivedAtom).controls).toEqual([]);
+        await waitFor(() =>
+          expect(
+            screen.getByRole("combobox", { name: /target node/i }),
+          ).toBeEnabled(),
+        );
+        expect(screen.getByRole("textbox", { name: /setting/i })).toBeEnabled();
+        expect(screen.getByRole("textbox", { name: /setting/i })).toHaveValue(
+          "30",
+        );
+      });
+
+      it("offers only the nodes downstream of the valve as control node", async () => {
+        stubFeatureOn("FLAG_FLOW_MODULATING_VALVES");
+        const store = setInitialState({
+          hydraulicModel: aPrvModel(),
+          selectedAssetId: IDS.V1,
+        });
+        const user = userEvent.setup();
+
+        renderComponent(store);
+        await user.click(screen.getByRole("combobox", { name: "Type" }));
+        await user.click(
+          await screen.findByRole("option", { name: "Flow modulated" }),
+        );
+
+        const controlNode = await screen.findByRole("combobox", {
+          name: "Control node",
+        });
+        await waitFor(() => expect(controlNode).toBeEnabled());
+        await user.click(controlNode);
+
+        expect(
+          await screen.findByRole("option", { name: "OTHER" }),
+        ).toBeInTheDocument();
+        expect(
+          screen.queryByRole("option", { name: "UP" }),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole("option", { name: "DOWN" }),
+        ).not.toBeInTheDocument();
+      });
+
+      it("hides the controls section when the flag is off", () => {
+        stubFeatureOff("FLAG_FLOW_MODULATING_VALVES");
+        const store = setInitialState({
+          hydraulicModel: aPrvModel(),
+          selectedAssetId: IDS.V1,
+        });
+
+        renderComponent(store);
+
+        expect(screen.queryByText("Controls")).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole("combobox", { name: "Type" }),
+        ).not.toBeInTheDocument();
+        expect(
+          screen.getByRole("combobox", { name: /target node/i }),
+        ).toBeInTheDocument();
+        expect(screen.getByRole("textbox", { name: /setting/i })).toHaveValue(
+          "30",
+        );
+      });
     });
 
     it("can show simulation results", async () => {
@@ -763,7 +1202,7 @@ describe("AssetPanel", () => {
         (getLink(updatedHydraulicModel.assets, IDS.PU1) as Pump).initialStatus,
       ).toEqual("off");
 
-      expect(selector).not.toHaveFocus();
+      expect(selector).toHaveFocus();
       expect(selector).toHaveTextContent("Of");
 
       historyControl("undo");
@@ -773,6 +1212,27 @@ describe("AssetPanel", () => {
         });
         expect(updatedSelector).toHaveTextContent("On");
       });
+    });
+
+    it("shows the controls section", () => {
+      const IDS = { PU1: 1, j1: 2, j2: 3 };
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aJunction(IDS.j1, { label: "J1" })
+        .aJunction(IDS.j2, { label: "J2" })
+        .aPump(IDS.PU1, {
+          label: "MY_PUMP",
+          connections: [IDS.j1, IDS.j2],
+          initialStatus: "on",
+        })
+        .build();
+      const store = setInitialState({
+        hydraulicModel,
+        selectedAssetId: IDS.PU1,
+      });
+
+      renderComponent(store);
+
+      expect(screen.getByText("Controls")).toBeInTheDocument();
     });
   });
 
@@ -1369,7 +1829,7 @@ describe("AssetPanel", () => {
       (getPipe(updatedHydraulicModel.assets, IDS.PIPE1) as Pipe).initialStatus,
     ).toEqual("closed");
 
-    expect(selector).not.toHaveFocus();
+    expect(selector).toHaveFocus();
     expect(selector).toHaveTextContent("Closed");
 
     historyControl("undo");
@@ -1520,17 +1980,10 @@ describe("AssetPanel", () => {
 
     renderComponent(store);
 
-    await user.tab();
-    // First tab focuses the label input field
-    const labelInput = screen.getByRole("textbox", {
-      name: /value for: P1/i,
-    });
-    expect(labelInput).toHaveFocus();
-
-    await user.tab();
     const selector = screen.getByRole("combobox", {
       name: /initial status/i,
     });
+    selector.focus();
     expect(selector).toHaveFocus();
 
     await user.keyboard("[ArrowDown]");
@@ -1542,7 +1995,7 @@ describe("AssetPanel", () => {
   });
 
   describe("validations", () => {
-    it("ignores sign in positive only numeric fields", async () => {
+    it("commits a negative value in a positive field informationally", async () => {
       const IDS = { PIPE1: 1 };
       const hydraulicModel = HydraulicModelBuilder.with()
         .aPipe(IDS.PIPE1, { diameter: 20 })
@@ -1562,10 +2015,15 @@ describe("AssetPanel", () => {
       await user.type(field, "-10");
       await user.keyboard("{Enter}");
 
+      const updatedHydraulicModel = store.get(stagingModelDerivedAtom);
+      expect(
+        (getPipe(updatedHydraulicModel.assets, IDS.PIPE1) as Pipe).diameter,
+      ).toEqual(-10);
+
       const updatedField = screen.getByRole("textbox", {
         name: /value for: diameter/i,
       });
-      expect(updatedField).toHaveValue("10");
+      expect(updatedField).toHaveValue("-10");
       expect(updatedField).not.toHaveFocus();
     });
 
@@ -1643,11 +2101,11 @@ describe("AssetPanel", () => {
       await user.type(field, "0");
       expect(
         screen.getByRole("textbox", { name: /value for: length/i }),
-      ).toHaveClass(/orange/i);
+      ).toHaveClass(/warning/i);
       await user.type(field, "10");
       expect(
         screen.getByRole("textbox", { name: /value for: length/i }),
-      ).not.toHaveClass(/orange/i);
+      ).not.toHaveClass(/warning/i);
       await user.keyboard("{Enter}");
 
       const updatedField = screen.getByRole("textbox", {
@@ -1657,7 +2115,7 @@ describe("AssetPanel", () => {
       expect(updatedField).not.toHaveFocus();
     });
 
-    it("ignores changes when not a valid number", async () => {
+    it("commits 0 in a positive field informationally", async () => {
       const IDS = { PIPE1: 1 };
       const hydraulicModel = HydraulicModelBuilder.with()
         .aPipe(IDS.PIPE1, { diameter: 10 })
@@ -1677,30 +2135,19 @@ describe("AssetPanel", () => {
       await user.type(field, "0");
       expect(
         screen.getByRole("textbox", { name: /value for: diameter/i }),
-      ).toHaveClass(/orange/i);
+      ).toHaveClass(/warning/i);
       await user.keyboard("{Enter}");
 
       const updatedHydraulicModel = store.get(stagingModelDerivedAtom);
       expect(
         (getPipe(updatedHydraulicModel.assets, IDS.PIPE1) as Pipe).diameter,
-      ).toEqual(10);
-
-      expect(field).toHaveValue("10");
-      expect(field).not.toHaveFocus();
+      ).toEqual(0);
 
       const updatedField = screen.getByRole("textbox", {
         name: /value for: diameter/i,
       });
-      expect(updatedField).toHaveValue("10");
-      expect(updatedField).not.toHaveFocus();
-
-      await user.clear(updatedField);
-      await user.type(updatedField, "0");
       expect(updatedField).toHaveValue("0");
-      await user.tab();
-
       expect(updatedField).not.toHaveFocus();
-      expect(updatedField).toHaveValue("10");
     });
   });
 
@@ -1741,29 +2188,20 @@ describe("AssetPanel", () => {
     expectTextPropertyDisplayed("direct demand (l/s)", "100");
 
     act(() => {
-      store.set(dataAtom, {
-        ...store.get(dataAtom),
-        selection: { type: "single", id: IDS.J2, parts: [] },
-      });
+      store.set(selectionAtom, USelection.fromAssetIds([IDS.J2]));
     });
 
     expectTextPropertyDisplayed("direct demand (l/s)", "200");
 
     act(() => {
-      store.set(dataAtom, {
-        ...store.get(dataAtom),
-        selection: { type: "single", id: IDS.P1, parts: [] },
-      });
+      store.set(selectionAtom, USelection.fromAssetIds([IDS.P1]));
     });
 
     expectPropertyDisplayed("diameter (mm)", "150");
     expectPropertyDisplayed("length (m)", "500");
 
     act(() => {
-      store.set(dataAtom, {
-        ...store.get(dataAtom),
-        selection: { type: "single", id: IDS.P2, parts: [] },
-      });
+      store.set(selectionAtom, USelection.fromAssetIds([IDS.P2]));
     });
 
     expectPropertyDisplayed("diameter (mm)", "300");
@@ -1781,11 +2219,8 @@ describe("AssetPanel", () => {
     selectedAssetId: AssetId;
     simulationData?: SimulationData;
   }): Store => {
-    store.set(stagingModelAtom, hydraulicModel);
-    store.set(dataAtom, {
-      ...nullData,
-      selection: { type: "single", id: selectedAssetId, parts: [] },
-    });
+    store.set(stagingModelDerivedAtom, hydraulicModel);
+    store.set(selectionAtom, USelection.fromAssetIds([selectedAssetId]));
 
     let simulation: SimulationState = initialSimulationState;
 
@@ -1813,7 +2248,7 @@ describe("AssetPanel", () => {
             version: hydraulicModel.version,
             hydraulicModel,
             labelManager: new LabelManager(),
-            momentLog: new MomentLog(),
+            sessionHistory: new SessionHistory(),
             simulation,
             simulationSourceId: "main",
             simulationSettings: defaultSimulationSettings,
@@ -1838,30 +2273,13 @@ describe("AssetPanel", () => {
       </QueryClientProvider>,
     );
 
+    const { result } = renderHook(() => useUndoableTransactions(), {
+      wrapper: ({ children }: { children: React.ReactNode }) => (
+        <JotaiProvider store={store}>{children}</JotaiProvider>
+      ),
+    });
     const historyControl = (direction: "undo" | "redo") => {
-      const isUndo = direction === "undo";
-      const momentLog = store.get(momentLogDerivedAtom).copy();
-      const currentMapSyncMoment = store.get(mapSyncMomentAtom);
-      const action = isUndo ? momentLog.nextUndo() : momentLog.nextRedo();
-      if (!action) return;
-
-      applyMoment(
-        store.get,
-        store.set,
-        action.stateId,
-        action.moment,
-        stagingModelDerivedAtom,
-      );
-
-      isUndo ? momentLog.undo() : momentLog.redo();
-
-      const newMapSyncMoment = computeSyncMoment(
-        currentMapSyncMoment,
-        momentLog,
-      );
-
-      store.set(momentLogDerivedAtom, momentLog);
-      store.set(mapSyncMomentAtom, newMapSyncMoment);
+      result.current.historyControl(direction);
     };
     return historyControl;
   };

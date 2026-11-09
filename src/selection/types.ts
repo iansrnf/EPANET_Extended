@@ -1,57 +1,20 @@
 /**
- * A selection of a single folder.
+ * The kinds of selectable entities tracked by a selection.
  */
-export interface SelFolder {
-  type: "folder";
-  /**
-   * The folder's id
-   */
-  id: StringId;
-}
+export type Category = "asset" | "customerPoint" | "zone";
 
 /**
- * A selection of a single feature.
+ * A selection is one id list per Category. "none" and "single"
+ * are derived notions (see `USelection.isNone` / `isSingleAsset`), not separate
+ * representations: keeping the per-kind arrays as the only state lets an update
+ * that touches one kind preserve the other kind's array reference, so consumers
+ * (e.g. map redraw diffing) can detect per-kind changes by reference identity.
+ *
+ * This is not an abbreviation, it is named Sel instead of Selection for safety:
+ * otherwise window.Selection will sneak in if you don't import the type.
  */
-export interface SelSingle {
-  type: "single";
-  /**
-   * The feature's id
-   */
-  id: number;
-  parts: readonly VertexId[];
+export interface Sel {
+  readonly asset: readonly number[];
+  readonly customerPoint: readonly number[];
+  readonly zone: readonly number[];
 }
-
-export interface SelMulti {
-  type: "multi";
-  ids: readonly number[];
-  previousIds?: readonly number[];
-}
-
-export interface SelSingleCustomerPoint {
-  type: "singleCustomerPoint";
-  /**
-   * The customer point's id
-   */
-  id: number;
-}
-
-export interface SelSinglePressureLogger {
-  type: "singlePressureLogger";
-  id: number;
-}
-
-/**
- * This is not an abbreviation, it is named Sel
- * instead of Selection for safety: otherwise
- * window.Selection will sneak in if you don't
- * import the type.
- */
-export type Sel =
-  | SelMulti
-  | SelFolder
-  | {
-      type: "none";
-    }
-  | SelSingle
-  | SelSingleCustomerPoint
-  | SelSinglePressureLogger;

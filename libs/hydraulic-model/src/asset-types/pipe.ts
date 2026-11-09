@@ -1,0 +1,91 @@
+import { pipeStatuses, type PipeStatus } from "@epanet-js/model-schema";
+import { Link, LinkProperties } from "./link";
+
+export { pipeStatuses };
+export type { PipeStatus };
+
+export type PipeProperties = {
+  type: "pipe";
+  diameter: number | null;
+  roughness: number | null;
+  minorLoss?: number;
+  initialStatus: PipeStatus;
+  bulkReactionCoeff?: number;
+  wallReactionCoeff?: number;
+  material?: string;
+  year?: number;
+} & LinkProperties;
+
+export const pipeQuantities = [
+  "diameter",
+  "roughness",
+  "length",
+  "minorLoss",
+  "flow",
+  "velocity",
+];
+export type PipeQuantity = (typeof pipeQuantities)[number];
+
+export const headlossFormulas = ["H-W", "D-W", "C-M"] as const;
+export const headlossFormulasFullNames = [
+  "Hazen-Williams",
+  "Darcy-Weisbach",
+  "Chezy-Manning",
+] as const;
+export type HeadlossFormula = (typeof headlossFormulas)[number];
+
+export class Pipe extends Link<PipeProperties> {
+  private attachedCustomerPointIdsSet: Set<string> = new Set();
+
+  get diameter() {
+    return this.properties.diameter;
+  }
+
+  setDiameter(value: number) {
+    this.properties.diameter = value;
+  }
+
+  get roughness() {
+    return this.properties.roughness;
+  }
+
+  setRoughness(value: number | null) {
+    this.properties.roughness = value;
+  }
+
+  get initialStatus() {
+    return this.properties.initialStatus;
+  }
+
+  setInitialStatus(newStatus: PipeStatus) {
+    this.properties.initialStatus = newStatus;
+  }
+
+  get minorLoss() {
+    return this.properties.minorLoss;
+  }
+
+  get bulkReactionCoeff() {
+    return this.properties.bulkReactionCoeff;
+  }
+
+  get wallReactionCoeff() {
+    return this.properties.wallReactionCoeff;
+  }
+
+  get material() {
+    return this.properties.material;
+  }
+
+  get year() {
+    return this.properties.year;
+  }
+
+  copy() {
+    const newPipe = new Pipe(this.id, [...this.coordinates], {
+      ...this.properties,
+    });
+
+    return newPipe;
+  }
+}

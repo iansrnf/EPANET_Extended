@@ -15,35 +15,31 @@ import {
   withHeadlossDefaults,
   flowUnitTranslationKeys,
   pressureUnitTranslationKeys,
-} from "src/lib/project-settings/quantities-spec";
-import type { Unit } from "src/quantity";
-import { defaultProjectName, ProjectSettings } from "src/lib/project-settings";
-import { type Projection, WGS84 } from "src/lib/projections";
+} from "@epanet-js/project-settings";
+import type { Unit } from "@epanet-js/quantity";
 import {
-  HeadlossFormula,
-  headlossFormulas,
-  initializeHydraulicModel,
-} from "src/hydraulic-model";
-import { initializeModelFactories } from "src/hydraulic-model/factories";
-import { LabelManager } from "src/hydraulic-model/label-manager";
-import { ConsecutiveIdsGenerator } from "src/lib/id-generator";
-import { defaultSimulationSettings } from "src/simulation/simulation-settings";
+  defaultProjectName,
+  ProjectSettings,
+} from "@epanet-js/project-settings";
+import { type Projection, WGS84 } from "@epanet-js/projections";
+import { HeadlossFormula, headlossFormulas } from "src/hydraulic-model";
+import { headlossFormulasFullNames } from "@epanet-js/hydraulic-model";
 import { useTranslate } from "src/hooks/use-translate";
-import { useStartNewProject } from "src/hooks/persistence/use-start-new-project";
-import { Selector } from "../components/form/selector";
+import { useStartBlankProject } from "src/hooks/persistence/use-start-new-project";
+import { Selector } from "@epanet-js/ui-kit";
 
 import { useAtomValue, useSetAtom } from "jotai";
-import { inpFileInfoAtom, projectFileInfoAtom } from "src/state/file-system";
+import { dialogAtom } from "src/state/dialog";
+import { captureError } from "src/infra/error-tracking";
 import {
   gridHiddenAtom,
   gridPreviewAtom,
   isUnprojectedAtom,
 } from "src/state/map-projection";
-import { headlossFormulasFullNames } from "src/hydraulic-model/asset-types/pipe";
 import { useUserTracking } from "src/infra/user-tracking";
 import { MapContext } from "src/map/map-context";
-import { MapEngine } from "src/map/map-engine";
-import { useContext, useRef, useCallback } from "react";
+import { MapEngine } from "@epanet-js/map";
+import { useContext, useRef, useCallback, useState } from "react";
 
 import NetworkUnprojectedIllustration from "./network-projection/network-unprojected";
 import NetworkProjectedIllustration from "./network-projection/network-projected";
@@ -68,9 +64,8 @@ type SubmitProps = {
 
 export const CreateNew = () => {
   const translate = useTranslate();
-  const { startNewProject } = useStartNewProject();
-  const setInpFileInfo = useSetAtom(inpFileInfoAtom);
-  const setProjectFileInfo = useSetAtom(projectFileInfoAtom);
+  const startBlankProject = useStartBlankProject();
+  const setDialog = useSetAtom(dialogAtom);
   const userTracking = useUserTracking();
   const map = useContext(MapContext);
 
@@ -80,6 +75,7 @@ export const CreateNew = () => {
   const { closeDialog } = useDialogState();
   const originalMapStateRef = useRef<mapboxgl.LngLatBounds | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (map && !originalMapStateRef.current) {
     originalMapStateRef.current = map.getBounds();
@@ -120,24 +116,26 @@ export const CreateNew = () => {
         formatting: { decimals: spec.decimals, defaultDecimals: 3 },
         projection: buildNewProjection(projection),
       };
-      const idGenerator = new ConsecutiveIdsGenerator();
-      const hydraulicModel = initializeHydraulicModel({
-        idGenerator,
-      });
-      const factories = initializeModelFactories({
-        idGenerator,
-        labelManager: new LabelManager(),
-        defaults,
-      });
       setGridPreview(false);
       setGridHidden(false);
-      await startNewProject({
-        hydraulicModel,
-        factories,
-        projectSettings,
-        simulationSettings: defaultSimulationSettings,
-        autoElevations: projection.id !== "xy-grid",
-      });
+      setIsSubmitting(true);
+      setDialog({ type: "loading" });
+      try {
+        const started = await startBlankProject({
+          projectSettings,
+          autoElevations: projection.id !== "xy-grid",
+        });
+        if (!started) {
+          closeDialog();
+          return;
+        }
+      } catch (error) {
+        captureError(error instanceof Error ? error : new Error(String(error)));
+        setDialog({ type: "changeNotApplied" });
+        return;
+      } finally {
+        setIsSubmitting(false);
+      }
       if (map) {
         centerMapForNewProject(map, projection, location);
       }
@@ -148,16 +146,13 @@ export const CreateNew = () => {
         location: location?.name || "",
         projection: projection.id,
       });
-      setInpFileInfo(null);
-      setProjectFileInfo(null);
       closeDialog();
     },
     [
       closeDialog,
-      startNewProject,
+      startBlankProject,
       map,
-      setInpFileInfo,
-      setProjectFileInfo,
+      setDialog,
       setGridPreview,
       setGridHidden,
       userTracking,
@@ -175,6 +170,7 @@ export const CreateNew = () => {
           action={translate("create")}
           onAction={() => formRef.current?.requestSubmit()}
           onClose={handleCancel}
+          isSubmitting={isSubmitting}
         />
       }
     >
@@ -328,7 +324,6 @@ const FlowUnitsSelector = ({
     >
       <Selector
         options={options}
-        tabIndex={0}
         selected={selected}
         onChange={onChange}
         ariaLabel={translate("simulationSettings.flowUnits")}
@@ -358,7 +353,6 @@ const HeadlossFormulaSelector = ({
     >
       <Selector
         options={options}
-        tabIndex={0}
         selected={selected}
         onChange={onChange}
         ariaLabel={translate("headlossFormula")}
@@ -390,7 +384,6 @@ const PressureUnitSelector = ({
     >
       <Selector
         options={options}
-        tabIndex={0}
         selected={selected as string}
         onChange={(value) => onChange(value as Unit)}
         ariaLabel={translate("simulationSettings.pressureUnits")}
@@ -400,9 +393,9 @@ const PressureUnitSelector = ({
 };
 
 const projectionCardBase =
-  "flex flex-col text-left cursor-pointer rounded-lg border bg-white hover:border-purple-500 hover:bg-purple-50 dark:bg-transparent dark:hover:border-purple-500 dark:hover:bg-purple-950 transition-colors overflow-hidden";
-const projectionCardUnselected = "border-gray-200 dark:border-gray-700";
-const projectionCardSelected = "border-purple-500 ring-1 ring-purple-500";
+  "flex flex-col text-left cursor-pointer rounded-lg border bg-base hover:border-accent hover:bg-base-hover transition-colors overflow-hidden";
+const projectionCardUnselected = "";
+const projectionCardSelected = "border-accent ring-1 ring-accent";
 
 const ProjectionSelector = ({
   selected,
@@ -415,7 +408,7 @@ const ProjectionSelector = ({
 
   return (
     <div>
-      <div className="text-sm text-gray-500 mb-2">
+      <div className="text-size-base text-subtle mb-2">
         {translate("projection")}
       </div>
       <div className="grid grid-cols-2 gap-3">
@@ -429,11 +422,11 @@ const ProjectionSelector = ({
               : projectionCardUnselected,
           )}
         >
-          <div className="w-full border-b border-gray-200 h-28 overflow-hidden">
+          <div className="w-full border-b h-28 overflow-hidden">
             <NetworkProjectedIllustration preserveAspectRatio="xMidYMid slice" />
           </div>
           <div className="grow p-2">
-            <p className="text-xs text-gray-700 dark:text-gray-300">
+            <p className="text-size-small text-default">
               {translate("inpProjectionChoice.projectedTitle")}
             </p>
           </div>
@@ -449,11 +442,11 @@ const ProjectionSelector = ({
               : projectionCardUnselected,
           )}
         >
-          <div className="w-full border-b border-gray-200 h-28 overflow-hidden">
+          <div className="w-full border-b h-28 overflow-hidden">
             <NetworkUnprojectedIllustration preserveAspectRatio="xMidYMid slice" />
           </div>
           <div className="grow p-2">
-            <p className="text-xs text-gray-700 dark:text-gray-300">
+            <p className="text-size-small text-default">
               {translate("inpProjectionChoice.nonProjectedTitle")}
             </p>
           </div>

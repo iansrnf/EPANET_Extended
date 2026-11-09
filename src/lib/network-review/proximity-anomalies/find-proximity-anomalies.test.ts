@@ -1,9 +1,9 @@
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
-import { findProximityAnomalies } from "./find-proximity-anomalies";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import {
   EncodedHydraulicModel,
   HydraulicModelEncoder,
-} from "../hydraulic-model-buffers";
+  findProximityAnomalies,
+} from "@epanet-js/network-review";
 import { HydraulicModel } from "src/hydraulic-model";
 
 describe("findProximityAnomalies", () => {

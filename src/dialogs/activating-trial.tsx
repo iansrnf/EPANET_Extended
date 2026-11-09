@@ -1,34 +1,47 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
+import { useAtom, useSetAtom } from "jotai";
 import { BaseDialog, useDialogState } from "src/components/dialog";
-import { useActivateTrial } from "src/hooks/use-activate-trial";
+import {
+  trialAfterSignInAtom,
+  useActivateTrial,
+} from "src/hooks/use-activate-trial";
 import { useAuth } from "src/hooks/use-auth";
-import { isTrialActive } from "src/lib/account-plans";
-import { notify } from "src/components/notifications";
-import { RefreshIcon, SuccessIcon } from "src/icons";
+import { isTrialAvailable } from "@epanet-js/account-plans";
+import { dialogAtom } from "src/state/dialog";
+import { RefreshIcon } from "src/icons";
 import { useTranslate } from "src/hooks/use-translate";
+
+export const ActivateTrialAfterSignIn = () => {
+  const { isSignedIn, user } = useAuth();
+  const [isPending, setPending] = useAtom(trialAfterSignInAtom);
+  const setDialog = useSetAtom(dialogAtom);
+
+  useEffect(() => {
+    if (!isPending || !isSignedIn || user.id === null) return;
+
+    setPending(false);
+    setDialog({ type: "activatingTrial" });
+  }, [isPending, isSignedIn, user.id, setPending, setDialog]);
+
+  return null;
+};
 
 export const ActivatingTrialDialog = () => {
   const { activateTrial } = useActivateTrial();
-  const { user } = useAuth();
+  const { isLoaded, isSignedIn, user } = useAuth();
   const { closeDialog } = useDialogState();
   const translate = useTranslate();
   const activatedRef = useRef(false);
 
-  if (!activatedRef.current) {
+  const isUserReady = isLoaded && (!isSignedIn || user.id !== null);
+
+  if (!activatedRef.current && isUserReady) {
     activatedRef.current = true;
 
-    if (isTrialActive(user)) {
+    if (!isSignedIn || !isTrialAvailable(user)) {
       closeDialog();
     } else {
-      void activateTrial().then((success) => {
-        if (success) {
-          notify({
-            variant: "success",
-            title: translate("trial.activated"),
-            Icon: SuccessIcon,
-            duration: 3000,
-          });
-        }
+      void activateTrial().then(() => {
         closeDialog();
       });
     }
@@ -42,8 +55,8 @@ export const ActivatingTrialDialog = () => {
       preventClose={true}
     >
       <div className="flex flex-col items-center gap-3 p-6">
-        <RefreshIcon className="animate-spin w-6 h-6 text-gray-500" />
-        <p className="text-sm text-gray-700 dark:text-gray-300">
+        <RefreshIcon className="animate-spin w-6 h-6 text-subtle" />
+        <p className="text-size-base text-default">
           {translate("trial.activating")}
         </p>
       </div>

@@ -3,14 +3,17 @@
  */
 import { act } from "react";
 import { renderHook } from "@testing-library/react";
-import {
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
+import { useReactTable } from "@tanstack/react-table";
 import { CellEditingFeature } from "./cell-editing-feature";
 import { CellRangeSelectionFeature } from "./cell-range-selection-feature";
 import { ClipboardFeature } from "./clipboard-feature";
+import { DefaultValueFeature } from "./default-value-feature";
+import { LazyRowModelFeature } from "./lazy-row-model-feature";
+import {
+  type LazyRowModel,
+  getLazyCoreRowModel,
+} from "../models/lazy-core-row-model";
+import { getLazyStickySortedRowModel } from "../models/lazy-sticky-sorted-row-model";
 import type { GridColumn, GridSelection } from "../types";
 
 type TestRow = { id: string; name: string; value: string };
@@ -33,16 +36,17 @@ type TableOptions = {
   onClipboardCopy?: (info: unknown) => void;
   onClipboardPaste?: (info: unknown) => void;
   sortable?: boolean;
+  maxClipboardRows?: number;
 };
 
 const useClipboardTable = (options: TableOptions) =>
   useReactTable({
     data: options.data,
     columns: options.columns ?? defaultColumns,
-    getCoreRowModel: getCoreRowModel(),
+    getCoreRowModel: getLazyCoreRowModel(),
     ...(options.sortable
       ? {
-          getSortedRowModel: getSortedRowModel(),
+          getSortedRowModel: getLazyStickySortedRowModel(),
           enableSorting: true,
         }
       : {}),
@@ -50,6 +54,8 @@ const useClipboardTable = (options: TableOptions) =>
       CellEditingFeature,
       CellRangeSelectionFeature,
       ClipboardFeature,
+      DefaultValueFeature,
+      LazyRowModelFeature,
     ],
     onDataChange: options.onChange,
     createRow: createTestRow,
@@ -58,6 +64,7 @@ const useClipboardTable = (options: TableOptions) =>
     autoExtendOnPaste: options.autoExtendOnPaste,
     onClipboardCopy: options.onClipboardCopy as never,
     onClipboardPaste: options.onClipboardPaste as never,
+    maxClipboardRows: options.maxClipboardRows,
   });
 
 const stubClipboard = (initialText = "") => {
@@ -68,7 +75,15 @@ const stubClipboard = (initialText = "") => {
   });
   const readText = vi.fn(() => Promise.resolve(stored));
   Object.assign(navigator, { clipboard: { writeText, readText } });
-  return { writeText, readText, getText: () => stored };
+  return {
+    writeText,
+    readText,
+    getText: () => stored,
+    // Simulate an external clipboard change (not via our writeText).
+    setText: (text: string) => {
+      stored = text;
+    },
+  };
 };
 
 const single = (col: number, row: number): GridSelection => ({
@@ -159,6 +174,113 @@ describe("ClipboardFeature", () => {
       expect(clip.writeText).toHaveBeenCalledWith(
         "ID\tName\tValue\n1\tAlice\t100",
       );
+    });
+
+    it("prepends headers when re-copying the same selection with headers", async () => {
+      const clip = stubClipboard();
+      const data: TestRow[] = [
+        { id: "1", name: "Alice", value: "100" },
+        { id: "2", name: "Bob", value: "200" },
+      ];
+      const nameAccessor = vi.fn((row: TestRow) => row.name);
+      const columns: GridColumn<TestRow>[] = [
+        { id: "name", header: "Name", accessorFn: nameAccessor },
+      ];
+
+      const { result } = renderHook(() => useClipboardTable({ data, columns }));
+      act(() =>
+        result.current.selectRange({
+          min: { col: 0, row: 0 },
+          max: { col: 0, row: 1 },
+        }),
+      );
+
+      await act(async () => {
+        await result.current.copySelection();
+      });
+      expect(clip.getText()).toBe("Alice\nBob");
+      const readsAfterFirstCopy = nameAccessor.mock.calls.length;
+
+      await act(async () => {
+        await result.current.copySelection({ includeHeaders: true });
+      });
+      expect(clip.getText()).toBe("Name\nAlice\nBob");
+      // Rebuilds the payload rather than reading the clipboard, so the cells
+      // are read again.
+      expect(nameAccessor.mock.calls.length).toBeGreaterThan(
+        readsAfterFirstCopy,
+      );
+    });
+
+    it("rebuilds (does not reuse) when the selection changed since the last copy", async () => {
+      const clip = stubClipboard();
+      const data: TestRow[] = [
+        { id: "1", name: "Alice", value: "100" },
+        { id: "2", name: "Bob", value: "200" },
+      ];
+      const nameAccessor = vi.fn((row: TestRow) => row.name);
+      const columns: GridColumn<TestRow>[] = [
+        { id: "name", header: "Name", accessorFn: nameAccessor },
+      ];
+
+      const { result } = renderHook(() => useClipboardTable({ data, columns }));
+      act(() =>
+        result.current.selectRange({
+          min: { col: 0, row: 0 },
+          max: { col: 0, row: 1 },
+        }),
+      );
+      await act(async () => {
+        await result.current.copySelection();
+      });
+      const readsAfterFirstCopy = nameAccessor.mock.calls.length;
+
+      // Shrink the selection, then copy with headers — cache no longer matches.
+      act(() =>
+        result.current.selectRange({
+          min: { col: 0, row: 0 },
+          max: { col: 0, row: 0 },
+        }),
+      );
+      await act(async () => {
+        await result.current.copySelection({ includeHeaders: true });
+      });
+      expect(clip.getText()).toBe("Name\nAlice");
+      expect(nameAccessor.mock.calls.length).toBeGreaterThan(
+        readsAfterFirstCopy,
+      );
+    });
+
+    it("rebuilds (does not prepend) when the clipboard changed since the copy", async () => {
+      const clip = stubClipboard();
+      const data: TestRow[] = [
+        { id: "1", name: "Alice", value: "100" },
+        { id: "2", name: "Bob", value: "200" },
+      ];
+      const nameAccessor = vi.fn((row: TestRow) => row.name);
+      const columns: GridColumn<TestRow>[] = [
+        { id: "name", header: "Name", accessorFn: nameAccessor },
+      ];
+
+      const { result } = renderHook(() => useClipboardTable({ data, columns }));
+      act(() =>
+        result.current.selectRange({
+          min: { col: 0, row: 0 },
+          max: { col: 0, row: 1 },
+        }),
+      );
+      await act(async () => {
+        await result.current.copySelection();
+      });
+
+      // User copies something else (different length) before clicking "headers".
+      clip.setText("unrelated clipboard text");
+
+      await act(async () => {
+        await result.current.copySelection({ includeHeaders: true });
+      });
+      // Rebuilt from the grid, not prepended onto the unrelated content.
+      expect(clip.getText()).toBe("Name\nAlice\nBob");
     });
 
     it("uses includeHeadersOnCopy table option when no explicit flag is passed", async () => {
@@ -258,12 +380,379 @@ describe("ClipboardFeature", () => {
       });
 
       expect(onClipboardCopy).toHaveBeenCalledWith({
+        requestedRows: 2,
         rows: 2,
         cols: 3,
         allRows: true,
         allCols: true,
         columnIds: ["id", "name", "value"],
+        includeHeaders: false,
       });
+    });
+
+    it("reports includeHeaders: true when copying with headers", async () => {
+      stubClipboard();
+      const onClipboardCopy = vi.fn();
+      const data: TestRow[] = [{ id: "1", name: "Alice", value: "100" }];
+
+      const { result } = renderHook(() =>
+        useClipboardTable({ data, onClipboardCopy }),
+      );
+      act(() => result.current.selectRange(single(0, 0)));
+
+      await act(async () => {
+        await result.current.copySelection({ includeHeaders: true });
+      });
+
+      expect(onClipboardCopy).toHaveBeenCalledWith(
+        expect.objectContaining({ includeHeaders: true }),
+      );
+    });
+  });
+
+  describe("copying column defaults for empty cells", () => {
+    // The default only substitutes for a null/undefined stored value, so these
+    // rows use nullable fields (an empty string is a present value, not empty).
+    type DefaultRow = { id: string; name: string | null; value: string | null };
+
+    // `name` has a static default, `value` a per-row (data index) default.
+    const defaultValueColumns = [
+      { accessorKey: "id", header: "ID" },
+      { accessorKey: "name", header: "Name", meta: { defaultValue: "N/A" } },
+      {
+        accessorKey: "value",
+        header: "Value",
+        meta: { defaultValue: (rowIndex: number) => `d${rowIndex}` },
+      },
+    ] as GridColumn<DefaultRow>[];
+
+    const useDefaultTable = (data: DefaultRow[], sortable = false) =>
+      useReactTable<DefaultRow>({
+        data,
+        columns: defaultValueColumns,
+        getCoreRowModel: getLazyCoreRowModel(),
+        ...(sortable
+          ? {
+              getSortedRowModel: getLazyStickySortedRowModel(),
+              enableSorting: true,
+            }
+          : {}),
+        _features: [
+          CellEditingFeature,
+          CellRangeSelectionFeature,
+          ClipboardFeature,
+          DefaultValueFeature,
+          LazyRowModelFeature,
+        ],
+      });
+
+    it("copies the static default when the cell is empty", async () => {
+      const clip = stubClipboard();
+      const data: DefaultRow[] = [{ id: "1", name: null, value: null }];
+
+      const { result } = renderHook(() => useDefaultTable(data));
+      act(() => result.current.selectRange(single(1, 0)));
+
+      await act(async () => {
+        await result.current.copySelection();
+      });
+
+      expect(clip.writeText).toHaveBeenCalledWith("N/A");
+    });
+
+    it("copies the stored value, not the default, when the cell is filled", async () => {
+      const clip = stubClipboard();
+      const data: DefaultRow[] = [{ id: "1", name: "Alice", value: null }];
+
+      const { result } = renderHook(() => useDefaultTable(data));
+      act(() => result.current.selectRange(single(1, 0)));
+
+      await act(async () => {
+        await result.current.copySelection();
+      });
+
+      expect(clip.writeText).toHaveBeenCalledWith("Alice");
+    });
+
+    it("resolves a function default with the row's data index", async () => {
+      const clip = stubClipboard();
+      const data: DefaultRow[] = [
+        { id: "1", name: null, value: null },
+        { id: "2", name: null, value: null },
+      ];
+
+      const { result } = renderHook(() => useDefaultTable(data));
+      act(() => result.current.selectRange(single(2, 1)));
+
+      await act(async () => {
+        await result.current.copySelection();
+      });
+
+      expect(clip.writeText).toHaveBeenCalledWith("d1");
+    });
+
+    it("mixes defaults and stored values across a multi-row copy", async () => {
+      const clip = stubClipboard();
+      const data: DefaultRow[] = [
+        { id: "1", name: null, value: null },
+        { id: "2", name: "Bob", value: null },
+      ];
+
+      const { result } = renderHook(() => useDefaultTable(data));
+      act(() =>
+        result.current.selectRange({
+          min: { col: 1, row: 0 },
+          max: { col: 1, row: 1 },
+        }),
+      );
+
+      await act(async () => {
+        await result.current.copySelection();
+      });
+
+      expect(clip.writeText).toHaveBeenCalledWith("N/A\nBob");
+    });
+
+    it("resolves the default by data index, not visual position, when sorted", async () => {
+      const clip = stubClipboard();
+      const data: DefaultRow[] = [
+        { id: "1", name: "a", value: null },
+        { id: "2", name: "b", value: null },
+      ];
+
+      const { result } = renderHook(() => useDefaultTable(data, true));
+      // Descending name puts id 2 (data index 1) at visual row 0.
+      act(() => result.current.setSorting([{ id: "name", desc: true }]));
+      act(() => result.current.selectRange(single(2, 0)));
+
+      await act(async () => {
+        await result.current.copySelection();
+      });
+
+      expect(clip.writeText).toHaveBeenCalledWith("d1");
+    });
+  });
+
+  describe("copy row cap", () => {
+    const LAZY_CAP = 1000; // LAZY_ROW_MODEL_THRESHOLD
+    const makeRows = (n: number): TestRow[] =>
+      Array.from({ length: n }, (_, i) => ({
+        id: String(i),
+        name: `n${i}`,
+        value: String(i),
+      }));
+
+    it("copies the whole selection on a large table (no cap by default)", async () => {
+      const clip = stubClipboard();
+      const onClipboardCopy = vi.fn();
+      const data = makeRows(LAZY_CAP + 500); // 1500, over the LRU cap
+
+      const { result } = renderHook(() =>
+        useClipboardTable({ data, onClipboardCopy }),
+      );
+      act(() =>
+        result.current.selectRange({
+          min: { col: 0, row: 0 },
+          max: { col: 0, row: data.length - 1 },
+        }),
+      );
+
+      await act(async () => {
+        await result.current.copySelection();
+      });
+
+      const written = clip.getText().split("\n");
+      expect(written).toHaveLength(data.length);
+      expect(written[0]).toBe("0");
+      expect(written[data.length - 1]).toBe(String(data.length - 1));
+
+      expect(onClipboardCopy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestedRows: data.length,
+          rows: data.length,
+          allRows: true,
+        }),
+      );
+    });
+
+    it("caps copy at maxClipboardRows when set, reporting both counts", async () => {
+      const clip = stubClipboard();
+      const onClipboardCopy = vi.fn();
+      const data = makeRows(LAZY_CAP + 500);
+
+      const { result } = renderHook(() =>
+        useClipboardTable({
+          data,
+          onClipboardCopy,
+          maxClipboardRows: LAZY_CAP,
+        }),
+      );
+      act(() =>
+        result.current.selectRange({
+          min: { col: 0, row: 0 },
+          max: { col: 0, row: data.length - 1 },
+        }),
+      );
+
+      await act(async () => {
+        await result.current.copySelection();
+      });
+
+      const written = clip.getText().split("\n");
+      expect(written).toHaveLength(LAZY_CAP);
+      expect(written[0]).toBe("0");
+      expect(written[LAZY_CAP - 1]).toBe(String(LAZY_CAP - 1));
+
+      expect(onClipboardCopy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestedRows: data.length,
+          rows: LAZY_CAP,
+          allRows: true,
+        }),
+      );
+    });
+
+    it("does not cap by default (rows === requestedRows)", async () => {
+      const clip = stubClipboard();
+      const onClipboardCopy = vi.fn();
+      // Over the LRU cap by row count, but no maxClipboardRows set.
+      const data = makeRows(LAZY_CAP + 200);
+
+      const { result } = renderHook(() =>
+        useClipboardTable({ data, onClipboardCopy }),
+      );
+      act(() =>
+        result.current.selectRange({
+          min: { col: 0, row: 0 },
+          max: { col: 0, row: data.length - 1 },
+        }),
+      );
+
+      await act(async () => {
+        await result.current.copySelection();
+      });
+
+      expect(clip.getText().split("\n")).toHaveLength(data.length);
+      expect(onClipboardCopy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          requestedRows: data.length,
+          rows: data.length,
+        }),
+      );
+    });
+  });
+
+  describe("lazy paste (uncapped, no materialization)", () => {
+    const THRESHOLD = 1000; // LAZY_ROW_MODEL_THRESHOLD
+    const makeRows = (n: number): TestRow[] =>
+      Array.from({ length: n }, (_, i) => ({
+        id: String(i),
+        name: `n${i}`,
+        value: String(i),
+      }));
+
+    it("fills a single column across all rows without materializing rows", async () => {
+      stubClipboard();
+      const onChange = vi.fn();
+      const data = makeRows(THRESHOLD + 500); // 1500, lazy
+
+      const { result } = renderHook(() =>
+        useClipboardTable({ data, onChange }),
+      );
+      // Whole "name" column selected.
+      act(() =>
+        result.current.selectRange({
+          min: { col: 1, row: 0 },
+          max: { col: 1, row: data.length - 1 },
+        }),
+      );
+      await act(async () => {
+        await result.current.applyPaste("x");
+      });
+
+      const written = onChange.mock.calls[0][0] as TestRow[];
+      expect(written).toHaveLength(data.length);
+      expect(written[0].name).toBe("x");
+      expect(written[data.length - 1].name).toBe("x");
+      // Indices resolved without creating Row objects.
+      const model = result.current.getRowModel() as LazyRowModel<TestRow>;
+      expect(model.getMaterializedRows()).toHaveLength(0);
+    });
+
+    it("writes every row of a large multi-column paste (no cap)", async () => {
+      stubClipboard();
+      const onChange = vi.fn();
+      const onClipboardPaste = vi.fn();
+      const data = makeRows(THRESHOLD + 500);
+
+      const { result } = renderHook(() =>
+        useClipboardTable({
+          data,
+          onChange,
+          onClipboardPaste,
+        }),
+      );
+      // First two columns across all rows; a 2-column value tiles down.
+      act(() =>
+        result.current.selectRange({
+          min: { col: 0, row: 0 },
+          max: { col: 1, row: data.length - 1 },
+        }),
+      );
+      await act(async () => {
+        await result.current.applyPaste("a\tb");
+      });
+
+      const written = onChange.mock.calls[0][0] as TestRow[];
+      expect(written).toHaveLength(data.length);
+      expect(written[0].id).toBe("a");
+      expect(written[0].name).toBe("b");
+      // Past the old cap → still written (no truncation).
+      expect(written[THRESHOLD].id).toBe("a");
+      expect(written[data.length - 1].id).toBe("a");
+      // And no Row objects were materialized to resolve indices.
+      const model = result.current.getRowModel() as LazyRowModel<TestRow>;
+      expect(model.getMaterializedRows()).toHaveLength(0);
+
+      expect(onClipboardPaste).toHaveBeenCalledWith(
+        expect.objectContaining({ rows: data.length }),
+      );
+    });
+
+    it("caps the paste when maxClipboardRows is set, reporting requestedRows", async () => {
+      stubClipboard();
+      const onChange = vi.fn();
+      const onClipboardPaste = vi.fn();
+      const data = makeRows(THRESHOLD + 500); // 1500
+
+      const { result } = renderHook(() =>
+        useClipboardTable({
+          data,
+          onChange,
+          onClipboardPaste,
+          maxClipboardRows: THRESHOLD,
+        }),
+      );
+      act(() =>
+        result.current.selectRange({
+          min: { col: 1, row: 0 },
+          max: { col: 1, row: data.length - 1 },
+        }),
+      );
+      await act(async () => {
+        await result.current.applyPaste("x");
+      });
+
+      const written = onChange.mock.calls[0][0] as TestRow[];
+      expect(written[0].name).toBe("x");
+      expect(written[THRESHOLD - 1].name).toBe("x");
+      expect(written[THRESHOLD].name).toBe(`n${THRESHOLD}`); // past cap → unchanged
+      expect(onClipboardPaste).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rows: THRESHOLD,
+          requestedRows: data.length,
+        }),
+      );
     });
   });
 

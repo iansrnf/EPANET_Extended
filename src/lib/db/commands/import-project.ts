@@ -1,29 +1,38 @@
 import type { HydraulicModel } from "src/hydraulic-model";
-import type { ProjectSettings } from "src/lib/project-settings";
-import type { SimulationSettings } from "src/simulation/simulation-settings";
-import type { AssetsMap } from "src/hydraulic-model/assets-map";
-import type { CustomerPoints } from "src/hydraulic-model/customer-points";
+import type { ProjectSettings } from "@epanet-js/project-settings";
 import type {
-  CustomerAssignedDemands,
-  JunctionAssignedDemands,
-} from "src/hydraulic-model/demands";
-import type { Patterns } from "src/hydraulic-model/patterns";
-import type { Curves } from "src/hydraulic-model/curves";
-import type { Controls } from "src/hydraulic-model/controls";
-import { getWorker, timed } from "src/lib/ejsdb";
-import { assetsToRows } from "../mappers/assets/to-rows";
-import { customerPointsToRows } from "../mappers/customer-points/to-rows";
-import { patternsToRows } from "../mappers/patterns/to-rows";
-import { curvesToRows } from "../mappers/curves/to-rows";
-import { serializeControls } from "../mappers/controls/to-rows";
-import { junctionDemandsToRows } from "../mappers/junction-demands/to-rows";
-import { newProject } from "./new-project";
-import { saveProjectSettings } from "./save-project-settings";
-import { setAllSimulationSettings } from "./set-all-simulation-settings";
+  Bookmark,
+  SelectionSet,
+  SelectionSetGroup,
+} from "src/lib/collections";
+import type { UserScript } from "src/state/scripts";
+import type { SimulationSettings } from "src/simulation/simulation-settings";
+import { getWorker, timed } from "@epanet-js/ejsdb";
+import {
+  assetsToRows,
+  customerPointsToRows,
+  patternsToRows,
+  curvesToRows,
+  serializeRawControls,
+  serializeControls,
+  serializePipeLibrary,
+  junctionDemandsToRows,
+  serializeProjectSettings,
+  zonesToRows,
+  serializeSimulationSettings,
+} from "@epanet-js/ejsdb-mappers";
+import { serializeSelectionSets } from "../mappers/selection-sets/to-rows";
+import { serializeSelectionSetGroups } from "../mappers/selection-set-groups/to-rows";
+import { serializeBookmarks } from "../mappers/bookmarks/to-rows";
+import { serializeScripts } from "../mappers/scripts/to-rows";
 
 export type ImportProjectInput = {
   newDb?: boolean;
   projectSettings?: ProjectSettings;
+  selectionSetGroups?: SelectionSetGroup[];
+  selectionSets?: SelectionSet[];
+  bookmarks?: Bookmark[];
+  scripts?: UserScript[];
   hydraulicModel: HydraulicModel;
   simulationSettings: SimulationSettings;
 };
@@ -32,56 +41,50 @@ export const importProject = async (
   input: ImportProjectInput,
 ): Promise<void> => {
   await timed("importProject", async () => {
-    if (input.newDb) {
-      await newProject();
+    const projectSettings = input.projectSettings
+      ? serializeProjectSettings(input.projectSettings)
+      : null;
+    const pipeLibrary =
+      input.hydraulicModel.pipeMaterials.length > 0
+        ? serializePipeLibrary(input.hydraulicModel.pipeMaterials)
+        : null;
+    const selectionSetGroups = input.selectionSetGroups
+      ? serializeSelectionSetGroups(input.selectionSetGroups)
+      : null;
+    const selectionSets = input.selectionSets
+      ? serializeSelectionSets(input.selectionSets)
+      : null;
+    const bookmarks = input.bookmarks
+      ? serializeBookmarks(input.bookmarks)
+      : null;
+    const scripts = input.scripts ? serializeScripts(input.scripts) : null;
+    const assets = assetsToRows(input.hydraulicModel.assets.values());
+
+    const result = await getWorker().importProject({
+      newDb: input.newDb ?? false,
+      projectSettings,
+      pipeLibrary,
+      selectionSetGroups,
+      selectionSets,
+      bookmarks,
+      scripts,
+      assets,
+      customerPoints: customerPointsToRows(
+        input.hydraulicModel.customerPoints,
+        input.hydraulicModel.demands.customerPoints,
+      ),
+      zones: zonesToRows(input.hydraulicModel.zones),
+      patterns: patternsToRows(input.hydraulicModel.patterns),
+      curves: curvesToRows(input.hydraulicModel.curves),
+      rawControls: serializeRawControls(input.hydraulicModel.rawControls),
+      controls: serializeControls(input.hydraulicModel.controls),
+      simulationSettings: serializeSimulationSettings(input.simulationSettings),
+      junctionDemands: junctionDemandsToRows(
+        input.hydraulicModel.demands.junctions,
+      ),
+    });
+    if (result.status !== "ok") {
+      throw new Error(`importProject storage error: ${result.errorDetails}`);
     }
-    if (input.projectSettings) {
-      await saveProjectSettings(input.projectSettings);
-    }
-    await writeAllAssets(input.hydraulicModel.assets);
-    await writeAllCustomerPoints(
-      input.hydraulicModel.customerPoints,
-      input.hydraulicModel.demands.customerPoints,
-    );
-    await writeAllPatterns(input.hydraulicModel.patterns);
-    await writeAllCurves(input.hydraulicModel.curves);
-    await writeAllControls(input.hydraulicModel.controls);
-    await setAllSimulationSettings(input.simulationSettings);
-    await writeAllJunctionDemands(input.hydraulicModel.demands.junctions);
   });
 };
-
-const writeAllAssets = (assets: AssetsMap) =>
-  timed("setAllAssets", async () => {
-    await getWorker().setAllAssets(assetsToRows(assets.values()));
-  });
-
-const writeAllCustomerPoints = (
-  customerPoints: CustomerPoints,
-  customerDemands: CustomerAssignedDemands,
-) =>
-  timed("setAllCustomerPoints", async () => {
-    await getWorker().setAllCustomerPoints(
-      customerPointsToRows(customerPoints, customerDemands),
-    );
-  });
-
-const writeAllPatterns = (patterns: Patterns) =>
-  timed("setAllPatterns", async () => {
-    await getWorker().setAllPatterns(patternsToRows(patterns));
-  });
-
-const writeAllCurves = (curves: Curves) =>
-  timed("setAllCurves", async () => {
-    await getWorker().setAllCurves(curvesToRows(curves));
-  });
-
-const writeAllControls = (controls: Controls) =>
-  timed("setAllControls", async () => {
-    await getWorker().setAllControls(serializeControls(controls));
-  });
-
-const writeAllJunctionDemands = (junctions: JunctionAssignedDemands) =>
-  timed("setAllJunctionDemands", async () => {
-    await getWorker().setAllJunctionDemands(junctionDemandsToRows(junctions));
-  });

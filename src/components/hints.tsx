@@ -9,6 +9,7 @@ import {
   simulationDerivedAtom,
 } from "src/state/derived-branch-state";
 import { selectionAtom } from "src/state/selection";
+import { USelection } from "src/selection";
 import { hideHintsAtom } from "src/state/user-settings";
 import { Mode, modeAtom } from "src/state/mode";
 import { localizeKeybinding } from "src/infra/i18n";
@@ -18,8 +19,7 @@ import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
 import { PropsWithChildren } from "react";
 
 export const tipLike = `
-    bg-white dark:bg-gray-900
-    rounded-xs
+    bg-base
     shadow-[0_2px_10px_2px_rgba(0,0,0,0.1)]
     ring-1 ring-gray-200 dark:ring-gray-700
     content-layout z-10`;
@@ -39,7 +39,8 @@ function HintWrapper({
   return (
     <div
       className={clsx(
-        "absolute max-w-[600px] top-2 left-3 text-sm flex gap-x-2  dark:text-white rounded-md",
+        "absolute max-w-[600px] text-size-base flex gap-x-2",
+        "bottom-8 left-1/2 -translate-x-1/2 rounded-sm",
         "p-2 items-start",
         tipLike,
       )}
@@ -77,21 +78,11 @@ function Hint({
       {!!secondaryText && (
         <div>
           <div>{text}</div>
-          <div className="text-gray-500 text-sm">{secondaryText}</div>
+          <div className="text-subtle text-size-base">{secondaryText}</div>
         </div>
       )}
       {!secondaryText && <div>{text}</div>}
     </HintWrapper>
-  );
-}
-
-function BottomMapPrompt({ text }: { text: string }) {
-  return (
-    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
-      <div className="rounded-sm bg-gray-900/85 px-3 py-1.5 text-sm font-medium text-white shadow-md">
-        {text}
-      </div>
-    </div>
   );
 }
 
@@ -122,7 +113,7 @@ export function Hints() {
       );
     }
     case Mode.NONE: {
-      if (selection.type === "none") {
+      if (USelection.isNone(selection)) {
         if (hydraulicModel.assets.size === 0) {
           return (
             <Hint
@@ -154,8 +145,9 @@ export function Hints() {
           }
         }
       }
-      if (selection.type === "single" && !isEditionBlocked) {
-        const asset = hydraulicModel.assets.get(selection.id);
+      const singleAssetId = USelection.singleAssetId(selection);
+      if (singleAssetId !== null && !isEditionBlocked) {
+        const asset = hydraulicModel.assets.get(singleAssetId);
         if (asset && asset.isNode) {
           return (
             <Hint
@@ -166,7 +158,7 @@ export function Hints() {
           );
         }
       }
-      if (selection.type === "singleCustomerPoint" && !isEditionBlocked) {
+      if (USelection.isSingleCustomerPoint(selection) && !isEditionBlocked) {
         return (
           <Hint
             hintId={"DRAG_CUSTOMER_POINT"}
@@ -205,17 +197,6 @@ export function Hints() {
           <Hint hintId={"START_PIPE"} text={translate("onboardingStartPipe")} />
         );
       }
-    }
-    case Mode.DRAW_PRESSURE_LOGGER: {
-      return (
-        <BottomMapPrompt
-          text={
-            ephemeralState.type === "drawLink" && !!ephemeralState.startNode
-              ? translate("pressureLoggerPlacePrompt")
-              : translate("pressureLoggerSelectNodeFirst")
-          }
-        />
-      );
     }
     case Mode.DRAW_PUMP: {
       if (

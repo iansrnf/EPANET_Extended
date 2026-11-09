@@ -1,7 +1,7 @@
 import { linearGradient } from "src/lib/color";
 import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
-import { localizeDecimal } from "src/infra/i18n/numbers";
+import { localizeDecimal } from "@epanet-js/i18n";
 import { useUserTracking } from "src/infra/user-tracking";
 import { RangeColorRule } from "src/map/symbology/range-color-rule";
 import { useAtomValue } from "jotai";
@@ -19,7 +19,7 @@ export const Legends = () => {
   if (!isSmOrLarger) return null;
 
   return (
-    <div className="space-y-1 absolute top-10 left-3 w-48">
+    <div className="space-y-1 absolute w-48 top-2 left-2">
       {!!nodeSymbology.colorRule && (
         <Legend symbology={nodeSymbology.colorRule} />
       )}
@@ -49,7 +49,7 @@ const Legend = ({ symbology }: { symbology: RangeColorRule }) => {
       <div
         className={clsx(
           "block w-full p-2 flex flex-col justify-between items-start gap-2",
-          "cursor-pointer hover:bg-gray-100",
+          "cursor-pointer hover:bg-base-hover",
         )}
         onClick={() => {
           setExpanded(!isExpanded);
@@ -60,7 +60,7 @@ const Legend = ({ symbology }: { symbology: RangeColorRule }) => {
         }}
       >
         <div className="flex w-full items-center justify-between">
-          <div className="text-xs text-wrap select-none">{title}</div>
+          <div className="text-size-small text-wrap select-none">{title}</div>
           <span className="shrink-0">
             {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
           </span>
@@ -80,7 +80,10 @@ const LegendContainer = ({
 }) => {
   return (
     <div
-      className="space-y-1 text-xs bg-white dark:bg-gray-900 dark:text-white border border-gray-300 dark:border-black w-32 rounded-xs"
+      className={clsx(
+        "space-y-1 text-size-small bg-base w-32",
+        "rounded-sm border shadow-md",
+      )}
       onClick={onClick}
     >
       {children}
@@ -106,7 +109,7 @@ export const LegendRamp = ({ colorRule }: { colorRule: RangeColorRule }) => {
         return (
           <div
             key={breaks[i] + "_" + i}
-            className="absolute left-full ml-2 text-xs whitespace-nowrap select-none"
+            className="absolute left-full ml-2 text-size-small whitespace-nowrap select-none"
             style={{
               top: `${topPct}%`,
               transform: "translateY(-50%)",

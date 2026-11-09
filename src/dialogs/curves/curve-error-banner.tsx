@@ -1,7 +1,11 @@
-import { CurvePoint, CurveType } from "src/hydraulic-model/curves";
+import {
+  CurvePoint,
+  CurveType,
+  getCurveErrors,
+} from "@epanet-js/hydraulic-model";
 import { getCurveTypeConfig } from "./curve-type-config";
 import { useTranslate } from "src/hooks/use-translate";
-import { NotificationBanner } from "src/components/notifications";
+import { Callout } from "@epanet-js/ui-kit";
 import { TriangleAlert } from "lucide-react";
 
 interface CurveErrorBannerProps {
@@ -12,7 +16,7 @@ interface CurveErrorBannerProps {
 export function CurveErrorBanner({ points, curveType }: CurveErrorBannerProps) {
   const translate = useTranslate();
   const curveConfig = getCurveTypeConfig(curveType);
-  const errors = curveConfig.getErrors(points);
+  const errors = getCurveErrors(curveType, points);
 
   if (errors.length === 0) return null;
 
@@ -31,7 +35,7 @@ export function CurveErrorBanner({ points, curveType }: CurveErrorBannerProps) {
 
   if (needsMorePoints) {
     return (
-      <NotificationBanner
+      <Callout
         variant="warning"
         title={translate("curves.invalidCurve")}
         description={translate("curveValidation.needsMorePoints")}
@@ -49,7 +53,7 @@ export function CurveErrorBanner({ points, curveType }: CurveErrorBannerProps) {
       parts.push(translate("curveValidation.needsNonZeroValue", xLabel));
     if (hasYError)
       parts.push(translate("curveValidation.needsNonZeroValue", yLabel));
-    description = parts.join(" ");
+    description = parts.join("");
   } else {
     const parts: string[] = [];
     if (hasXError)
@@ -61,11 +65,11 @@ export function CurveErrorBanner({ points, curveType }: CurveErrorBannerProps) {
           : "curveValidation.valueAscendingOrder";
       parts.push(translate(yKey, yLabel));
     }
-    description = parts.join(" ");
+    description = parts.join("");
   }
 
   return (
-    <NotificationBanner
+    <Callout
       variant="warning"
       title={translate("curves.invalidCurve")}
       description={description}

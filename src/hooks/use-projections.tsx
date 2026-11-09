@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import type { Proj4Projection } from "src/lib/projections";
+import { fetchProjections } from "@epanet-js/projections";
+import type { Proj4Projection } from "@epanet-js/projections";
 
 type ProjectionsState = {
   projections: Map<string, Proj4Projection> | null;
@@ -7,8 +8,6 @@ type ProjectionsState = {
   loading: boolean;
   error: string | null;
 };
-
-type RawProjection = { id: string; name: string; code: string };
 
 export const useProjections = (): ProjectionsState => {
   const [state, setState] = useState<ProjectionsState>({
@@ -22,20 +21,9 @@ export const useProjections = (): ProjectionsState => {
     let cancelled = false;
     setState((prev) => ({ ...prev, loading: true, error: null }));
 
-    fetch("/projections.json")
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Failed to load projections: ${response.status}`);
-        }
-        return response.json();
-      })
-      .then((data: RawProjection[]) => {
+    fetchProjections()
+      .then((enriched) => {
         if (cancelled) return;
-        const enriched: Proj4Projection[] = data.map((p) => ({
-          type: "proj4" as const,
-          ...p,
-          deprecated: /\(deprecated\)/i.test(p.name),
-        }));
         const sorted = [...enriched].sort(
           (a, b) => Number(a.deprecated) - Number(b.deprecated),
         );

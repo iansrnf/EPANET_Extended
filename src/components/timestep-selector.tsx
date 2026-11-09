@@ -15,7 +15,7 @@ import {
 import { Button, DDContent, StyledRadioItem } from "src/components/elements";
 import { simulationStepAtom } from "src/state/simulation";
 import { simulationDerivedAtom } from "src/state/derived-branch-state";
-import { triggerStylesFor } from "./form/selector";
+import { triggerStylesFor } from "@epanet-js/ui-kit";
 import React, { useEffect, useState } from "react";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import {
@@ -34,7 +34,24 @@ import {
 import { useTogglePlayback } from "src/commands/toggle-playback";
 import { useTranslate } from "src/hooks/use-translate";
 
-export const TimestepSelector = () => {
+export const useHasPlayableTimesteps = () => {
+  const simulationStep = useAtomValue(simulationStepAtom);
+  const simulation = useAtomValue(simulationDerivedAtom);
+  const isSmOrLarger = useBreakpoint("sm");
+
+  if (!isSmOrLarger) return false;
+  if (simulationStep === null) return false;
+  if (!("epsResultsReader" in simulation) || !simulation.epsResultsReader)
+    return false;
+
+  return simulation.epsResultsReader.timestepCount > 1;
+};
+
+export const TimestepSelector = ({
+  variant = "floating",
+}: {
+  variant?: "floating" | "inline";
+} = {}) => {
   const simulationStep = useAtomValue(simulationStepAtom);
   const simulation = useAtomValue(simulationDerivedAtom);
   const { changeTimestep } = useChangeTimestep();
@@ -54,6 +71,7 @@ export const TimestepSelector = () => {
       timestepCount={timestepCount}
       reportTimestep={reportingTimeStep}
       onChangeTimestep={changeTimestep}
+      variant={variant}
     />
   );
 };
@@ -63,6 +81,7 @@ type TimestepSelectorUIProps = {
   timestepCount: number;
   reportTimestep: number;
   onChangeTimestep: (index: number, source: ChangeTimestepSource) => void;
+  variant?: "floating" | "inline";
 };
 
 export const TimestepSelectorUI = ({
@@ -70,6 +89,7 @@ export const TimestepSelectorUI = ({
   timestepCount,
   reportTimestep,
   onChangeTimestep,
+  variant = "floating",
 }: TimestepSelectorUIProps) => {
   const translate = useTranslate();
   const canGoPrevious = currentTimestepIndex > 0;
@@ -77,52 +97,82 @@ export const TimestepSelectorUI = ({
 
   const { stopPlayback } = useTogglePlayback();
   const { goToPreviousTimestep, goToNextTimestep } = useChangeTimestep();
+
+  const isInline = variant === "inline";
+  const isLgOrLarger = useBreakpoint("lg");
+  const compact = isInline && !isLgOrLarger;
+
+  const controls = (
+    <div
+      className={clsx(
+        "flex items-center",
+        !isInline &&
+          "p-1 bg-base rounded-xs border shadow-[0_2px_10px_2px_rgba(0,0,0,0.1)]",
+      )}
+    >
+      {!compact && (
+        <>
+          <PlayButton />
+          <SpeedButton />
+          <Button
+            variant="quiet/mode"
+            className="h-8"
+            aria-label={translate("previousTimestep")}
+            onClick={() => goToPreviousTimestep("buttons")}
+            disabled={!canGoPrevious}
+          >
+            <ChevronLeftIcon />
+          </Button>
+          <Button
+            variant="quiet/mode"
+            className="h-8"
+            aria-label={translate("nextTimestep")}
+            onClick={() => goToNextTimestep("buttons")}
+            disabled={!canGoNext}
+          >
+            <ChevronRightIcon />
+          </Button>
+        </>
+      )}
+      <TimestepDropdown
+        currentTimestepIndex={currentTimestepIndex}
+        timestepCount={timestepCount}
+        reportTimestep={reportTimestep}
+        onOpen={() => stopPlayback("dropdown")}
+        onChangeTimestep={(index) => onChangeTimestep(index, "dropdown")}
+      />
+    </div>
+  );
+
+  return isInline ? (
+    controls
+  ) : (
+    <div className="grid grid-cols-[min-content] gap-1">{controls}</div>
+  );
+};
+
+export const TimestepSpeedWarning = () => {
+  const translate = useTranslate();
   const speedWarning = useAtomValue(currentSpeedWarningAtom);
   const isPlaying = useAtomValue(isPlayingAtom);
 
+  if (!isPlaying || !speedWarning) return null;
+
   return (
-    <div className="grid grid-cols-[min-content] gap-1">
-      <div className="flex items-center gap-1 p-1 bg-white dark:bg-gray-900 border border-gray-200 dark:border-black rounded-xs shadow-[0_2px_10px_2px_rgba(0,0,0,0.1)]">
-        <PlayButton />
-        <SpeedButton />
-        <Button
-          variant="quiet/mode"
-          className="h-8"
-          aria-label={translate("previousTimestep")}
-          onClick={() => goToPreviousTimestep("buttons")}
-          disabled={!canGoPrevious}
-        >
-          <ChevronLeftIcon />
-        </Button>
-        <Button
-          variant="quiet/mode"
-          className="h-8"
-          aria-label={translate("nextTimestep")}
-          onClick={() => goToNextTimestep("buttons")}
-          disabled={!canGoNext}
-        >
-          <ChevronRightIcon />
-        </Button>
-        <TimestepDropdown
-          currentTimestepIndex={currentTimestepIndex}
-          timestepCount={timestepCount}
-          reportTimestep={reportTimestep}
-          onOpen={() => stopPlayback("dropdown")}
-          onChangeTimestep={(index) => onChangeTimestep(index, "dropdown")}
-        />
-      </div>
-      {isPlaying && speedWarning && (
-        <div className="flex items-start gap-1.5 text-xs bg-gray-100 dark:bg-gray-900/80 px-2 py-1 rounded-xs shadow-[0_2px_10px_2px_rgba(0,0,0,0.1)]">
-          <WarningIcon className="shrink-0 mt-px text-orange-500" />
-          <span className="wrap-break-word min-w-0">
-            {translate(
-              speedWarning === "slow"
-                ? "playbackSpeedWarningSlow"
-                : "playbackSpeedWarningTooFast",
-            )}
-          </span>
-        </div>
+    <div
+      className={clsx(
+        "flex items-start gap-1.5 text-size-small px-2 py-1 bg-panel/80 max-w-[16rem]",
+        "rounded-sm border shadow-md",
       )}
+    >
+      <WarningIcon className="shrink-0 mt-px text-warning" />
+      <span className="wrap-break-word min-w-0">
+        {translate(
+          speedWarning === "slow"
+            ? "playbackSpeedWarningSlow"
+            : "playbackSpeedWarningTooFast",
+        )}
+      </span>
     </div>
   );
 };
@@ -198,10 +248,10 @@ const SpeedButton = () => {
             {speedOptions.map(({ translationKey, value, warning }) => (
               <StyledRadioItem key={value} value={value}>
                 <span className="flex-1">{translate(translationKey)}</span>
-                {warning && <WarningIcon className="text-orange-500" />}
+                {warning && <WarningIcon className="text-warning" />}
                 <span className="w-4 flex items-center justify-center">
                   <DD.ItemIndicator>
-                    <CheckIcon className="text-purple-700" />
+                    <CheckIcon className="text-accent" />
                   </DD.ItemIndicator>
                 </span>
               </StyledRadioItem>
@@ -273,7 +323,7 @@ const TimestepDropdown = ({
         <Popover.Content
           align="end"
           sideOffset={4}
-          className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-black text-sm rounded-md shadow-md z-50 overflow-hidden min-w-(--radix-popover-trigger-width)"
+          className="bg-base border text-size-base rounded-md shadow-md z-50 overflow-hidden min-w-(--radix-popover-trigger-width)"
           onKeyDown={(event) => {
             if (event.code === "Escape" || event.code === "Enter") {
               event.stopPropagation();
@@ -306,7 +356,7 @@ const TimestepDropdown = ({
                     }}
                     className={clsx(
                       "absolute left-0 right-0 flex items-center justify-between gap-4 px-2",
-                      "text-left cursor-pointer hover:bg-purple-300/40 focus:bg-purple-300/40 rounded-xs",
+                      "text-left cursor-pointer hover:bg-base-hover focus:bg-base-hover rounded-xs",
                     )}
                     style={{
                       height: ROW_HEIGHT,
@@ -315,7 +365,7 @@ const TimestepDropdown = ({
                   >
                     <span>{formatTimestepTime(index, reportTimestep)}</span>
                     {isSelected && (
-                      <CheckIcon className="text-purple-700 ml-auto" />
+                      <CheckIcon className="text-accent ml-auto" />
                     )}
                   </button>
                 );

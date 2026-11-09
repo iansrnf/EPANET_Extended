@@ -6,9 +6,7 @@ import {
   RedoIcon,
   SettingsIcon,
   SaveIcon,
-  SaveAllIcon,
   RunSimulationIcon,
-  ImportCustomerPointsIcon,
   PanelBottomIcon,
   PanelBottomActiveIcon,
   PanelLeftIcon,
@@ -19,13 +17,9 @@ import {
   TableIcon,
   HglProfileIcon,
 } from "src/icons";
-import Modes from "./modes";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { splitsAtom } from "src/state/layout";
 import { commandBarOpenAtom } from "src/state/command-bar";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { usePermissions } from "src/hooks/use-permissions";
-import { useShowPriorityAccessDialog } from "src/hooks/use-priority-access";
 import { opfsAvailableAtom } from "src/state/opfs";
 import {
   canRedoDerivedAtom,
@@ -33,11 +27,7 @@ import {
   simulationDerivedAtom,
   simulationSettingsDerivedAtom,
 } from "src/state/derived-branch-state";
-import {
-  saveAsShortcut,
-  saveShortcut,
-  useSaveInp,
-} from "src/commands/save-inp";
+import { saveShortcut } from "src/commands/save-inp";
 import { useSaveProject } from "src/commands/save-project";
 import {
   runSimulationShortcut,
@@ -51,28 +41,31 @@ import {
   useShowSimulationSettings,
 } from "src/commands/show-simulation-settings";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
-import { useImportCustomerPoints } from "src/commands/import-customer-points";
+import { useAllocateCustomerPoints } from "src/commands/allocate-customer-points";
 import { FileDropdown } from "./file-dropdown";
 import { OperationalDataDropdown } from "./operational-data-dropdown";
+import {
+  TimestepSelector,
+  useHasPlayableTimesteps,
+} from "src/components/timestep-selector";
 import { Mode, modeAtom } from "src/state/mode";
 import { useShowDataTables } from "src/commands/show-data-tables";
 import { useShowHglProfile } from "src/commands/show-hgl-profile";
 import { useStartProfileSelection } from "src/commands/start-profile-selection";
 import {
-  toggleNetworkReviewShortcut,
-  useToggleNetworkReview,
-} from "src/commands/toggle-network-review";
+  toggleLeftPanelShortcut,
+  useToggleLeftPanel,
+} from "src/commands/toggle-left-panel";
 import {
   toggleSidePanelShortcut,
   useToggleSidePanel,
 } from "src/commands/toggle-side-panel";
+import { useToggleVerticalPanel } from "src/commands/toggle-vertical-panel";
 import {
   toggleBottomPanelShortcut,
   useToggleBottomPanel,
 } from "src/commands/toggle-bottom-panel";
-import { darkThemeAtom } from "src/state/user-settings";
-import { StyledSwitch, StyledThumb, TContent } from "src/components/elements";
-import * as Tooltip from "@radix-ui/react-tooltip";
+import { CustomAllocateCustomerPointsIcon } from "src/icons/custom-icons/allocate-customer-points-icon";
 
 export const Toolbar = ({
   readonly = false,
@@ -82,20 +75,15 @@ export const Toolbar = ({
   customerAllocationDisabled?: boolean;
 }) => {
   const translate = useTranslate();
-  const saveInp = useSaveInp();
   const saveProject = useSaveProject();
   const userTracking = useUserTracking();
   const runSimulation = useRunSimulation();
   const showSimulationSettings = useShowSimulationSettings();
   const showReport = useShowReport();
-  const importCustomerPoints = useImportCustomerPoints();
+  const allocateCustomerPoints = useAllocateCustomerPoints();
   const showDataTables = useShowDataTables();
   const showHglProfile = useShowHglProfile();
   const startProfileSelection = useStartProfileSelection();
-  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
-  const isHglProfileOn = useFeatureFlag("FLAG_PROFILE_VIEW");
-  const { canUseHglProfile } = usePermissions();
-  const showPriorityAccess = useShowPriorityAccessDialog();
   const isOPFSAvailable = useAtomValue(opfsAvailableAtom);
   const { mode: currentMode } = useAtomValue(modeAtom);
 
@@ -107,205 +95,171 @@ export const Toolbar = ({
   const canRedo = useAtomValue(canRedoDerivedAtom);
   const isMdOrLarger = useBreakpoint("md");
   const isSmOrLarger = useBreakpoint("sm");
+  const hasPlayableTimesteps = useHasPlayableTimesteps();
+
+  const fileActionsGroup = isSmOrLarger && (
+    <>
+      <MenuAction
+        label={translate("save")}
+        role="button"
+        onClick={() => {
+          void saveProject({ source: "toolbar" });
+        }}
+        readOnlyHotkey={saveShortcut}
+      >
+        <SaveIcon />
+      </MenuAction>
+      <MenuAction
+        label={translate("allocateCustomerPoints.menuEntry")}
+        role="button"
+        onClick={() => allocateCustomerPoints()}
+        disabled={customerAllocationDisabled}
+      >
+        <CustomAllocateCustomerPointsIcon />
+      </MenuAction>
+    </>
+  );
+
+  const undoRedoGroup = isMdOrLarger && (
+    <>
+      <MenuAction
+        label={translate("undo")}
+        role="button"
+        onClick={() => {
+          userTracking.capture({
+            name: "operation.undone",
+            source: "toolbar",
+          });
+
+          undo();
+        }}
+        readOnlyHotkey={"ctrl+z"}
+        disabled={readonly || !canUndo}
+      >
+        <UndoIcon />
+      </MenuAction>
+      <MenuAction
+        label={translate("redo")}
+        role="button"
+        onClick={() => {
+          userTracking.capture({
+            name: "operation.redone",
+            source: "toolbar",
+          });
+          redo();
+        }}
+        readOnlyHotkey={"ctrl+y"}
+        disabled={readonly || !canRedo}
+      >
+        <RedoIcon />
+      </MenuAction>
+      <Divider />
+    </>
+  );
+
+  const simulationGroup = (
+    <>
+      {!isOPFSAvailable ? (
+        <DisabledMenuAction
+          label={translate("simulate")}
+          reason={translate("simulateUnavailableNoBrowserStorage")}
+        >
+          <RunSimulationIcon className="stroke-yellow-600" />
+        </DisabledMenuAction>
+      ) : (
+        <MenuAction
+          label={translate("simulate")}
+          role="button"
+          onClick={() => {
+            userTracking.capture({
+              name: "simulation.executed",
+              source: "toolbar",
+              qualityType: simulationSettings.qualitySimulationType,
+            });
+            void runSimulation();
+          }}
+          expanded={true}
+          readOnlyHotkey={runSimulationShortcut}
+        >
+          <RunSimulationIcon className="stroke-yellow-600" />
+        </MenuAction>
+      )}
+      <MenuAction
+        label={translate("simulationSettings.title")}
+        role="button"
+        onClick={() => showSimulationSettings({ source: "toolbar" })}
+        readOnlyHotkey={showSimulationSettingsShortcut}
+      >
+        <SettingsIcon />
+      </MenuAction>
+      <MenuAction
+        label={translate("viewReport")}
+        role="button"
+        onClick={() => {
+          showReport({ source: "toolbar" });
+        }}
+        readOnlyHotkey={"alt+r"}
+        disabled={simulation.status === "idle"}
+      >
+        <FileTextIcon />
+      </MenuAction>
+    </>
+  );
+
+  const operationalGroup = (
+    <>
+      <OperationalDataDropdown />
+      <MenuAction
+        label={translate("dataTables.title")}
+        role="button"
+        onClick={showDataTables}
+      >
+        <TableIcon />
+      </MenuAction>
+      <MenuAction
+        label={translate("hglProfile.toolbar")}
+        role="button"
+        selected={currentMode === Mode.HGL_PROFILE}
+        onClick={() => {
+          showHglProfile({ source: "toolbar" });
+          startProfileSelection({ source: "toolbar" });
+        }}
+      >
+        <HglProfileIcon />
+      </MenuAction>
+    </>
+  );
 
   return (
     <div
       className="relative flex flex-row items-center justify-between overflow-x-auto sm:overflow-visible
-          border-t border-gray-200 dark:border-gray-900 px-2 h-12"
+  border-t dark:border-gray-900 px-2 h-12"
     >
       <div className="flex flex-row items-center justify-start">
         <FileDropdown />
-        {isSmOrLarger && (
-          <>
-            <MenuAction
-              label={translate("save")}
-              role="button"
-              onClick={() => {
-                if (isOurFileOn) {
-                  void saveProject({ source: "toolbar" });
-                } else {
-                  void saveInp({ source: "toolbar" });
-                }
-              }}
-              readOnlyHotkey={saveShortcut}
-            >
-              <SaveIcon />
-            </MenuAction>
-            {!isOurFileOn && (
-              <MenuAction
-                label={translate("saveAs")}
-                role="button"
-                onClick={() => {
-                  void saveInp({ source: "toolbar", isSaveAs: true });
-                }}
-                readOnlyHotkey={saveAsShortcut}
-              >
-                <SaveAllIcon />
-              </MenuAction>
-            )}
-            <MenuAction
-              label={translate("importCustomerPoints.label")}
-              role="button"
-              onClick={() => {
-                void importCustomerPoints({ source: "toolbar" });
-              }}
-              disabled={customerAllocationDisabled}
-            >
-              <ImportCustomerPointsIcon />
-            </MenuAction>
-          </>
-        )}
+        {fileActionsGroup}
         <Divider />
-        {isMdOrLarger && (
-          <>
-            <MenuAction
-              label={translate("undo")}
-              role="button"
-              onClick={() => {
-                userTracking.capture({
-                  name: "operation.undone",
-                  source: "toolbar",
-                });
-
-                void undo();
-              }}
-              readOnlyHotkey={"ctrl+z"}
-              disabled={readonly || !canUndo}
-            >
-              <UndoIcon />
-            </MenuAction>
-            <MenuAction
-              label={translate("redo")}
-              role="button"
-              onClick={() => {
-                userTracking.capture({
-                  name: "operation.redone",
-                  source: "toolbar",
-                });
-                void redo();
-              }}
-              readOnlyHotkey={"ctrl+y"}
-              disabled={readonly || !canRedo}
-            >
-              <RedoIcon />
-            </MenuAction>
-            <Divider />
-          </>
-        )}
-        {isSmOrLarger && (
-          <>
-            <Modes disabled={readonly} />
-            <Divider />
-          </>
-        )}
-        {!isOPFSAvailable ? (
-          <DisabledMenuAction
-            label={translate("simulate")}
-            reason={translate("simulateUnavailablePrivateBrowsing")}
-          >
-            <RunSimulationIcon className="stroke-yellow-600" />
-          </DisabledMenuAction>
-        ) : (
-          <MenuAction
-            label={translate("simulate")}
-            role="button"
-            onClick={() => {
-              userTracking.capture({
-                name: "simulation.executed",
-                source: "toolbar",
-                qualityType: simulationSettings.qualitySimulationType,
-              });
-              void runSimulation();
-            }}
-            expanded={true}
-            readOnlyHotkey={runSimulationShortcut}
-          >
-            <RunSimulationIcon className="stroke-yellow-600" />
-          </MenuAction>
-        )}
-        <MenuAction
-          label={translate("simulationSettings.title")}
-          role="button"
-          onClick={() => showSimulationSettings({ source: "toolbar" })}
-          readOnlyHotkey={showSimulationSettingsShortcut}
-        >
-          <SettingsIcon />
-        </MenuAction>
-        <MenuAction
-          label={translate("viewReport")}
-          role="button"
-          onClick={() => {
-            showReport({ source: "toolbar" });
-          }}
-          readOnlyHotkey={"alt+r"}
-          disabled={simulation.status === "idle"}
-        >
-          <FileTextIcon />
-        </MenuAction>
+        {undoRedoGroup}
+        {operationalGroup}
         <Divider />
-        <OperationalDataDropdown />
-        {isHglProfileOn && (
-          <MenuAction
-            label={translate("dataTables.title")}
-            role="button"
-            onClick={() => showDataTables({ source: "toolbar" })}
-          >
-            <TableIcon />
-          </MenuAction>
-        )}
-        {isHglProfileOn && (
-          <MenuAction
-            label={translate("hglProfile.toolbar")}
-            role="button"
-            selected={currentMode === Mode.HGL_PROFILE}
-            onClick={() => {
-              if (!canUseHglProfile) {
-                showPriorityAccess({
-                  featureName: translate("hglProfile.toolbar"),
-                });
-                return;
-              }
-              showHglProfile({ source: "toolbar" });
-              startProfileSelection({ source: "toolbar" });
-            }}
-          >
-            <HglProfileIcon />
-          </MenuAction>
+        {simulationGroup}
+        {hasPlayableTimesteps && (
+          <>
+            <Divider />
+            <TimestepSelector variant="inline" />
+          </>
         )}
       </div>
-      <div className="flex flex-row items-center justify-end gap-2">
-        <DarkThemeToggle />
+      <div className="flex flex-row items-center justify-end">
         <CommandBarButton />
-        {isSmOrLarger && <LayoutActions />}
+        {isSmOrLarger ? <LayoutActions /> : <VerticalLayoutActions />}
       </div>
     </div>
   );
 };
 
 const Divider = () => {
-  return <div className="border-r-2 border-gray-100 h-8 mx-1"></div>;
-};
-
-const DarkThemeToggle = () => {
-  const translate = useTranslate();
-  const [darkTheme, setDarkTheme] = useAtom(darkThemeAtom);
-
-  return (
-    <Tooltip.Root delayDuration={200}>
-      <Tooltip.Trigger asChild>
-        <div className="h-10 flex items-center py-1">
-          <StyledSwitch
-            aria-label={translate("toggleDarkTheme")}
-            checked={darkTheme}
-            onCheckedChange={setDarkTheme}
-          >
-            <StyledThumb />
-          </StyledSwitch>
-        </div>
-      </Tooltip.Trigger>
-      <TContent side="bottom">{translate("toggleDarkTheme")}</TContent>
-    </Tooltip.Root>
-  );
+  return <div className="border-r-2 h-8 mx-1"></div>;
 };
 
 const CommandBarButton = () => {
@@ -331,10 +285,28 @@ const CommandBarButton = () => {
   );
 };
 
+const VerticalLayoutActions = () => {
+  const translate = useTranslate();
+  const splits = useAtomValue(splitsAtom);
+  const toggleVerticalPanel = useToggleVerticalPanel();
+
+  return (
+    <MenuAction
+      label={translate("toggleBottomPanel")}
+      role="button"
+      onClick={() => {
+        toggleVerticalPanel({ source: "toolbar" });
+      }}
+    >
+      {splits.verticalOpen ? <PanelBottomActiveIcon /> : <PanelBottomIcon />}
+    </MenuAction>
+  );
+};
+
 const LayoutActions = () => {
   const translate = useTranslate();
   const splits = useAtomValue(splitsAtom);
-  const toggleNetworkReview = useToggleNetworkReview();
+  const toggleLeftPanel = useToggleLeftPanel();
   const toggleBottomPanel = useToggleBottomPanel();
   const toggleSidePanel = useToggleSidePanel();
 
@@ -357,12 +329,12 @@ const LayoutActions = () => {
   return (
     <>
       <MenuAction
-        label={translate("networkReview.toggle")}
+        label={translate("toggleLeftPanel")}
         role="button"
         onClick={() => {
-          toggleNetworkReview({ source: "toolbar" });
+          toggleLeftPanel({ source: "toolbar" });
         }}
-        readOnlyHotkey={toggleNetworkReviewShortcut}
+        readOnlyHotkey={toggleLeftPanelShortcut}
       >
         {leftPanelIcon}
       </MenuAction>

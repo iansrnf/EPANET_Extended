@@ -3,6 +3,7 @@ import { DataGridVariant, RowAction } from "../types";
 import { GridDataCell } from "./grid-data-cell";
 import { RowGutterCell } from "./row-gutter-cell";
 import { RowActionsCell } from "./row-actions-cell";
+import { FIXED_COLUMN_SIZE } from "./dimensions";
 
 export type GridRowProps<TData extends Record<string, unknown>> = {
   table: Table<TData>;
@@ -46,6 +47,8 @@ export function GridRow<TData extends Record<string, unknown>>({
   cellHasWarning,
 }: GridRowProps<TData>) {
   const cells = row.getVisibleCells();
+  const gutterWidth = gutterColumn ? FIXED_COLUMN_SIZE : 0;
+  let pinnedLeftCursor = gutterWidth;
 
   return (
     <>
@@ -63,11 +66,15 @@ export function GridRow<TData extends Record<string, unknown>>({
 
       {cells.map((cell: Cell<TData, unknown>, colIndex) => {
         const accessorKey = cell.column.id;
+        const isPinnedLeft = cell.column.getIsPinned() === "left";
+        const pinnedLeftOffset = isPinnedLeft ? pinnedLeftCursor : undefined;
+        if (isPinnedLeft) pinnedLeftCursor += cell.column.getSize();
+        const readOnly = cell.column.isReadOnly(cell.row.index);
         return (
           <GridDataCell
             key={cell.id}
             cell={cell}
-            readOnly={cell.column.isReadOnly(rowIndex)}
+            readOnly={readOnly}
             onMouseDown={(e) => onCellMouseDown(colIndex, rowIndex, e)}
             onMouseEnter={() => onCellMouseEnter(colIndex, rowIndex)}
             onDoubleClick={() => onCellDoubleClick(colIndex)}
@@ -83,10 +90,19 @@ export function GridRow<TData extends Record<string, unknown>>({
             isLastRow={cellsIsLastRow}
             isLastCol={colIndex === cells.length - 1}
             hasWarning={
-              accessorKey
-                ? (cellHasWarning?.(rowIndex, accessorKey) ?? false)
-                : false
+              (!readOnly &&
+                cell.column.hasWarning(
+                  cell.column.getEffectiveValue(
+                    cell.getValue(),
+                    cell.row.index,
+                  ),
+                  cell.row.index,
+                )) ||
+              (accessorKey
+                ? (cellHasWarning?.(cell.row.index, accessorKey) ?? false)
+                : false)
             }
+            pinnedLeftOffset={pinnedLeftOffset}
           />
         );
       })}

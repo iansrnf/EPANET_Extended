@@ -2,10 +2,10 @@ import type { HandlerContext } from "src/types";
 import { Mode, modeAtom } from "src/state/mode";
 import { useSetAtom, useAtomValue } from "jotai";
 import { useEffect, useRef } from "react";
-import { useGetMapCoord } from "../utils";
+import { getMapCoord } from "../utils";
 import { useConnectCustomerPointsState } from "./connect-state";
 import { usePipeSnappingForCustomerPoints } from "./pipe-snapping";
-import { connectCustomers } from "src/hydraulic-model/model-operations";
+import { connectCustomers } from "@epanet-js/hydraulic-model-operations";
 import { useUserTracking } from "src/infra/user-tracking";
 import { captureError } from "src/infra/error-tracking";
 import { useKeyboardState } from "src/keyboard/use-keyboard-state";
@@ -31,7 +31,6 @@ export function useConnectCustomerPointsHandlers({
   } = useConnectCustomerPointsState();
   const { findNearestPipe, calculateSnapPoints } =
     usePipeSnappingForCustomerPoints(map, hydraulicModel.assets);
-  const getMapCoord = useGetMapCoord();
 
   const hasInitializedRef = useRef(false);
 
@@ -87,19 +86,18 @@ export function useConnectCustomerPointsHandlers({
     }
 
     try {
-      const moment = connectCustomers(hydraulicModel, {
+      const data = {
         customerPointIds: ephemeralState.customerPoints.map((cp) => cp.id),
         pipeId: ephemeralState.targetPipeId,
         snapPoints: ephemeralState.snapPoints,
-      });
-
+      };
       userTracking.capture({
         name: "customerPoints.connected",
         count: ephemeralState.customerPoints.length,
         strategy: ephemeralState.strategy,
       });
 
-      transact(moment);
+      transact(() => connectCustomers(hydraulicModel, data));
       setMode({ mode: Mode.NONE });
       clearConnectState();
     } catch (error) {

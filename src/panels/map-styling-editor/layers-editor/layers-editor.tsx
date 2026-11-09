@@ -1,5 +1,6 @@
 import debounce from "lodash/debounce";
-import * as T from "@radix-ui/react-tooltip";
+import { numericChecks } from "src/lib/model-attributes-validation";
+import { Tooltip } from "@epanet-js/ui-kit";
 import { atom, useAtom, useAtomValue, useSetAtom } from "jotai";
 import { dialogAtom } from "src/state/dialog";
 import { isPlayingAtom } from "src/state/simulation-playback";
@@ -7,7 +8,8 @@ import { layerConfigAtom } from "src/state/map";
 import * as E from "src/components/elements";
 import { Button } from "src/components/elements";
 import * as P from "@radix-ui/react-popover";
-import { basemaps } from "src/map/basemaps";
+import { basemaps, isBasemapConfigured } from "src/map/basemaps";
+import { useSelectBasemap } from "src/commands/select-basemap";
 import { DefaultLayerItem } from "./default-layer-item";
 import { newFeatureId } from "src/lib/id";
 import { Form, FORM_ERROR } from "src/core/components/Form";
@@ -46,10 +48,9 @@ import {
   maybeDeleteOldMapboxLayer,
   useLayerConfigState,
 } from "src/map/layer-config";
-import { Selector } from "src/components/form/selector";
-import { SelectorWithSearch } from "src/components/form/selector-with-search";
+import { Selector } from "@epanet-js/ui-kit";
 import { useUserTracking } from "src/infra/user-tracking";
-import { localizeDecimal } from "src/infra/i18n/numbers";
+import { localizeDecimal } from "@epanet-js/i18n";
 import { useTranslate } from "src/hooks/use-translate";
 import { usePermissions } from "src/hooks/use-permissions";
 import { zTileJSON } from "src/lib/tile-json";
@@ -96,18 +97,7 @@ const SHARED_INTIAL_VALUES = {
   labelVisibility: true,
   tms: false,
   opacity: 1,
-  sourceMaxZoom: {},
 } as const;
-
-/**
- * LayersPopover
- * --> AddLayer
- * ----> DefaultLayerItem
- * ----> XYZLayer
- * ----> MapboxLayer
- * ------> MapboxLayerList
- * --------> DefaultLayerItem
- */
 
 /**
  * Layers with lower ats stack on top,
@@ -470,7 +460,7 @@ function XYZLayer({
         readOnly={readonly}
       />
       <TextWell>{translate("customLayers.xyzURLContain")}</TextWell>
-      <label className="flex items-center gap-x-2 text-sm py-2">
+      <label className="flex items-center gap-x-2 text-size-base py-2">
         <E.FieldCheckbox name="tms" type="checkbox" disabled={readonly} /> TMS
       </label>
     </Form>
@@ -484,8 +474,6 @@ export function AddLayer() {
   const userTracking = useUserTracking();
   const setDialogState = useSetAtom(dialogAtom);
   const { canAddCustomLayers } = usePermissions();
-
-  const isCustomLayersPaywallOn = useFeatureFlag("FLAG_CUSTOM_LAYERS_PAYWALL");
 
   const { applyChanges } = useLayerConfigState();
   const layerConfigs = useAtomValue(layerConfigAtom);
@@ -578,7 +566,6 @@ export function AddLayer() {
           labelVisibility: true,
           tms: false,
           isBasemap: false,
-          sourceMaxZoom: {},
           color: "#3b82f6",
           lineWidth: 1.5,
         },
@@ -591,18 +578,7 @@ export function AddLayer() {
 
   const handleUpgrade = () => {
     setOpen(false);
-    if (isCustomLayersPaywallOn) {
-      setDialogState({ type: "featurePaywall", feature: "customLayers" });
-    } else {
-      userTracking.capture({
-        name: "upgradeButton.clicked",
-        source: "customLayers",
-      });
-      setDialogState({
-        type: "upgrade",
-        source: { kind: "customLayers" },
-      });
-    }
+    setDialogState({ type: "featurePaywall", feature: "customLayers" });
   };
 
   const handleModeChange = (mode: Mode, type: string) => {
@@ -652,7 +628,7 @@ export function AddLayer() {
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide pb-1">
+                    <div className="text-size-small font-semibold text-subtle uppercase tracking-wide pb-1">
                       {translate("customLayers.webServices")}
                     </div>
                     <div className="space-y-2 grid grid-cols-1">
@@ -693,7 +669,7 @@ export function AddLayer() {
                         TileJSON
                       </LayerTypeButton>
                     </div>
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide pb-1 pt-3">
+                    <div className="text-size-small font-semibold text-subtle uppercase tracking-wide pb-1 pt-3">
                       {translate("customLayers.localData")}
                     </div>
                     <div className="space-y-2 grid grid-cols-1">
@@ -762,11 +738,11 @@ export function AddLayer() {
 }
 
 const BaseMapOptions = ({ onDone }: { onDone?: () => void }) => {
+  const translate = useTranslate();
+  const selectBasemap = useSelectBasemap();
   const userTracking = useUserTracking();
-  const { applyChanges } = useLayerConfigState();
   const layerConfigs = useAtomValue(layerConfigAtom);
   const items = [...layerConfigs.values()];
-  const nextAt = getNextAt(items);
 
   return (
     <>
@@ -775,35 +751,23 @@ const BaseMapOptions = ({ onDone }: { onDone?: () => void }) => {
           key={id}
           mapboxLayer={mapboxLayer}
           onSelect={(layer) => {
-            const { deleteLayerConfigs, oldAt, oldMapboxLayer } =
-              maybeDeleteOldMapboxLayer(items);
+            const { oldMapboxLayer } = maybeDeleteOldMapboxLayer(items);
+            if (!selectBasemap(layer)) return;
             userTracking.capture({
               name: "baseMap.changed",
               newBasemap: layer.name,
               oldBasemap: oldMapboxLayer ? oldMapboxLayer.name : "",
               source: "popover",
             });
-
-            applyChanges({
-              deleteLayerConfigs,
-              putLayerConfigs: [
-                {
-                  ...layer,
-                  visibility: true,
-                  tms: false,
-                  opacity: mapboxLayer.opacity,
-                  at: oldAt || nextAt,
-                  id: newFeatureId(),
-                  labelVisibility: oldMapboxLayer
-                    ? oldMapboxLayer.labelVisibility
-                    : true,
-                } as ILayerConfig,
-              ],
-            });
             onDone && onDone();
           }}
         />
       ))}
+      {!isBasemapConfigured(basemaps.googleRoadmap) && (
+        <p className="text-size-xs text-subtle">
+          {translate("googleMaps.configureKey")}
+        </p>
+      )}
     </>
   );
 };
@@ -846,20 +810,21 @@ const OpacitySetting = ({
   return (
     <div className="flex items-center gap-x-1">
       {readonly ? (
-        <div className="text-xs px-1 py-0.5 w-12 opacity-50">{value}</div>
+        <div className="text-size-small px-1 py-0.5 w-12 opacity-50">
+          {value}
+        </div>
       ) : (
         <input
           type="number"
           min="0"
           step="1"
-          className="text-xs
-          px-1 py-0.5
-          border-gray-300
-          rounded-xs
-          dark:text-white
-          dark:bg-transparent
-        opacity-50 hover:opacity-100 focus:opacity-100
-        w-12"
+          className="text-size-small
+ px-1 py-0.5
+ border-strong
+ rounded-xs
+ dark:bg-transparent
+ opacity-50 hover:opacity-100 focus:opacity-100
+ w-12"
           max="100"
           disabled={readonly}
           value={value}
@@ -875,7 +840,7 @@ const OpacitySetting = ({
           }}
         />
       )}
-      <div className="text-gray-500 text-xs">%</div>
+      <div className="text-subtle text-size-small">%</div>
     </div>
   );
 };
@@ -967,63 +932,51 @@ const BaseMapItem = ({
   readonly: boolean;
 }) => {
   const translate = useTranslate();
-  const isRaster = layerConfig.name.includes("Satellite");
-  const { applyChanges } = useLayerConfigState();
+  const isRaster =
+    layerConfig.type === "GOOGLE" || layerConfig.name.includes("Satellite");
+  const selectBasemap = useSelectBasemap();
   const layerConfigs = useAtomValue(layerConfigAtom);
   const items = [...layerConfigs.values()];
-  const nextAt = getNextAt(items);
   const userTracking = useUserTracking();
 
+  const basemapOptions = Object.entries(basemaps).map(([, mapboxLayer]) => ({
+    value: mapboxLayer.name,
+    label: isBasemapConfigured(mapboxLayer)
+      ? mapboxLayer.name
+      : `${mapboxLayer.name}: ${translate("googleMaps.keyRequired")}`,
+  }));
+  const handleBasemapChange = (name: string) => {
+    const newMapboxLayer = Object.values(basemaps).find((l) => l.name === name);
+    if (!newMapboxLayer) return;
+
+    const { oldMapboxLayer } = maybeDeleteOldMapboxLayer(items);
+    if (!selectBasemap(newMapboxLayer)) return;
+    userTracking.capture({
+      name: "baseMap.changed",
+      newBasemap: name,
+      oldBasemap: oldMapboxLayer ? oldMapboxLayer.name : "",
+      source: "dropdown",
+    });
+  };
+  const basemapStyleOptions = {
+    border: false,
+    paddingX: 0 as const,
+    paddingY: 0 as const,
+    textSize: "text-size-base" as const,
+  };
+
   const namePopover = (
-    <div className="flex items-center justify-start  gap-x-2 cursor-pointer">
-      <span className="select-none truncate text-sm w-auto">
+    <div className="flex items-center justify-start gap-x-2 cursor-pointer">
+      <span className="select-none truncate text-size-base w-auto">
         {readonly ? (
           layerConfig.name
         ) : (
           <Selector
             ariaLabel="basemaps"
-            options={Object.entries(basemaps).map(([, mapboxLayer]) => ({
-              value: mapboxLayer.name,
-              label: mapboxLayer.name,
-            }))}
+            options={basemapOptions}
             selected={layerConfig.name}
-            onChange={(name) => {
-              const newMapboxLayer = Object.values(basemaps).find(
-                (l) => l.name === name,
-              );
-              if (!newMapboxLayer) return;
-
-              const { deleteLayerConfigs, oldAt, oldMapboxLayer } =
-                maybeDeleteOldMapboxLayer(items);
-              userTracking.capture({
-                name: "baseMap.changed",
-                newBasemap: name,
-                oldBasemap: oldMapboxLayer ? oldMapboxLayer.name : "",
-                source: "dropdown",
-              });
-              applyChanges({
-                deleteLayerConfigs,
-                putLayerConfigs: [
-                  {
-                    ...newMapboxLayer,
-                    visibility: true,
-                    tms: false,
-                    opacity: newMapboxLayer.opacity,
-                    at: oldAt || nextAt,
-                    id: newFeatureId(),
-                    labelVisibility: layerConfig
-                      ? layerConfig.labelVisibility
-                      : true,
-                  },
-                ],
-              });
-            }}
-            styleOptions={{
-              border: false,
-              paddingX: 0,
-              paddingY: 0,
-              textSize: "text-sm",
-            }}
+            onChange={handleBasemapChange}
+            styleOptions={basemapStyleOptions}
           />
         )}
       </span>
@@ -1075,7 +1028,7 @@ const MapboxItem = ({
   return (
     <div className="flex-auto min-w-0">
       <div className="flex items-center min-w-0">
-        <span className="block select-none truncate flex-auto min-w-0 text-sm">
+        <span className="block select-none truncate flex-auto min-w-0 text-size-base">
           {layerConfig.name}
         </span>
         {editPopover}
@@ -1086,7 +1039,7 @@ const MapboxItem = ({
         <LabelsToggle layerConfig={layerConfig} disabled={readonly} />
         {!readonly && <DeleteLayerButton layerConfig={layerConfig} />}
       </div>
-      <div className="font-semibold text-xs text-gray-500">MAPBOX</div>
+      <div className="font-semibold text-size-small text-subtle">MAPBOX</div>
     </div>
   );
 };
@@ -1099,7 +1052,7 @@ const DeleteLayerButton = ({ layerConfig }: { layerConfig: ILayerConfig }) => {
   return (
     <Button
       variant="quiet/mode"
-      className="h-8 text-red-500"
+      className="h-8 text-error"
       aria-label={translate("delete")}
       onClick={() => {
         userTracking.capture({ name: "layer.removed", type: layerConfig.type });
@@ -1142,7 +1095,7 @@ const XYZItem = ({
 
   return (
     <LayerConfigItem typeLabel="XYZ">
-      <span className="block select-none truncate flex-auto text-sm">
+      <span className="block select-none truncate flex-auto text-size-base">
         {layerConfig.name}
       </span>
 
@@ -1190,16 +1143,19 @@ const TileJSONItem = ({
 
   return (
     <LayerConfigItem typeLabel="TILEJSON">
-      <span className="block select-none truncate flex-auto text-sm">
+      <span className="block select-none truncate flex-auto text-size-base">
         {layerConfig.name}
       </span>
       {isError ? (
-        <T.Root delayDuration={0}>
-          <T.Trigger>
-            <WarningIcon className="text-red-500 dark:text-red-300" />
-          </T.Trigger>
-          <E.TContent>This TileJSON source failed to load</E.TContent>
-        </T.Root>
+        <Tooltip
+          content="This TileJSON source failed to load"
+          side="top"
+          delayDuration={0}
+        >
+          <button type="button">
+            <WarningIcon className="text-error" />
+          </button>
+        </Tooltip>
       ) : null}
       {editPopover}
       <OpacitySetting layerConfig={layerConfig} readonly={readonly} />
@@ -1219,7 +1175,9 @@ const LayerConfigItem = ({
   return (
     <div className="flex-auto min-w-0">
       <div className="flex items-center min-w-0">{children}</div>
-      <div className="font-semibold text-xs text-gray-500">{typeLabel}</div>
+      <div className="font-semibold text-size-small text-subtle">
+        {typeLabel}
+      </div>
     </div>
   );
 };
@@ -1296,7 +1254,7 @@ const VectorFileItem = ({
       <E.StyledPopoverContent>
         <E.StyledPopoverArrow />
         <div className="space-y-2 min-w-[200px]">
-          <div className="font-bold text-sm pb-1">
+          <div className="font-bold text-size-base pb-1">
             {translate("customLayers.vectorFile")}
           </div>
           <InlineField
@@ -1354,8 +1312,8 @@ const VectorFileItem = ({
                   <NumericField
                     label={translate("customLayers.lineWidth")}
                     displayValue={localizeDecimal(layerConfig.lineWidth)}
-                    positiveOnly={true}
-                    isNullable={false}
+                    validate={numericChecks.positive}
+                    isRequired={true}
                     styleOptions={{ padding: "sm" }}
                     onChangeValue={(v) =>
                       applyChanges({
@@ -1382,8 +1340,8 @@ const VectorFileItem = ({
               <NumericField
                 label={translate("customLayers.opacity")}
                 displayValue={String(Math.round(layerConfig.opacity * 100))}
-                positiveOnly={true}
-                isNullable={false}
+                validate={numericChecks.positive}
+                isRequired={true}
                 styleOptions={{ padding: "sm" }}
                 onChangeValue={(v) =>
                   applyChanges({
@@ -1409,13 +1367,15 @@ const VectorFileItem = ({
                   {layerConfig.labelProperty ?? translate("none")}{" "}
                 </TextField>
               ) : (
-                <SelectorWithSearch
+                <Selector
+                  nullable
                   placeholder={translate("none")}
                   options={availableProperties.map((p) => ({
                     value: p,
                     label: p,
                   }))}
                   selected={layerConfig.labelProperty ?? null}
+                  minOptionsForSearch={1}
                   onChange={handleLabelPropertyChange}
                 />
               )}
@@ -1428,7 +1388,7 @@ const VectorFileItem = ({
 
   return (
     <LayerConfigItem typeLabel="Vector file">
-      <span className="block select-none truncate flex-auto text-sm">
+      <span className="block select-none truncate flex-auto text-size-base">
         {layerConfig.name}
       </span>
       {settingsPopover}
@@ -1436,7 +1396,7 @@ const VectorFileItem = ({
       {!readonly && (
         <Button
           variant="quiet/mode"
-          className="h-8 text-red-500"
+          className="h-8 text-error"
           aria-label={translate("delete")}
           onClick={handleDelete}
         >
@@ -1466,7 +1426,7 @@ function SortableLayerConfig({
     <div
       ref={setNodeRef}
       style={style}
-      className="group flex gap-x-2 items-start -ml-1 -mr-1"
+      className="group flex gap-x-2 items-start -ml-1"
       key={layerConfig.id}
     >
       {readonly ? (
@@ -1482,9 +1442,10 @@ function SortableLayerConfig({
           <Draggable />
         </div>
       )}
-      {layerConfig.type === "MAPBOX" && layerConfig.isBasemap && (
-        <BaseMapItem layerConfig={layerConfig} readonly={readonly} />
-      )}
+      {(layerConfig.type === "MAPBOX" || layerConfig.type === "GOOGLE") &&
+        layerConfig.isBasemap && (
+          <BaseMapItem layerConfig={layerConfig} readonly={readonly} />
+        )}
       {layerConfig.type === "MAPBOX" && !layerConfig.isBasemap && (
         <MapboxItem layerConfig={layerConfig} readonly={readonly} />
       )}
@@ -1631,7 +1592,7 @@ const LayerTypeButton = ({
 const UpgradeTag = () => {
   const translate = useTranslate();
   return (
-    <span className="bg-purple-100 text-purple-500 text-xs px-1 rounded-md">
+    <span className="bg-purple-100 text-accent text-size-small px-1 rounded-md">
       {translate("upgrade").toUpperCase()}
     </span>
   );

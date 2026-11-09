@@ -5,8 +5,8 @@ import {
   LinkAsset,
   Topology,
 } from "src/hydraulic-model";
-import { PathData } from "src/hydraulic-model/topology/types";
-import { ResultsReader } from "src/simulation/results-reader";
+import { PathData } from "@epanet-js/hydraulic-model";
+import { ResultsReader } from "@epanet-js/simulation";
 
 export const findProfilePath = (
   topology: Topology,

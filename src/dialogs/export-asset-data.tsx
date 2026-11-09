@@ -1,14 +1,17 @@
 import { useState, useCallback } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { stagingModelAtom } from "src/state/hydraulic-model";
 import { BaseDialog, SimpleDialogActions } from "src/components/dialog";
 import { useTranslate } from "src/hooks/use-translate";
 import { useExportAssetData } from "src/commands/export-asset-data";
-import { simulationDerivedAtom } from "src/state/derived-branch-state";
+import {
+  simulationDerivedAtom,
+  stagingModelDerivedAtom,
+} from "src/state/derived-branch-state";
 import { simulationStepAtom } from "src/state/simulation";
 import { dialogAtom } from "src/state/dialog";
 import { selectionAtom } from "src/state/selection";
 import { USelection } from "src/selection";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import type { ExportFormat } from "src/lib/export/types";
 
 const exportFormats: { value: ExportFormat; labelKey: string }[] = [
@@ -18,9 +21,11 @@ const exportFormats: { value: ExportFormat; labelKey: string }[] = [
   { value: "xlsx", labelKey: "exportXlsx" },
 ];
 
+const NO_ZONES: readonly number[] = [];
+
 export const ExportAssetDataDialog = ({ onClose }: { onClose: () => void }) => {
   const translate = useTranslate();
-  const model = useAtomValue(stagingModelAtom);
+  const model = useAtomValue(stagingModelDerivedAtom);
   const exportAssetData = useExportAssetData();
   const setDialogState = useSetAtom(dialogAtom);
   const simulation = useAtomValue(simulationDerivedAtom);
@@ -34,8 +39,16 @@ export const ExportAssetDataDialog = ({ onClose }: { onClose: () => void }) => {
   const reportingTimeStep = epsResultsReader?.reportingTimeStep ?? 3600;
 
   const selection = useAtomValue(selectionAtom);
-  const selectedIds = USelection.toIds(selection);
-  const hasSelection = selectedIds.length > 0;
+  const selectedAssetIds = USelection.getAssetIds(selection);
+  const selectedCustomerPointIds = USelection.getCustomerPointIds(selection);
+  const isZoneExportOn = useFeatureFlag("FLAG_ZONE_CUSTOM_ATTRIBUTES");
+  const selectedZoneIds = isZoneExportOn
+    ? USelection.getZoneIds(selection)
+    : NO_ZONES;
+  const hasSelection =
+    selectedAssetIds.length > 0 ||
+    selectedCustomerPointIds.length > 0 ||
+    selectedZoneIds.length > 0;
 
   const [format, setFormat] = useState<ExportFormat>("geojson");
   const [includeSimulationResults, setIncludeSimulationResults] =
@@ -43,20 +56,32 @@ export const ExportAssetDataDialog = ({ onClose }: { onClose: () => void }) => {
   const [selectedAssetsOnly, setSelectedAssetsOnly] = useState(false);
 
   const handleExport = useCallback(async () => {
-    const selectedAssets = selectedAssetsOnly
-      ? new Set(selectedIds)
-      : new Set<number>();
+    const assetIdFilter = selectedAssetsOnly
+      ? new Set<number>(selectedAssetIds)
+      : null;
+    const customerPointIdFilter = selectedAssetsOnly
+      ? new Set<number>(selectedCustomerPointIds)
+      : null;
+    const zoneIdFilter = selectedAssetsOnly
+      ? new Set<number>(selectedZoneIds)
+      : null;
     setDialogState(null);
 
     await exportAssetData({
       format,
       includeSimulationResults,
       simulationStep,
-      selectedAssets,
+      assetIdFilter,
+      customerPointIdFilter,
+      includeZones: isZoneExportOn,
+      zoneIdFilter,
     });
   }, [
     selectedAssetsOnly,
-    selectedIds,
+    selectedAssetIds,
+    selectedCustomerPointIds,
+    selectedZoneIds,
+    isZoneExportOn,
     setDialogState,
     exportAssetData,
     format,
@@ -84,7 +109,7 @@ export const ExportAssetDataDialog = ({ onClose }: { onClose: () => void }) => {
         }
       >
         <div className="p-4">
-          <p className="text-sm text-gray-700">
+          <p className="text-size-base text-default">
             {translate("exportAssetData.noAssets")}
           </p>
         </div>
@@ -111,13 +136,13 @@ export const ExportAssetDataDialog = ({ onClose }: { onClose: () => void }) => {
     >
       <div className="p-4 space-y-4">
         <div className="space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
+          <label className="block text-size-base font-medium text-default">
             {translate("exportFormat")}
           </label>
           <select
             value={format}
             onChange={(e) => setFormat(e.target.value as ExportFormat)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-hidden focus:ring-1 focus:ring-purple-500"
+            className="w-full px-3 py-2 border border-strong rounded-sm text-size-base focus:outline-hidden focus:ring-1 focus:ring-accent"
           >
             {exportFormats.map(({ value, labelKey }) => (
               <option key={value} value={value}>
@@ -127,7 +152,7 @@ export const ExportAssetDataDialog = ({ onClose }: { onClose: () => void }) => {
           </select>
         </div>
 
-        <div className="border-t border-gray-200 pt-4 space-y-3">
+        <div className="border-t pt-4 space-y-3">
           <label
             className={`flex items-center gap-x-2 w-max ${hasSimulationResults ? "cursor-pointer" : "cursor-not-allowed opacity-50"}`}
           >
@@ -136,9 +161,9 @@ export const ExportAssetDataDialog = ({ onClose }: { onClose: () => void }) => {
               checked={includeSimulationResults}
               disabled={!hasSimulationResults}
               onChange={(e) => setIncludeSimulationResults(e.target.checked)}
-              className="rounded-sm text-purple-600 focus:ring-purple-500"
+              className="rounded-sm text-accent-hover focus:ring-accent"
             />
-            <span className="text-sm text-gray-700">
+            <span className="text-size-base text-default">
               {includeSimulationResultsLabelText}
             </span>
           </label>
@@ -150,9 +175,9 @@ export const ExportAssetDataDialog = ({ onClose }: { onClose: () => void }) => {
               checked={selectedAssetsOnly}
               disabled={!hasSelection}
               onChange={(e) => setSelectedAssetsOnly(e.target.checked)}
-              className="rounded-sm text-purple-600 focus:ring-purple-500"
+              className="rounded-sm text-accent-hover focus:ring-accent"
             />
-            <span className="text-sm text-gray-700">
+            <span className="text-size-base text-default">
               {translate("exportSelectedAssetsOnly")}
             </span>
           </label>

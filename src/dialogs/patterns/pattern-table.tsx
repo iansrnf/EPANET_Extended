@@ -153,6 +153,7 @@ export const PatternTable = forwardRef<DataGridRef, PatternTableProps>(
         {
           label: translate("delete"),
           icon: <DeleteIcon size="sm" />,
+          variant: "destructive" as const,
           onSelect: handleDeleteRow,
           disabled: () => rowData.length <= 1,
         },
@@ -186,8 +187,7 @@ export const PatternTable = forwardRef<DataGridRef, PatternTableProps>(
         floatColumn("multiplier", {
           header: translate("multiplier"),
           size: 82,
-          deleteValue: DEFAULT_MULTIPLIER,
-          nullValue: 0,
+          emptyValue: 0,
         }),
       ],
       [translate],

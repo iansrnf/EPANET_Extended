@@ -5,17 +5,14 @@ import { useHglProfileHandlers } from "./hgl-profile";
 import { useDrawNodeHandlers } from "./draw-node";
 import { useDrawLinkHandlers } from "./draw-link";
 import { useDrawCustomerPointHandlers } from "./draw-customer-point";
-import { useDrawPressureLoggerHandlers } from "./draw-pressure-logger";
 import { useConnectCustomerPointsHandlers } from "./connect-customer-points";
 import { useRedrawLinkHandlers } from "./redraw-link";
 import { useAreaSelectionHandlers } from "./area-selection";
 import { useTraceSelectHandlers } from "./trace-select";
 
 export function useModeHandlers(handlerContext: HandlerContext) {
-  const noneHandlers = useNoneHandlers(handlerContext);
-
   const HANDLERS: Record<Mode, Handlers> = {
-    [Mode.NONE]: noneHandlers,
+    [Mode.NONE]: useNoneHandlers(handlerContext),
     [Mode.SELECT_RECTANGULAR]: useAreaSelectionHandlers({
       ...handlerContext,
       selectionMode: "rectangular",
@@ -53,7 +50,6 @@ export function useModeHandlers(handlerContext: HandlerContext) {
       linkType: "valve",
     }),
     [Mode.DRAW_CUSTOMER_POINT]: useDrawCustomerPointHandlers(handlerContext),
-    [Mode.DRAW_PRESSURE_LOGGER]: useDrawPressureLoggerHandlers(handlerContext),
     [Mode.CONNECT_CUSTOMER_POINTS]:
       useConnectCustomerPointsHandlers(handlerContext),
     [Mode.REDRAW_LINK]: useRedrawLinkHandlers(handlerContext),

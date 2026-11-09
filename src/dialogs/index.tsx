@@ -1,497 +1,92 @@
-import dynamic from "next/dynamic";
 import { memo, useCallback, useRef } from "react";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { dialogAtom } from "src/state/dialog";
+import { recoverableSessionsAtom } from "src/state/session-recovery";
 import { match } from "ts-pattern";
 import * as dialogState from "src/state/dialog";
-import type { Projection } from "src/lib/projections";
-import { ParserIssues } from "src/import/inp";
 import { useUserTracking } from "src/infra/user-tracking";
 import { LoadingDialog } from "../components/dialog";
 import { WelcomeDialog } from "./welcome";
+import { SessionRecoveryDialog } from "./session-recovery";
 import { AppLoadFailedDialog } from "./app-load-failed";
-
-const SimulationSettingsDialog = dynamic(
-  () =>
-    import("src/dialogs/simulation-settings").then(
-      (r) => r.SimulationSettingsDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const UpgradeDialog = dynamic<{
-  onClose: () => void;
-  source?: dialogState.UpgradeSource;
-}>(() => import("src/dialogs/upgrade").then((r) => r.UpgradeDialog), {
-  loading: () => <LoadingDialog />,
-});
-
-const InvalidFilesErrorDialog = dynamic<{
-  modal: dialogState.InvalidFilesErrorDialogState;
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/invalid-files-error").then(
-      (r) => r.InvalidFilesErrorDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const InpIssuesDialog = dynamic<{
-  issues: ParserIssues;
-  onClose: () => void;
-}>(() => import("src/dialogs/inp-issues").then((r) => r.InpIssuesDialog), {
-  loading: () => <LoadingDialog />,
-});
-
-const NetworkProjectionDialog = dynamic<{
-  source: "import" | "map-panel";
-  previewGeoJson: import("geojson").FeatureCollection;
-  onImportWithProjection: (
-    projection: Projection,
-    extent?: import("geojson").BBox,
-  ) => void;
-  filename: string;
-  flowUnits: string;
-  initialProjection?: import("src/lib/projections").Proj4Projection;
-  suggestedXyScale?: number;
-}>(
-  () =>
-    import("src/dialogs/network-projection").then(
-      (r) => r.NetworkProjectionDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const MissingCoordinatesDialog = dynamic<{
-  issues: ParserIssues;
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/inp-issues").then((r) => r.MissingCoordinatesDialog),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const CreateNewDialog = dynamic(
-  () => import("src/dialogs/create-new").then((r) => r.CreateNew),
-  { loading: () => <LoadingDialog /> },
-);
-
-const SimulationReportDialog = dynamic(
-  () =>
-    import("src/dialogs/simulation-report").then(
-      (r) => r.SimulationReportDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const SimulationSummaryDialog = dynamic<{
-  modal: dialogState.SimulationSummaryState;
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/simulation-summary").then(
-      (r) => r.SimulationSummaryDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const UnsavedChangesDialog = dynamic<{
-  onContinue: () => void;
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/unsaved-changes").then((r) => r.UnsavedChangesDialog),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const AlertInpOutputDialog = dynamic<{
-  onContinue: () => void;
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/alert-inp-output").then((r) => r.AlertInpOutputDialog),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const AlertExportInpDialog = dynamic<{
-  onSaveProject: () => void;
-  onExportAnyway: () => void;
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/alert-export-inp").then((r) => r.AlertExportInpDialog),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const ProjectSavedInfoDialog = dynamic<{
-  onConfirm: () => void;
-  onCancel?: () => void;
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/project-saved-info").then(
-      (r) => r.ProjectSavedInfoDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const FileFormatUpdatedDialog = dynamic<{
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/file-format-updated").then(
-      (r) => r.FileFormatUpdatedDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const AlertScenariosNotSavedDialog = dynamic<{
-  onContinue: () => void;
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/alert-scenarios-not-saved").then(
-      (r) => r.AlertScenariosNotSavedDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const AlertNetworkRequiredDialog = dynamic<{
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/alert-network-required").then(
-      (r) => r.AlertNetworkRequiredDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const CheatsheetDialog = dynamic<Record<string, never>>(
-  () => import("src/dialogs/cheatsheet").then((r) => r.CheatsheetDialog),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const UnexpectedErrorDialog = dynamic<{
-  modal: dialogState.UnexpectedErrorDialogState;
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/unexpected-error").then((r) => r.UnexpectedErrorDialog),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const ImportCustomerPointsWizard = dynamic<{
-  isOpen: boolean;
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/import-customer-points-wizard").then(
-      (r) => r.ImportCustomerPointsWizard,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const ModelBuilderIframeDialog = dynamic<{
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/model-builder-iframe").then(
-      (r) => r.ModelBuilderIframeDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const ModelBuilderApiDialog = dynamic<{
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/model-builder-api").then(
-      (r) => r.ModelBuilderApiDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const EarlyAccessDialog = dynamic<{
-  onContinue: () => void;
-  afterSignupDialog?: string;
-}>(() => import("src/dialogs/early-access").then((r) => r.EarlyAccessDialog), {
-  loading: () => <LoadingDialog />,
-});
-
-const ImportCustomerPointsWarningDialog = dynamic<{
-  onContinue: () => void;
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/import-customer-points-warning").then(
-      (r) => r.ImportCustomerPointsWarningDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const SimulationProgressDialog = dynamic<{
-  modal: dialogState.SimulationProgressDialogState;
-}>(
-  () =>
-    import("src/dialogs/simulation-progress").then(
-      (r) => r.SimulationProgressDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const OpenProjectProgressDialog = dynamic<{
-  modal: dialogState.OpenProjectProgressDialogState;
-}>(
-  () =>
-    import("src/dialogs/open-project-progress").then(
-      (r) => r.OpenProjectProgressDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const ControlsDialog = dynamic(
-  () => import("src/dialogs/controls-dialog").then((r) => r.ControlsDialog),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const PatternsDialog = dynamic<{
-  initialPatternId?: number;
-  initialSection?:
-    | "demand"
-    | "reservoirHead"
-    | "pumpSpeed"
-    | "qualitySourceStrength"
-    | "energyPrice";
-}>(() => import("src/dialogs/patterns").then((r) => r.PatternsDialog), {
-  loading: () => <LoadingDialog />,
-});
-
-const PumpLibraryDialog = dynamic<{
-  initialCurveId?: number;
-  initialSection?: "pump" | "efficiency";
-}>(() => import("src/dialogs/pump-library").then((r) => r.PumpLibraryDialog), {
-  loading: () => <LoadingDialog />,
-});
-
-const CurveLibraryDialog = dynamic<{
-  initialCurveId?: number;
-  initialSection?: "volume" | "valve" | "headloss";
-}>(() => import("src/dialogs/curves").then((r) => r.CurveLibraryDialog), {
-  loading: () => <LoadingDialog />,
-});
-
-const DeleteScenarioConfirmationDialog = dynamic<{
-  scenarioId: string;
-  scenarioName: string;
-  onConfirm: (scenarioId: string) => void;
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/delete-scenario-confirmation").then(
-      (r) => r.DeleteScenarioConfirmationDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const RenameScenarioDialog = dynamic<{
-  scenarioId: string;
-  currentName: string;
-  onConfirm: (scenarioId: string, newName: string) => void;
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/rename-scenario").then((r) => r.RenameScenarioDialog),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const ScenariosPaywallConnector = dynamic<{
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/paywall/scenarios-connector").then(
-      (r) => r.ScenariosPaywallConnector,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const ElevationsPaywallConnector = dynamic<{
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/paywall/elevations-connector").then(
-      (r) => r.ElevationsPaywallConnector,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const CustomLayersPaywallConnector = dynamic<{
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/paywall/custom-layers-connector").then(
-      (r) => r.CustomLayersPaywallConnector,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const ElevationTileErrorsDialog = dynamic<{
-  totalCount: number;
-  errors: { fileName: string; error: string }[];
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/elevation-tile-errors").then(
-      (r) => r.ElevationTileErrorsDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const GisImportErrorsDialog = dynamic<{
-  totalCount: number;
-  errors: { fileName: string; error: string }[];
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/gis-import-errors").then(
-      (r) => r.GisImportErrorsDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const ActivatingTrialDialog = dynamic(
-  () =>
-    import("src/dialogs/activating-trial").then((r) => r.ActivatingTrialDialog),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const ExportAssetDataDialog = dynamic<{
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/export-asset-data").then(
-      (r) => r.ExportAssetDataDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const ExportTimeSeriesDialog = dynamic<{
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/export-simulation-results").then(
-      (r) => r.ExportSimulationResultsDialog,
-    ),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const FirstScenarioDialog = dynamic<{
-  onConfirm: () => void;
-  onClose: () => void;
-}>(
-  () => import("src/dialogs/first-scenario").then((r) => r.FirstScenarioDialog),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const ProfileNoPathDialog = dynamic<{
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/profile-no-path").then((r) => r.ProfileNoPathDialog),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const CustomGraphDialog = dynamic<{
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/custom-graph-dialog").then((r) => r.CustomGraphDialog),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
-
-const PriorityAccessDialog = dynamic<{
-  featureName: string;
-  onClose: () => void;
-}>(
-  () =>
-    import("src/dialogs/priority-access").then((r) => r.PriorityAccessDialog),
-  {
-    loading: () => <LoadingDialog />,
-  },
-);
+import { DbUnavailableDialog } from "./db-unavailable";
+import { RebuildStorageProgressDialog } from "./rebuild-storage-progress";
+import { SimulationSettingsDialog } from "src/dialogs/simulation-settings";
+import { UpgradeDialog } from "src/dialogs/upgrade";
+import { InvalidFilesErrorDialog } from "src/dialogs/invalid-files-error";
+import { FileReadErrorDialog } from "src/dialogs/file-read-error";
+import {
+  InpIssuesDialog,
+  MissingCoordinatesDialog,
+  MalformedCoordinatesDialog,
+} from "src/dialogs/inp-issues";
+import {
+  ConvertModelFailedDialog,
+  ConvertModelIssuesDialog,
+} from "src/dialogs/convert-model-issues";
+import { NetworkProjectionDialog } from "src/dialogs/network-projection";
+import { CreateNew as CreateNewDialog } from "src/dialogs/create-new";
+import { SimulationReportDialog } from "src/dialogs/simulation-report";
+import { SimulationSummaryDialog } from "src/dialogs/simulation-summary";
+import { SimulationOutOfMemoryDialog } from "src/dialogs/simulation-out-of-memory";
+import { SimulationStorageErrorDialog } from "src/dialogs/simulation-storage-error";
+import { UnsavedChangesDialog } from "src/dialogs/unsaved-changes";
+import { AlertInpOutputDialog } from "src/dialogs/alert-inp-output";
+import { AlertExportInpDialog } from "src/dialogs/alert-export-inp";
+import { ProjectSavedInfoDialog } from "src/dialogs/project-saved-info";
+import { FileFormatUpdatedDialog } from "src/dialogs/file-format-updated";
+import { AlertNetworkRequiredDialog } from "src/dialogs/alert-network-required";
+import { CheatsheetDialog } from "src/dialogs/cheatsheet";
+import { ScriptRunDialog } from "src/dialogs/script-run";
+import { UnexpectedErrorDialog } from "src/dialogs/unexpected-error";
+import { ChangeNotAppliedDialog } from "src/dialogs/change-not-applied";
+import { ImportCustomerPointsWizard } from "src/dialogs/import-customer-points-wizard";
+import { EarlyAccessDialog } from "src/dialogs/early-access";
+import { ImportCustomerPointsWarningDialog } from "src/dialogs/import-customer-points-warning";
+import { ImportZonesWarningDialog } from "src/dialogs/import-zones-warning";
+import { SimulationProgressDialog } from "src/dialogs/simulation-progress";
+import { OpenProjectProgressDialog } from "src/dialogs/open-project-progress";
+import { LoadingScenarioDialog } from "src/dialogs/loading-scenario";
+import { ControlsDialog } from "src/dialogs/controls-dialog";
+import { PatternsDialog } from "src/dialogs/patterns";
+import { PipeLibraryDialog } from "src/dialogs/pipe-library";
+import { PumpLibraryDialog } from "src/dialogs/pump-library";
+import { CurveLibraryDialog } from "src/dialogs/curves";
+import { CustomAttributesDialog } from "src/dialogs/custom-attributes";
+import { DeleteScenarioConfirmationDialog } from "src/dialogs/delete-scenario-confirmation";
+import { DeleteScriptConfirmationDialog } from "src/dialogs/delete-script-confirmation";
+import { DeleteSelectionSetGroupConfirmationDialog } from "src/dialogs/delete-selection-set-group-confirmation";
+import { RenameScenarioDialog } from "src/dialogs/rename-scenario";
+import { ScenarioSignInDialog } from "src/dialogs/scenario-sign-in";
+import { ScenariosPaywallConnector } from "src/dialogs/paywall/scenarios-connector";
+import { ElevationsPaywallConnector } from "src/dialogs/paywall/elevations-connector";
+import { CustomLayersPaywallConnector } from "src/dialogs/paywall/custom-layers-connector";
+import { PipeLibraryPaywallConnector } from "src/dialogs/paywall/pipe-library-connector";
+import { CustomAttributesPaywallConnector } from "src/dialogs/paywall/custom-attributes-connector";
+import { ConvertModelPaywallConnector } from "src/dialogs/paywall/convert-model-connector";
+import { ModelBuilderPaywallConnector } from "src/dialogs/paywall/model-builder-connector";
+import { ScriptingPaywallConnector } from "src/dialogs/paywall/scripting-connector";
+import { ElevationTileErrorsDialog } from "src/dialogs/elevation-tile-errors";
+import { GisImportErrorsDialog } from "src/dialogs/gis-import-errors";
+import { ActivatingTrialDialog } from "src/dialogs/activating-trial";
+import { WaitingForPaymentDialog } from "src/dialogs/waiting-for-payment";
+import { ExportAssetDataDialog } from "src/dialogs/export-asset-data";
+import { OpenDataTablesDialog } from "src/dialogs/open-data-tables";
+import { ExportSimulationResultsDialog as ExportTimeSeriesDialog } from "src/dialogs/export-simulation-results";
+import { FirstScenarioDialog } from "src/dialogs/first-scenario";
+import { CustomGraphDialog } from "src/dialogs/custom-graph-dialog";
+import { PriorityAccessDialog } from "src/dialogs/priority-access";
+import { AllocateCustomerPointsDialog } from "src/dialogs/allocate-customer-points";
+import { RecalculateAllElevationsConfirmDialog } from "src/dialogs/recalculate-all-elevations-confirm-dialog";
+import { RecomputeElevationsProgressDialog } from "src/dialogs/recompute-elevations-progress-dialog";
+import { AllocateCustomerPointsWarningDialog } from "src/dialogs/allocate-customer-points-warning";
+import { PreSimulationChecksDialog } from "src/dialogs/pre-simulation-checks";
+import { ImportZonesDialog } from "src/dialogs/import-zones-wizard";
 
 export const Dialogs = memo(function Dialogs() {
   const [dialog, setDialogState] = useAtom(dialogAtom);
+  const recoverableSessions = useAtomValue(recoverableSessionsAtom);
+  const hasRecoverableSession = recoverableSessions.length > 0;
   const userTracking = useUserTracking();
   const onClose = useCallback(() => {
     setDialogState(null);
@@ -505,9 +100,13 @@ export const Dialogs = memo(function Dialogs() {
     return <AppLoadFailedDialog modal={dialog} />;
   }
 
+  if (dialog.type === "dbUnavailable") {
+    return <DbUnavailableDialog />;
+  }
+
   if (previousDialog.current !== dialog && !!dialog) {
     if (previousDialog.current?.type !== dialog.type) {
-      if (dialog.type === "welcome") {
+      if (dialog.type === "welcome" && !hasRecoverableSession) {
         userTracking.capture({ name: "welcome.seen" });
       }
       if (dialog.type === "unsavedChanges") {
@@ -515,6 +114,9 @@ export const Dialogs = memo(function Dialogs() {
       }
       if (dialog.type === "inpMissingCoordinates") {
         userTracking.capture({ name: "missingCoordinates.seen" });
+      }
+      if (dialog.type === "inpMalformedCoordinates") {
+        userTracking.capture({ name: "malformedCoordinates.seen" });
       }
       if (dialog.type === "networkProjection") {
         userTracking.capture({
@@ -525,6 +127,12 @@ export const Dialogs = memo(function Dialogs() {
       if (dialog.type === "inpIssues") {
         userTracking.capture({ name: "inpIssues.seen" });
       }
+      if (dialog.type === "convertModelFailed") {
+        userTracking.capture({ name: "convertModelFailed.seen" });
+      }
+      if (dialog.type === "convertModelIssues") {
+        userTracking.capture({ name: "convertModelIssues.seen" });
+      }
       if (dialog.type === "simulationSummary") {
         userTracking.capture({
           name: "simulationSummary.seen",
@@ -533,11 +141,28 @@ export const Dialogs = memo(function Dialogs() {
           qualityType: dialog.qualityType,
         });
       }
+      if (dialog.type === "simulationOutOfMemory") {
+        userTracking.capture({ name: "simulationOutOfMemory.seen" });
+      }
+      if (dialog.type === "simulationStorageError") {
+        userTracking.capture({ name: "simulationStorageError.seen" });
+      }
       if (dialog.type === "unexpectedError") {
         userTracking.capture({ name: "unexpectedError.seen" });
       }
       if (dialog.type === "featurePaywall") {
-        userTracking.capture({ name: "paywall.seen", feature: dialog.feature });
+        userTracking.capture({
+          name: "paywall.seen",
+          feature: dialog.feature,
+          type: "paywall",
+        });
+      }
+      if (dialog.type === "upgrade") {
+        userTracking.capture({
+          name: "upgradeDialog.seen",
+          source: dialog.source ?? "upgrade",
+          sourceFeature: dialog.feature ?? "upgradeMenu",
+        });
       }
       if (dialog.type === "priorityAccess") {
         userTracking.capture({
@@ -561,20 +186,52 @@ export const Dialogs = memo(function Dialogs() {
   if (dialog.type === "simulationSummary") {
     return <SimulationSummaryDialog modal={dialog} onClose={onClose} />;
   }
+  if (dialog.type === "simulationOutOfMemory") {
+    return <SimulationOutOfMemoryDialog onClose={onClose} />;
+  }
+  if (dialog.type === "simulationStorageError") {
+    return <SimulationStorageErrorDialog onClose={onClose} />;
+  }
   if (dialog.type === "importCustomerPointsWizard") {
     return <ImportCustomerPointsWizard isOpen={true} onClose={onClose} />;
   }
-  if (dialog.type === "modelBuilderIframe") {
-    return <ModelBuilderIframeDialog onClose={onClose} />;
+  if (dialog.type === "allocateCustomerPoints") {
+    return <AllocateCustomerPointsDialog isOpen={true} onClose={onClose} />;
   }
-  if (dialog.type === "modelBuilderApi") {
-    return <ModelBuilderApiDialog onClose={onClose} />;
+  if (dialog.type === "recalculateAllElevationsConfirm") {
+    return (
+      <RecalculateAllElevationsConfirmDialog
+        onConfirm={dialog.onConfirm}
+        onClose={onClose}
+      />
+    );
+  }
+  if (dialog.type === "recomputeElevationsProgress") {
+    return (
+      <RecomputeElevationsProgressDialog modal={dialog} onClose={onClose} />
+    );
+  }
+  if (dialog.type === "allocateCustomerPointsWarning") {
+    return (
+      <AllocateCustomerPointsWarningDialog
+        onImport={dialog.onImport}
+        onClose={onClose}
+      />
+    );
+  }
+  if (dialog.type === "preSimulationChecks") {
+    return <PreSimulationChecksDialog modal={dialog} onClose={onClose} />;
   }
   if (dialog.type === "unexpectedError") {
     return <UnexpectedErrorDialog modal={dialog} onClose={onClose} />;
   }
+  if (dialog.type === "changeNotApplied") {
+    return <ChangeNotAppliedDialog onClose={onClose} />;
+  }
   if (dialog.type === "welcome") {
-    return <WelcomeDialog />;
+    if (!hasRecoverableSession) return <WelcomeDialog />;
+
+    return <SessionRecoveryDialog />;
   }
   if (dialog.type === "loading") {
     return <LoadingDialog />;
@@ -584,6 +241,15 @@ export const Dialogs = memo(function Dialogs() {
   }
   if (dialog.type === "openProjectProgress") {
     return <OpenProjectProgressDialog modal={dialog} />;
+  }
+  if (dialog.type === "loadingScenario") {
+    return <LoadingScenarioDialog modal={dialog} />;
+  }
+  if (dialog.type === "rebuildStorageProgress") {
+    return <RebuildStorageProgressDialog modal={dialog} onClose={onClose} />;
+  }
+  if (dialog.type === "scriptRun") {
+    return <ScriptRunDialog onClose={onClose} />;
   }
   if (dialog.type === "controls") {
     return <ControlsDialog />;
@@ -595,6 +261,9 @@ export const Dialogs = memo(function Dialogs() {
         initialSection={dialog.initialSection}
       />
     );
+  }
+  if (dialog.type === "pipeLibrary") {
+    return <PipeLibraryDialog />;
   }
   if (dialog.type === "pumpLibrary") {
     return (
@@ -612,17 +281,47 @@ export const Dialogs = memo(function Dialogs() {
       />
     );
   }
+  if (dialog.type === "customAttributes") {
+    return (
+      <CustomAttributesDialog initialAssetType={dialog.initialAssetType} />
+    );
+  }
 
   if (dialog.type === "upgrade") {
-    return <UpgradeDialog onClose={onClose} source={dialog.source} />;
+    return <UpgradeDialog feature={dialog.feature} source={dialog.source} />;
   }
 
   if (dialog.type === "featurePaywall") {
     if (dialog.feature === "scenarios") {
       return <ScenariosPaywallConnector onClose={onClose} />;
     }
+    if (dialog.feature === "manageScenarios") {
+      return (
+        <ScenariosPaywallConnector
+          feature="manageScenarios"
+          onClose={onClose}
+        />
+      );
+    }
     if (dialog.feature === "customLayers") {
       return <CustomLayersPaywallConnector onClose={onClose} />;
+    }
+    if (dialog.feature === "pipeLibrary") {
+      return <PipeLibraryPaywallConnector onClose={onClose} />;
+    }
+    if (dialog.feature === "customAttributes") {
+      return <CustomAttributesPaywallConnector onClose={onClose} />;
+    }
+    if (dialog.feature === "convertModel") {
+      return <ConvertModelPaywallConnector onClose={onClose} />;
+    }
+    if (dialog.feature === "modelBuilder") {
+      return <ModelBuilderPaywallConnector onClose={onClose} />;
+    }
+    if (dialog.feature === "runScripts" || dialog.feature === "editScripts") {
+      return (
+        <ScriptingPaywallConnector feature={dialog.feature} onClose={onClose} />
+      );
     }
     return <ElevationsPaywallConnector onClose={onClose} />;
   }
@@ -651,6 +350,10 @@ export const Dialogs = memo(function Dialogs() {
     return <ActivatingTrialDialog />;
   }
 
+  if (dialog.type === "waitingForPayment") {
+    return <WaitingForPaymentDialog />;
+  }
+
   if (dialog.type === "firstScenario") {
     return (
       <FirstScenarioDialog onConfirm={dialog.onConfirm} onClose={onClose} />
@@ -659,6 +362,10 @@ export const Dialogs = memo(function Dialogs() {
 
   if (dialog.type === "exportAssetData") {
     return <ExportAssetDataDialog onClose={onClose} />;
+  }
+
+  if (dialog.type === "openDataTables") {
+    return <OpenDataTablesDialog onClose={onClose} />;
   }
 
   if (dialog.type === "exportTimeSeries") {
@@ -673,6 +380,19 @@ export const Dialogs = memo(function Dialogs() {
     return (
       <PriorityAccessDialog
         featureName={dialog.featureName}
+        onClose={onClose}
+      />
+    );
+  }
+
+  if (dialog.type === "importZones") {
+    return <ImportZonesDialog onClose={onClose} />;
+  }
+
+  if (dialog.type === "importZonesWarning") {
+    return (
+      <ImportZonesWarningDialog
+        onContinue={dialog.onContinue}
         onClose={onClose}
       />
     );
@@ -716,16 +436,13 @@ export const Dialogs = memo(function Dialogs() {
     .with({ type: "fileFormatUpdated" }, () => (
       <FileFormatUpdatedDialog onClose={onClose} />
     ))
-    .with({ type: "alertScenariosNotSaved" }, ({ onContinue }) => (
-      <AlertScenariosNotSavedDialog onContinue={onContinue} onClose={onClose} />
-    ))
     .with({ type: "alertNetworkRequired" }, () => (
       <AlertNetworkRequiredDialog onClose={onClose} />
     ))
-    .with({ type: "earlyAccess" }, ({ onContinue, afterSignupDialog }) => (
+    .with({ type: "earlyAccess" }, ({ onContinue, afterSignupUrl }) => (
       <EarlyAccessDialog
         onContinue={onContinue}
-        afterSignupDialog={afterSignupDialog}
+        afterSignupUrl={afterSignupUrl}
       />
     ))
     .with({ type: "importCustomerPointsWarning" }, ({ onContinue }) => (
@@ -734,8 +451,11 @@ export const Dialogs = memo(function Dialogs() {
         onClose={onClose}
       />
     ))
-    .with({ type: "invalidFilesError" }, (modal) => (
-      <InvalidFilesErrorDialog modal={modal} onClose={onClose} />
+    .with({ type: "invalidFilesError" }, () => (
+      <InvalidFilesErrorDialog onClose={onClose} />
+    ))
+    .with({ type: "fileReadError" }, ({ fileName }) => (
+      <FileReadErrorDialog fileName={fileName} onClose={onClose} />
     ))
     .with({ type: "cheatsheet" }, () => <CheatsheetDialog />)
     .with({ type: "inpIssues" }, ({ issues, onAfterClose }) => (
@@ -750,6 +470,15 @@ export const Dialogs = memo(function Dialogs() {
     .with({ type: "inpMissingCoordinates" }, ({ issues }) => (
       <MissingCoordinatesDialog issues={issues} onClose={onClose} />
     ))
+    .with({ type: "inpMalformedCoordinates" }, ({ issues }) => (
+      <MalformedCoordinatesDialog issues={issues} onClose={onClose} />
+    ))
+    .with({ type: "convertModelFailed" }, ({ issues }) => (
+      <ConvertModelFailedDialog issues={issues} onClose={onClose} />
+    ))
+    .with({ type: "convertModelIssues" }, ({ issues }) => (
+      <ConvertModelIssuesDialog issues={issues} onClose={onClose} />
+    ))
     .with(
       { type: "deleteScenarioConfirmation" },
       ({ scenarioId, scenarioName, onConfirm }) => (
@@ -761,6 +490,19 @@ export const Dialogs = memo(function Dialogs() {
         />
       ),
     )
+    .with({ type: "deleteScriptConfirmation" }, ({ scriptId, scriptName }) => (
+      <DeleteScriptConfirmationDialog
+        scriptId={scriptId}
+        scriptName={scriptName}
+        onClose={onClose}
+      />
+    ))
+    .with({ type: "deleteSelectionSetGroupConfirmation" }, ({ groupId }) => (
+      <DeleteSelectionSetGroupConfirmationDialog
+        groupId={groupId}
+        onClose={onClose}
+      />
+    ))
     .with(
       { type: "renameScenario" },
       ({ scenarioId, currentName, onConfirm }) => (
@@ -772,8 +514,8 @@ export const Dialogs = memo(function Dialogs() {
         />
       ),
     )
-    .with({ type: "profileNoPath" }, () => (
-      <ProfileNoPathDialog onClose={onClose} />
+    .with({ type: "scenarioSignIn" }, ({ source }) => (
+      <ScenarioSignInDialog source={source} onClose={onClose} />
     ))
     .exhaustive();
 

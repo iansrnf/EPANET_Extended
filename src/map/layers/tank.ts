@@ -17,6 +17,14 @@ export const tankLayers = ({
             "symbol-placement": "point",
             "icon-image": [
               "case",
+              [
+                "all",
+                ["==", ["get", "selected"], true],
+                ["==", ["get", "isActive"], false],
+              ],
+              "tank-disabled-selected",
+              ["==", ["get", "selected"], true],
+              "tank-selected",
               ["==", ["get", "isActive"], false],
               "tank-disabled",
               "tank",

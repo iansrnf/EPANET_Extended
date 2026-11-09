@@ -1,6 +1,12 @@
 import { useRef } from "react";
 import { Position, HandlerContext } from "src/types";
-import { useSelection } from "src/selection";
+import { useSelection, USelection } from "src/selection";
+import { useAtomValue, useSetAtom } from "jotai";
+import { selectionAtom } from "src/state/selection";
+import {
+  customerPointsVisibleAtom,
+  zonesVisibleAtom,
+} from "src/state/map-symbology";
 import { runQuery } from "./run-query";
 import { captureError } from "src/infra/error-tracking";
 
@@ -8,6 +14,9 @@ export const useAreaSelection = (context: HandlerContext) => {
   const { selection, hydraulicModel } = context;
   const { selectAssets, clearSelection, extendSelection, removeFromSelection } =
     useSelection(selection);
+  const setSelection = useSetAtom(selectionAtom);
+  const customerPointsVisible = useAtomValue(customerPointsVisibleAtom);
+  const zonesVisible = useAtomValue(zonesVisibleAtom);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const abort = () => {
@@ -26,28 +35,47 @@ export const useAreaSelection = (context: HandlerContext) => {
     abortControllerRef.current = controller;
 
     try {
-      const assetIds = await runQuery(
+      const { assetIds, customerPointIds, zoneIds } = await runQuery(
         hydraulicModel,
         points,
         controller.signal,
+        undefined,
+        customerPointsVisible,
+        zonesVisible,
       );
 
       if (controller.signal.aborted) {
         return;
       }
 
-      if (assetIds.length === 0) {
+      if (
+        assetIds.length === 0 &&
+        customerPointIds.length === 0 &&
+        zoneIds.length === 0
+      ) {
         if (!operation) {
           clearSelection();
         }
+        return;
+      }
+
+      if (customerPointIds.length > 0 || zoneIds.length > 0) {
+        setSelection(
+          USelection.applyOperation(
+            selection,
+            { assetIds, customerPointIds, zoneIds },
+            operation,
+          ),
+        );
+        return;
+      }
+
+      if (operation === "add") {
+        extendSelection(assetIds);
+      } else if (operation === "subtract") {
+        removeFromSelection(assetIds);
       } else {
-        if (operation === "add") {
-          extendSelection(assetIds);
-        } else if (operation === "subtract") {
-          removeFromSelection(assetIds);
-        } else {
-          selectAssets(assetIds);
-        }
+        selectAssets(assetIds);
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {

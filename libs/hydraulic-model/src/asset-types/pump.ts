@@ -1,0 +1,102 @@
+import {
+  pumpDefinitionTypes,
+  pumpStatuses,
+  type PumpDefinitionType,
+  type PumpStatus,
+} from "@epanet-js/model-schema";
+import { CurveId, CurvePoint, Curves, ICurve } from "../curves";
+import { PatternId } from "../patterns";
+import { Link, LinkProperties } from "./link";
+
+export { pumpStatuses };
+export type { PumpStatus };
+
+export type PumpStatusWarning = "cannot-deliver-flow" | "cannot-deliver-head";
+
+export { pumpDefinitionTypes };
+export type { PumpDefinitionType };
+
+export const DEFAULT_SPEED = 1;
+
+export type PumpProperties = {
+  type: "pump";
+  initialStatus: PumpStatus;
+  definitionType: PumpDefinitionType;
+  power: number | null;
+  speed?: number;
+  speedPatternId?: PatternId;
+  curveId: CurveId | null;
+  curve: CurvePoint[] | null;
+  efficiencyCurveId?: CurveId;
+  energyPrice?: number;
+  energyPricePatternId?: PatternId;
+} & LinkProperties;
+
+export const pumpQuantities = ["flow", "head", "power", "speed"];
+export type PumpQuantity = (typeof pumpQuantities)[number];
+
+export class Pump extends Link<PumpProperties> {
+  get initialStatus() {
+    return this.properties.initialStatus;
+  }
+
+  get definitionType() {
+    return this.properties.definitionType;
+  }
+
+  get power() {
+    return this.properties.power;
+  }
+
+  get speed() {
+    return this.properties.speed;
+  }
+
+  get speedPatternId() {
+    return this.properties.speedPatternId;
+  }
+
+  get curveId() {
+    return this.properties.curveId;
+  }
+
+  get curve() {
+    return this.properties.curve;
+  }
+
+  get efficiencyCurveId() {
+    return this.properties.efficiencyCurveId;
+  }
+
+  get energyPrice() {
+    return this.properties.energyPrice;
+  }
+
+  get energyPricePatternId() {
+    return this.properties.energyPricePatternId;
+  }
+
+  getCurve = (curves: Curves): ICurve | CurvePoint[] | undefined => {
+    if (this.definitionType === "power") return undefined;
+    if (
+      this.definitionType === "designPointCurve" ||
+      this.definitionType === "standardCurve"
+    )
+      return this.curve ?? undefined;
+    if (!this.curveId) return undefined;
+    const curve = curves.get(this.curveId);
+    return curve;
+  };
+
+  getCurvePoints = (curves: Curves): CurvePoint[] | undefined => {
+    const curve = this.getCurve(curves);
+    return curve ? ("id" in curve ? curve.points : curve) : undefined;
+  };
+
+  copy() {
+    return new Pump(this.id, [...this.coordinates], {
+      ...this.properties,
+      curve: this.properties.curve?.map((p) => ({ ...p })) ?? null,
+    });
+  }
+}

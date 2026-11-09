@@ -1,7 +1,7 @@
 import { useAtom, useAtomValue } from "jotai";
 import { useCallback } from "react";
 import { AssetId } from "src/hydraulic-model";
-import { deleteAssets } from "src/hydraulic-model/model-operations";
+import { deleteAssets } from "@epanet-js/hydraulic-model-operations";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
 import { AssetDeleted, useUserTracking } from "src/infra/user-tracking";
 import { USelection } from "src/selection";
@@ -34,24 +34,29 @@ export const useDeleteAssets = () => {
         });
       }
 
-      const currentIds = new Set(USelection.toIds(selection));
-      const intersects = assetIds.some((id) => currentIds.has(id));
+      const currentAssetIds = USelection.getAssetIds(selection);
+      const currentCustomerPointIds = USelection.getCustomerPointIds(selection);
+      const deletedSet = new Set(assetIds);
+      const intersects = currentAssetIds.some((id) => deletedSet.has(id));
       if (intersects) {
-        const remaining = USelection.toIds(selection).filter(
-          (id) => !assetIds.includes(id),
+        const remainingAssetIds = currentAssetIds.filter(
+          (id) => !deletedSet.has(id),
         );
         setSelection(
-          remaining.length === 0
-            ? USelection.none()
-            : USelection.fromIds(remaining),
+          USelection.fromIds(
+            remainingAssetIds,
+            currentCustomerPointIds,
+            USelection.getZoneIds(selection),
+          ),
         );
       }
 
-      const moment = deleteAssets(hydraulicModel, {
+      const data = {
         assetIds,
         shouldUpdateCustomerPoints: true,
-      });
-      transact(moment);
+        shouldRemoveRawControls: true,
+      };
+      transact(() => deleteAssets(hydraulicModel, data));
     },
     [hydraulicModel, selection, setSelection, transact, userTracking],
   );

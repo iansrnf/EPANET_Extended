@@ -1,58 +1,97 @@
 import { useCallback } from "react";
 import { useAtomCallback } from "jotai/utils";
 import type { Getter, Setter } from "jotai";
-import { mapSyncMomentAtom } from "src/state/map";
 import {
   stagingModelDerivedAtom,
-  momentLogDerivedAtom,
+  sessionHistoryDerivedAtom,
 } from "src/state/derived-branch-state";
 import { worktreeAtom } from "src/state/scenarios";
+import { historyPendingAtom } from "src/state/transactions";
+import type {
+  HistoryEntry,
+  SessionHistory,
+} from "src/lib/persistence/session-history";
+import { applyChange } from "src/lib/persistence/transaction-helpers";
+import { persistBranchChange } from "src/lib/persistence/persist-branch-change";
+import type { Direction } from "@epanet-js/change-set";
+import { timedSync } from "@epanet-js/ejsdb";
 import {
-  applyMoment,
-  computeSyncMoment,
-} from "src/lib/persistence/transaction-helpers";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
-import { applyMomentToDb } from "src/lib/db";
-import { captureError } from "src/infra/error-tracking";
+  writeQueue,
+  type WriteFailureHandler,
+} from "src/lib/persistence/write-queue";
+import { useWriteFailureHandler } from "src/hooks/persistence/use-write-failure-handler";
+
+const commitHistoryEntry = (
+  get: Getter,
+  set: Setter,
+  direction: "undo" | "redo",
+  entry: HistoryEntry,
+  sessionHistory: SessionHistory,
+  onWriteFailure: WriteFailureHandler,
+) => {
+  const isUndo = direction === "undo";
+  const changeDirection: Direction = isUndo ? "reverse" : "forward";
+
+  const worktree = get(worktreeAtom);
+
+  timedSync(
+    "changeSet:apply",
+    () =>
+      applyChange(
+        get,
+        set,
+        entry.stateId,
+        entry.changeSet,
+        changeDirection,
+        stagingModelDerivedAtom,
+      ),
+    { direction: changeDirection },
+  );
+
+  isUndo ? sessionHistory.undo() : sessionHistory.redo();
+
+  writeQueue.enqueue(
+    () => persistBranchChange(worktree, entry.changeSet, changeDirection),
+    onWriteFailure,
+  );
+
+  set(sessionHistoryDerivedAtom, sessionHistory);
+};
+
+const nextEntry = (
+  sessionHistory: SessionHistory,
+  direction: "undo" | "redo",
+): HistoryEntry | null =>
+  direction === "undo" ? sessionHistory.nextUndo() : sessionHistory.nextRedo();
 
 export const useUndoableTransactions = () => {
-  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
+  const onWriteFailure = useWriteFailureHandler();
+
   const historyControl = useAtomCallback(
     useCallback(
-      (get: Getter, set: Setter, direction: "undo" | "redo") => {
-        const isUndo = direction === "undo";
+      (get: Getter, set: Setter, direction: "undo" | "redo"): boolean => {
+        if (get(historyPendingAtom)) return false;
 
-        const momentLog = get(momentLogDerivedAtom).copy();
-        const currentMapSyncMoment = get(mapSyncMomentAtom);
-        const action = isUndo ? momentLog.nextUndo() : momentLog.nextRedo();
-        if (!action) return;
+        const sessionHistory = get(sessionHistoryDerivedAtom).copy();
+        const entry = nextEntry(sessionHistory, direction);
+        if (!entry) return false;
 
-        applyMoment(
-          get,
-          set,
-          action.stateId,
-          action.moment,
-          stagingModelDerivedAtom,
-        );
-
-        if (isOurFileOn) {
-          const worktree = get(worktreeAtom);
-          if (worktree.activeBranchId === worktree.mainId) {
-            void applyMomentToDb(action.moment).catch(captureError);
-          }
+        set(historyPendingAtom, true);
+        try {
+          commitHistoryEntry(
+            get,
+            set,
+            direction,
+            entry,
+            sessionHistory,
+            onWriteFailure,
+          );
+          return true;
+        } finally {
+          set(historyPendingAtom, false);
         }
-
-        isUndo ? momentLog.undo() : momentLog.redo();
-
-        const newMapSyncMoment = computeSyncMoment(
-          currentMapSyncMoment,
-          momentLog,
-        );
-
-        set(momentLogDerivedAtom, momentLog);
-        set(mapSyncMomentAtom, newMapSyncMoment);
       },
-      [isOurFileOn],
+      [onWriteFailure],
     ),
   );
 

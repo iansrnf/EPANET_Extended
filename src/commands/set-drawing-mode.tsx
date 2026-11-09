@@ -3,7 +3,7 @@ import { useCallback } from "react";
 import { ephemeralStateAtom } from "src/state/drawing";
 import { selectionAtom } from "src/state/selection";
 import { lastDrawingModeAtom, Mode, modeAtom } from "src/state/mode";
-import { USelection } from "src/selection/selection";
+import { USelection } from "src/selection";
 
 const DRAWING_MODES = [
   Mode.DRAW_JUNCTION,
@@ -13,7 +13,6 @@ const DRAWING_MODES = [
   Mode.DRAW_PUMP,
   Mode.DRAW_VALVE,
   Mode.DRAW_CUSTOMER_POINT,
-  Mode.DRAW_PRESSURE_LOGGER,
 ] as const;
 
 const SELECTION_MODES = [
@@ -41,7 +40,6 @@ export const drawingModeShorcuts: { [key in Mode]: string } = {
   [Mode.DRAW_PUMP]: "6",
   [Mode.DRAW_VALVE]: "7",
   [Mode.DRAW_CUSTOMER_POINT]: "8",
-  [Mode.DRAW_PRESSURE_LOGGER]: "9",
   [Mode.CONNECT_CUSTOMER_POINTS]: "",
   [Mode.REDRAW_LINK]: "",
   [Mode.BOUNDARY_TRACE_SELECT]: "",

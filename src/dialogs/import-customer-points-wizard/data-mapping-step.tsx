@@ -1,4 +1,11 @@
-import React, { useState, useCallback, useMemo } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { numericChecks } from "src/lib/model-attributes-validation";
 import { Feature } from "geojson";
 import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
@@ -7,185 +14,282 @@ import { useAtomValue } from "jotai";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { modelFactoriesAtom } from "src/state/model-factories";
-import { buildCustomerPointPreviewFactory } from "src/hydraulic-model/factories";
-import { parseCustomerPoints } from "src/import/customer-points/parse-customer-points";
+import {
+  buildCustomerPointPreviewFactory,
+  CustomerPoint,
+  MAX_CUSTOMER_POINT_LABEL_LENGTH,
+} from "@epanet-js/hydraulic-model";
+import {
+  parseGisSource,
+  customerPointsImporter,
+} from "@epanet-js/gis-importers";
 import {
   CustomerPointsIssuesAccumulator,
-  CustomerPointsParserIssues,
-} from "src/import/customer-points/parse-customer-points-issues";
-import {
-  CustomerPoint,
-  CustomerPointId,
-  MAX_CUSTOMER_POINT_LABEL_LENGTH,
-} from "src/hydraulic-model/customer-points";
-import { Demand } from "src/hydraulic-model/demands";
-import { localizeDecimal } from "src/infra/i18n/numbers";
-import {
-  WizardState,
-  WizardActions,
-  ParsedDataSummary,
-  InputData,
-} from "./types";
-import { UnitsSpec } from "src/lib/project-settings/quantities-spec";
+  type CustomerPointsParserIssues,
+} from "./issues";
+import type { Proj4Projection } from "@epanet-js/projections";
+import { isAbortError } from "src/infra/abort";
+import { buildCustomerPoints } from "./build-customer-points";
+import { collectImportIssues } from "./collect-import-issues";
+import { useLabelMaxLength } from "src/hooks/use-label-max-length";
+import { localizeDecimal } from "@epanet-js/i18n";
+import { WizardState, WizardActions, ParsedDataSummary } from "./types";
+import { UnitsSpec } from "@epanet-js/project-settings";
 import { WizardActions as WizardActionsComponent } from "src/components/wizard";
-import { convertTo } from "src/quantity";
-import { ChevronDownIcon, ChevronRightIcon } from "src/icons";
-import { Selector } from "src/components/form/selector";
+import { convertTo } from "@epanet-js/quantity";
+import { ChevronDownIcon, ChevronRightIcon, ErrorIcon } from "src/icons";
+import { Callout, Selector } from "@epanet-js/ui-kit";
+import { NumericField } from "src/components/form/numeric-field";
+import { sourceErrorKey } from "./source-error-key";
+import { awaitsCoordinates } from "./use-wizard-state";
 const CONSTANT_PATTERN_ID = 0;
+
+/** Failures the attributes the user named are answerable for. */
+const COORDINATE_CODES = new Set([
+  "coordinateAttributesUnknown",
+  "coordinateSystemUnknown",
+  "coordinateSystemUnsupported",
+  "coordinateSystemMismatch",
+]);
 
 export const DataMappingStep: React.FC<{
   onNext: () => void;
   onBack: () => void;
   renderActions?: boolean;
   wizardState: WizardState & WizardActions & { units: UnitsSpec };
-}> = ({ onNext, onBack, renderActions = true, wizardState }) => {
+  projections?: Map<string, Proj4Projection> | null;
+}> = ({ onNext, onBack, renderActions = true, wizardState, projections }) => {
   const translate = useTranslate();
+  const translateUnit = useTranslateUnit();
   const userTracking = useUserTracking();
   const projectSettings = useAtomValue(projectSettingsAtom);
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
-  const { labelManager } = useAtomValue(modelFactoriesAtom);
+  const { labelManager, idPools } = useAtomValue(modelFactoriesAtom);
+  const labelMaxLength = useLabelMaxLength();
   const patterns = hydraulicModel.patterns;
+  const customerDemandPerDayUnit = projectSettings.units.customerDemandPerDay;
   const {
     parsedDataSummary,
     error,
     inputData,
-    selectedFile,
+    sourceFiles,
     selectedDemandProperty,
     selectedLabelProperty,
     selectedPatternId,
+    defaultDemand,
     setLoading,
     setError,
     setParsedDataSummary,
     setSelectedDemandProperty,
     setSelectedLabelProperty,
     setSelectedPatternId,
+    setDefaultDemand,
+    coordinateAttributes,
+    setCoordinateAttributes,
     isLoading,
   } = wizardState;
 
-  const patternOptions = useMemo(() => {
-    const options: { value: number; label: string }[] = [
-      {
-        value: CONSTANT_PATTERN_ID,
-        label: translate("constant").toUpperCase(),
-      },
-    ];
+  const namesCoordinates = !!inputData?.needsCoordinates;
+  const awaitingCoordinates = awaitsCoordinates(wizardState);
+  const [coordinatesRejected, setCoordinatesRejected] = useState(false);
+  const [namedAxes, setNamedAxes] = useState<{
+    x: string | null;
+    y: string | null;
+  }>({
+    x: coordinateAttributes?.x ?? null,
+    y: coordinateAttributes?.y ?? null,
+  });
+
+  const constantLabel = translate("constant");
+  const realPatternOptions = useMemo(() => {
+    const options: { value: number; label: string }[] = [];
     for (const [patternId, { label }] of patterns.entries()) {
       options.push({ value: patternId, label });
     }
     return options;
-  }, [patterns, translate]);
+  }, [patterns]);
 
-  const parseInputDataToCustomerPoints = useCallback(
-    (
-      inputData: InputData,
-      demandPropertyName: string,
-      labelPropertyName: string | null = null,
-      patternId: number | null = null,
+  const inFlight = useRef<AbortController | null>(null);
+  const [primaryFile] = sourceFiles;
+
+  useEffect(() => () => inFlight.current?.abort(), []);
+
+  const importSelection = useCallback(
+    async (
+      demandPropertyName: string | null,
+      labelPropertyName: string | null,
+      patternId: number | null,
+      defaultDemandValue: number,
     ) => {
+      if (awaitingCoordinates) return;
+
       setLoading(true);
       setError(null);
 
-      setTimeout(() => {
-        try {
-          const issues = new CustomerPointsIssuesAccumulator();
-          const validCustomerPoints: CustomerPoint[] = [];
-          const customerPointDemands = new Map<CustomerPointId, Demand[]>();
-          let totalCount = 0;
+      inFlight.current?.abort();
+      const { signal } = (inFlight.current = new AbortController());
 
-          const demandImportUnit = projectSettings.units.customerDemandPerDay;
-          const demandTargetUnit = projectSettings.units.customerDemand;
+      const source = {
+        files: sourceFiles,
+        projections: projections ?? undefined,
+        ...(coordinateAttributes ? { coordinateAttributes } : {}),
+      };
 
-          const fileContent = JSON.stringify({
-            type: "FeatureCollection",
-            features: inputData.features,
-          });
+      try {
+        const { features, issues: parseIssues } = await parseGisSource(source);
+        const blocking = parseIssues
+          .build()
+          .find(({ severity }) => severity === "error");
 
-          const previewFactory = buildCustomerPointPreviewFactory(labelManager);
-
-          for (const parsed of parseCustomerPoints(
-            fileContent,
-            issues,
-            demandImportUnit,
-            demandTargetUnit,
-            previewFactory,
-            demandPropertyName,
-            labelPropertyName,
-            patternId,
-          )) {
-            totalCount++;
-            if (parsed) {
-              validCustomerPoints.push(parsed.customerPoint);
-              customerPointDemands.set(parsed.customerPoint.id, parsed.demands);
-            }
-          }
-
-          const parsedDataSummary: ParsedDataSummary = {
-            validCustomerPoints,
-            customerPointDemands,
-            issues: issues.buildResult(),
-            totalCount,
-            demandImportUnit,
-          };
-
-          if (validCustomerPoints.length === 0) {
-            userTracking.capture({
-              name: "importCustomerPoints.dataMapping.noValidPoints",
-              fileName: selectedFile!.name,
-            });
-          }
-
-          setParsedDataSummary(parsedDataSummary);
+        if (blocking) {
+          setCoordinatesRejected(
+            namesCoordinates && COORDINATE_CODES.has(blocking.code),
+          );
+          setError(translate(sourceErrorKey(blocking.code)));
           setLoading(false);
-
-          userTracking.capture({
-            name: "importCustomerPoints.dataMapping.customerPointsLoaded",
-            validCount: validCustomerPoints.length,
-            issuesCount: issues.count(),
-            totalCount,
-            fileName: selectedFile!.name,
-          });
-        } catch (error) {
-          userTracking.capture({
-            name: "importCustomerPoints.dataMapping.parseError",
-            fileName: selectedFile!.name,
-          });
-          setError(translate("importCustomerPoints.dataSource.parseFileError"));
+          return;
         }
-      }, 50);
+
+        setCoordinatesRejected(false);
+
+        const { network, issues: importIssues } =
+          await customerPointsImporter.importFromFeatures(
+            features,
+            {
+              mapping: { label: labelPropertyName, demand: demandPropertyName },
+            },
+            { signal },
+          );
+
+        const issues = new CustomerPointsIssuesAccumulator();
+        collectImportIssues(importIssues, issues);
+
+        const demandImportUnit = projectSettings.units.customerDemandPerDay;
+        const demandTargetUnit = projectSettings.units.customerDemand;
+
+        const previewIdGenerator = idPools.forPool("customerPoint").copy();
+
+        const built = await buildCustomerPoints(
+          network.customerPoints ?? [],
+          features,
+          {
+            factory: buildCustomerPointPreviewFactory(
+              labelManager,
+              previewIdGenerator,
+            ),
+            toDemand: (value) =>
+              convertTo({ value, unit: demandImportUnit }, demandTargetUnit),
+            patternId,
+            defaultDemand: defaultDemandValue,
+            labelMaxLength,
+            issues,
+            signal,
+          },
+        );
+
+        const { customerPoints, demands } = built;
+
+        setParsedDataSummary({
+          validCustomerPoints: customerPoints,
+          idGenerator: previewIdGenerator,
+          customerPointDemands: demands,
+          issues: issues.buildResult(),
+          totalCount: features.length,
+          demandImportUnit,
+        });
+        setLoading(false);
+
+        if (customerPoints.length === 0) {
+          userTracking.capture({
+            name: "importCustomerPoints.dataMapping.noValidPoints",
+            fileName: primaryFile.name,
+          });
+        }
+
+        userTracking.capture({
+          name: "importCustomerPoints.dataMapping.customerPointsLoaded",
+          validCount: customerPoints.length,
+          issuesCount: issues.count(),
+          totalCount: features.length,
+          fileName: primaryFile.name,
+        });
+      } catch (error) {
+        if (isAbortError(error)) return;
+
+        userTracking.capture({
+          name: "importCustomerPoints.dataMapping.parseError",
+          fileName: primaryFile.name,
+        });
+        setError(translate("importCustomerPoints.dataSource.parseFileError"));
+        setLoading(false);
+      }
     },
     [
-      setLoading,
-      setError,
+      sourceFiles,
+      primaryFile,
+      projections,
+      awaitingCoordinates,
+      namesCoordinates,
+      coordinateAttributes,
       projectSettings.units,
       labelManager,
+      idPools,
+      labelMaxLength,
       setParsedDataSummary,
-      userTracking,
-      selectedFile,
+      setLoading,
+      setError,
       translate,
+      userTracking,
     ],
   );
 
   const handleDemandPropertyChange = useCallback(
-    (property: string) => {
+    (property: string | null) => {
       userTracking.capture({
         name: "importCustomerPoints.dataMapping.selectDemand",
-        property,
+        property: property ?? "(default)",
       });
       setSelectedDemandProperty(property);
+      if (!inputData) return;
       setParsedDataSummary(null);
-      parseInputDataToCustomerPoints(
-        inputData as InputData,
+      void importSelection(
         property,
         selectedLabelProperty,
         selectedPatternId,
+        defaultDemand,
       );
     },
     [
       userTracking,
       setSelectedDemandProperty,
       setParsedDataSummary,
-      parseInputDataToCustomerPoints,
+      importSelection,
       inputData,
+      selectedLabelProperty,
+      selectedPatternId,
+      defaultDemand,
+    ],
+  );
+
+  const handleDefaultDemandChange = useCallback(
+    (value: number) => {
+      const safeValue = isNaN(value) ? 0 : value;
+      setDefaultDemand(safeValue);
+      if (!inputData) return;
+      setParsedDataSummary(null);
+      void importSelection(
+        selectedDemandProperty,
+        selectedLabelProperty,
+        selectedPatternId,
+        safeValue,
+      );
+    },
+    [
+      setDefaultDemand,
+      setParsedDataSummary,
+      importSelection,
+      inputData,
+      selectedDemandProperty,
       selectedLabelProperty,
       selectedPatternId,
     ],
@@ -198,38 +302,53 @@ export const DataMappingStep: React.FC<{
         property,
       });
       setSelectedLabelProperty(property);
-      if (selectedDemandProperty) {
-        setParsedDataSummary(null);
-        parseInputDataToCustomerPoints(
-          inputData as InputData,
-          selectedDemandProperty,
-          property,
-          selectedPatternId,
-        );
-      }
+      if (!inputData) return;
+      setParsedDataSummary(null);
+      void importSelection(
+        selectedDemandProperty,
+        property,
+        selectedPatternId,
+        defaultDemand,
+      );
     },
     [
       userTracking,
       setSelectedLabelProperty,
       selectedDemandProperty,
       setParsedDataSummary,
-      parseInputDataToCustomerPoints,
+      importSelection,
       inputData,
       selectedPatternId,
+      defaultDemand,
     ],
+  );
+
+  const handleCoordinateChange = useCallback(
+    (axis: "x" | "y", property: string | null) => {
+      const next = { ...namedAxes, [axis]: property };
+      setNamedAxes(next);
+      setParsedDataSummary(null);
+      setError(null);
+      setCoordinatesRejected(false);
+
+      setCoordinateAttributes(
+        next.x === null || next.y === null ? null : { x: next.x, y: next.y },
+      );
+    },
+    [namedAxes, setCoordinateAttributes, setParsedDataSummary, setError],
   );
 
   const handlePatternChange = useCallback(
     (rawPatternId: number) => {
       const patternId = rawPatternId ? rawPatternId : null;
       setSelectedPatternId(patternId);
-      if (selectedDemandProperty) {
+      if (inputData) {
         setParsedDataSummary(null);
-        parseInputDataToCustomerPoints(
-          inputData as InputData,
+        void importSelection(
           selectedDemandProperty,
           selectedLabelProperty,
           patternId,
+          defaultDemand,
         );
       }
       userTracking.capture({
@@ -242,132 +361,207 @@ export const DataMappingStep: React.FC<{
       setSelectedPatternId,
       selectedDemandProperty,
       setParsedDataSummary,
-      parseInputDataToCustomerPoints,
+      importSelection,
       inputData,
       selectedLabelProperty,
       patterns,
+      defaultDemand,
     ],
   );
 
+  useEffect(() => {
+    if (
+      inputData &&
+      !awaitingCoordinates &&
+      !parsedDataSummary &&
+      !isLoading &&
+      !error
+    ) {
+      void importSelection(
+        selectedDemandProperty,
+        selectedLabelProperty,
+        selectedPatternId,
+        defaultDemand,
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputData, coordinateAttributes]);
+
   const showAttributesMapping = !!inputData;
-  const showLoading = inputData && isLoading && !parsedDataSummary;
+  const showLoading =
+    inputData && isLoading && !parsedDataSummary && !awaitingCoordinates;
   const showDataPreview = parsedDataSummary;
   const showNoDataMessage = !inputData;
   const validCount = parsedDataSummary?.validCustomerPoints.length || 0;
   const MAX_PREVIEW_ROWS = 15;
-  const hasDemandPatterns = patterns.size > 0;
 
   const isNextDisabled =
     isLoading ||
-    !selectedDemandProperty ||
-    (parsedDataSummary ? validCount === 0 : false);
+    awaitingCoordinates ||
+    !!error ||
+    (parsedDataSummary ? validCount === 0 : !inputData);
 
   return (
     <>
       <div className="overflow-y-auto grow scroll-shadows">
-        <h2 className="text-lg font-semibold">
+        <h2 className="text-size-heading-3 font-semibold">
           {translate("importCustomerPoints.wizard.dataMapping.title")}
         </h2>
 
         {showAttributesMapping && (
           <div className="space-y-2">
             <div>
-              <p className="text-sm text-gray-600 mt-2 mb-4">
+              <p className="text-size-base text-subtle mt-2 mb-4">
                 {translate(
                   "importCustomerPoints.wizard.dataMapping.attributesMapping.description",
                 )}
               </p>
-              <div
-                className={`space-y-4 md:grid md:gap-4 md:space-y-0 ${
-                  hasDemandPatterns ? "md:grid-cols-3" : "md:grid-cols-2"
-                }`}
-              >
-                <div>
-                  <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">
-                    {translate(
-                      "importCustomerPoints.wizard.dataMapping.demandSelector.label",
-                    )}
-                  </label>
-                  <Selector
-                    nullable={true}
-                    placeholder={translate(
-                      "importCustomerPoints.wizard.dataMapping.demandSelector.placeholder",
-                    )}
-                    options={Array.from(inputData.properties).map((prop) => ({
-                      label: prop,
-                      value: prop,
-                    }))}
-                    selected={selectedDemandProperty}
-                    onChange={(value) =>
-                      handleDemandPropertyChange(value || "")
-                    }
-                    ariaLabel={translate(
-                      "importCustomerPoints.wizard.dataMapping.demandSelector.label",
-                    )}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">
-                    {`${translate(
-                      "importCustomerPoints.wizard.dataMapping.labelSelector.label",
-                    )} (${translate("optional")})`}
-                  </label>
-                  <Selector
-                    nullable={true}
-                    placeholder={translate(
-                      "importCustomerPoints.wizard.dataMapping.labelSelector.placeholder",
-                    )}
-                    options={[
-                      {
-                        label: translate(
-                          "importCustomerPoints.wizard.dataMapping.labelSelector.noneAutoGenerate",
-                        ),
-                        value: "__NONE__",
-                      },
-                      ...Array.from(inputData.properties).map((prop) => ({
-                        label: prop,
-                        value: prop,
-                      })),
-                    ]}
-                    selected={selectedLabelProperty || "__NONE__"}
-                    onChange={(value) =>
-                      handleLabelPropertyChange(
-                        value === "__NONE__" ? "" : value || "",
-                      )
-                    }
-                    ariaLabel={translate(
-                      "importCustomerPoints.wizard.dataMapping.labelSelector.label",
-                    )}
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    {translate(
-                      "importCustomerPoints.wizard.dataMapping.labelSelector.description",
-                      String(MAX_CUSTOMER_POINT_LABEL_LENGTH),
-                    )}
-                  </p>
-                </div>
-                {hasDemandPatterns && (
-                  <div>
-                    <label className="block text-sm text-gray-700 dark:text-gray-300 mb-2">
-                      {`${translate(
-                        "importCustomerPoints.wizard.demandOptions.timePattern.title",
-                      )} (${translate("optional")})`}
+              <div className="@container space-y-4">
+                <div className="@lg:grid @lg:grid-cols-3 @lg:gap-x-4 @lg:items-start space-y-4 @lg:space-y-0">
+                  <div className="space-y-2">
+                    <label className="block text-size-base text-default">
+                      {translate(
+                        "importCustomerPoints.wizard.dataMapping.labelSelector.label",
+                      )}
                     </label>
                     <Selector
-                      options={patternOptions}
-                      selected={selectedPatternId ?? CONSTANT_PATTERN_ID}
-                      onChange={handlePatternChange}
+                      nullable={true}
+                      placeholder={translate(
+                        "importCustomerPoints.wizard.dataMapping.labelSelector.autoGenerate",
+                      )}
+                      options={Array.from(inputData.properties).map((prop) => ({
+                        label: prop,
+                        value: prop,
+                      }))}
+                      selected={selectedLabelProperty || null}
+                      clearLabel={translate(
+                        "importCustomerPoints.wizard.dataMapping.labelSelector.autoGenerate",
+                      )}
+                      onChange={(value) =>
+                        handleLabelPropertyChange(value ?? "")
+                      }
+                      ariaLabel={translate(
+                        "importCustomerPoints.wizard.dataMapping.labelSelector.label",
+                      )}
+                    />
+                    <p className="text-size-small text-subtle">
+                      {translate(
+                        "importCustomerPoints.wizard.dataMapping.labelSelector.description",
+                        String(
+                          labelMaxLength ?? MAX_CUSTOMER_POINT_LABEL_LENGTH,
+                        ),
+                      )}
+                    </p>
+                  </div>
+                  {namesCoordinates &&
+                    (["x", "y"] as const).map((axis) => (
+                      <div key={axis} className="space-y-2">
+                        <label className="block text-size-base text-default">
+                          {translate(
+                            `importCustomerPoints.wizard.dataMapping.coordinateSelector.${axis}`,
+                          )}
+                        </label>
+                        <Selector
+                          nullable
+                          placeholder={translate(
+                            "importCustomerPoints.wizard.dataMapping.coordinateSelector.choose",
+                          )}
+                          options={Array.from(inputData.properties).map(
+                            (prop) => ({ label: prop, value: prop }),
+                          )}
+                          selected={namedAxes[axis]}
+                          styleOptions={
+                            coordinatesRejected
+                              ? { variant: "warning" }
+                              : undefined
+                          }
+                          onChange={(value) =>
+                            handleCoordinateChange(axis, value ?? null)
+                          }
+                          ariaLabel={translate(
+                            `importCustomerPoints.wizard.dataMapping.coordinateSelector.${axis}`,
+                          )}
+                        />
+                      </div>
+                    ))}
+                </div>
+
+                <div className="space-y-4 @lg:grid @lg:gap-x-4 @lg:gap-y-2 @lg:space-y-0 @lg:grid-cols-3 @lg:grid-rows-[repeat(3,auto)]">
+                  <div className="space-y-2 @lg:space-y-0 @lg:grid @lg:grid-rows-subgrid @lg:row-span-3 @lg:gap-y-2">
+                    <label className="block text-size-base text-default">
+                      {translate(
+                        "importCustomerPoints.wizard.dataMapping.demandSelector.label",
+                      )}
+                    </label>
+                    <Selector
+                      nullable={true}
+                      placeholder={translate(
+                        "importCustomerPoints.wizard.dataMapping.demandSelector.useDefault",
+                      )}
+                      options={Array.from(inputData.properties).map((prop) => ({
+                        label: prop,
+                        value: prop,
+                      }))}
+                      selected={selectedDemandProperty}
+                      clearLabel={translate(
+                        "importCustomerPoints.wizard.dataMapping.demandSelector.useDefault",
+                      )}
+                      onChange={(value) =>
+                        handleDemandPropertyChange(value ?? null)
+                      }
+                      ariaLabel={translate(
+                        "importCustomerPoints.wizard.dataMapping.demandSelector.label",
+                      )}
+                    />
+                  </div>
+                  <div className="space-y-2 @lg:space-y-0 @lg:grid @lg:grid-rows-subgrid @lg:row-span-3 @lg:gap-y-2">
+                    <label className="block text-size-base text-default">
+                      {`${translate(
+                        "importCustomerPoints.wizard.dataMapping.defaultDemand.label",
+                      )} (${translateUnit(customerDemandPerDayUnit)})`}
+                    </label>
+                    <NumericField
+                      label={translate(
+                        "importCustomerPoints.wizard.dataMapping.defaultDemand.label",
+                      )}
+                      displayValue={localizeDecimal(defaultDemand)}
+                      onChangeValue={handleDefaultDemandChange}
+                      validate={numericChecks.nonNegative}
+                      styleOptions={{ padding: "md", textSize: "sm" }}
+                    />
+                    <p className="text-size-small text-subtle">
+                      {translate(
+                        "importCustomerPoints.wizard.dataMapping.defaultDemand.description",
+                      )}
+                    </p>
+                  </div>
+                  <div className="space-y-2 @lg:space-y-0 @lg:grid @lg:grid-rows-subgrid @lg:row-span-3 @lg:gap-y-2">
+                    <label className="block text-size-base text-default">
+                      {translate(
+                        "importCustomerPoints.wizard.demandOptions.timePattern.title",
+                      )}
+                    </label>
+                    <Selector
+                      nullable
+                      placeholder={constantLabel}
+                      clearLabel={constantLabel}
+                      options={realPatternOptions}
+                      selected={selectedPatternId ?? null}
+                      disabled={patterns.size === 0}
+                      onChange={(value) =>
+                        handlePatternChange(value ?? CONSTANT_PATTERN_ID)
+                      }
                       ariaLabel={translate(
                         "importCustomerPoints.wizard.demandOptions.timePattern.title",
                       )}
                     />
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-size-small text-subtle">
                       {translate(
                         "importCustomerPoints.wizard.demandOptions.timePattern.description",
                       )}
                     </p>
                   </div>
-                )}
+                </div>
               </div>
             </div>
 
@@ -375,7 +569,7 @@ export const DataMappingStep: React.FC<{
               <div>
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-                  <span className="ml-3 text-gray-600">
+                  <span className="ml-3 text-subtle">
                     {translate(
                       "importCustomerPoints.wizard.dataMapping.loading",
                     )}
@@ -383,26 +577,11 @@ export const DataMappingStep: React.FC<{
                 </div>
               </div>
             )}
-
-            {selectedDemandProperty && !parsedDataSummary && !showLoading && (
-              <div>
-                <h4 className="text-md font-medium text-gray-900">
-                  {translate(
-                    "importCustomerPoints.wizard.dataMapping.dataPreview.title",
-                  )}
-                </h4>
-                <p className="text-sm text-gray-600">
-                  {translate(
-                    "importCustomerPoints.wizard.dataMapping.dataPreview.selectPrompt",
-                  )}
-                </p>
-              </div>
-            )}
           </div>
         )}
 
         {showNoDataMessage && (
-          <p className="text-gray-600">
+          <p className="text-subtle">
             {translate(
               "importCustomerPoints.wizard.dataMapping.messages.noValidCustomerPoints",
             )}
@@ -410,9 +589,12 @@ export const DataMappingStep: React.FC<{
         )}
 
         {error && (
-          <div className="bg-red-50 border border-red-200 rounded-md p-3">
-            <p className="text-red-700 text-sm">{error}</p>
-          </div>
+          <Callout
+            variant="error"
+            description={error}
+            Icon={ErrorIcon}
+            className="border rounded-md mt-4"
+          />
         )}
 
         {showDataPreview && (
@@ -445,21 +627,6 @@ export const DataMappingStep: React.FC<{
   );
 };
 
-const getTotalErrorCount = (
-  issues: CustomerPointsParserIssues | null,
-): number => {
-  if (!issues) return 0;
-
-  return (
-    (issues.skippedNonPointFeatures?.length || 0) +
-    (issues.skippedInvalidCoordinates?.length || 0) +
-    (issues.skippedMissingCoordinates?.length || 0) +
-    (issues.skippedInvalidProjection?.length || 0) +
-    (issues.skippedCreationFailures?.length || 0) +
-    (issues.skippedInvalidDemands?.length || 0)
-  );
-};
-
 type CustomerPointsTableProps = {
   customerPoints: CustomerPoint[];
   maxPreviewRows: number;
@@ -467,7 +634,7 @@ type CustomerPointsTableProps = {
   wizardState: WizardState & WizardActions & { units: UnitsSpec };
 };
 
-const CustomerPointsTable: React.FC<CustomerPointsTableProps> = ({
+export const CustomerPointsTable: React.FC<CustomerPointsTableProps> = ({
   customerPoints,
   maxPreviewRows,
   parsedDataSummary,
@@ -483,7 +650,7 @@ const CustomerPointsTable: React.FC<CustomerPointsTableProps> = ({
 
   if (validCount === 0) {
     return (
-      <p className="text-gray-500 text-sm">
+      <p className="text-subtle text-size-base">
         {translate(
           "importCustomerPoints.wizard.dataMapping.messages.noValidCustomerPoints",
         )}
@@ -493,32 +660,32 @@ const CustomerPointsTable: React.FC<CustomerPointsTableProps> = ({
 
   return (
     <div className="mt-6">
-      <h4 className="text-md font-medium text-gray-900">
+      <h4 className="text-md font-medium text-default">
         {translate(
           "importCustomerPoints.wizard.dataMapping.table.title",
           localizeDecimal(validCount),
         )}
       </h4>
-      <div className="overflow-x-auto mt-2 border border-gray-200 rounded-lg">
-        <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 sticky top-0">
+      <div className="overflow-x-auto mt-2 border rounded-lg">
+        <table className="min-w-full text-size-base">
+          <thead className="bg-panel sticky top-0">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 tracking-wider border-b">
+              <th className="px-3 py-2 text-left text-size-small font-medium text-subtle tracking-wider border-b">
                 {translate(
                   "importCustomerPoints.wizard.dataMapping.table.label",
                 )}
               </th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 tracking-wider border-b">
+              <th className="px-3 py-2 text-left text-size-small font-medium text-subtle tracking-wider border-b">
                 {translate(
                   "importCustomerPoints.wizard.dataMapping.table.latitude",
                 )}
               </th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500  tracking-wider border-b">
+              <th className="px-3 py-2 text-left text-size-small font-medium text-subtle tracking-wider border-b">
                 {translate(
                   "importCustomerPoints.wizard.dataMapping.table.longitude",
                 )}
               </th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 tracking-wider border-b">
+              <th className="px-3 py-2 text-left text-size-small font-medium text-subtle tracking-wider border-b">
                 {`${translate(
                   "importCustomerPoints.wizard.dataMapping.table.demand",
                 )} (${translateUnit(customerDemandPerDayUnit)})`}
@@ -529,7 +696,7 @@ const CustomerPointsTable: React.FC<CustomerPointsTableProps> = ({
             {validPreview.map((point, index) => (
               <tr
                 key={point.id}
-                className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                className={index % 2 === 0 ? "bg-base" : "bg-panel"}
               >
                 <td className="px-3 py-2 border-b">
                   <div className="truncate" title={point.label}>
@@ -561,7 +728,7 @@ const CustomerPointsTable: React.FC<CustomerPointsTableProps> = ({
           </tbody>
         </table>
         {validHasMore && (
-          <p className="text-sm text-gray-500 text-center py-2">
+          <p className="text-size-base text-subtle text-center py-2">
             {translate(
               "importCustomerPoints.wizard.dataMapping.messages.andXMore",
               localizeDecimal(validCount - maxPreviewRows, { decimals: 0 }),
@@ -577,25 +744,30 @@ type IssuesSummaryProps = {
   issues: CustomerPointsParserIssues | null;
 };
 
-const IssuesSummary: React.FC<IssuesSummaryProps> = ({ issues }) => {
+export const IssuesSummary: React.FC<IssuesSummaryProps> = ({ issues }) => {
   const translate = useTranslate();
-  const errorCount = getTotalErrorCount(issues);
+  const fallbackFeatures = issues?.skippedInvalidDemands ?? [];
+  const totalIssueCount =
+    (issues?.skippedNonPointFeatures?.length || 0) +
+    (issues?.skippedInvalidCoordinates?.length || 0) +
+    (issues?.skippedMissingCoordinates?.length || 0) +
+    (issues?.skippedInvalidProjection?.length || 0) +
+    (issues?.skippedCreationFailures?.length || 0) +
+    fallbackFeatures.length;
 
-  if (errorCount === 0) {
-    return;
-  }
+  if (totalIssueCount === 0) return null;
 
   return (
     <div className="space-y-2 mt-6">
-      <h2 className="text-md font-medium text-gray-900">
+      <h2 className="text-md font-medium text-default">
         {translate(
           "importCustomerPoints.wizard.dataMapping.issues.title",
-          localizeDecimal(errorCount),
+          localizeDecimal(totalIssueCount),
         )}
       </h2>
       <div className="space-y-4">
         <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-          <p className="text-sm text-yellow-800">
+          <p className="text-size-base text-yellow-800">
             {translate(
               "importCustomerPoints.wizard.dataMapping.messages.skippedRowsWarning",
             )}
@@ -637,13 +809,13 @@ const IssuesSummary: React.FC<IssuesSummaryProps> = ({ issues }) => {
             features={issues.skippedInvalidProjection}
           />
         )}
-        {issues?.skippedInvalidDemands && (
+        {fallbackFeatures.length > 0 && (
           <IssueSection
             title={translate(
-              "importCustomerPoints.wizard.dataMapping.issues.invalidDemands",
-              issues.skippedInvalidDemands.length.toString(),
+              "importCustomerPoints.wizard.dataMapping.issues.defaultedDemands",
+              fallbackFeatures.length.toString(),
             )}
-            features={issues.skippedInvalidDemands}
+            features={fallbackFeatures}
           />
         )}
         {issues?.skippedCreationFailures && (
@@ -665,34 +837,37 @@ type IssueSectionProps = {
   features: Feature[];
 };
 
-const IssueSection: React.FC<IssueSectionProps> = ({ title, features }) => {
+export const IssueSection: React.FC<IssueSectionProps> = ({
+  title,
+  features,
+}) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const translate = useTranslate();
 
   return (
-    <div className="border border-gray-200 rounded-md">
+    <div className="border rounded-md">
       <button
-        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between"
+        className="w-full px-3 py-2 text-left text-size-base text-default hover:bg-panel flex items-center justify-between"
         onClick={() => setIsExpanded(!isExpanded)}
       >
         <span>{title}</span>
-        <span className="text-sm text-gray-500">
+        <span className="text-size-base text-subtle">
           {isExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
         </span>
       </button>
       {isExpanded && (
-        <div className="border-t border-gray-200 p-3 bg-gray-50">
+        <div className="border-t p-3 bg-panel">
           <div className="space-y-2">
             {features.slice(0, 3).map((feature, index) => (
               <div
                 key={index}
-                className="text-xs font-mono bg-white p-2 rounded-sm border text-gray-800"
+                className="text-size-small font-mono bg-base p-2 rounded-sm border text-default"
               >
                 {JSON.stringify(feature)}
               </div>
             ))}
             {features.length > 3 && (
-              <p className="text-xs text-gray-500 text-center pt-2">
+              <p className="text-size-small text-subtle text-center pt-2">
                 {translate(
                   "importCustomerPoints.wizard.dataMapping.messages.andXMoreIssues",
                   (features.length - 3).toString(),

@@ -1,12 +1,8 @@
 import { atom, useAtom } from "jotai";
 import { useAtomValue } from "jotai";
-import {
-  AllocationRule,
-  CustomerPoint,
-  getDefaultAllocationRules,
-} from "src/hydraulic-model/customer-points";
-import { UnitsSpec } from "src/lib/project-settings/quantities-spec";
+import { UnitsSpec } from "@epanet-js/project-settings";
 import { projectSettingsAtom } from "src/state/project-settings";
+import type { CoordinateAttributes } from "@epanet-js/gis-importers";
 import {
   WizardState,
   WizardActions,
@@ -14,33 +10,29 @@ import {
   ParsedDataSummary,
   InputData,
 } from "./types";
-import { AllocationResult } from "src/hydraulic-model/model-operations/allocate-customer-points";
 
 const initialState: WizardState = {
   currentStep: 1,
-  selectedFile: null,
-  parsedCustomerPoints: null,
+  sourceFiles: [],
   parsedDataSummary: null,
   inputData: null,
   selectedDemandProperty: null,
   selectedLabelProperty: null,
+  coordinateAttributes: null,
   isLoading: false,
   error: null,
   isProcessing: false,
-  keepDemands: false,
-  allocationRules: null,
-  connectionCounts: null,
-  allocationResult: null,
-  isAllocating: false,
-  lastAllocatedRules: null,
-  isEditingRules: false,
+  keepDemands: true,
   selectedPatternId: null,
+  defaultDemand: 0,
 };
 
 export const wizardStateAtom = atom<WizardState>(initialState);
 
-export const useWizardState = (): Omit<WizardState, "allocationRules"> & {
-  allocationRules: AllocationRule[];
+export const awaitsCoordinates = (state: WizardState): boolean =>
+  !!state.inputData?.needsCoordinates && state.coordinateAttributes === null;
+
+export const useWizardState = (): WizardState & {
   units: UnitsSpec;
 } & WizardActions => {
   const [state, setWizardState] = useAtom(wizardStateAtom);
@@ -53,7 +45,7 @@ export const useWizardState = (): Omit<WizardState, "allocationRules"> & {
   const goNext = () => {
     setWizardState((prev) => ({
       ...prev,
-      currentStep: Math.min(4, prev.currentStep + 1) as WizardStep,
+      currentStep: Math.min(3, prev.currentStep + 1) as WizardStep,
       error: null,
     }));
   };
@@ -66,16 +58,12 @@ export const useWizardState = (): Omit<WizardState, "allocationRules"> & {
     }));
   };
 
-  const setSelectedFile = (file: File | null) => {
+  const setSourceFiles = (files: File[]) => {
     setWizardState((prev) => ({
       ...prev,
-      selectedFile: file,
+      sourceFiles: files,
       error: null,
     }));
-  };
-
-  const setParsedCustomerPoints = (points: CustomerPoint[] | null) => {
-    setWizardState((prev) => ({ ...prev, parsedCustomerPoints: points }));
   };
 
   const setParsedDataSummary = (summary: ParsedDataSummary | null) => {
@@ -92,6 +80,10 @@ export const useWizardState = (): Omit<WizardState, "allocationRules"> & {
 
   const setSelectedLabelProperty = (property: string | null) => {
     setWizardState((prev) => ({ ...prev, selectedLabelProperty: property }));
+  };
+
+  const setCoordinateAttributes = (attributes: CoordinateAttributes | null) => {
+    setWizardState((prev) => ({ ...prev, coordinateAttributes: attributes }));
   };
 
   const resetWizardData = () => {
@@ -122,36 +114,12 @@ export const useWizardState = (): Omit<WizardState, "allocationRules"> & {
     setWizardState((prev) => ({ ...prev, keepDemands }));
   };
 
-  const setAllocationRules = (allocationRules: AllocationRule[]) => {
-    setWizardState((prev) => ({ ...prev, allocationRules }));
-  };
-
-  const setConnectionCounts = (
-    connectionCounts: { [ruleIndex: number]: number } | null,
-  ) => {
-    setWizardState((prev) => ({ ...prev, connectionCounts }));
-  };
-
-  const setAllocationResult = (allocationResult: AllocationResult | null) => {
-    setWizardState((prev) => ({ ...prev, allocationResult }));
-  };
-
-  const setIsAllocating = (isAllocating: boolean) => {
-    setWizardState((prev) => ({ ...prev, isAllocating, error: null }));
-  };
-
-  const setLastAllocatedRules = (
-    lastAllocatedRules: AllocationRule[] | null,
-  ) => {
-    setWizardState((prev) => ({ ...prev, lastAllocatedRules }));
-  };
-
-  const setIsEditingRules = (isEditingRules: boolean) => {
-    setWizardState((prev) => ({ ...prev, isEditingRules }));
-  };
-
   const setSelectedPatternId = (patternId: number | null) => {
     setWizardState((prev) => ({ ...prev, selectedPatternId: patternId }));
+  };
+
+  const setDefaultDemand = (value: number) => {
+    setWizardState((prev) => ({ ...prev, defaultDemand: value }));
   };
 
   const reset = () => {
@@ -160,29 +128,23 @@ export const useWizardState = (): Omit<WizardState, "allocationRules"> & {
 
   return {
     ...state,
-    allocationRules: state.allocationRules ?? getDefaultAllocationRules(units),
     units,
     goToStep,
     goNext,
     goBack,
-    setSelectedFile,
-    setParsedCustomerPoints,
+    setSourceFiles,
     setParsedDataSummary,
     setInputData,
     setSelectedDemandProperty,
     setSelectedLabelProperty,
+    setCoordinateAttributes,
     resetWizardData,
     setError,
     setLoading,
     setProcessing,
     setKeepDemands,
-    setAllocationRules,
-    setConnectionCounts,
-    setAllocationResult,
-    setIsAllocating,
-    setLastAllocatedRules,
-    setIsEditingRules,
     setSelectedPatternId,
+    setDefaultDemand,
     reset,
   };
 };

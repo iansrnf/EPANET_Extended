@@ -1,9 +1,8 @@
 import { AssetsMap, Asset, AssetId, Pipe, Pump } from "src/hydraulic-model";
 import { Feature } from "src/types";
 import { USelection } from "src/selection";
-import type { Sel } from "src/selection/types";
-import { findLargestSegment, Link } from "src/hydraulic-model/asset-types/link";
-import { Valve } from "src/hydraulic-model/asset-types";
+import type { Sel } from "src/selection";
+import { findLargestSegment, Link, Valve } from "@epanet-js/hydraulic-model";
 import {
   buildFeatureId,
   appendPipeStatus,
@@ -11,8 +10,8 @@ import {
   appendValveStatus,
   appendPipeArrowProps,
 } from "./features";
-import type { ResultsReader } from "src/simulation/results-reader";
-import type { UnitsSpec } from "src/lib/project-settings/quantities-spec";
+import type { ResultsReader } from "@epanet-js/simulation";
+import type { UnitsSpec } from "@epanet-js/project-settings";
 
 export const buildSelectionSource = (
   assets: AssetsMap,
@@ -21,7 +20,7 @@ export const buildSelectionSource = (
   movedAssetIds: Set<AssetId> = new Set(),
   simulationResults?: ResultsReader | null,
 ): Feature[] => {
-  const selectedIds = USelection.toIds(selection);
+  const selectedIds = USelection.getAssetIds(selection);
   if (selectedIds.length === 0) {
     return [];
   }

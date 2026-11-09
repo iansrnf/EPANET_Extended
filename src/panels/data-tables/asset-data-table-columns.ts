@@ -1,39 +1,72 @@
 import {
   booleanColumn,
   floatColumn,
+  integerColumn,
   filterableSelectColumn,
   textColumn,
   type GridColumn,
+  type ColumnKey,
 } from "src/components/data-grid";
-import type { AssetType } from "src/hydraulic-model/asset-types/types";
-import { pipeStatuses } from "src/hydraulic-model/asset-types/pipe";
-import { pumpStatuses } from "src/hydraulic-model/asset-types/pump";
+import type { ReactNode } from "react";
+import type { CustomHeaderAction } from "src/components/data-grid/features";
+import { type CustomAttribute } from "@epanet-js/hydraulic-model";
+import { type Asset, type Pipe } from "@epanet-js/hydraulic-model";
+import type { RoughnessInferrer } from "@epanet-js/hydraulic-model";
 import {
+  type AssetType,
+  pipeStatuses,
+  pumpStatuses,
   valveKinds,
   valveStatuses,
-} from "src/hydraulic-model/asset-types/valve";
-import { chemicalSourceTypes } from "src/hydraulic-model/asset-types/node";
-import {
+  chemicalSourceTypes,
   tankMixingModels,
   TANK_TWO_COMPARTMENT_MIXING,
-} from "src/hydraulic-model/asset-types/tank";
-import type {
-  Patterns,
-  PatternId,
-  PatternType,
-} from "src/hydraulic-model/patterns";
-import type { Curves, CurveType } from "src/hydraulic-model/curves";
+  type Patterns,
+  type PatternId,
+  type PatternType,
+  type Curves,
+  type CurveType,
+  LabelManager,
+  DEFAULT_MINOR_LOSS,
+  DEFAULT_EMITTER_COEFFICIENT,
+  DEFAULT_MIN_VOLUME,
+  DEFAULT_MIXING_FRACTION,
+  DEFAULT_SPEED,
+  DEFAULT_INITIAL_QUALITY,
+} from "@epanet-js/hydraulic-model";
 import type { TranslateFn } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
-import { getDecimals } from "src/lib/project-settings";
-import { localizeDecimal } from "src/infra/i18n/numbers";
+import { getDecimals } from "@epanet-js/project-settings";
+import { localizeDecimal } from "@epanet-js/i18n";
 import type { SimulationSettings } from "src/simulation/simulation-settings";
 import type {
   UnitsSpec,
   FormattingSpec,
   QuantityProperty,
-} from "src/lib/project-settings/quantities-spec";
-import type { AssetRow } from "./data";
+} from "@epanet-js/project-settings";
+import {
+  type AssetRow,
+  type AssetAccessorCtx,
+  assetAccessor,
+  isAssetComputedKey,
+} from "./data";
+import { fieldValidator } from "src/lib/model-attributes-validation";
+
+function makeCk(type: AssetType, accessorCtx?: AssetAccessorCtx) {
+  return (key: string): ColumnKey<AssetRow, never> => {
+    if (accessorCtx && isAssetComputedKey(type, key)) {
+      return {
+        id: key,
+        accessorFn: assetAccessor(type, key, accessorCtx) as (
+          row: AssetRow,
+        ) => never,
+      };
+    }
+    return key;
+  };
+}
+
+type Ck = ReturnType<typeof makeCk>;
 
 export const EDITABLE_SELECT_KEYS: Record<AssetType, string[]> = {
   junction: ["chemicalSourceType", "chemicalSourcePatternId"],
@@ -90,13 +123,69 @@ export const EDITABLE_NUMERIC_KEYS: Record<AssetType, string[]> = {
   ],
 };
 
-export const NULLABLE_KEYS = new Set([
+export const OPTIONAL_KEYS = new Set([
   "bulkReactionCoeff",
   "wallReactionCoeff",
   "energyPrice",
   "chemicalSourceStrength",
+  "minorLoss",
+  "emitterCoefficient",
+  "minVolume",
   "mixingFraction",
+  "speed",
+  "initialQuality",
 ]);
+
+export const NON_ZERO_KEYS = new Set([
+  "diameter",
+  "length",
+  "roughness",
+  "maxLevel",
+  "mixingFraction",
+  "power",
+]);
+
+const NULLABLE_KEYS = new Set([
+  "elevation",
+  "roughness",
+  "head",
+  "initialLevel",
+  "minLevel",
+  "maxLevel",
+  "setting",
+  "diameter",
+  "length",
+  "power",
+]);
+
+// EPANET default shown as a placeholder for an empty optional column.
+const optionalColumnDefault = (key: string): number | undefined => {
+  switch (key) {
+    case "minorLoss":
+      return DEFAULT_MINOR_LOSS;
+    case "emitterCoefficient":
+      return DEFAULT_EMITTER_COEFFICIENT;
+    case "minVolume":
+      return DEFAULT_MIN_VOLUME;
+    case "mixingFraction":
+      return DEFAULT_MIXING_FRACTION;
+    case "speed":
+      return DEFAULT_SPEED;
+    case "initialQuality":
+      return DEFAULT_INITIAL_QUALITY;
+    default:
+      return undefined;
+  }
+};
+
+export const isOptionalColumn = (key: string): boolean =>
+  OPTIONAL_KEYS.has(key);
+
+export const isNullableColumn = (key: string): boolean =>
+  NULLABLE_KEYS.has(key);
+
+export const isEmptiableColumn = (key: string): boolean =>
+  isOptionalColumn(key) || isNullableColumn(key);
 
 type TranslateUnitFn = ReturnType<typeof useTranslateUnit>;
 export type QualityAnalysisType = "none" | "age" | "trace" | "chemical";
@@ -116,6 +205,7 @@ function makeSimColHelpers(
   translateUnit: TranslateUnitFn,
   formatting: FormattingSpec,
   qualityType: QualityAnalysisType,
+  ck: Ck,
 ) {
   const headerLabel = (
     name: string,
@@ -130,7 +220,7 @@ function makeSimColHelpers(
     unit: Parameters<TranslateUnitFn>[0],
     property?: QuantityProperty,
   ): GridColumn<AssetRow> =>
-    floatColumn(key, {
+    floatColumn(ck(key), {
       header: headerLabel(name, unit),
       decimals:
         property != null
@@ -139,7 +229,7 @@ function makeSimColHelpers(
       isReadOnly: true,
     });
   const simTextValue = (key: string, name: string): GridColumn<AssetRow> =>
-    textColumn(key, { header: name, isReadOnly: true });
+    textColumn(ck(key), { header: name, isReadOnly: true });
   const qualityCols = (): GridColumn<AssetRow>[] => {
     if (qualityType === "age")
       return [
@@ -174,6 +264,7 @@ function makeSimColHelpers(
 }
 
 function buildSimColumns(
+  ck: Ck,
   ...[
     type,
     translate,
@@ -189,6 +280,7 @@ function buildSimColumns(
     translateUnit,
     formatting,
     qualityType,
+    ck,
   );
 
   const pressureStatsCols = (): GridColumn<AssetRow>[] => [
@@ -367,8 +459,13 @@ type BuildColumnsArgs = [
   curves: Curves,
   simulationSettings: SimulationSettings,
   qualityType: QualityAnalysisType,
-  validateLabel?: (label: string, rowIndex: number) => boolean,
+  validateLabel?: (label: string, row: AssetRow) => boolean,
   getRow?: (rowIndex: number) => AssetRow | undefined,
+  accessorCtx?: AssetAccessorCtx,
+  customAttributes?: CustomAttribute[],
+  customAttributesLock?: AttributesLock,
+  labelMaxLength?: number,
+  inferRoughness?: RoughnessInferrer,
 ];
 
 type ExtraPipeColsFn = (
@@ -376,26 +473,103 @@ type ExtraPipeColsFn = (
   formatting: FormattingSpec,
 ) => GridColumn<AssetRow>[];
 
-const noExtraPipeCols: ExtraPipeColsFn = () => [];
+type AttributesLock = {
+  openPaywall: () => void;
+  icon: ReactNode;
+};
 
-function pipeAttributeColsFor(materials: string[]): ExtraPipeColsFn {
-  return (translate): GridColumn<AssetRow>[] => [
-    filterableSelectColumn("material", {
-      header: translate("material"),
-      options: materials.map((m) => ({ value: m, label: m })),
-      placeholder: translate("none"),
-      emptyOptionLabel: translate("none"),
-      deleteValue: null,
-    }),
-    floatColumn("year", {
-      header: translate("yearOfInstallation"),
-      decimals: 0,
-      nullValue: null,
-      deleteValue: null,
-      placeholder: "",
-      isReadOnly: false,
-    }),
-  ];
+function pipeAttributeColsFor(
+  materials: string[],
+  lock?: AttributesLock,
+): ExtraPipeColsFn {
+  return (translate, _formatting): GridColumn<AssetRow>[] => {
+    const cols: GridColumn<AssetRow>[] = [
+      filterableSelectColumn("material", {
+        header: translate("material"),
+        options: materials.map((m) => ({ value: m, label: m })),
+        placeholder: translate("none"),
+        emptyOptionLabel: translate("none"),
+        emptyValue: null,
+        allowNew: true,
+        createLabel: (query) => translate("addNewValue", query),
+        isReadOnly: !!lock,
+      }),
+      integerColumn("year", {
+        header: translate("yearOfInstallation"),
+        emptyValue: null,
+        validate: fieldValidator("pipe", "year"),
+        commitInvalidValues: true,
+        required: false,
+        placeholder: "",
+        isReadOnly: !!lock,
+      }),
+    ];
+
+    if (lock) {
+      const action: CustomHeaderAction = {
+        icon: lock.icon,
+        ariaLabel: translate("paywall.tooltip"),
+        tooltip: translate("paywall.tooltip"),
+        onClick: lock.openPaywall,
+        alwaysVisible: true,
+      };
+      for (const col of cols) {
+        col.meta = {
+          ...col.meta,
+          customHeaderActions: [action],
+        };
+      }
+    }
+
+    return cols;
+  };
+}
+
+function customAttributeColumns(
+  attributes: CustomAttribute[],
+  formatting: FormattingSpec,
+  translate: TranslateFn,
+  lock?: AttributesLock,
+): GridColumn<AssetRow>[] {
+  const headerAction: CustomHeaderAction | undefined = lock
+    ? {
+        icon: lock.icon,
+        ariaLabel: translate("paywall.tooltip"),
+        tooltip: translate("paywall.tooltip"),
+        onClick: lock.openPaywall,
+        alwaysVisible: true,
+      }
+    : undefined;
+  return attributes.map((attribute) => {
+    const key = attribute.id;
+    const columnKey: ColumnKey<AssetRow, never> = {
+      id: key,
+      accessorFn: ((row: AssetRow) =>
+        (row as unknown as Asset).getProperty(key) ?? null) as (
+        row: AssetRow,
+      ) => never,
+    };
+    const column =
+      attribute.type === "number"
+        ? floatColumn(columnKey, {
+            header: attribute.label,
+            decimals: formatting.defaultDecimals,
+            emptyValue: null,
+            isReadOnly: !!lock,
+          })
+        : textColumn(columnKey, {
+            header: attribute.label,
+            emptyValue: null,
+            isReadOnly: !!lock,
+          });
+    if (headerAction) {
+      column.meta = {
+        ...column.meta,
+        customHeaderActions: [headerAction],
+      };
+    }
+    return column;
+  });
 }
 
 function _buildColumns(
@@ -410,9 +584,15 @@ function _buildColumns(
   curves: Curves,
   simulationSettings: SimulationSettings,
   qualityType: QualityAnalysisType,
-  validateLabel?: (label: string, rowIndex: number) => boolean,
+  validateLabel?: (label: string, row: AssetRow) => boolean,
   getRow?: (rowIndex: number) => AssetRow | undefined,
+  accessorCtx?: AssetAccessorCtx,
+  customAttributes: CustomAttribute[] = [],
+  customAttributesLock?: AttributesLock,
+  labelMaxLength?: number,
+  inferRoughness?: RoughnessInferrer,
 ): GridColumn<AssetRow>[] {
+  const ck = makeCk(type, accessorCtx);
   const energyGlobalPatternId = simulationSettings.energyGlobalPatternId;
   const energyGlobalPrice = simulationSettings.energyGlobalPrice;
   const energyGlobalEfficiency = simulationSettings.energyGlobalEfficiency;
@@ -428,30 +608,67 @@ function _buildColumns(
     return unitLabel ? `${name} (${unitLabel})` : name;
   };
 
+  // Shown as the roughness placeholder for a pipe that has none of its own,
+  // the way an EPANET default is for the optional columns.
+  const inferredRoughnessFor = (rowIndex: number): number | null => {
+    const row = getRow?.(rowIndex);
+    return row && inferRoughness
+      ? inferRoughness(row as unknown as Pipe)
+      : null;
+  };
+
   const numericCol = (
     key: string,
     name: string,
-    unit: Parameters<TranslateUnitFn>[0] = null,
-    property?: QuantityProperty,
-    isReadOnly?: (rowIndex: number) => boolean,
-    placeholder?: string,
-  ): GridColumn<AssetRow> =>
-    floatColumn(key, {
+    {
+      unit = null,
+      property,
+      isReadOnly,
+      defaultValue,
+      commitInvalidValues,
+      placeholder,
+    }: {
+      unit?: Parameters<TranslateUnitFn>[0];
+      property?: QuantityProperty;
+      isReadOnly?: (rowIndex: number) => boolean;
+      defaultValue?: number | null | ((rowIndex: number) => number | null);
+      commitInvalidValues?: boolean;
+      placeholder?: (rowIndex: number) => string | undefined;
+    } = {},
+  ): GridColumn<AssetRow> => {
+    const nullable = isNullableColumn(key);
+    const emptiable = isOptionalColumn(key) || nullable;
+    return floatColumn(ck(key), {
       header: headerLabel(name, unit),
       decimals:
         property != null
           ? getDecimals(formatting, property)
           : formatting.defaultDecimals,
       isReadOnly: !editable.has(key) ? true : (isReadOnly ?? false),
+      validate: fieldValidator(type, key),
+      commitInvalidValues,
+      required: !isOptionalColumn(key),
+      defaultValue: defaultValue ?? optionalColumnDefault(key),
       placeholder,
-      ...(NULLABLE_KEYS.has(key) ? { nullValue: null, deleteValue: null } : {}),
+      emptyValue: emptiable ? null : NON_ZERO_KEYS.has(key) ? undefined : 0,
     });
+  };
+
+  const isSettingSetByControl = (rowIndex: number): boolean => {
+    const row = getRow?.(rowIndex);
+    return (
+      !!row &&
+      !!accessorCtx &&
+      accessorCtx.model.controlsLookup.hasControls(row.id)
+    );
+  };
 
   const booleanCol = (
     key: string,
     name: string,
     isReadOnly = false,
-  ): GridColumn<AssetRow> => booleanColumn(key, { header: name, isReadOnly });
+  ): GridColumn<AssetRow> =>
+    booleanColumn(ck(key), { header: name, isReadOnly });
 
   const patternOpts = (filterType: PatternType, excludeId?: PatternId) =>
     [...patterns.values()]
@@ -479,12 +696,12 @@ function _buildColumns(
     isReadOnly?: (rowIndex: number) => boolean,
     excludeId?: PatternId,
   ): GridColumn<AssetRow> =>
-    filterableSelectColumn(key, {
+    filterableSelectColumn(ck(key), {
       header: name,
       options: patternOpts(filterType, excludeId),
       placeholder,
       emptyOptionLabel: placeholder,
-      deleteValue: null,
+      emptyValue: null,
       isReadOnly,
     });
 
@@ -495,12 +712,12 @@ function _buildColumns(
     placeholder?: string,
     isReadOnly?: (rowIndex: number) => boolean,
   ): GridColumn<AssetRow> =>
-    filterableSelectColumn(key, {
+    filterableSelectColumn(ck(key), {
       header: name,
       options: curveOpts(filterType),
       placeholder: placeholder ?? translate("none"),
       emptyOptionLabel: placeholder ?? translate("none"),
-      deleteValue: null,
+      emptyValue: null,
       isReadOnly,
     });
 
@@ -518,15 +735,13 @@ function _buildColumns(
       })),
       emptyOptionLabel: translate("none"),
       placeholder: translate("none"),
-      deleteValue: null,
+      emptyValue: null,
     }),
-    numericCol(
-      "chemicalSourceStrength",
-      translate("chemicalSourceStrength"),
-      undefined,
-      undefined,
-      isChemicalSourceNone,
-    ),
+    numericCol("chemicalSourceStrength", translate("chemicalSourceStrength"), {
+      isReadOnly: isChemicalSourceNone,
+      defaultValue: 0,
+      commitInvalidValues: true,
+    }),
     patternCol(
       "chemicalSourcePatternId",
       translate("chemicalSourcePattern"),
@@ -538,6 +753,7 @@ function _buildColumns(
 
   const simCols = hasSimulation
     ? buildSimColumns(
+        ck,
         type,
         translate,
         units,
@@ -547,57 +763,80 @@ function _buildColumns(
       )
     : [];
 
+  const trailingCols = [
+    ...customAttributeColumns(
+      customAttributes,
+      formatting,
+      translate,
+      customAttributesLock,
+    ),
+    ...simCols,
+  ];
+
   switch (type) {
     case "junction":
       return [
         textColumn("label", {
           header: translate("label"),
           validate: validateLabel,
+          cleanLabel: (raw) =>
+            LabelManager.sanitizeLabel(raw, type, labelMaxLength),
         }),
         booleanCol("isActive", translate("isEnabled"), true),
-        numericCol(
-          "elevation",
-          translate("elevation"),
-          units.elevation,
-          "elevation",
-        ),
-        numericCol(
-          "emitterCoefficient",
-          translate("emitterCoefficient"),
-          units.emitterCoefficient,
-          "emitterCoefficient",
-        ),
-        floatColumn("avgDemand", {
+        numericCol("elevation", translate("elevation"), {
+          unit: units.elevation,
+          property: "elevation",
+        }),
+        numericCol("emitterCoefficient", translate("emitterCoefficient"), {
+          unit: units.emitterCoefficient,
+          property: "emitterCoefficient",
+          commitInvalidValues: true,
+        }),
+        floatColumn(ck("avgDemand"), {
           header: headerLabel(translate("directDemand"), units.baseDemand),
           decimals: getDecimals(formatting, "baseDemand"),
           isReadOnly: true,
         }),
-        floatColumn("avgCustomerDemand", {
-          header: headerLabel(translate("customerDemand"), units.baseDemand),
-          decimals: getDecimals(formatting, "baseDemand"),
+        integerColumn(ck("demandsCount"), {
+          header: translate("demandsCount"),
           isReadOnly: true,
         }),
-        floatColumn("customerPointCount", {
+        floatColumn(ck("baseDemand"), {
+          header: headerLabel(translate("baseDemand"), units.baseDemand),
+          decimals: getDecimals(formatting, "baseDemand"),
+          emptyValue: 0,
+        }),
+        patternCol("patternId", translate("timePattern"), "demand"),
+        floatColumn(ck("customerPointCount"), {
           header: translate("connectedCustomers"),
           decimals: 0,
           isReadOnly: true,
         }),
-        numericCol("initialQuality", translate("initialQuality")),
+        floatColumn(ck("avgCustomerDemand"), {
+          header: headerLabel(translate("customerDemand"), units.baseDemand),
+          decimals: getDecimals(formatting, "baseDemand"),
+          isReadOnly: true,
+        }),
+        numericCol("initialQuality", translate("initialQuality"), {
+          commitInvalidValues: true,
+        }),
         ...chemicalSourceTypeCols(),
-        ...simCols,
+        ...trailingCols,
       ];
     case "pipe":
       return [
         textColumn("label", {
           header: translate("label"),
           validate: validateLabel,
+          cleanLabel: (raw) =>
+            LabelManager.sanitizeLabel(raw, type, labelMaxLength),
         }),
         booleanCol("isActive", translate("isEnabled")),
-        textColumn("startNode", {
+        textColumn(ck("startNode"), {
           header: translate("startNode"),
           isReadOnly: true,
         }),
-        textColumn("endNode", {
+        textColumn(ck("endNode"), {
           header: translate("endNode"),
           isReadOnly: true,
         }),
@@ -608,27 +847,33 @@ function _buildColumns(
             label: translate(`pipe.${s}`),
           })),
         }),
-        numericCol(
-          "diameter",
-          translate("diameter"),
-          units.diameter,
-          "diameter",
-        ),
-        numericCol("length", translate("length"), units.length, "length"),
-        numericCol("roughness", translate("roughness"), units.roughness),
-        numericCol(
-          "minorLoss",
-          translate("minorLoss"),
-          units.minorLoss,
-          "minorLoss",
-        ),
+        numericCol("diameter", translate("diameter"), {
+          unit: units.diameter,
+          property: "diameter",
+          commitInvalidValues: true,
+        }),
+        numericCol("length", translate("length"), {
+          unit: units.length,
+          property: "length",
+          commitInvalidValues: true,
+        }),
         ...buildExtraPipeCols(translate, formatting),
-        floatColumn("customerDemand", {
+        numericCol("roughness", translate("roughness"), {
+          unit: units.roughness,
+          commitInvalidValues: true,
+          defaultValue: (rowIndex) => inferredRoughnessFor(rowIndex),
+        }),
+        numericCol("minorLoss", translate("minorLoss"), {
+          unit: units.minorLoss,
+          property: "minorLoss",
+          commitInvalidValues: true,
+        }),
+        floatColumn(ck("customerDemand"), {
           header: headerLabel(translate("customerDemand"), units.baseDemand),
           decimals: getDecimals(formatting, "baseDemand"),
           isReadOnly: true,
         }),
-        floatColumn("customerPointCount", {
+        floatColumn(ck("customerPointCount"), {
           header: translate("connectedCustomers"),
           decimals: 0,
           isReadOnly: true,
@@ -636,29 +881,31 @@ function _buildColumns(
         floatColumn("bulkReactionCoeff", {
           header: translate("bulkReactionCoeff"),
           decimals: formatting.defaultDecimals,
-          deleteValue: null,
-          placeholder: localizeDecimal(reactionGlobalBulk),
+          emptyValue: null,
+          defaultValue: reactionGlobalBulk,
         }),
         floatColumn("wallReactionCoeff", {
           header: translate("wallReactionCoeff"),
           decimals: formatting.defaultDecimals,
-          deleteValue: null,
-          placeholder: localizeDecimal(reactionGlobalWall),
+          emptyValue: null,
+          defaultValue: reactionGlobalWall,
         }),
-        ...simCols,
+        ...trailingCols,
       ];
     case "pump":
       return [
         textColumn("label", {
           header: translate("label"),
           validate: validateLabel,
+          cleanLabel: (raw) =>
+            LabelManager.sanitizeLabel(raw, type, labelMaxLength),
         }),
         booleanCol("isActive", translate("isEnabled")),
-        textColumn("startNode", {
+        textColumn(ck("startNode"), {
           header: translate("startNode"),
           isReadOnly: true,
         }),
-        textColumn("endNode", {
+        textColumn(ck("endNode"), {
           header: translate("endNode"),
           isReadOnly: true,
         }),
@@ -693,14 +940,18 @@ function _buildColumns(
           undefined,
           (rowIndex) => getRow?.(rowIndex)?.definitionType !== "curveId",
         ),
-        numericCol(
-          "power",
-          translate("power"),
-          units.power,
-          "power",
-          (rowIndex) => getRow?.(rowIndex)?.definitionType !== "power",
-        ),
-        numericCol("speed", translate("initialSpeed"), units.speed, "speed"),
+        numericCol("power", translate("power"), {
+          unit: units.power,
+          property: "power",
+          isReadOnly: (rowIndex) =>
+            getRow?.(rowIndex)?.definitionType !== "power",
+          commitInvalidValues: true,
+        }),
+        numericCol("speed", translate("initialSpeed"), {
+          unit: units.speed,
+          property: "speed",
+          commitInvalidValues: true,
+        }),
         patternCol("speedPatternId", translate("speedPattern"), "pumpSpeed"),
         curveCol(
           "efficiencyCurveId",
@@ -708,14 +959,10 @@ function _buildColumns(
           "efficiency",
           translate("constantPercent", localizeDecimal(energyGlobalEfficiency)),
         ),
-        numericCol(
-          "energyPrice",
-          translate("energyPrice"),
-          undefined,
-          undefined,
-          undefined,
-          localizeDecimal(energyGlobalPrice),
-        ),
+        numericCol("energyPrice", translate("energyPrice"), {
+          defaultValue: energyGlobalPrice,
+          commitInvalidValues: true,
+        }),
         patternCol(
           "energyPricePatternId",
           translate("energyPricePattern"),
@@ -724,20 +971,22 @@ function _buildColumns(
           undefined,
           energyGlobalPatternId ?? undefined,
         ),
-        ...simCols,
+        ...trailingCols,
       ];
     case "valve":
       return [
         textColumn("label", {
           header: translate("label"),
           validate: validateLabel,
+          cleanLabel: (raw) =>
+            LabelManager.sanitizeLabel(raw, type, labelMaxLength),
         }),
         booleanCol("isActive", translate("isEnabled")),
-        textColumn("startNode", {
+        textColumn(ck("startNode"), {
           header: translate("startNode"),
           isReadOnly: true,
         }),
-        textColumn("endNode", {
+        textColumn(ck("endNode"), {
           header: translate("endNode"),
           isReadOnly: true,
         }),
@@ -748,23 +997,31 @@ function _buildColumns(
             label: translate(`valve.${k}.detailed`),
           })),
         }),
-        numericCol(
-          "setting",
-          translate("setting"),
-          undefined,
-          undefined,
-          (rowIndex) => getRow?.(rowIndex)?.kind === "gpv",
-        ),
+        numericCol("setting", translate("setting"), {
+          isReadOnly: (rowIndex) =>
+            getRow?.(rowIndex)?.kind === "gpv" ||
+            isSettingSetByControl(rowIndex),
+          placeholder: (rowIndex) =>
+            isSettingSetByControl(rowIndex)
+              ? translate("controls.flowModulating.setByControl")
+              : undefined,
+          commitInvalidValues: true,
+        }),
         filterableSelectColumn("curveId", {
           header: translate("valveCurve"),
           options: [...curveOpts("headloss"), ...curveOpts("valve")],
           placeholder: translate("none"),
           emptyOptionLabel: translate("none"),
-          deleteValue: null,
+          emptyValue: null,
           isReadOnly: (rowIndex) => {
             const kind = getRow?.(rowIndex)?.kind;
             return kind !== "gpv" && kind !== "pcv";
           },
+        }),
+        textColumn(ck("targetNodeId"), {
+          header: translate("targetNode"),
+          placeholder: translate("none"),
+          isReadOnly: true,
         }),
         filterableSelectColumn("initialStatus", {
           header: translate("initialStatus"),
@@ -773,91 +1030,90 @@ function _buildColumns(
             label: translate(`valve.${s}`),
           })),
         }),
-        numericCol(
-          "diameter",
-          translate("diameter"),
-          units.diameter,
-          "diameter",
-        ),
-        numericCol(
-          "minorLoss",
-          translate("minorLoss"),
-          units.minorLoss,
-          "minorLoss",
-        ),
-        ...simCols,
+        numericCol("diameter", translate("diameter"), {
+          unit: units.diameter,
+          property: "diameter",
+          commitInvalidValues: true,
+        }),
+        numericCol("minorLoss", translate("minorLoss"), {
+          unit: units.minorLoss,
+          property: "minorLoss",
+          commitInvalidValues: true,
+        }),
+        ...trailingCols,
       ];
     case "reservoir":
       return [
         textColumn("label", {
           header: translate("label"),
           validate: validateLabel,
+          cleanLabel: (raw) =>
+            LabelManager.sanitizeLabel(raw, type, labelMaxLength),
         }),
         booleanCol("isActive", translate("isEnabled"), true),
-        numericCol(
-          "elevation",
-          translate("elevation"),
-          units.elevation,
-          "elevation",
-        ),
-        numericCol("head", translate("head"), units.head, "head"),
+        numericCol("elevation", translate("elevation"), {
+          unit: units.elevation,
+          property: "elevation",
+        }),
+        numericCol("head", translate("head"), {
+          unit: units.head,
+          property: "head",
+          commitInvalidValues: true,
+        }),
         patternCol("headPatternId", translate("headPattern"), "reservoirHead"),
-        numericCol("initialQuality", translate("initialQuality")),
+        numericCol("initialQuality", translate("initialQuality"), {
+          commitInvalidValues: true,
+        }),
         ...chemicalSourceTypeCols(),
-        ...simCols,
+        ...trailingCols,
       ];
     case "tank":
       return [
         textColumn("label", {
           header: translate("label"),
           validate: validateLabel,
+          cleanLabel: (raw) =>
+            LabelManager.sanitizeLabel(raw, type, labelMaxLength),
         }),
         booleanCol("isActive", translate("isEnabled"), true),
-        numericCol(
-          "elevation",
-          translate("elevation"),
-          units.elevation,
-          "elevation",
-        ),
-        numericCol(
-          "initialLevel",
-          translate("initialLevel"),
-          units.initialLevel,
-          "initialLevel",
-        ),
-        numericCol(
-          "minLevel",
-          translate("minLevel"),
-          units.minLevel,
-          "minLevel",
-          (rowIndex) => getRow?.(rowIndex)?.volumeCurveId != null,
-        ),
-        numericCol(
-          "maxLevel",
-          translate("maxLevel"),
-          units.maxLevel,
-          "maxLevel",
-          (rowIndex) => getRow?.(rowIndex)?.volumeCurveId != null,
-        ),
-        numericCol(
-          "minVolume",
-          translate("minVolume"),
-          units.minVolume,
-          "minVolume",
-          (rowIndex) => getRow?.(rowIndex)?.volumeCurveId != null,
-        ),
-        floatColumn("maxVolume", {
+        numericCol("elevation", translate("elevation"), {
+          unit: units.elevation,
+          property: "elevation",
+        }),
+        numericCol("initialLevel", translate("initialLevel"), {
+          unit: units.initialLevel,
+          property: "initialLevel",
+          commitInvalidValues: true,
+        }),
+        numericCol("minLevel", translate("minLevel"), {
+          unit: units.minLevel,
+          property: "minLevel",
+          isReadOnly: (rowIndex) => getRow?.(rowIndex)?.volumeCurveId != null,
+          commitInvalidValues: true,
+        }),
+        numericCol("maxLevel", translate("maxLevel"), {
+          unit: units.maxLevel,
+          property: "maxLevel",
+          isReadOnly: (rowIndex) => getRow?.(rowIndex)?.volumeCurveId != null,
+          commitInvalidValues: true,
+        }),
+        numericCol("minVolume", translate("minVolume"), {
+          unit: units.minVolume,
+          property: "minVolume",
+          isReadOnly: (rowIndex) => getRow?.(rowIndex)?.volumeCurveId != null,
+          commitInvalidValues: true,
+        }),
+        floatColumn(ck("maxVolume"), {
           header: headerLabel(translate("maxVolume"), units.minVolume),
           decimals: getDecimals(formatting, "minVolume"),
           isReadOnly: true,
         }),
-        numericCol(
-          "diameter",
-          translate("diameter"),
-          units.tankDiameter,
-          "tankDiameter",
-          (rowIndex) => getRow?.(rowIndex)?.volumeCurveId != null,
-        ),
+        numericCol("diameter", translate("diameter"), {
+          unit: units.tankDiameter,
+          property: "tankDiameter",
+          isReadOnly: (rowIndex) => getRow?.(rowIndex)?.volumeCurveId != null,
+          commitInvalidValues: true,
+        }),
         curveCol("volumeCurveId", translate("volumeCurve"), "volume"),
         booleanCol("overflow", translate("canOverflow")),
         filterableSelectColumn("mixingModel", {
@@ -866,37 +1122,32 @@ function _buildColumns(
             value: m,
             label: translate(`tank.${m}`),
           })),
-          deleteValue: "mixed",
+          emptyValue: "mixed",
         }),
-        floatColumn("mixingFraction", {
-          header: translate("mixingFraction"),
-          decimals: formatting.defaultDecimals,
-          deleteValue: null,
+        numericCol("mixingFraction", translate("mixingFraction"), {
           isReadOnly: (rowIndex) =>
             getRow?.(rowIndex)?.mixingModel !== TANK_TWO_COMPARTMENT_MIXING,
+          commitInvalidValues: true,
         }),
-        numericCol("initialQuality", translate("initialQuality")),
+        numericCol("initialQuality", translate("initialQuality"), {
+          commitInvalidValues: true,
+        }),
         floatColumn("bulkReactionCoeff", {
           header: translate("bulkReactionCoeff"),
           decimals: formatting.defaultDecimals,
-          deleteValue: null,
-          placeholder: localizeDecimal(reactionGlobalBulk),
+          emptyValue: null,
+          defaultValue: reactionGlobalBulk,
         }),
         ...chemicalSourceTypeCols(),
-        ...simCols,
+        ...trailingCols,
       ];
   }
 }
 
 export function buildColumns(
-  ...args: BuildColumnsArgs
-): GridColumn<AssetRow>[] {
-  return _buildColumns(noExtraPipeCols, ...args);
-}
-
-export function buildColumnsWithPipeAttributes(
   materials: string[],
+  lock: AttributesLock | undefined,
   ...args: BuildColumnsArgs
 ): GridColumn<AssetRow>[] {
-  return _buildColumns(pipeAttributeColsFor(materials), ...args);
+  return _buildColumns(pipeAttributeColsFor(materials, lock), ...args);
 }

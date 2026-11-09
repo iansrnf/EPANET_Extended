@@ -14,11 +14,13 @@ declare module "@tanstack/react-table" {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface ColumnMeta<TData extends RowData, TValue> {
     cellComponent?: ComponentType<CellProps<TValue>>;
+    hasWarning?: (value: TValue, rowIndex?: number) => boolean;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface Column<TData extends RowData, TValue> {
     getCellComponent: () => CellComponent | undefined;
+    hasWarning: (value: TValue, rowIndex?: number) => boolean;
   }
 }
 
@@ -28,5 +30,7 @@ export const CellRenderingFeature: TableFeature = {
     _table: Table<TData>,
   ): void => {
     column.getCellComponent = () => column.columnDef.meta?.cellComponent;
+    column.hasWarning = (value, rowIndex) =>
+      column.columnDef.meta?.hasWarning?.(value, rowIndex) ?? false;
   },
 };

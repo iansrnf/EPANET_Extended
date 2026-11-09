@@ -1,5 +1,5 @@
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
-import { decodeProximityAnomalies } from "./data";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
+import { decodeProximityAnomalies } from "@epanet-js/network-review";
 
 describe("decodeProximityAnomalies", () => {
   it("sorts proximity anomalies by distance (ascending)", () => {

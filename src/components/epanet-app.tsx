@@ -1,10 +1,12 @@
 //TODO: CHECK LINTER ERRORS
 "use client";
+import { ScriptEditorProvider } from "src/panels/scripts/script-editor-context";
 import type { MapEngine } from "src/map";
 import { MapCanvas } from "src/map/map-canvas";
 import { MenuBarPlay } from "src/components/menu-bar";
 import Drop from "src/components/drop";
 import { Dialogs } from "src/dialogs";
+import { ActivateTrialAfterSignIn } from "src/dialogs/activating-trial";
 import { CSS } from "@dnd-kit/utilities";
 import React, {
   Suspense,
@@ -17,8 +19,9 @@ import React, {
 import { Resizer, useWindowResizeSplits } from "src/components/resizer";
 import {
   BottomPanel,
+  ActivityBar,
   LeftSidePanel,
-  RelocatedSidePanel,
+  VerticalPanel,
   SidePanel,
 } from "src/panels";
 import { MapContext } from "src/map";
@@ -39,33 +42,42 @@ import {
 import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 import debounce from "lodash/debounce";
 import { Legends } from "./legends";
-import { TimestepSelector } from "./timestep-selector";
+import { TimestepSpeedWarning } from "./timestep-selector";
 import { MapLoading } from "src/map/map-loader";
 import { Toolbar } from "src/toolbar/";
+import { MapToolbar } from "src/toolbar/map-toolbar";
+import { useIsDrawingAvailable } from "src/hooks/use-is-drawing-available";
 import { Footer } from "./footer";
 import { useHydrateAtoms } from "jotai/utils";
 import { TabCloseGuard } from "./tab-close-guard";
 import { CommandShortcuts } from "./commands-shortcuts";
-import { PanelRegistrations } from "src/panels/panel-registrations";
 import { CommandBar } from "./command-bar/command-bar";
 import { SimulationPlaybackController } from "./simulation-playback-controller";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useAuth } from "src/hooks/use-auth";
+import { useEffectivePlan } from "src/hooks/use-effective-plan";
 import { dialogFromUrl } from "src/state/dialog";
 import { OfflineGuard } from "./offline-guard";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
+import { useNarrowViewport } from "src/hooks/use-narrow-viewport";
 import { NotificationFromUrl } from "./notification-from-url";
 import { setUserContext } from "src/infra/error-tracking";
 import { useAppReady } from "src/hooks/use-app-ready";
+import { useFeatureFlagsReady } from "src/hooks/use-feature-flags";
 import { AppLoader } from "./app-loader";
 import { PrivacyBanner } from "./privacy-banner";
 import { usePrivacySettings } from "src/hooks/use-privacy-settings";
 import { initStorage } from "src/infra/storage";
 import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
 import { useIsCustomerAllocationDisabled } from "src/hooks/use-is-customer-allocation-disabled";
-import { useSeedDefaultProjectDb } from "src/hooks/persistence/use-start-new-project";
-import { useLoggerTelemetry } from "src/hooks/use-logger-telemetry";
-import { darkThemeAtom } from "src/state/user-settings";
+import { SessionRecoveryGuard } from "./session-recovery-guard";
+import { AuthSyncGuard } from "./auth-sync-guard";
+import { useDbStorageBootstrap } from "src/hooks/use-db-storage-bootstrap";
+import { useWorkersBootstrap } from "src/hooks/use-workers-bootstrap";
+import { contentViewAtom } from "src/state/content-view";
+import { ContentViews } from "src/views/content-views";
+import { ModelBuildViewUrl } from "src/views/model-build-view-url";
+import { DialogFromUrl } from "./dialog-from-url";
 
 type ResolvedLayout = "HORIZONTAL" | "VERTICAL" | "FLOATING";
 
@@ -80,50 +92,43 @@ const persistentTransformAtom = atom<Transform>({
 });
 
 export function EpanetApp() {
-  const { isReady, progress } = useAppReady();
+  const areFeatureFlagsReady = useFeatureFlagsReady();
+  const isDbReady = useDbStorageBootstrap(areFeatureFlagsReady);
+  const areWorkersReady = useWorkersBootstrap(areFeatureFlagsReady);
+  const { isReady, progress } = useAppReady(isDbReady, areWorkersReady);
   const [map, setMap] = useState<MapEngine | null>(null);
   useWindowResizeSplits();
   const userTracking = useUserTracking();
   const { user, isSignedIn } = useAuth();
   const { enableAllTracking } = usePrivacySettings();
   const hasIdentifiedRef = useRef(false);
+  const effectivePlan = useEffectivePlan();
+  const lastReportedPlanRef = useRef<string | null>(null);
 
+  const isContentViewOpen = useAtomValue(contentViewAtom) !== null;
   const isEditionBlocked = useIsEditionBlocked();
   const isCustomerAllocationDisabled = useIsCustomerAllocationDisabled();
-  const seedDefaultProjectDb = useSeedDefaultProjectDb();
-  const dbInitializedRef = useRef(false);
-  const darkTheme = useAtomValue(darkThemeAtom);
-  useLoggerTelemetry();
-
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", darkTheme);
-    document.documentElement.style.colorScheme = darkTheme ? "dark" : "light";
-  }, [darkTheme]);
 
   useEffect(() => {
     void initStorage();
   }, []);
 
   useEffect(() => {
-    if (dbInitializedRef.current) return;
-    if (!isReady) return;
-    dbInitializedRef.current = true;
-    seedDefaultProjectDb();
-  }, [isReady, seedDefaultProjectDb]);
-
-  useEffect(() => {
     if (isSignedIn && user && !hasIdentifiedRef.current) {
+      // Sentry's scope is in-memory and resets on every page load, unlike
+      // PostHog's persisted identity, so this must run outside that guard.
+      setUserContext({
+        id: user.id as string,
+        email: user.email,
+        plan: user.plan,
+      });
+
       if (!userTracking.isIdentified()) {
         enableAllTracking();
         userTracking.identify(user);
         userTracking.reloadFeatureFlags();
-        setUserContext({
-          id: user.id as string,
-          email: user.email,
-          plan: user.plan,
-        });
-        hasIdentifiedRef.current = true;
       }
+      hasIdentifiedRef.current = true;
     }
 
     if (!isSignedIn && hasIdentifiedRef.current) {
@@ -133,14 +138,23 @@ export function EpanetApp() {
         localStorage.clear();
         setUserContext(null);
         hasIdentifiedRef.current = false;
+        lastReportedPlanRef.current = null;
       }
     }
   }, [isSignedIn, user, userTracking, enableAllTracking]);
 
-  const isSmOrLarger = useBreakpoint("sm");
+  useEffect(() => {
+    if (!isSignedIn || !hasIdentifiedRef.current) return;
+    if (lastReportedPlanRef.current === effectivePlan) return;
+
+    userTracking.setUserProperties({ plan: effectivePlan });
+    lastReportedPlanRef.current = effectivePlan;
+  }, [isSignedIn, effectivePlan, userTracking]);
+
+  const isNarrowViewport = useNarrowViewport();
   const isMdOrLarger = useBreakpoint("md");
 
-  const layout: ResolvedLayout = isSmOrLarger ? "HORIZONTAL" : "VERTICAL";
+  const layout: ResolvedLayout = isNarrowViewport ? "VERTICAL" : "HORIZONTAL";
 
   const sensor = useSensors(
     useSensor(PointerSensor, {
@@ -167,71 +181,90 @@ export function EpanetApp() {
   }
 
   return (
-    <main
-      className={
-        "custom-cursor-family h-dvh flex flex-col bg-white dark:bg-gray-800"
-      }
-    >
+    <main className={"custom-cursor-family h-dvh flex flex-col bg-popover"}>
       <MapContext.Provider value={map}>
-        <div className="h-24">
-          <MenuBarPlay />
-          <Toolbar
-            readonly={isEditionBlocked}
-            customerAllocationDisabled={isCustomerAllocationDisabled}
-          />
-        </div>
-        <div
-          className={clsx(
-            layout === "VERTICAL" && "flex-col h-full",
-            "flex grow relative border-t border-gray-200 dark:border-gray-900",
-            "pb-10",
-          )}
-        >
-          {layout === "HORIZONTAL" && <LeftSidePanel />}
-          <div className="flex-auto flex flex-col relative min-w-0">
-            <DndContext
-              sensors={sensor}
-              modifiers={[restrictToWindowEdges]}
-              onDragEnd={(end) => {
-                setPersistentTransform((transform) => {
-                  return {
-                    x: transform.x + end.delta.x,
-                    y: transform.y + end.delta.y,
-                  };
-                });
-              }}
-            >
-              <DraggableMap
-                persistentTransform={persistentTransform}
-                setMap={setMap}
-                layout={layout}
+        <ScriptEditorProvider>
+          <div className={clsx(!isContentViewOpen && "h-24")}>
+            <MenuBarPlay />
+            {!isContentViewOpen && (
+              <Toolbar
+                readonly={isEditionBlocked}
+                customerAllocationDisabled={isCustomerAllocationDisabled}
               />
-            </DndContext>
-            {layout === "HORIZONTAL" && <BottomPanel />}
-            {layout === "VERTICAL" && <RelocatedSidePanel />}
+            )}
           </div>
-          {layout === "HORIZONTAL" && (
+          <div
+            className={clsx(
+              layout === "VERTICAL" && "flex-col h-full",
+              "flex grow relative border-t dark:border-gray-900",
+              "pb-10",
+              isContentViewOpen && "invisible",
+            )}
+          >
+            {layout === "HORIZONTAL" && <ActivityBar />}
+            <div
+              className={clsx(
+                layout === "VERTICAL" && "flex-col",
+                "flex grow relative min-w-0 min-h-0",
+              )}
+            >
+              {layout === "HORIZONTAL" && <LeftSidePanel />}
+              <div className="flex-auto flex flex-col relative min-w-0">
+                <DndContext
+                  sensors={sensor}
+                  modifiers={[restrictToWindowEdges]}
+                  onDragEnd={(end) => {
+                    setPersistentTransform((transform) => {
+                      return {
+                        x: transform.x + end.delta.x,
+                        y: transform.y + end.delta.y,
+                      };
+                    });
+                  }}
+                >
+                  <DraggableMap
+                    persistentTransform={persistentTransform}
+                    setMap={setMap}
+                    layout={layout}
+                    readonly={isEditionBlocked}
+                  />
+                </DndContext>
+                {layout === "HORIZONTAL" && <BottomPanel />}
+                {layout === "VERTICAL" && <VerticalPanel />}
+              </div>
+              {layout === "HORIZONTAL" && (
+                <>
+                  <SidePanel />
+                  <Resizer side="left" isToggleAllowed={false} />
+                  <Resizer side="right" isToggleAllowed={false} />
+                </>
+              )}
+            </div>
+            <ContentViews />
+          </div>
+          {!isContentViewOpen && <Drop />}
+          <Dialogs />
+          <ActivateTrialAfterSignIn />
+          {!isContentViewOpen && (
             <>
-              <SidePanel />
-              <Resizer side="left" isToggleAllowed={false} />
-              <Resizer side="right" isToggleAllowed={false} />
+              <CommandBar />
+              <Suspense fallback={null}>
+                <CommandShortcuts />
+                <SimulationPlaybackController />
+              </Suspense>
             </>
           )}
-        </div>
-        <Drop />
-        <Dialogs />
-        <CommandBar />
-        <PanelRegistrations />
-        <Suspense fallback={null}>
-          <CommandShortcuts />
-          <SimulationPlaybackController />
-        </Suspense>
-        <Notifications />
-        <Footer />
+          <Notifications />
+          {!isContentViewOpen && <Footer />}
+        </ScriptEditorProvider>
       </MapContext.Provider>
       <TabCloseGuard />
+      <SessionRecoveryGuard />
+      <AuthSyncGuard />
       <OfflineGuard />
       <NotificationFromUrl />
+      <ModelBuildViewUrl />
+      <DialogFromUrl />
       <PrivacyBanner />
     </main>
   );
@@ -241,15 +274,18 @@ function DraggableMap({
   setMap,
   layout,
   persistentTransform,
+  readonly = false,
 }: {
   setMap: (arg0: MapEngine | null) => void;
   layout: ResolvedLayout;
   persistentTransform: Transform;
+  readonly?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const { setNodeRef, transform } = useDraggable({
     id: "map",
   });
+  const isDrawingAvailable = useIsDrawingAvailable();
 
   useMapResize(containerRef.current, layout);
 
@@ -259,6 +295,7 @@ function DraggableMap({
         layout === "FLOATING"
           ? "overflow-hidden absolute w-64 h-64 flex z-50 rounded-sm border border-gray-500 shadow-lg"
           : "relative flex-auto flex flex-col",
+        "drawing-toolbar-controls",
       )}
       ref={(elem) => {
         setNodeRef(elem);
@@ -275,14 +312,15 @@ function DraggableMap({
           : {}
       }
     >
-      <div className="flex-auto relative">
+      <div className="flex-auto relative overflow-hidden">
         <MapCanvas setMap={setMap} />
       </div>
       <Legends />
-      <div className="absolute top-3 right-3 flex flex-col gap-1 items-end">
-        <TimestepSelector />
+      <div className="absolute flex flex-col gap-1 items-end top-2 right-2">
+        <TimestepSpeedWarning />
         <MapLoading />
       </div>
+      {isDrawingAvailable && <MapToolbar readonly={readonly} />}
     </div>
   );
 }

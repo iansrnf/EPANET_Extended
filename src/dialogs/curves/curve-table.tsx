@@ -16,13 +16,14 @@ import {
 import {
   CurvePoint,
   CurveType,
+  getCurveErrors,
   stripTrailingEmptyPoints,
-} from "src/hydraulic-model/curves";
+} from "@epanet-js/hydraulic-model";
 import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import { DeleteIcon, AddIcon } from "src/icons";
 import { getCurveTypeConfig } from "./curve-type-config";
-import type { UnitsSpec } from "src/lib/project-settings/quantities-spec";
+import type { UnitsSpec } from "@epanet-js/project-settings";
 
 type CurveRow = {
   x: number;
@@ -96,13 +97,13 @@ export const CurveTable = forwardRef<DataGridRef, CurveTableProps>(
 
     const errorCells = useMemo(() => {
       const meaningful = stripTrailingEmptyPoints(points);
-      const errors = curveConfig.getErrors(meaningful);
+      const errors = getCurveErrors(curveType, meaningful);
       const set = new Set<string>();
       for (const e of errors) {
         set.add(`${e.index}:${e.value}`);
       }
       return set;
-    }, [points, curveConfig]);
+    }, [points, curveType]);
 
     const rowData = useMemo(() => toRows(points), [points]);
 
@@ -157,6 +158,7 @@ export const CurveTable = forwardRef<DataGridRef, CurveTableProps>(
         {
           label: translate("delete"),
           icon: <DeleteIcon size="sm" />,
+          variant: "destructive" as const,
           onSelect: handleDeleteRow,
           disabled: () => rowData.length <= 1,
         },
@@ -185,14 +187,12 @@ export const CurveTable = forwardRef<DataGridRef, CurveTableProps>(
         floatColumn("x", {
           header: xHeader,
           size: 82,
-          deleteValue: DEFAULT_X,
-          nullValue: 0,
+          emptyValue: 0,
         }),
         floatColumn("y", {
           header: yHeader,
           size: 82,
-          deleteValue: DEFAULT_Y,
-          nullValue: 0,
+          emptyValue: 0,
         }),
       ],
       [xHeader, yHeader],

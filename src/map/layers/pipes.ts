@@ -11,6 +11,14 @@ export const pipeLinkColorExpression = (
   defaultLinkColor: string,
 ): mapboxgl.Expression => [
   "case",
+  [
+    "all",
+    ["==", ["get", "selected"], true],
+    ["==", ["get", "isActive"], false],
+  ],
+  colors.fuchsia300,
+  ["==", ["get", "selected"], true],
+  colors.fuchsia500,
   ["==", ["get", "isActive"], false],
   colors.zinc400,
   ["coalesce", ["get", "color"], defaultLinkColor],
@@ -58,7 +66,12 @@ export const pipesLayer = ({
 
 export const pipeArrowColorExpression = (
   defaultLinkColor: string,
-): mapboxgl.Expression => ["coalesce", ["get", "color"], defaultLinkColor];
+): mapboxgl.Expression => [
+  "case",
+  ["==", ["get", "selected"], true],
+  colors.fuchsia500,
+  ["coalesce", ["get", "color"], defaultLinkColor],
+];
 
 export const pipeArrows = ({
   source,

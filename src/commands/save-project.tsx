@@ -7,17 +7,17 @@ import {
   projectFileInfoAtom,
   isDemoNetworkAtom,
 } from "src/state/file-system";
-import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
+import { markProjectSavedAtom } from "src/state/project-revision";
 import { dialogAtom } from "src/state/dialog";
 import { userSettingsAtom } from "src/state/user-settings";
 import { projectSettingsAtom } from "src/state/project-settings";
+import { worktreeAtom } from "src/state/scenarios";
 import { notify } from "src/components/notifications";
 import { SpinnerIcon, SuccessIcon, WarningIcon } from "src/icons";
 import { useTranslate } from "src/hooks/use-translate";
 import { useRecentFiles } from "src/hooks/use-recent-files";
 import { useUserTracking } from "src/infra/user-tracking";
 import * as db from "src/lib/db";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { captureError, captureWarning } from "src/infra/error-tracking";
 import { MapContext, captureThumbnail } from "src/map";
 
@@ -40,7 +40,6 @@ export const useSaveProject = ({
   const translate = useTranslate();
   const { addRecent } = useRecentFiles();
   const userTracking = useUserTracking();
-  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
   const map = useContext(MapContext);
 
   const performSave = useAtomCallback(
@@ -50,7 +49,6 @@ export const useSaveProject = ({
           const { fileSave } = await getFsAccess();
           const projectInfo = get(projectFileInfoAtom);
           const inpInfo = get(inpFileInfoAtom);
-          const hydraulicModel = get(stagingModelDerivedAtom);
 
           const suggestedName = projectInfo
             ? projectInfo.name
@@ -89,9 +87,10 @@ export const useSaveProject = ({
             const isDemo = get(isDemoNetworkAtom);
             set(projectFileInfoAtom, {
               name: newHandle.name,
-              modelVersion: hydraulicModel.version,
               handle: newHandle,
+              lastSavedAt: Date.now(),
             });
+            set(markProjectSavedAtom);
             if (!isDemo) {
               const thumbnail = map
                 ? (captureThumbnail(map) ?? undefined)
@@ -112,6 +111,7 @@ export const useSaveProject = ({
         });
         try {
           await asyncSave();
+
           notify({
             variant: "success",
             title: translate("saved"),
@@ -166,9 +166,12 @@ export const useSaveProject = ({
         set,
         { source, isSaveAs = false }: { source: string; isSaveAs?: boolean },
       ) => {
-        if (!isOurFileOn) return false;
-
-        userTracking.capture({ name: "project.saved", source, isSaveAs });
+        userTracking.capture({
+          name: "project.saved",
+          source,
+          isSaveAs,
+          scenariosCount: get(worktreeAtom).scenarios.length,
+        });
 
         const projectInfo = get(projectFileInfoAtom);
         if (!projectInfo && get(userSettingsAtom).showProjectSavedInfo) {
@@ -185,7 +188,7 @@ export const useSaveProject = ({
 
         return performSave({ isSaveAs });
       },
-      [performSave, isOurFileOn, userTracking],
+      [performSave, userTracking],
     ),
   );
 };

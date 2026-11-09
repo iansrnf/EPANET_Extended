@@ -1,17 +1,19 @@
 import { act, renderHook } from "@testing-library/react";
 import { vi } from "vitest";
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { setInitialState } from "src/__helpers__/state";
 import { CommandContainer } from "src/commands/__helpers__/command-container";
 import { hglProfileAtom } from "src/state/hgl-profile";
 import { ephemeralStateAtom } from "src/state/drawing";
 import { Mode, modeAtom } from "src/state/mode";
 import { selectionAtom } from "src/state/selection";
+import { cursorStyleAtom } from "src/state/map";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import type { Store } from "src/state";
 import type { HandlerContext } from "src/types";
 import type { Asset, AssetId, HydraulicModel } from "src/hydraulic-model";
 import { useHglProfileHandlers } from "./index";
+import { USelection } from "src/selection";
 
 let nextClickedAsset: Asset | null = null;
 
@@ -60,6 +62,24 @@ const clickNode = (
   nextClickedAsset = null;
 };
 
+const hoverNode = (
+  handlers: ReturnType<typeof useHglProfileHandlers>,
+  store: Store,
+  nodeId: AssetId,
+) => {
+  const model = store.get(stagingModelDerivedAtom);
+  nextClickedAsset = (model.assets.get(nodeId) as Asset) ?? null;
+  act(() => {
+    handlers.move({} as never);
+  });
+  nextClickedAsset = null;
+};
+
+const hoveredNodeIdOf = (store: Store) => {
+  const ephemeral = store.get(ephemeralStateAtom);
+  return ephemeral.type === "hglProfile" ? ephemeral.hoveredNodeId : null;
+};
+
 describe("useHglProfileHandlers click (commit-on-click model)", () => {
   it("stages the first anchor without committing an HGL profile", () => {
     const store = setInitialState({
@@ -80,7 +100,7 @@ describe("useHglProfileHandlers click (commit-on-click model)", () => {
     expect(
       ephemeral.type === "hglProfile" ? ephemeral.anchorIds : null,
     ).toEqual([IDS.J1]);
-    expect(store.get(selectionAtom)).toEqual({ type: "none" });
+    expect(USelection.isNone(store.get(selectionAtom))).toBe(true);
   });
 
   it("commits the HGL profile on the second valid click", () => {
@@ -107,10 +127,9 @@ describe("useHglProfileHandlers click (commit-on-click model)", () => {
       ephemeral.type === "hglProfile" ? ephemeral.anchorIds : null,
     ).toBeUndefined();
 
-    expect(store.get(selectionAtom)).toEqual({
-      type: "multi",
-      ids: [IDS.J1, IDS.J2, IDS.J3, IDS.P1, IDS.P2],
-    });
+    expect(store.get(selectionAtom)).toEqual(
+      USelection.fromAssetIds([IDS.J1, IDS.J2, IDS.J3, IDS.P1, IDS.P2]),
+    );
 
     expect(store.get(modeAtom).mode).toBe(Mode.HGL_PROFILE);
   });
@@ -137,10 +156,13 @@ describe("useHglProfileHandlers click (commit-on-click model)", () => {
     expect(after!.anchors).toEqual([IDS.J1, IDS.J2, IDS.J3]);
     expect(after!.id).not.toBe(before!.id);
 
-    expect(store.get(selectionAtom)).toEqual({
-      type: "multi",
-      ids: [IDS.J1, IDS.J2, IDS.J3, IDS.P1, IDS.P2],
-    });
+    expect(USelection.getAssetIds(store.get(selectionAtom))).toEqual([
+      IDS.J1,
+      IDS.J2,
+      IDS.J3,
+      IDS.P1,
+      IDS.P2,
+    ]);
   });
 
   it("ignores a click on the same last anchor", () => {
@@ -249,6 +271,42 @@ describe("useHglProfileHandlers.exit (non-destructive)", () => {
 
     expect(store.get(hglProfileAtom)).toBe(committedBefore);
     expect(store.get(modeAtom).mode).toBe(Mode.NONE);
+  });
+});
+
+describe("useHglProfileHandlers move", () => {
+  it("highlights a hovered node that a path can reach", () => {
+    const store = setInitialState({
+      hydraulicModel: buildLinearModel(),
+      mode: Mode.HGL_PROFILE,
+    });
+    const handlers = renderHandlers({
+      store,
+      hydraulicModel: store.get(stagingModelDerivedAtom),
+    });
+
+    clickNode(handlers, store, IDS.J1);
+    hoverNode(handlers, store, IDS.J3);
+
+    expect(hoveredNodeIdOf(store)).toBe(IDS.J3);
+    expect(store.get(cursorStyleAtom)).toBe("");
+  });
+
+  it("does not highlight a hovered node that no path can reach", () => {
+    const store = setInitialState({
+      hydraulicModel: buildLinearModel(),
+      mode: Mode.HGL_PROFILE,
+    });
+    const handlers = renderHandlers({
+      store,
+      hydraulicModel: store.get(stagingModelDerivedAtom),
+    });
+
+    clickNode(handlers, store, IDS.J1);
+    hoverNode(handlers, store, ISOLATED);
+
+    expect(hoveredNodeIdOf(store)).toBeUndefined();
+    expect(store.get(cursorStyleAtom)).toBe("not-allowed");
   });
 });
 

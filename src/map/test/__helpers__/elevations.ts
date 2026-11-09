@@ -1,7 +1,7 @@
 import { Mock, vi } from "vitest";
-import * as useElevationsModule from "src/map/elevations/use-elevations";
+import * as useElevationsModule from "src/hooks/use-elevations";
 
-vi.mock("src/map/elevations/use-elevations", () => ({
+vi.mock("src/hooks/use-elevations", () => ({
   useElevations: vi.fn(),
 }));
 
@@ -9,22 +9,31 @@ export const stubElevation = (
   point?: { lng: number; lat: number },
   elevation?: number,
 ) => {
+  const elevationAt = (lngLat: { lng: number; lat: number }) => {
+    if (
+      point &&
+      elevation !== undefined &&
+      lngLat.lng === point.lng &&
+      lngLat.lat === point.lat
+    ) {
+      return elevation;
+    }
+
+    return null;
+  };
+
   const mockImpl = () => ({
     fetchElevation: vi
       .fn()
-      .mockImplementation((lngLat: { lng: number; lat: number }) => {
-        if (
-          point &&
-          elevation !== undefined &&
-          lngLat.lng === point.lng &&
-          lngLat.lat === point.lat
-        ) {
-          return Promise.resolve(elevation);
-        }
-
-        return Promise.resolve(0);
-      }),
-    prefetchTile: vi.fn(),
+      .mockImplementation((lngLat: { lng: number; lat: number }) =>
+        Promise.resolve(elevationAt(lngLat)),
+      ),
+    fetchElevations: vi
+      .fn()
+      .mockImplementation((lngLats: { lng: number; lat: number }[]) =>
+        Promise.resolve(lngLats.map(elevationAt)),
+      ),
+    prefetchTileThrottled: vi.fn(),
   });
 
   (useElevationsModule.useElevations as Mock).mockImplementation(mockImpl);
@@ -35,7 +44,10 @@ export const stubElevationError = () => {
     fetchElevation: vi
       .fn()
       .mockRejectedValue(new Error("Failed to fetch elevation")),
-    prefetchTile: vi.fn(),
+    fetchElevations: vi
+      .fn()
+      .mockRejectedValue(new Error("Failed to fetch elevation")),
+    prefetchTileThrottled: vi.fn(),
   });
 
   (useElevationsModule.useElevations as Mock).mockImplementation(mockImpl);

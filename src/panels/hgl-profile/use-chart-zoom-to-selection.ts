@@ -2,7 +2,7 @@
 import { useEffect, type RefObject } from "react";
 import { useAtomValue } from "jotai";
 import { selectionAtom } from "src/state/selection";
-import { USelection } from "src/selection/selection";
+import { USelection } from "src/selection";
 import type { ProfileLink, ProfilePoint } from "./chart-data";
 
 const TARGET_LINK_FRACTION = 0.1;
@@ -27,7 +27,7 @@ export function useChartZoomToSelection({
   totalLength,
 }: UseChartZoomToSelectionParams): void {
   const selection = useAtomValue(selectionAtom);
-  const ids = USelection.toIds(selection);
+  const ids = USelection.getAssetIds(selection);
   const idsKey = ids.join(",");
 
   useEffect(() => {

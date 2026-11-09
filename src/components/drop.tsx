@@ -6,10 +6,13 @@ import { StyledDropOverlay } from "./elements";
 import { useTranslate } from "src/hooks/use-translate";
 import { useImportInp, inpExtension } from "src/commands/import-inp";
 import { useOpenProjectFile } from "src/commands/open-project";
+import { useConvertFile } from "src/commands/convert-model";
+import { converterForFile } from "src/lib/converters";
+import { useAvailableConverters } from "src/hooks/use-available-converters";
+import { usePermissions } from "src/hooks/use-permissions";
 import { projectExtension } from "src/commands/save-project";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useUnsavedChangesCheck } from "src/commands/check-unsaved-changes";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useAtomValue, useSetAtom } from "jotai";
 import { dialogAtom } from "src/state/dialog";
 
@@ -42,30 +45,51 @@ const Drop = () => {
   const checkUnsavedChanges = useUnsavedChangesCheck();
   const importInp = useImportInp();
   const openProjectFile = useOpenProjectFile();
+  const converters = useAvailableConverters();
+  const { canImportSynergi } = usePermissions();
+  const convertFile = useConvertFile();
   const userTracking = useUserTracking();
   const dialog = useAtomValue(dialogAtom);
   const setDialogState = useSetAtom(dialogAtom);
-  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
 
   const handlers: DropHandler[] = useMemo(
     () => [
-      ...(isOurFileOn
-        ? [
-            {
-              matches: (f: FileWithHandle) =>
-                f.name.toLowerCase().endsWith(projectExtension),
-              handle: (files: FileWithHandle[]) =>
-                openProjectFile(files[0], "dragDrop"),
-            },
-          ]
-        : []),
+      {
+        matches: (f: FileWithHandle) =>
+          f.name.toLowerCase().endsWith(projectExtension),
+        handle: (files: FileWithHandle[]) =>
+          openProjectFile(files[0], "dragDrop"),
+      },
       {
         matches: (f: FileWithHandle) =>
           f.name.toLowerCase().endsWith(inpExtension),
         handle: (files: FileWithHandle[]) => importInp(files, "dragDrop"),
       },
+      {
+        matches: (f: FileWithHandle) =>
+          converterForFile(converters, f.name) !== null,
+        handle: (files: FileWithHandle[]) => {
+          const match = converterForFile(converters, files[0].name);
+          if (!match) return;
+
+          userTracking.capture({
+            name: "convertModel.started",
+            source: "dragDrop",
+            vendor: match.vendor,
+            canImportSynergi,
+          });
+          void convertFile(match.converter, match.vendor, files[0], "dragDrop");
+        },
+      },
     ],
-    [isOurFileOn, openProjectFile, importInp],
+    [
+      openProjectFile,
+      importInp,
+      converters,
+      convertFile,
+      userTracking,
+      canImportSynergi,
+    ],
   );
 
   useEffect(() => {
@@ -160,7 +184,9 @@ const Drop = () => {
 
   return dragging ? (
     <StyledDropOverlay>
-      {translate(isOurFileOn ? "dropProjectOrInp" : "dropInp")}
+      {converters.length > 0
+        ? translate("dropProjectInpOrModel")
+        : translate("dropProjectOrInp")}
     </StyledDropOverlay>
   ) : null;
 };

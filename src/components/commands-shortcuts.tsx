@@ -9,11 +9,7 @@ import {
   createNewShortcut,
   useNewProject,
 } from "src/commands/create-new-project";
-import {
-  saveAsShortcut,
-  saveShortcut,
-  useSaveInp,
-} from "src/commands/save-inp";
+import { saveAsShortcut, saveShortcut } from "src/commands/save-inp";
 import {
   redoShortcut,
   undoShortcut,
@@ -33,10 +29,7 @@ import {
   useDeleteSelection,
 } from "src/commands/delete-selection";
 import { selectAllShortcut, useSelectAll } from "src/commands/select-all";
-import {
-  openInpFromFsShortcut,
-  useOpenInpFromFs,
-} from "src/commands/open-inp-from-fs";
+import { openInpFromFsShortcut } from "src/commands/open-inp-from-fs";
 import { useOpenProject } from "src/commands/open-project";
 import { useSaveProject } from "src/commands/save-project";
 import {
@@ -65,9 +58,9 @@ import {
 } from "src/commands/set-redraw-mode";
 import { reverseLinkShortcut, useReverseLink } from "src/commands/reverse-link";
 import {
-  toggleNetworkReviewShortcut,
-  useToggleNetworkReview,
-} from "src/commands/toggle-network-review";
+  toggleLeftPanelShortcut,
+  useToggleLeftPanel,
+} from "src/commands/toggle-left-panel";
 import {
   toggleSidePanelShortcut,
   useToggleSidePanel,
@@ -111,7 +104,11 @@ import {
   createScenarioShortcut,
   useCreateScenario,
 } from "src/commands/create-scenario";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import {
+  captureDemoThumbnailShortcut,
+  useCaptureDemoThumbnail,
+} from "src/commands/capture-demo-thumbnail";
+import { isDebugOn } from "src/infra/debug-mode";
 
 const IGNORE_ROLES = new Set(["menuitem"]);
 
@@ -120,11 +117,8 @@ export const CommandShortcuts = () => {
   const runSimulation = useRunSimulation();
   const showShortcuts = useShowShortcuts();
   const createNew = useNewProject();
-  const openInpFromFs = useOpenInpFromFs();
   const openProject = useOpenProject();
-  const saveInp = useSaveInp();
   const saveProject = useSaveProject();
-  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
   const { undo, redo } = useHistoryControl();
   const userTracking = useUserTracking();
   const setDrawingMode = useDrawingMode();
@@ -138,7 +132,7 @@ export const CommandShortcuts = () => {
   const reverseLinkAction = useReverseLink();
   const simulation = useAtomValue(simulationDerivedAtom);
   const simulationSettings = useAtomValue(simulationSettingsDerivedAtom);
-  const toggleNetworkReview = useToggleNetworkReview();
+  const toggleLeftPanel = useToggleLeftPanel();
   const toggleSidePanel = useToggleSidePanel();
   const toggleBottomPanel = useToggleBottomPanel();
   const cycleSelectionMode = useCycleSelectionMode();
@@ -152,6 +146,19 @@ export const CommandShortcuts = () => {
   const createScenario = useCreateScenario();
   const toggleBranch = useToggleBranch();
   const goToMain = useGoToMain();
+  const captureDemoThumbnail = useCaptureDemoThumbnail();
+
+  useHotkeys(
+    captureDemoThumbnailShortcut,
+    (e) => {
+      if (e.preventDefault) e.preventDefault();
+
+      captureDemoThumbnail();
+    },
+    [captureDemoThumbnailShortcut, captureDemoThumbnail],
+    "Capture demo thumbnail",
+    !isDebugOn,
+  );
 
   useHotkeys(
     showReportShorcut,
@@ -186,13 +193,9 @@ export const CommandShortcuts = () => {
     (e) => {
       if (e.preventDefault) e.preventDefault();
 
-      if (isOurFileOn) {
-        openProject({ source: "shortcut" });
-      } else {
-        void openInpFromFs({ source: "shortcut" });
-      }
+      openProject({ source: "shortcut" });
     },
-    [openInpFromFsShortcut, openInpFromFs, openProject, isOurFileOn],
+    [openInpFromFsShortcut, openProject],
     "Open inp",
   );
 
@@ -212,13 +215,9 @@ export const CommandShortcuts = () => {
     (e) => {
       if (e.preventDefault) e.preventDefault();
 
-      if (isOurFileOn) {
-        void saveProject({ source: "shortcut" });
-      } else {
-        void saveInp({ source: "shortcut" });
-      }
+      void saveProject({ source: "shortcut" });
     },
-    [saveShortcut, saveInp, saveProject, isOurFileOn],
+    [saveShortcut, saveProject],
     "Save",
   );
 
@@ -227,13 +226,9 @@ export const CommandShortcuts = () => {
     (e) => {
       if (e.preventDefault) e.preventDefault();
 
-      if (isOurFileOn) {
-        void saveProject({ source: "shortcut", isSaveAs: true });
-      } else {
-        void saveInp({ source: "shortcut", isSaveAs: true });
-      }
+      void saveProject({ source: "shortcut", isSaveAs: true });
     },
-    [saveAsShortcut, saveInp, saveProject, isOurFileOn],
+    [saveAsShortcut, saveProject],
     "Save",
   );
 
@@ -247,7 +242,7 @@ export const CommandShortcuts = () => {
         name: "operation.undone",
         source: "shortcut",
       });
-      void undo();
+      undo();
     },
     [undoShortcut, undo, isEditionBlocked],
     "Undo",
@@ -263,7 +258,7 @@ export const CommandShortcuts = () => {
         name: "operation.redone",
         source: "shortcut",
       });
-      void redo();
+      redo();
     },
     [redoShortcut, redo, isEditionBlocked],
     "Redo",
@@ -279,7 +274,7 @@ export const CommandShortcuts = () => {
         name: "operation.redone",
         source: "shortcut",
       });
-      void redo();
+      redo();
     },
     [redoShortcut, redo, isEditionBlocked],
     "Redo",
@@ -403,13 +398,13 @@ export const CommandShortcuts = () => {
   );
 
   useHotkeys(
-    toggleNetworkReviewShortcut,
+    toggleLeftPanelShortcut,
     (e) => {
       e.preventDefault();
-      toggleNetworkReview({ source: "shortcut" });
+      toggleLeftPanel({ source: "shortcut" });
     },
-    [toggleNetworkReview],
-    "Toggle network review",
+    [toggleLeftPanel],
+    "Toggle left panel",
   );
 
   useHotkeys(

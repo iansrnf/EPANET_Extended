@@ -1,167 +1,39 @@
-import { useState, KeyboardEventHandler } from "react";
+import { useState, useRef, useMemo } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTranslate } from "src/hooks/use-translate";
-import { useTranslateUnit } from "src/hooks/use-translate-unit";
-import { localizeDecimal } from "src/infra/i18n/numbers";
-import { InlineField } from "src/components/form/fields";
+import { localizeDecimal } from "@epanet-js/i18n";
 import { NumericField } from "src/components/form/numeric-field";
-import { Selector, SelectorOption } from "src/components/form/selector";
-import { CreatableSelector } from "src/components/form/creatable-selector";
+import { Selector, SelectorListOption } from "@epanet-js/ui-kit";
 import { TriStateCheckbox } from "src/components/form/Checkbox";
-import * as P from "@radix-ui/react-popover";
+
+import { SortAscendingIcon, SortDescendingIcon } from "src/icons";
+import { EmptyBucket, QuantityStats } from "./stats";
 import {
-  StyledPopoverArrow,
-  StyledPopoverContent,
-} from "src/components/elements";
-import {
-  MultipleValuesIcon,
-  SortAscendingIcon,
-  SortDescendingIcon,
-} from "src/icons";
-import { AssetPropertyStats, QuantityStats } from "./data";
-import { BatchEditPropertyConfig } from "./batch-edit-property-config";
+  BatchEditPropertyConfig,
+  isOptionalProperty,
+} from "./batch-edit-property-config";
 import { AssetId } from "src/hydraulic-model";
-import type { Curves, CurveType } from "src/hydraulic-model/curves";
-import type { Patterns, PatternType } from "src/hydraulic-model/patterns";
-import type { LabelManager } from "src/hydraulic-model/label-manager";
+import {
+  type Curves,
+  type CurveType,
+  type Patterns,
+  type PatternType,
+  type LabelManager,
+} from "@epanet-js/hydraulic-model";
 import { JsonValue } from "type-fest";
-import type { ChangeableProperty } from "src/hydraulic-model/model-operations/change-property";
-import clsx from "clsx";
+import type { ChangeableProperty } from "@epanet-js/hydraulic-model-operations";
 
-type MultiValueRowProps = {
-  propertyStats: AssetPropertyStats;
-  config: BatchEditPropertyConfig;
-  onPropertyChange: (
-    modelProperty: ChangeableProperty,
-    value: number | string | boolean,
-  ) => void;
-  readonly?: boolean;
-  onSelectAssets?: (assetIds: AssetId[], property: string) => void;
-  curves?: Curves;
-  patterns?: Patterns;
-  labelManager?: LabelManager;
-  onOpenLibrary?: (
-    library: "curves" | "patterns" | "pumps",
-    filterByType?: CurveType | PatternType,
-  ) => void;
-};
-
-export function MultiValueRow({
-  propertyStats,
-  config,
-  onPropertyChange,
-  readonly = false,
-  onSelectAssets,
-  curves,
-  patterns,
-  labelManager,
-  onOpenLibrary,
-}: MultiValueRowProps) {
-  const translate = useTranslate();
-  const translateUnit = useTranslateUnit();
-
-  const isMixed = propertyStats.values.size > 1;
-  const label =
-    propertyStats.type === "quantity" && propertyStats.unit
-      ? `${translate(propertyStats.property)} (${translateUnit(propertyStats.unit)})`
-      : translate(propertyStats.property);
-  const nullLabel =
-    "nullLabelKey" in config && config.nullLabelKey
-      ? translate(config.nullLabelKey)
-      : undefined;
-
-  return (
-    <InlineField name={label} labelSize="md">
-      <div className="flex items-center gap-1">
-        {isMixed ? (
-          <StatsPopoverButton
-            propertyStats={propertyStats}
-            label={label}
-            onSelectAssets={onSelectAssets}
-            nullLabel={nullLabel}
-          />
-        ) : (
-          <div className="shrink-0 w-7" />
-        )}
-        <div className="flex-1 min-w-0">
-          <EditableField
-            propertyStats={propertyStats}
-            config={config}
-            isMixed={isMixed}
-            onPropertyChange={onPropertyChange}
-            label={label}
-            readonly={readonly}
-            curves={curves}
-            patterns={patterns}
-            labelManager={labelManager}
-            onOpenLibrary={onOpenLibrary}
-          />
-        </div>
-      </div>
-    </InlineField>
-  );
-}
-
-const StatsPopoverButton = ({
-  propertyStats,
-  label,
-  onSelectAssets,
-  nullLabel,
-}: {
-  propertyStats: AssetPropertyStats;
-  label: string;
-  onSelectAssets?: (assetIds: AssetId[], property: string) => void;
-  nullLabel?: string;
-}) => {
-  const [isOpen, setIsOpen] = useState(false);
-
-  const handleContentKeyDown: KeyboardEventHandler<HTMLDivElement> = (
-    event,
-  ) => {
-    if (event.code === "Escape" || event.code === "Enter") {
-      event.stopPropagation();
-      setIsOpen(false);
-    }
-  };
-
-  return (
-    <P.Root open={isOpen} onOpenChange={setIsOpen}>
-      <P.Trigger
-        aria-label={`Stats for: ${label}`}
-        className="shrink-0 w-7 h-7 flex items-center justify-center rounded-xs text-gray-500 hover:text-gray-700 hover:bg-gray-200 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-700"
-      >
-        <MultipleValuesIcon />
-      </P.Trigger>
-      <P.Portal>
-        <StyledPopoverContent onKeyDown={handleContentKeyDown} align="end">
-          <StyledPopoverArrow />
-          {propertyStats.type === "quantity" && (
-            <QuantityStatsBaseFields quantityStats={propertyStats} />
-          )}
-          <SortableValuesList
-            values={propertyStats.values}
-            decimals={
-              propertyStats.type === "quantity"
-                ? propertyStats.decimals
-                : undefined
-            }
-            type={propertyStats.type}
-            onSelectAssets={
-              onSelectAssets
-                ? (ids) => onSelectAssets(ids, propertyStats.property)
-                : undefined
-            }
-            nullLabel={nullLabel}
-          />
-        </StyledPopoverContent>
-      </P.Portal>
-    </P.Root>
-  );
-};
-
-const EditableField = ({
-  propertyStats,
+export const EditableField = ({
   config,
   isMixed,
+  distinctBuckets,
+  singleValue,
+  distinctValues,
+  hasOnlyEmpty,
+  emptyLabel,
+  emptyValue,
+  decimals,
+  isInteger,
   onPropertyChange,
   label,
   readonly,
@@ -170,12 +42,19 @@ const EditableField = ({
   labelManager,
   onOpenLibrary,
 }: {
-  propertyStats: AssetPropertyStats;
   config: BatchEditPropertyConfig;
   isMixed: boolean;
+  distinctBuckets: number;
+  singleValue: number | string | null;
+  distinctValues: string[];
+  hasOnlyEmpty: boolean;
+  emptyLabel?: string;
+  emptyValue?: number | null;
+  decimals?: number;
+  isInteger?: boolean;
   onPropertyChange: (
     modelProperty: ChangeableProperty,
-    value: number | string | boolean,
+    value: number | string | boolean | null | undefined,
   ) => void;
   label: string;
   readonly: boolean;
@@ -188,26 +67,48 @@ const EditableField = ({
   ) => void;
 }) => {
   const translate = useTranslate();
+  const isDisabled = readonly || config.disabled === true;
 
-  const mixedPlaceholder = `${propertyStats.values.size} ${translate("values").toLowerCase()}`;
+  const mixedPlaceholder = hasOnlyEmpty
+    ? translate(emptyLabel!)
+    : `${distinctBuckets} ${translate("values").toLowerCase()}`;
 
   if (config.fieldType === "quantity") {
-    const stats = propertyStats as QuantityStats;
-    const firstValue = stats.values.keys().next().value as number;
-    const displayValue = isMixed
-      ? ""
-      : localizeDecimal(firstValue, { decimals: stats.decimals });
+    const firstValue =
+      typeof singleValue === "number" ? singleValue : undefined;
+    const displayValue =
+      isMixed || firstValue === undefined
+        ? ""
+        : isInteger
+          ? String(firstValue)
+          : localizeDecimal(firstValue, { decimals });
+
+    const isRequired = !isOptionalProperty(config.modelProperty);
+    const commitInvalidValues = !!config.hasModelValidation;
+    const quantityPlaceholder =
+      hasOnlyEmpty && emptyValue != null
+        ? localizeDecimal(emptyValue, { decimals })
+        : mixedPlaceholder;
 
     return (
       <NumericField
         label={label}
         displayValue={displayValue}
-        placeholder={mixedPlaceholder}
-        positiveOnly={config.positiveOnly}
-        isNullable={config.isNullable}
-        disabled={readonly}
+        placeholder={quantityPlaceholder}
+        isRequired={isRequired && !isMixed}
+        commitInvalidValues={commitInvalidValues}
+        validate={config.validate}
+        disabled={isDisabled}
         styleOptions={{}}
-        onChangeValue={(newValue) => {
+        onChangeValue={(newValue, isEmpty) => {
+          if (isEmpty) {
+            if (!isRequired) {
+              onPropertyChange(config.modelProperty, undefined);
+            } else if (commitInvalidValues) {
+              onPropertyChange(config.modelProperty, null);
+            }
+            return;
+          }
           onPropertyChange(config.modelProperty, newValue);
         }}
       />
@@ -215,43 +116,50 @@ const EditableField = ({
   }
 
   if (config.fieldType === "category") {
-    const firstKey = propertyStats.values.keys().next().value as string;
-    const currentValue = isMixed
-      ? null
-      : firstKey.replace(config.statsPrefix, "");
+    const firstKey = typeof singleValue === "string" ? singleValue : undefined;
+    const currentValue =
+      isMixed || firstKey === undefined
+        ? null
+        : firstKey.replace(config.statsPrefix, "");
 
-    const options: SelectorOption<string>[] = readonly
-      ? currentValue != null
-        ? [
-            {
-              label: config.useUppercaseLabel
-                ? currentValue.toUpperCase()
-                : translate(config.statsPrefix + currentValue),
-              value: currentValue,
-            },
-          ]
-        : []
-      : config.values.map((v) => ({
-          label: config.useUppercaseLabel
-            ? v.toUpperCase()
-            : translate(config.statsPrefix + v),
-          value: v,
-        }));
+    const toOption = (value: string): SelectorListOption<string> => ({
+      value,
+      label: config.useUppercaseLabel
+        ? value.toUpperCase()
+        : translate(config.statsPrefix + value),
+    });
 
-    if (isMixed) {
+    const options: SelectorListOption<string>[] = !isDisabled
+      ? config.values.map(toOption)
+      : currentValue != null
+        ? [toOption(currentValue)]
+        : [];
+
+    const isClearable = !!config.nullLabelKey;
+    const isNullable = isMixed || isClearable;
+    const clearLabel = isClearable ? translate(config.nullLabelKey!) : "";
+    const categoryPlaceholder = isMixed ? mixedPlaceholder : clearLabel;
+    const handleCategoryChange = (newValue: string | null) => {
+      if (newValue === null) {
+        if (isClearable) {
+          onPropertyChange(config.modelProperty, undefined);
+        }
+        return;
+      }
+      onPropertyChange(config.modelProperty, newValue);
+    };
+
+    if (isNullable) {
       return (
         <Selector<string>
           selected={currentValue}
           options={options}
           nullable={true}
-          placeholder={mixedPlaceholder}
+          placeholder={categoryPlaceholder}
+          clearLabel={isClearable ? clearLabel : undefined}
           ariaLabel={label}
-          onChange={(newValue) => {
-            if (newValue !== null) {
-              onPropertyChange(config.modelProperty, newValue);
-            }
-          }}
-          disabled={readonly}
+          onChange={handleCategoryChange}
+          disabled={isDisabled}
         />
       );
     }
@@ -264,7 +172,7 @@ const EditableField = ({
         onChange={(newValue) => {
           onPropertyChange(config.modelProperty, newValue);
         }}
-        disabled={readonly}
+        disabled={isDisabled}
       />
     );
   }
@@ -272,65 +180,64 @@ const EditableField = ({
   if (config.fieldType === "librarySelect") {
     const collection = config.library === "patterns" ? patterns : curves;
     const labelType = config.library === "patterns" ? "pattern" : "curve";
-    const LIBRARY_SENTINEL = "-1";
 
-    const itemGroup: SelectorOption<string>[] = [];
+    const items: SelectorListOption<string>[] = [];
     if (collection) {
       for (const [id, item] of collection) {
         if (config.filterByType && item.type !== config.filterByType) continue;
-        itemGroup.push({ label: item.label, value: String(id) });
+        items.push({ label: item.label, value: String(id) });
       }
     }
 
-    const options: SelectorOption<string>[][] = [];
-    if (config.libraryLabelKey && onOpenLibrary) {
-      options.push([
-        { label: translate(config.libraryLabelKey), value: LIBRARY_SENTINEL },
-      ]);
-    }
-    options.push(itemGroup);
-
     // Stats store labels; resolve to ID via labelManager
-    const firstLabel = propertyStats.values.keys().next().value as string;
-    const resolvedId = labelManager?.getIdByLabel(firstLabel, labelType);
-    const currentId = isMixed
-      ? null
-      : resolvedId != null
-        ? String(resolvedId)
-        : null;
+    const firstLabel =
+      typeof singleValue === "string" ? singleValue : undefined;
+    const resolvedId = firstLabel
+      ? labelManager?.getIdByLabel(firstLabel, labelType)
+      : undefined;
+    const currentId = isMixed || resolvedId == null ? null : String(resolvedId);
+
+    const showLibraryAction = !!config.libraryLabelKey && !!onOpenLibrary;
+    const resolvedPlaceholder = isMixed
+      ? mixedPlaceholder
+      : config.nullLabelKey
+        ? translate(config.nullLabelKey)
+        : translate("none");
 
     return (
       <Selector<string>
         selected={currentId}
-        options={options}
+        options={items}
         nullable={true}
-        stickyFirstGroup={!!config.libraryLabelKey && !!onOpenLibrary}
-        stickyGroupClassName="italic"
-        placeholder={
-          isMixed
-            ? mixedPlaceholder
-            : config.nullLabelKey
-              ? translate(config.nullLabelKey)
-              : translate("none")
+        actions={
+          showLibraryAction
+            ? [
+                {
+                  label: translate(config.libraryLabelKey!),
+                  onSelect: () =>
+                    onOpenLibrary(config.library, config.filterByType),
+                },
+              ]
+            : undefined
+        }
+        placeholder={resolvedPlaceholder}
+        clearLabel={
+          config.nullLabelKey ? translate(config.nullLabelKey) : undefined
         }
         ariaLabel={label}
         onChange={(newValue) => {
-          if (newValue === LIBRARY_SENTINEL) {
-            onOpenLibrary?.(config.library, config.filterByType);
-            return;
-          }
           onPropertyChange(
             config.modelProperty,
-            newValue === null ? (undefined as never) : Number(newValue),
+            newValue === null ? undefined : Number(newValue),
           );
         }}
-        disabled={readonly}
+        disabled={isDisabled}
       />
     );
   }
 
   if (config.fieldType === "openCategory") {
-    const options = Array.from(propertyStats.values.keys() as Iterable<string>);
+    const options = distinctValues;
     const currentValue = isMixed ? null : (options[0] ?? null);
     const placeholder = isMixed
       ? mixedPlaceholder
@@ -339,9 +246,11 @@ const EditableField = ({
         : translate("none");
 
     return (
-      <CreatableSelector
-        options={options}
+      <Selector
+        options={options.map((o) => ({ value: o, label: o }))}
         selected={currentValue}
+        nullable
+        allowNew
         onChange={(newValue) => {
           if (newValue === null) return;
           const normalized = newValue.trim();
@@ -353,22 +262,20 @@ const EditableField = ({
         }}
         placeholder={placeholder}
         ariaLabel={label}
-        searchPlaceholder={translate("searchOrTypeNew")}
-        createLabel={(query) => translate("addNewValue", query)}
+        validateNew={config.validateNew}
       />
     );
   }
 
   // Boolean field (e.g. canOverflow)
-  const firstKey = propertyStats.values.keys().next().value as string;
-  const isChecked = !isMixed && firstKey === "yes";
+  const isChecked = !isMixed && singleValue === "yes";
 
   return (
     <div className="p-2 flex items-center h-[38px]">
       <TriStateCheckbox
         checked={isChecked}
         indeterminate={isMixed}
-        disabled={readonly}
+        disabled={isDisabled}
         ariaLabel={label}
         onChange={(newChecked) => {
           onPropertyChange(config.modelProperty, newChecked);
@@ -384,6 +291,7 @@ export const QuantityStatsBaseFields = ({
   quantityStats: QuantityStats;
 }) => {
   const decimals = quantityStats.decimals;
+  const isInteger = quantityStats.isInteger;
   const translate = useTranslate();
   const [tabIndex, setTabIndex] = useState(-1);
   const handleFocus = () => {
@@ -402,18 +310,22 @@ export const QuantityStatsBaseFields = ({
             <span
               role="textbox"
               aria-label={`Key: ${label}`}
-              className="pb-1 text-xs text-gray-500 font-bold"
+              className="pb-1 text-size-small text-subtle font-bold"
             >
               {label}
             </span>
             <input
               role="textbox"
               aria-label={`Value for: ${label}`}
-              className="text-xs font-mono px-2 py-2 bg-gray-100 border-none focus-visible:ring-inset focus-visible:ring-purple-500 focus-visible:bg-purple-300/10"
+              className="text-size-small font-mono px-2 py-2 bg-base-disabled border-none focus-visible:ring-inset focus-visible:ring-accent focus-visible:bg-purple-300/10"
               readOnly
               tabIndex={tabIndex}
               onFocus={handleFocus}
-              value={localizeDecimal(quantityStats[metric], { decimals })}
+              value={
+                isInteger
+                  ? String(quantityStats[metric])
+                  : localizeDecimal(quantityStats[metric], { decimals })
+              }
             />
           </div>
         );
@@ -425,20 +337,37 @@ export const QuantityStatsBaseFields = ({
 type SortColumn = "value" | "count";
 type SortDirection = "asc" | "desc";
 
+export const formatEmptyBucket = (
+  emptyBucket: { label: string; value?: number | null },
+  translate: (key: string) => string,
+  decimals?: number,
+): string =>
+  emptyBucket.value != null
+    ? `${translate(emptyBucket.label)} (${localizeDecimal(emptyBucket.value, {
+        decimals,
+      })})`
+    : translate(emptyBucket.label);
+
 export const SortableValuesList = ({
   values,
   decimals,
+  isInteger,
   type,
   onSelectAssets,
-  nullLabel,
+  emptyBucket,
 }: {
   values: Map<JsonValue, AssetId[]>;
   decimals?: number;
+  isInteger?: boolean;
   type: "quantity" | "category" | "boolean" | "literalCategory";
   onSelectAssets?: (assetIds: AssetId[]) => void;
-  nullLabel?: string;
+  emptyBucket?: EmptyBucket;
 }) => {
   const translate = useTranslate();
+
+  const emptyBucketLabel = emptyBucket
+    ? formatEmptyBucket(emptyBucket, translate, decimals)
+    : "";
 
   const [sortColumn, setSortColumn] = useState<SortColumn>(
     type === "quantity" ? "value" : "count",
@@ -458,22 +387,44 @@ export const SortableValuesList = ({
     }
   };
 
-  const valueEntries = Array.from(values.entries()).sort(
-    ([a, idsA], [b, idsB]) => {
-      const multiplier = sortDirection === "asc" ? 1 : -1;
-      if (sortColumn === "value") {
-        if (type === "quantity") {
-          return ((a as number) - (b as number)) * multiplier;
-        } else {
+  const sortedRows = useMemo(() => {
+    const entries = Array.from(values.entries()).sort(
+      ([a, idsA], [b, idsB]) => {
+        const multiplier = sortDirection === "asc" ? 1 : -1;
+        if (sortColumn === "value") {
+          if (type === "quantity") {
+            return ((a as number) - (b as number)) * multiplier;
+          }
           return String(a).localeCompare(String(b)) * multiplier;
         }
-      } else {
         return (idsA.length - idsB.length) * multiplier;
-      }
-    },
-  );
+      },
+    );
+
+    const result: {
+      value: JsonValue | null;
+      assetIds: AssetId[];
+      isEmpty: boolean;
+    }[] = entries.map(([value, assetIds]) => ({
+      value,
+      assetIds,
+      isEmpty: false,
+    }));
+    if (emptyBucket) {
+      result.push({ value: null, assetIds: emptyBucket.ids, isEmpty: true });
+    }
+    return result;
+  }, [values, sortColumn, sortDirection, type, emptyBucket]);
 
   const isClickable = !!onSelectAssets;
+
+  const parentRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: sortedRows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 34,
+    overscan: 8,
+  });
 
   const SortIndicator = ({ column }: { column: SortColumn }) => {
     const isActive = sortColumn === column;
@@ -501,7 +452,7 @@ export const SortableValuesList = ({
       <div className="flex justify-between pb-2" role="row">
         <button
           onClick={() => handleSort("value")}
-          className="text-xs text-gray-500 font-bold hover:text-gray-700 dark:hover:text-gray-300 cursor-pointer"
+          className="text-size-small text-subtle font-bold hover:text-default dark:hover:text-gray-300 cursor-pointer"
           role="columnheader"
           aria-sort={getAriaSort("value")}
         >
@@ -510,7 +461,7 @@ export const SortableValuesList = ({
         </button>
         <button
           onClick={() => handleSort("count")}
-          className="text-xs text-gray-500 font-bold hover:text-gray-700 dark:hover:text-gray-300 cursor-pointer"
+          className="text-size-small text-subtle font-bold hover:text-default dark:hover:text-gray-300 cursor-pointer"
           role="columnheader"
           aria-sort={getAriaSort("count")}
         >
@@ -518,36 +469,43 @@ export const SortableValuesList = ({
           <SortIndicator column="count" />
         </button>
       </div>
-      <div className="max-h-32 overflow-y-auto" role="rowgroup">
-        <div className="w-full">
-          {valueEntries.map(([value, assetIds], index) => {
-            const label = formatValue(value, translate, decimals, type);
-            const emptyLabel = nullLabel ?? translate("none");
+      <div ref={parentRef} className="max-h-32 overflow-y-auto" role="rowgroup">
+        <div
+          className="w-full relative"
+          style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+        >
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const row = sortedRows[virtualRow.index];
+            const label = row.isEmpty
+              ? emptyBucketLabel
+              : formatValue(row.value, translate, decimals, type, isInteger);
+            const striped = virtualRow.index % 2 === 1;
             return (
               <div
-                key={index}
-                className={`py-2 px-2 flex items-center hover:bg-gray-200 dark:hover:bg-gray-700 gap-x-2 even:bg-gray-100 ${isClickable ? "cursor-pointer" : ""}`}
+                key={virtualRow.index}
+                className={`absolute top-0 left-0 w-full py-2 px-2 flex items-center hover:bg-base-hover gap-x-2 ${striped ? "bg-panel" : ""} ${isClickable ? "cursor-pointer" : ""}`}
+                style={{
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
                 role="row"
                 onClick={
-                  isClickable ? () => onSelectAssets(assetIds) : undefined
+                  isClickable ? () => onSelectAssets(row.assetIds) : undefined
                 }
               >
                 <div
-                  title={label || emptyLabel}
-                  className={clsx(
-                    "flex-auto font-mono text-xs truncate",
-                    !label && "italic text-gray-600",
-                  )}
+                  title={label}
+                  className={`flex-auto font-mono text-size-small truncate ${row.isEmpty ? "italic text-subtle" : ""}`}
                   role="cell"
                 >
-                  {label || emptyLabel}
+                  {label}
                 </div>
                 <div
-                  className="text-xs font-mono"
+                  className="text-size-small font-mono"
                   title={translate("assets")}
                   role="cell"
                 >
-                  ({localizeDecimal(assetIds.length)})
+                  ({localizeDecimal(row.assetIds.length)})
                 </div>
               </div>
             );
@@ -563,10 +521,11 @@ export const formatValue = (
   translate: (key: string) => string,
   decimals?: number,
   type?: string,
+  isInteger?: boolean,
 ): string => {
   if (value === undefined) return "";
   if (typeof value === "number") {
-    return localizeDecimal(value, { decimals });
+    return isInteger ? String(value) : localizeDecimal(value, { decimals });
   }
   if (typeof value === "object") return JSON.stringify(value);
   if (typeof value === "boolean") return String(value);

@@ -1,5 +1,5 @@
 import { CircleLayer, FillLayer, LineLayer, SymbolLayer } from "mapbox-gl";
-import { strokeColorFor } from "src/lib/color";
+import { strokeColorFor } from "@epanet-js/map";
 
 export function gisLayerFill(
   sourceId: string,
@@ -84,7 +84,9 @@ export function gisLayerLabel(
     id: `${sourceId}-label`,
     type: "symbol",
     source: sourceId,
-    filter: labelProperty ? ["has", labelProperty] : ["==", 0, 1],
+    filter: labelProperty
+      ? ["has", labelProperty]
+      : ["==", ["literal", 0], ["literal", 1]],
     layout: {
       "text-field": labelProperty ? ["get", labelProperty] : "",
       "text-font": [

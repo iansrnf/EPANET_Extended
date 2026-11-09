@@ -1,14 +1,14 @@
 import { useMemo } from "react";
 import type { HydraulicModel } from "src/hydraulic-model";
-import { Pipe } from "src/hydraulic-model/asset-types/pipe";
-import { listPipeMaterials } from "src/hydraulic-model/utilities/pipe-materials";
+import { Pipe } from "@epanet-js/hydraulic-model";
+import { listPipeMaterials } from "src/hydraulic-model/pipe-materials";
 import type { PropertyComparison } from "src/hooks/use-asset-comparison";
 import { CreatableTextRow } from "./ui-components";
 
 type OnMaterialChange = (
   name: "material",
-  newValue: string | null,
-  oldValue: string | null,
+  newValue: string | undefined,
+  oldValue: string | undefined,
 ) => void;
 
 export const PipeMaterialRow = ({
@@ -25,18 +25,24 @@ export const PipeMaterialRow = ({
   readOnly?: boolean;
 }) => {
   const existingMaterials = useMemo(
-    () => listPipeMaterials(hydraulicModel.assets),
-    [hydraulicModel.assets],
+    () =>
+      listPipeMaterials(
+        hydraulicModel.assets,
+        hydraulicModel.pipeMaterials.map((m) => m.label),
+      ),
+    [hydraulicModel.assets, hydraulicModel.pipeMaterials],
   );
 
   return (
     <CreatableTextRow
       name="material"
-      value={pipe.material ?? null}
+      value={pipe.material}
       options={existingMaterials}
+      isOptional
       comparison={comparison}
       onChange={onChange}
       readOnly={readOnly}
+      paywall="pipeAttributes"
     />
   );
 };

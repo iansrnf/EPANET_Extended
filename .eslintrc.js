@@ -1,9 +1,30 @@
+const fs = require("fs");
+const path = require("path");
+
+// Derive the private workspace lib names from private/libs/* package.json files.
+// This is used to restrict public code from importing private libs.
+const privateLibImportPatterns = (() => {
+  try {
+    const dir = path.resolve(__dirname, "../../../private/libs");
+    if (!fs.existsSync(dir)) return [];
+    return fs
+      .readdirSync(dir)
+      .map((name) => path.join(dir, name, "package.json"))
+      .filter((pkg) => fs.existsSync(pkg))
+      .map((pkg) => JSON.parse(fs.readFileSync(pkg, "utf8")).name)
+      .filter(Boolean)
+      .flatMap((name) => [name, `${name}/**`]);
+  } catch {
+    return [];
+  }
+})();
+
 module.exports = {
   env: {
     browser: true,
     es2021: true,
   },
-  ignorePatterns: ["workers", "vendor", "docs"],
+  ignorePatterns: ["workers", "vendor", "docs", "libs"],
   settings: {
     react: {
       version: "detect",
@@ -40,7 +61,40 @@ module.exports = {
     "no-warning-comments": ["error", { terms: ["fixme"] }],
     "no-restricted-imports": [
       "error",
-      { paths: ["lodash", "purify-ts", "proj4"] },
+      {
+        paths: ["lodash", "purify-ts", "proj4"],
+        patterns: [
+          {
+            group: [...privateLibImportPatterns, "**/private/libs/**"],
+            message:
+              "Public code must not import a private lib. Register private backends in the src/libs.private.ts seam; reference flags by name only.",
+          },
+          {
+            group: ["src/selection/types", "**/selection/types"],
+            message:
+              "Import Sel/Category from 'src/selection' (the module's public surface) and use USelection helpers to construct or read selections. Sub-types like SelMulti/SelSingle are intentionally not exported.",
+          },
+          {
+            group: [
+              "src/selection/selection",
+              "src/selection/use-selection",
+              "**/selection/selection",
+              "**/selection/use-selection",
+            ],
+            message:
+              "Import USelection / useSelection from 'src/selection' (the module's public surface), not its internal files.",
+          },
+        ],
+      },
+    ],
+    "no-restricted-syntax": [
+      "error",
+      {
+        selector:
+          "ObjectExpression > Property[key.name='asset']:not([value.type='Literal']) ~ Property[key.name='customerPoint']:not([value.type='Literal']), ObjectExpression > Property[key.name='customerPoint']:not([value.type='Literal']) ~ Property[key.name='asset']:not([value.type='Literal'])",
+        message:
+          "Do not construct Sel literals directly. Use USelection.none / USelection.singleAsset / USelection.fromIds instead. (See src/selection/AGENTS.md.)",
+      },
     ],
     "no-throw-literal": "error",
     "prefer-const": 1,
@@ -69,9 +123,16 @@ module.exports = {
   },
   overrides: [
     {
+      files: ["**/*.private.ts", "**/*.private.tsx"], // Private files can import private libs.
+      rules: {
+        "no-restricted-imports": "off",
+      },
+    },
+    {
       files: ["*.ts", "*.tsx"], // Your TypeScript files extension
       parserOptions: {
         project: ["./tsconfig.json"], // Specify it only for TypeScript files
+        tsconfigRootDir: __dirname,
       },
       extends: [
         "plugin:@typescript-eslint/recommended-requiring-type-checking",
@@ -99,6 +160,24 @@ module.exports = {
       files: ["./*.config.js", ".eslintrc.js"],
       env: {
         commonjs: true,
+      },
+    },
+    {
+      // The selection module owns the Sel wire shape; tests and shared
+      // helpers legitimately construct Sel literals for fixtures and
+      // assertions.
+      files: [
+        "src/selection/**",
+        "src/__helpers__/**",
+        "**/*.test.ts",
+        "**/*.test.tsx",
+      ],
+      rules: {
+        "no-restricted-imports": [
+          "error",
+          { paths: ["lodash", "purify-ts", "proj4"] },
+        ],
+        "no-restricted-syntax": "off",
       },
     },
     {

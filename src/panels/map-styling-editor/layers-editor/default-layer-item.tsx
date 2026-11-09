@@ -1,19 +1,11 @@
-import {
-  contentLike,
-  menuItemLike,
-  StyledTooltipArrow,
-} from "src/components/elements";
-import * as Tooltip from "@radix-ui/react-tooltip";
-import clsx from "clsx";
+import { Tooltip } from "@epanet-js/ui-kit";
+import { menuItemLike } from "src/components/elements";
 import { Thumbnail } from "./thumbnail";
-import { LayerConfigTemplate } from "src/map/basemaps";
+import { isBasemapConfigured, LayerConfigTemplate } from "src/map/basemaps";
+import { useTranslate } from "src/hooks/use-translate";
 
 type T = LayerConfigTemplate;
 
-/**
- * Only applicable to Mapbox layers, this is
- * a "list-like" interface.
- */
 export function DefaultLayerItem({
   mapboxLayer,
   onSelect,
@@ -21,22 +13,63 @@ export function DefaultLayerItem({
   mapboxLayer: T;
   onSelect: (arg0: T) => void;
 }) {
+  const translate = useTranslate();
+  const isConfigured = isBasemapConfigured(mapboxLayer);
+  const providerName =
+    mapboxLayer.type === "GOOGLE"
+      ? mapboxLayer.name
+      : `Mapbox ${mapboxLayer.name}`;
+  const switchLabel = translate("switchMapProvider", providerName);
+
   return (
-    <Tooltip.Root delayDuration={0}>
-      <Tooltip.Trigger asChild>
+    <Tooltip
+      content={
+        <div className="space-y-1">
+          <div className="px-1 text-size-xs">{switchLabel}</div>
+          <Thumbnail mapboxLayer={mapboxLayer} />
+        </div>
+      }
+      side="left"
+      delayDuration={0}
+      zIndex={30}
+      className="p-1! bg-popover! rounded-md! shadow-md!"
+    >
+      <span
+        className="block"
+        tabIndex={isConfigured ? undefined : 0}
+        title={
+          isConfigured ? switchLabel : translate("googleMaps.configureKey")
+        }
+        aria-label={
+          isConfigured
+            ? undefined
+            : `${mapboxLayer.name}: ${translate("googleMaps.keyRequired")}`
+        }
+      >
         <button
+          type="button"
+          disabled={!isConfigured}
+          aria-label={
+            isConfigured
+              ? switchLabel
+              : `${mapboxLayer.name}: ${translate("googleMaps.keyRequired")}`
+          }
           onClick={() => {
             onSelect(mapboxLayer);
           }}
-          className={menuItemLike({ variant: "default" }) + " border"}
+          className={
+            menuItemLike({ variant: "default" }) +
+            " w-full border disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed"
+          }
         >
           {mapboxLayer.name || "Untitled"}
+          {!isConfigured && (
+            <span className="ml-2 text-size-xs text-subtle">
+              {translate("googleMaps.keyRequired")}
+            </span>
+          )}
         </button>
-      </Tooltip.Trigger>
-      <Tooltip.Content className={clsx(contentLike, "py-1 px-1")} side="left">
-        <Thumbnail mapboxLayer={mapboxLayer} />
-        <StyledTooltipArrow />
-      </Tooltip.Content>
-    </Tooltip.Root>
+      </span>
+    </Tooltip>
   );
 }

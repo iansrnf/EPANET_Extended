@@ -1,7 +1,9 @@
 import * as Comlink from "comlink";
-import { EncodedSubNetwork } from "./data";
-import { findSubNetworks } from "./find-subnetworks";
-import { HydraulicModelBuffers } from "../hydraulic-model-buffers";
+import {
+  EncodedSubNetwork,
+  HydraulicModelBuffers,
+  findSubNetworks,
+} from "@epanet-js/network-review";
 
 export interface ConnectivityTraceWorkerAPI {
   findSubNetworks: (buffers: HydraulicModelBuffers) => EncodedSubNetwork[];

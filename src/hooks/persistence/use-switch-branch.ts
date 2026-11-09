@@ -2,15 +2,18 @@ import { useCallback } from "react";
 import { useAtomCallback } from "jotai/utils";
 import type { Getter, Setter } from "jotai";
 import type { HydraulicModel } from "src/hydraulic-model";
-import { initializeModelFactories } from "src/hydraulic-model/factories";
-import type { LabelManager } from "src/hydraulic-model/label-manager";
-import { branchStateAtom } from "src/state/branch-state";
+import {
+  initializeModelFactories,
+  type LabelManager,
+} from "@epanet-js/hydraulic-model";
+import { branchStateAtom, isBranchLoaded } from "src/state/branch-state";
+import { worktreeAtom } from "src/state/scenarios";
+import { unloadBranch } from "./use-initialize-branch";
 import { modelFactoriesAtom } from "src/state/model-factories";
-import { mapSyncMomentAtom } from "src/state/map";
+import { mapEditionsTrackerAtom } from "src/state/map";
+import { MapEditionsTracker } from "src/map/map-editions-tracker";
 import { selectionAtom } from "src/state/selection";
-import { projectSettingsAtom } from "src/state/project-settings";
 import { USelection } from "src/selection";
-import type { MomentLog } from "src/lib/persistence/moment-log";
 
 function updateFactories(
   get: Getter,
@@ -21,20 +24,11 @@ function updateFactories(
   set(
     modelFactoriesAtom,
     initializeModelFactories({
-      idGenerator: currentFactories.idGenerator,
+      idPools: currentFactories.idPools,
       labelManager,
-      defaults: get(projectSettingsAtom).defaults,
       labelCounters: currentFactories.labelCounters,
     }),
   );
-}
-
-function syncMapMoment(get: Getter, set: Setter, momentLog: MomentLog): void {
-  const current = get(mapSyncMomentAtom);
-  set(mapSyncMomentAtom, {
-    pointer: momentLog.getPointer(),
-    version: current.version + 1,
-  });
 }
 
 function validateSelection(
@@ -47,23 +41,38 @@ function validateSelection(
     selection,
     model.assets,
     model.customerPoints,
-    model.pressureLoggers,
+    model.zones,
   );
   set(selectionAtom, { ...validatedSelection });
+}
+
+function unloadOtherScenarios(get: Getter, set: Setter, branchId: string) {
+  const { mainId } = get(worktreeAtom);
+  if (branchId === mainId) return;
+
+  const branchStates = get(branchStateAtom);
+  const toUnload = [...branchStates].filter(
+    ([id, state]) => id !== mainId && id !== branchId && isBranchLoaded(state),
+  );
+  if (toUnload.length === 0) return;
+
+  const updated = new Map(branchStates);
+  for (const [id, state] of toUnload) updated.set(id, unloadBranch(state));
+  set(branchStateAtom, updated);
 }
 
 export const useSwitchBranch = () => {
   const switchBranch = useAtomCallback(
     useCallback((get: Getter, set: Setter, branchId: string) => {
-      const branchStates = get(branchStateAtom);
-
-      const targetState = branchStates.get(branchId);
-      if (!targetState) {
+      const targetState = get(branchStateAtom).get(branchId);
+      if (!targetState || !isBranchLoaded(targetState)) {
         throw new Error(`Branch state not found for ${branchId}`);
       }
 
+      unloadOtherScenarios(get, set, branchId);
+
       updateFactories(get, set, targetState.labelManager);
-      syncMapMoment(get, set, targetState.momentLog);
+      set(mapEditionsTrackerAtom, new MapEditionsTracker());
       validateSelection(get, set, targetState.hydraulicModel);
     }, []),
   );

@@ -4,13 +4,19 @@ import React, {
   useCallback,
   useMemo,
   useEffect,
-  FunctionComponent,
 } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import clsx from "clsx";
-import { CheckIcon, ChevronDownIcon } from "src/icons";
-import type { ColumnDef, RowData } from "@tanstack/react-table";
+import { ChevronDownIcon } from "src/icons";
+import type { Row, RowData } from "@tanstack/react-table";
+import {
+  SelectorAction,
+  SelectorList,
+  SelectorListOption,
+  isSelectorEmpty,
+} from "@epanet-js/ui-kit";
 import { CellProps, GridColumn } from "../types";
+import { type ColumnKey, resolveColumnKey } from "./column-key";
 
 export type FilterableSelectOption<
   T extends string | number | boolean = string,
@@ -27,272 +33,91 @@ type FilterableSelectCellProps<
   placeholder: string;
   emptyOptionLabel?: string;
   minOptionsForSearch?: number;
+  actions?: SelectorAction[];
+  allowNew?: boolean;
+  createLabel?: (query: string) => string;
+  validateNew?: (query: string) => boolean;
+  onHighlightChange?: (value: T | null) => void;
 };
 
-const PAGE_SIZE = 5;
+// Creatable columns hold free text, where a value differing only in case is the
+// same one, so it resolves to the option that stands for it.
+const findOption = <T extends string | number | boolean>(
+  options: FilterableSelectOption<T>[],
+  value: T | null,
+  allowNew?: boolean,
+): FilterableSelectOption<T> | undefined => {
+  const exact = options.find((option) => option.value === value);
+  if (exact || !allowNew || typeof value !== "string") return exact;
 
-const LIST_NAVIGATION_KEYS = [
-  "ArrowDown",
-  "ArrowUp",
-  "PageDown",
-  "PageUp",
-  "Home",
-  "End",
-];
-
-function filterOptions(
-  options: FilterableSelectOption<string | number | boolean>[],
-  query: string,
-): FilterableSelectOption<string | number | boolean>[] {
-  if (!query.trim()) {
-    return options;
-  }
-  const lowerQuery = query.toLowerCase();
-  return options.filter((opt) => opt.label.toLowerCase().includes(lowerQuery));
-}
-
-function findMatchingIndex(
-  options: FilterableSelectOption<string | number | boolean>[],
-  query: string,
-): number {
-  const char = query.toLowerCase();
-  return options.findIndex(
-    (opt) => opt.enabled !== false && opt.label.toLowerCase().startsWith(char),
+  const key = value.toLowerCase();
+  return options.find(
+    (option) =>
+      typeof option.value === "string" && option.value.toLowerCase() === key,
   );
-}
-
-function calculateNextListIndex(
-  key: string,
-  prev: number,
-  total: number,
-  hasEmptyOption = false,
-): number | null {
-  const first = hasEmptyOption ? 0 : 1;
-  switch (key) {
-    case "ArrowDown":
-      return prev < 1 ? 1 : Math.min(prev + 1, total);
-    case "ArrowUp":
-      if (prev <= 1) return hasEmptyOption ? 0 : total;
-      return prev - 1;
-    case "PageDown":
-      return Math.min(prev < 1 ? PAGE_SIZE : prev + PAGE_SIZE, total);
-    case "PageUp":
-      return Math.max(prev - PAGE_SIZE, first);
-    case "Home":
-      return first;
-    case "End":
-      return total;
-    default:
-      return null;
-  }
-}
-
-function skipDisabled(
-  options: FilterableSelectOption<string | number | boolean>[],
-  index: number,
-  direction: 1 | -1,
-  hasEmptyOption: boolean,
-): number {
-  const first = hasEmptyOption ? 0 : 1;
-  const last = options.length;
-  let i = index;
-  while (i >= first && i <= last) {
-    if (i === 0) return 0;
-    if (options[i - 1]?.enabled !== false) return i;
-    i += direction;
-  }
-  return index;
-}
+};
 
 export function FilterableSelectCell({
   value,
   onChange,
-  stopEditing: onClose,
-  startEditing: onOpen,
+  stopEditing,
+  startEditing,
   isActive,
   editMode,
   readOnly,
   options,
   placeholder,
   emptyOptionLabel,
-  minOptionsForSearch = 8,
+  minOptionsForSearch,
+  actions,
+  allowNew,
+  createLabel,
+  validateNew,
+  onHighlightChange,
 }: CellProps<string | number | boolean | null> &
   FilterableSelectCellProps<string | number | boolean>) {
   const isOpen = !!editMode;
-  const showSearch = options.length >= minOptionsForSearch;
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const listContainerRef = useRef<HTMLDivElement>(null);
+  const [initialQuery, setInitialQuery] = useState("");
+
+  const listOptions: SelectorListOption<string | number | boolean>[] = useMemo(
+    () =>
+      isOpen
+        ? options.map((o) => ({
+            value: o.value,
+            label: o.label,
+            disabled: o.enabled === false,
+          }))
+        : [],
+    [options, isOpen],
+  );
 
   const selectedOption = useMemo(
-    () => options.find((opt) => opt.value === value),
-    [options, value],
+    () => findOption(options, value, allowNew),
+    [options, value, allowNew],
   );
 
-  const [activeIndex, setActiveIndex] = useState<number>(() => {
-    if (emptyOptionLabel && value === null) return 0;
-    const i = options.findIndex((opt) => opt.value === value);
-    return i >= 0 ? i + 1 : 1;
-  });
-  const [searchQuery, setSearchQuery] = useState("");
-  const [mode, setMode] = useState<"search" | "navigation">("search");
-
-  const filteredOptions = useMemo(
-    () => filterOptions(options, searchQuery),
-    [options, searchQuery],
-  );
-
-  const isNavigating = mode === "navigation";
+  // A creatable column can legitimately hold a value the options do not list,
+  // so it shows itself rather than reading as empty.
+  const displayLabel =
+    selectedOption?.label ??
+    (allowNew && value != null && value !== "" ? String(value) : placeholder);
+  const isEmptyValue = !selectedOption && displayLabel === placeholder;
 
   useEffect(
-    function resetStateOnPopoverVisibilityChange() {
-      if (isOpen) {
-        requestAnimationFrame(() => {
-          if (showSearch) {
-            searchInputRef.current?.focus();
-          } else {
-            listContainerRef.current?.focus();
-          }
-        });
-      } else {
-        // Reset when closing
-        setSearchQuery("");
-        if (emptyOptionLabel && value === null) {
-          setActiveIndex(0);
-        } else {
-          const i = options.findIndex((opt) => opt.value === value);
-          setActiveIndex(i >= 0 ? i + 1 : 1);
-        }
-        setMode("search");
+    function syncCellIsActive() {
+      if (isActive) {
+        buttonRef.current?.focus();
       }
     },
-    [isOpen, showSearch, options, value, emptyOptionLabel],
+    [isActive],
   );
 
-  const commit = useCallback(() => {
-    if (activeIndex === 0 && emptyOptionLabel) {
-      onChange(null);
-    } else {
-      const active = filteredOptions[activeIndex - 1];
-      if (active && active.enabled !== false) {
-        onChange(active.value);
-      } else {
-        return;
-      }
-    }
-    onClose();
-  }, [filteredOptions, activeIndex, emptyOptionLabel, onChange, onClose]);
-
-  const handleOptionClick = useCallback(
-    (option: FilterableSelectOption<string | number | boolean>) => {
-      if (option.enabled === false) return;
-      onChange(option.value);
-      onClose();
+  useEffect(
+    function clearInitialQueryOnClose() {
+      if (!isOpen) setInitialQuery("");
     },
-    [onChange, onClose],
-  );
-
-  const handleSearchChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      setSearchQuery(e.target.value);
-      setActiveIndex(1); // Highlight first match
-      setMode("search");
-    },
-    [],
-  );
-
-  // Unified keyboard handler for the popover content
-  const handlePopoverKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      // Navigation keys - switch to navigation mode and move
-      if (LIST_NAVIGATION_KEYS.includes(e.key)) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (
-          filteredOptions.length > 0 ||
-          (emptyOptionLabel && e.key === "ArrowDown")
-        ) {
-          setMode("navigation");
-          setActiveIndex((prev) => {
-            const next = calculateNextListIndex(
-              e.key,
-              prev,
-              filteredOptions.length,
-              !!emptyOptionLabel,
-            );
-            if (next === null) return prev;
-            const direction = ["ArrowDown", "PageDown", "End"].includes(e.key)
-              ? 1
-              : -1;
-            return skipDisabled(
-              filteredOptions,
-              next,
-              direction,
-              !!emptyOptionLabel,
-            );
-          });
-        }
-        return;
-      }
-
-      if (e.key === "Enter") {
-        e.preventDefault();
-        commit();
-        return;
-      }
-
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        e.nativeEvent.stopImmediatePropagation();
-        if (isNavigating && showSearch) {
-          setMode("search");
-          searchInputRef.current?.focus();
-          searchInputRef.current?.select();
-        } else {
-          onClose();
-        }
-        return;
-      }
-
-      if (e.key === "Tab") {
-        e.preventDefault();
-        commit();
-        return;
-      }
-
-      if (showSearch && (e.key === "Backspace" || e.key === "Delete")) {
-        e.stopPropagation();
-        if (isNavigating) {
-          setMode("search");
-          searchInputRef.current?.focus();
-        }
-        // Don't prevent default - let key work on input
-        return;
-      }
-
-      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
-        if (showSearch) {
-          setMode("search");
-          searchInputRef.current?.focus();
-          // Don't prevent default - let character be typed
-        } else {
-          e.preventDefault();
-          const matchIndex = findMatchingIndex(filteredOptions, e.key);
-          if (matchIndex >= 0) {
-            setActiveIndex(matchIndex + 1);
-          }
-        }
-      }
-    },
-    [
-      filteredOptions,
-      isNavigating,
-      showSearch,
-      emptyOptionLabel,
-      commit,
-      onClose,
-    ],
+    [isOpen],
   );
 
   const handleTriggerKeyDown = useCallback(
@@ -306,71 +131,56 @@ export function FilterableSelectCell({
         "Backspace",
         "Tab",
       ];
-
-      // Skip navigation keys and modified keys (let grid handle them)
       if (EXCLUDED_KEYS.includes(e.key) || e.ctrlKey || e.metaKey || e.altKey) {
         return;
       }
-
-      // Character keys - open popover
       if (e.key.length === 1) {
         e.preventDefault();
         e.stopPropagation();
-        if (showSearch) {
-          setSearchQuery(e.key);
-        } else {
-          // Typeahead: find first option starting with the typed character
-          const char = e.key.toLowerCase();
-          const matchIndex = options.findIndex((opt) =>
-            opt.label.toLowerCase().startsWith(char),
-          );
-          if (matchIndex >= 0) {
-            setActiveIndex(matchIndex + 1);
-          }
-        }
-        onOpen();
+        setInitialQuery(e.key);
+        startEditing();
       }
     },
-    [showSearch, onOpen, options],
+    [startEditing],
   );
 
-  useEffect(
-    function syncCellIsActive() {
-      if (isActive) {
-        buttonRef.current?.focus();
+  const handleCommit = (v: string | number | boolean | null) => {
+    onChange(v);
+    stopEditing();
+  };
+
+  const hoverHandlers = onHighlightChange
+    ? {
+        onMouseEnter: () => onHighlightChange(value),
+        onMouseLeave: () => onHighlightChange(null),
       }
-    },
-    [isActive],
-  );
+    : {};
 
   if (readOnly) {
     return (
-      <div className="w-full h-full pl-2 flex items-center justify-between gap-1 text-sm bg-gray-50">
+      <div
+        className="w-full h-full px-2 flex items-center text-size-base bg-panel"
+        {...hoverHandlers}
+      >
         <span
           className={clsx(
             "truncate",
-            !selectedOption ? "text-gray-400" : "text-gray-700",
+            isEmptyValue ? "text-subtle" : "text-default",
           )}
         >
-          {selectedOption?.label ?? placeholder}
+          {displayLabel}
         </span>
-        <div className="pl-1 text-gray-400">
-          <ChevronDownIcon />
-        </div>
       </div>
     );
   }
 
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full" {...hoverHandlers}>
       <Popover.Root
         open={isOpen}
-        onOpenChange={(newOpen) => {
-          if (newOpen) {
-            onOpen();
-          } else {
-            onClose();
-          }
+        onOpenChange={(open) => {
+          if (open) startEditing();
+          else stopEditing();
         }}
       >
         <Popover.Trigger asChild>
@@ -379,12 +189,10 @@ export function FilterableSelectCell({
             type="button"
             tabIndex={-1}
             onKeyDown={handleTriggerKeyDown}
-            className="w-full h-full pl-2 flex items-center justify-between gap-1 text-sm text-gray-700 bg-transparent border-none outline-hidden text-left min-w-0"
+            className="w-full h-full pl-2 flex items-center justify-between gap-1 text-size-base text-default bg-transparent border-none outline-hidden text-left min-w-0"
           >
-            <span
-              className={clsx("truncate", !selectedOption && "text-gray-400")}
-            >
-              {selectedOption?.label ?? placeholder}
+            <span className={clsx("truncate", isEmptyValue && "text-subtle")}>
+              {displayLabel}
             </span>
             <div className="pl-1">
               <ChevronDownIcon />
@@ -396,61 +204,31 @@ export function FilterableSelectCell({
           <Popover.Content
             side="bottom"
             align="start"
-            className="bg-white min-w-[180px] border text-sm rounded-md shadow-md z-50 mt-1"
+            className="bg-popover min-w-(--radix-popover-trigger-width) max-h-(--radix-popover-content-available-height) border text-size-base rounded-md shadow-md z-50 mt-1 overflow-hidden flex flex-col"
             onOpenAutoFocus={(e) => e.preventDefault()}
-            onCloseAutoFocus={(e) => e.preventDefault()}
             onPointerDownOutside={(e) => {
               if (buttonRef.current?.contains(e.target as Node)) {
-                e.preventDefault(); // Prevent Radix from closing, so toggle works
-                return;
+                e.preventDefault();
               }
-              commit();
-            }}
-            onEscapeKeyDown={(e) => {
-              // Prevent Radix from handling escape - we handle it in handlePopoverKeyDown
-              e.preventDefault();
             }}
           >
-            <div
-              ref={listContainerRef}
-              tabIndex={showSearch ? -1 : 0}
-              onKeyDown={handlePopoverKeyDown}
-              className="outline-hidden"
-            >
-              {showSearch && (
-                <div className="p-2 border-b border-gray-200">
-                  <input
-                    ref={searchInputRef}
-                    type="text"
-                    value={searchQuery}
-                    onChange={handleSearchChange}
-                    placeholder="Search..."
-                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-sm outline-hidden focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
-                  />
-                </div>
-              )}
-              {emptyOptionLabel && (
-                <EmptyOption
-                  label={emptyOptionLabel}
-                  isActive={activeIndex === 0}
-                  isSelected={value === null}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }}
-                  onClick={() => {
-                    onChange(null);
-                    onClose();
-                  }}
-                />
-              )}
-              <OptionsList
-                options={filteredOptions}
-                activeIndex={activeIndex}
+            {isOpen && (
+              <SelectorList<string | number | boolean>
+                options={listOptions}
                 selected={value}
-                onSelect={handleOptionClick}
+                nullable
+                onCommit={handleCommit}
+                onClose={stopEditing}
+                clearLabel={emptyOptionLabel}
+                actions={actions}
+                allowNew={allowNew}
+                createLabel={createLabel}
+                minOptionsForSearch={minOptionsForSearch}
+                validateNew={validateNew}
+                initialQuery={initialQuery}
+                onActiveOptionChange={onHighlightChange}
               />
-            </div>
+            )}
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
@@ -458,168 +236,41 @@ export function FilterableSelectCell({
   );
 }
 
-type OptionsListProps = {
-  options: FilterableSelectOption<string | number | boolean>[];
-  activeIndex: number;
-  selected: string | number | boolean | null;
-  onSelect: (option: FilterableSelectOption<string | number | boolean>) => void;
-};
-
-const OptionsList: FunctionComponent<OptionsListProps> = ({
-  options,
-  activeIndex,
-  selected,
-  onSelect,
-}) => {
-  const listRef = useRef<HTMLUListElement | null>(null);
-
-  useEffect(
-    function keepActiveItemVisible() {
-      if (!listRef.current) return;
-
-      if (activeIndex < 1) {
-        listRef.current.scrollTop = 0;
-        return;
-      }
-
-      const activeItem = listRef.current.children[
-        activeIndex - 1
-      ] as HTMLElement;
-      activeItem?.scrollIntoView({ block: "nearest" });
-    },
-    [activeIndex],
-  );
-
-  const preventFocusOnListItem = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
-
-  if (options.length === 0) {
-    return null;
-  }
-
-  return (
-    <ul
-      ref={listRef}
-      tabIndex={-1}
-      role="listbox"
-      className="outline-hidden max-h-56 overflow-auto p-1"
-    >
-      {options.map((option, index) => (
-        <Option
-          key={String(option.value)}
-          option={option}
-          isActive={index + 1 === activeIndex}
-          isSelected={option.value === selected}
-          onMouseDown={preventFocusOnListItem}
-          onClick={onSelect}
-        />
-      ))}
-    </ul>
-  );
-};
-
-type OptionProps = {
-  option: FilterableSelectOption<string | number | boolean>;
-  isActive: boolean;
-  isSelected: boolean;
-  onMouseDown: (e: React.MouseEvent) => void;
-  onClick: (option: FilterableSelectOption<string | number | boolean>) => void;
-};
-
-const Option: FunctionComponent<OptionProps> = ({
-  option,
-  isActive,
-  isSelected,
-  onMouseDown,
-  onClick,
-}) => {
-  const isDisabled = option.enabled === false;
-  return (
-    <li
-      role="option"
-      aria-selected={isSelected}
-      aria-disabled={isDisabled}
-      className={clsx(
-        "flex items-center justify-between gap-4 px-2 py-2 rounded-sm",
-        isDisabled
-          ? "cursor-default text-gray-400"
-          : "cursor-pointer text-gray-700",
-        !isDisabled && isActive && "bg-purple-300/40",
-        !isDisabled && !isActive && "hover:bg-gray-100",
-      )}
-      onMouseDown={isDisabled ? undefined : onMouseDown}
-      onClick={isDisabled ? undefined : () => onClick(option)}
-    >
-      <span>{option.label}</span>
-      {isSelected && <CheckIcon className="text-purple-700 shrink-0" />}
-    </li>
-  );
-};
-
-type EmptyOptionProps = {
-  label: string;
-  isActive: boolean;
-  isSelected: boolean;
-  onMouseDown: (e: React.MouseEvent) => void;
-  onClick: () => void;
-};
-
-const EmptyOption: FunctionComponent<EmptyOptionProps> = ({
-  label,
-  isActive,
-  isSelected,
-  onMouseDown,
-  onClick,
-}) => {
-  return (
-    <div className="p-1">
-      <div
-        role="option"
-        aria-selected={isSelected}
-        className={clsx(
-          "flex items-center justify-between gap-4 px-2 py-2 cursor-pointer text-gray-400 italic rounded-sm border-b border-gray-100",
-          isActive && "bg-purple-300/40",
-          !isActive && "hover:bg-gray-100",
-        )}
-        onMouseDown={onMouseDown}
-        onClick={onClick}
-      >
-        <span>{label}</span>
-        {isSelected && <CheckIcon className="text-purple-700 shrink-0" />}
-      </div>
-    </div>
-  );
-};
-
 export function filterableSelectColumn<
   T extends string | number | boolean = string,
   TData extends RowData = RowData,
 >(
-  accessorKey: Extract<keyof TData, string> & string,
+  key: ColumnKey<TData, T | null>,
   options: {
     header: string;
     size?: number;
     options: FilterableSelectOption<T>[];
     placeholder?: string;
     emptyOptionLabel?: string;
-    deleteValue?: T | null;
+    emptyValue?: T | null;
     minOptionsForSearch?: number;
     isReadOnly?: boolean | ((rowIndex: number) => boolean);
+    actions?: SelectorAction[];
+    allowNew?: boolean;
+    createLabel?: (query: string) => string;
+    validateNew?: (query: string) => boolean;
+    onHighlightChange?: (value: T | null) => void;
   },
 ): GridColumn<TData> {
-  const isEmpty = options.options.length === 0;
+  const isEmpty = isSelectorEmpty(options.options, {
+    allowNew: options.allowNew,
+    actions: options.actions,
+  });
   const resolveReadOnly = (rowIndex: number) =>
     typeof options.isReadOnly === "function"
       ? options.isReadOnly(rowIndex)
       : (options.isReadOnly ?? false);
 
-  const column: ColumnDef<TData, T | null> = {
-    accessorKey,
+  const column = {
+    ...resolveColumnKey(key),
     header: options.header,
     size: options.size,
-    sortingFn: (rowA, rowB, columnId) => {
+    sortingFn: (rowA: Row<TData>, rowB: Row<TData>, columnId: string) => {
       const aVal = rowA.getValue(columnId);
       const bVal = rowB.getValue(columnId);
       const aLabel =
@@ -631,22 +282,25 @@ export function filterableSelectColumn<
       return aLabel.localeCompare(bLabel);
     },
     meta: {
-      autoSizeExtraWidth: 32, // Account for chevron + padding
+      autoSizeExtraWidth: 32,
       placeholder: options.placeholder,
-      copyValue: (v) => {
-        const match = options.options.find((opt) => opt.value === v);
-        return match?.label ?? "";
+      copyValue: (v: T | null) => {
+        const match = findOption(options.options, v, options.allowNew);
+        if (match) return match.label;
+        return options.allowNew && v != null && v !== "" ? String(v) : "";
       },
-      pasteValue: (v) => {
+      pasteValue: (v: string) => {
         const match = options.options.find(
           (opt) =>
             opt.enabled !== false &&
             (String(opt.value) === v ||
               opt.label.toLowerCase() === v.toLowerCase()),
         );
-        return match ? match.value : null;
+        if (match) return match.value;
+        if (v === "") return options.emptyValue;
+        return undefined;
       },
-      deleteValue: options.deleteValue ?? null,
+      deleteValue: options.emptyValue,
       isReadOnly: isEmpty ? true : options.isReadOnly,
       cellComponent: (props: CellProps<T | null>) => (
         <FilterableSelectCell
@@ -662,6 +316,15 @@ export function filterableSelectColumn<
           placeholder={options.placeholder ?? ""}
           emptyOptionLabel={options.emptyOptionLabel}
           minOptionsForSearch={options.minOptionsForSearch}
+          actions={options.actions}
+          allowNew={options.allowNew}
+          createLabel={options.createLabel}
+          validateNew={options.validateNew}
+          onHighlightChange={
+            options.onHighlightChange as
+              | ((value: string | number | boolean | null) => void)
+              | undefined
+          }
         />
       ),
     },

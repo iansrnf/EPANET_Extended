@@ -2,11 +2,10 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { selectionAtom } from "src/state/selection";
-import { tabAtom, TabOption } from "src/state/layout";
+import { useActivateAssetPanel } from "src/commands/activate-asset-panel";
 import { Mode, modeAtom } from "src/state/mode";
 import { ephemeralStateAtom } from "src/state/drawing";
-import { USelection } from "src/selection/selection";
-import type { Sel } from "src/selection/types";
+import { USelection, type Sel } from "src/selection";
 import { useUserTracking } from "src/infra/user-tracking";
 import { ProfileLink, ProfilePoint } from "./chart-data";
 import { findLinkAt } from "./tooltip-data";
@@ -32,7 +31,7 @@ export function useChartClick({
 }: UseChartClickParams): void {
   const selection = useAtomValue(selectionAtom);
   const setSelection = useSetAtom(selectionAtom);
-  const setTab = useSetAtom(tabAtom);
+  const activateAssetPanel = useActivateAssetPanel();
   const { mode } = useAtomValue(modeAtom);
   const setMode = useSetAtom(modeAtom);
   const setEphemeralState = useSetAtom(ephemeralStateAtom);
@@ -43,7 +42,7 @@ export function useChartClick({
     links,
     selection,
     setSelection,
-    setTab,
+    activateAssetPanel,
     mode,
     setMode,
     setEphemeralState,
@@ -55,7 +54,7 @@ export function useChartClick({
     links,
     selection,
     setSelection,
-    setTab,
+    activateAssetPanel,
     mode,
     setMode,
     setEphemeralState,
@@ -114,12 +113,12 @@ export function useChartClick({
 
       const selectAsset = (id: number) => {
         const next: Sel = shift
-          ? USelection.isSelected(deps.selection, id)
-            ? USelection.removeFeatureFromSelection(deps.selection, id)
-            : USelection.addSelectionId(deps.selection, id)
-          : USelection.toggleSingleSelectionId(deps.selection, id);
+          ? USelection.isAssetSelected(deps.selection, id)
+            ? USelection.removeId(deps.selection, "asset", id)
+            : USelection.addId(deps.selection, "asset", id)
+          : USelection.toggleSingleAsset(deps.selection, id);
         deps.setSelection(next);
-        deps.setTab(TabOption.Asset);
+        deps.activateAssetPanel();
         if (deps.mode === Mode.HGL_PROFILE) {
           deps.setEphemeralState({ type: "none" });
         }

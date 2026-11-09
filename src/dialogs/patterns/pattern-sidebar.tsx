@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useTranslate } from "src/hooks/use-translate";
+import { useLabelMaxLength } from "src/hooks/use-label-max-length";
 import {
   Pattern,
   PatternMultipliers,
@@ -14,7 +15,7 @@ import {
   DuplicateIcon,
   RenameIcon,
 } from "src/icons";
-import { LabelManager } from "src/hydraulic-model/label-manager";
+import { LabelManager } from "@epanet-js/hydraulic-model";
 import { useUserTracking } from "src/infra/user-tracking";
 import {
   CollapsibleListSection,
@@ -25,6 +26,10 @@ import {
   NavigableList,
 } from "src/components/list";
 import type { NavItem, NavigableListHandle } from "src/components/list";
+import {
+  PATTERN_TYPES,
+  PATTERN_TYPE_TRANSLATION_KEYS,
+} from "./pattern-type-labels";
 
 type TypedPattern = Pattern & { type: PatternType };
 
@@ -35,21 +40,9 @@ type ActionState =
 
 type SectionType = PatternType | "uncategorized";
 
-const SECTION_TYPES: PatternType[] = [
-  "demand",
-  "reservoirHead",
-  "pumpSpeed",
-  "qualitySourceStrength",
-  "energyPrice",
-];
+const SECTION_TYPES = PATTERN_TYPES;
 
-const SECTION_TRANSLATION_KEYS: Record<PatternType, string> = {
-  demand: "patterns.demandPatterns",
-  reservoirHead: "patterns.reservoirHeadPatterns",
-  pumpSpeed: "patterns.pumpSpeedPatterns",
-  qualitySourceStrength: "patterns.qualitySourceStrengthPatterns",
-  energyPrice: "patterns.energyPricePatterns",
-};
+const SECTION_TRANSLATION_KEYS = PATTERN_TYPE_TRANSLATION_KEYS;
 
 type PatternSidebarProps = {
   width: number;
@@ -85,6 +78,8 @@ export const PatternSidebar = ({
   readOnly = false,
 }: PatternSidebarProps) => {
   const translate = useTranslate();
+  const moreActionsLabel = translate("moreActions");
+  const labelMaxLength = useLabelMaxLength();
   const userTracking = useUserTracking();
   const labelManager = useRef(new LabelManager());
   const listRef = useRef<NavigableListHandle>(null);
@@ -353,7 +348,11 @@ export const PatternSidebar = ({
                     }
                     actions={itemActions}
                     onAction={handleAction}
+                    actionsLabel={moreActionsLabel}
                     editLabelMode={getEditMode(actionState, pattern.id)}
+                    sanitize={(raw) =>
+                      LabelManager.sanitizeLabel(raw, "pattern", labelMaxLength)
+                    }
                     onLabelChange={handlePatternLabelChange}
                     placeholder={translate("patterns.patternName")}
                     onCancel={clearActionState}
@@ -366,6 +365,9 @@ export const PatternSidebar = ({
                   label="New pattern name"
                   value=""
                   placeholder={translate("patterns.patternName")}
+                  sanitize={(raw) =>
+                    LabelManager.sanitizeLabel(raw, "pattern", labelMaxLength)
+                  }
                   onCommit={handlePatternLabelChange}
                   onCancel={clearActionState}
                 />
@@ -393,6 +395,7 @@ export const PatternSidebar = ({
                   }
                   actions={uncategorizedItemActions}
                   onAction={handleAction}
+                  actionsLabel={moreActionsLabel}
                   readOnly={readOnly}
                 />
               );

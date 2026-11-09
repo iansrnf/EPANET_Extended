@@ -1,104 +1,123 @@
-import * as Comlink from "comlink";
 import { Position } from "src/types";
-import { AssetId } from "src/hydraulic-model/asset-types";
+import { AssetId } from "@epanet-js/hydraulic-model";
 import { HydraulicModel } from "src/hydraulic-model/hydraulic-model";
+import { AssetsGeoIndex } from "@epanet-js/hydraulic-model";
 import {
-  AssetsGeoIndex,
-  AssetsGeoBuffers,
-  assetsGeoTransferables,
-} from "src/hydraulic-model/assets-geo";
+  CustomerPointsGeoIndex,
+  queryContainedCustomerPoints,
+} from "@epanet-js/hydraulic-model";
+import { queryContainedAssets } from "@epanet-js/hydraulic-model";
 import {
-  AssetIndexBuffers,
-  assetIndexTransferables,
-} from "src/hydraulic-model/asset-index";
-import { queryContainedAssets } from "src/hydraulic-model/spatial-queries";
+  ZonesGeoView,
+  queryIntersectingZones,
+} from "@epanet-js/hydraulic-model";
 import { canUseWorker, enrichWorkerError } from "src/infra/worker";
-import type { SpatialQueryWorkerAPI } from "./worker-api";
+import { getSpatialQueryWorker } from "src/lib/spatial-query/get-worker";
+import { transferArgs } from "src/lib/spatial-query/transfer";
 import {
-  EncodedContainedAssets,
-  decodeContainedAssets,
-  encodeHydraulicModel,
-} from "./data";
-import { BufferType } from "src/lib/buffers";
+  EncodedAreaSelectionBuffers,
+  EncodedAreaSelectionResult,
+  cloneEncodedAreaSelectionBuffers,
+  decodeAreaSelectionResult,
+  getEncodedAreaSelectionBuffers,
+  getEncodedZonesGeoBuffers,
+} from "src/lib/spatial-query/data";
+import { BufferType } from "@epanet-js/buffers";
+
+export type AreaSelectionResult = {
+  assetIds: AssetId[];
+  customerPointIds: number[];
+  zoneIds: number[];
+};
 
 export const runQuery = async (
   hydraulicModel: HydraulicModel,
   points: Position[],
   signal: AbortSignal | undefined = undefined,
   bufferType: BufferType = "array",
-  runInWorker: boolean = true,
-): Promise<AssetId[]> => {
-  if (signal?.aborted) {
-    throw new DOMException("Operation cancelled", "AbortError");
-  }
-
-  if (runInWorker) {
-    const { assetsGeoBuffers, assetIndexBuffers } = encodeHydraulicModel(
-      hydraulicModel,
-      bufferType,
-    );
-
-    const encodedResult = await runWithWorker(
-      assetIndexBuffers,
-      assetsGeoBuffers,
-      points,
-      signal,
-    );
-
-    return decodeContainedAssets(encodedResult);
-  } else {
-    const assetsGeo = new AssetsGeoIndex(
-      hydraulicModel.assets,
-      hydraulicModel.assetIndex,
-    );
-    return queryContainedAssets(assetsGeo, points);
-  }
-};
-
-const runWithWorker = async (
-  assetIndexBuffers: AssetIndexBuffers,
-  assetsGeoBuffers: AssetsGeoBuffers,
-  points: Position[],
-  signal?: AbortSignal,
-): Promise<EncodedContainedAssets> => {
+  includeCustomerPoints: boolean = true,
+  includeZones: boolean = false,
+): Promise<AreaSelectionResult> => {
   if (signal?.aborted) {
     throw new DOMException("Operation cancelled", "AbortError");
   }
 
   if (!canUseWorker()) {
-    const { workerAPI: fallbackWorkerAPI } = await import("./worker-api");
-    return fallbackWorkerAPI.queryContainedAssets(
-      assetIndexBuffers,
-      assetsGeoBuffers,
+    return runQueryInProcess(
+      hydraulicModel,
       points,
+      includeCustomerPoints,
+      includeZones,
     );
   }
 
-  const worker = new Worker(new URL("./worker.ts", import.meta.url), {
-    type: "module",
-  });
+  const cached = getEncodedAreaSelectionBuffers(
+    hydraulicModel,
+    bufferType,
+    includeCustomerPoints,
+    includeZones,
+  );
+  const encoded = cloneEncodedAreaSelectionBuffers(cached);
 
-  const workerAPI = Comlink.wrap<SpatialQueryWorkerAPI>(worker);
+  const encodedResult = await runQueryWithWorker(encoded, points, signal);
+  return decodeAreaSelectionResult(encodedResult);
+};
 
-  const abortHandler = () => worker.terminate();
-  signal?.addEventListener("abort", abortHandler);
+const runQueryInProcess = (
+  hydraulicModel: HydraulicModel,
+  points: Position[],
+  includeCustomerPoints: boolean,
+  includeZones: boolean,
+): AreaSelectionResult => {
+  const assetsGeo = new AssetsGeoIndex(
+    hydraulicModel.assets,
+    hydraulicModel.assetIndex,
+  );
+  const assetIds = queryContainedAssets(assetsGeo, points);
+  const customerPointIds =
+    includeCustomerPoints && hydraulicModel.customerPoints.size > 0
+      ? queryContainedCustomerPoints(
+          new CustomerPointsGeoIndex(hydraulicModel.customerPoints),
+          points,
+        )
+      : [];
+  const zoneIds =
+    includeZones && hydraulicModel.zones.size > 0
+      ? queryIntersectingZones(
+          new ZonesGeoView(getEncodedZonesGeoBuffers(hydraulicModel.zones)),
+          points,
+        )
+      : [];
+  return { assetIds, customerPointIds, zoneIds };
+};
 
+const runQueryWithWorker = async (
+  encoded: EncodedAreaSelectionBuffers,
+  points: Position[],
+  signal?: AbortSignal,
+): Promise<EncodedAreaSelectionResult> => {
+  if (signal?.aborted) {
+    throw new DOMException("Operation cancelled", "AbortError");
+  }
+
+  const { assetIndexArg, assetsGeoArg, customerPointsGeoArg, zonesGeoArg } =
+    transferArgs(encoded);
+
+  const workerAPI = getSpatialQueryWorker();
   try {
-    return await workerAPI.queryContainedAssets(
-      Comlink.transfer(
-        assetIndexBuffers,
-        assetIndexTransferables(assetIndexBuffers),
-      ),
-      Comlink.transfer(
-        assetsGeoBuffers,
-        assetsGeoTransferables(assetsGeoBuffers),
-      ),
+    const result = await workerAPI.queryContainedFeatures(
+      assetIndexArg,
+      assetsGeoArg,
+      customerPointsGeoArg,
+      zonesGeoArg,
       points,
     );
+    if (signal?.aborted) {
+      throw new DOMException("Operation cancelled", "AbortError");
+    }
+    return result;
   } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
     throw enrichWorkerError("spatial-query", e);
-  } finally {
-    signal?.removeEventListener("abort", abortHandler);
-    worker.terminate();
   }
 };

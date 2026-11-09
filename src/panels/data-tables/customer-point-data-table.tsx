@@ -1,8 +1,24 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAtomValue } from "jotai";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { useAtomValue, useSetAtom } from "jotai";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
+import { usePanelGridState } from "./use-panel-grid-state";
+import {
+  registerTableHandleAtom,
+  unregisterTableHandleAtom,
+} from "./table-handles";
+import { dialogAtom } from "src/state/dialog";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
-import { changeCustomerPointLabel } from "src/hydraulic-model/model-operations";
+import {
+  changeCustomerPointLabel,
+  changeCustomerPointProperties,
+  changeDemandAssignment,
+  mergeChangeSets,
+} from "@epanet-js/hydraulic-model-operations";
+import type { ChangeSet } from "@epanet-js/change-set";
+import { getAttribute, getAttributes } from "@epanet-js/hydraulic-model";
+import { getCustomerPointDemands } from "src/hydraulic-model";
+import type { CustomerDemandAssignment } from "@epanet-js/hydraulic-model-operations";
+import { createTimeSlicer } from "src/infra/yield-to-main";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import {
   DataGrid,
@@ -11,8 +27,11 @@ import {
   type GutterContextAction,
   type ClipboardCopyInfo,
   type ClipboardPasteInfo,
+  patchModelRow,
 } from "src/components/data-grid";
-import { useSelectCustomerPointInApp } from "src/commands/select-customer-point-in-app";
+import { useSelectCustomerPointsInApp } from "src/commands/select-customer-points-in-app";
+import { useZoomTo } from "src/hooks/use-zoom-to";
+import { USelection } from "src/selection";
 import { useDeleteCustomerPoints } from "src/commands/delete-customer-points";
 import { useUserTracking } from "src/infra/user-tracking";
 import { DeleteIcon, PointerClickIcon } from "src/icons";
@@ -20,71 +39,158 @@ import { notify } from "src/components/notifications";
 import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import { projectSettingsAtom } from "src/state/project-settings";
+import { customerPointsVisibleAtom } from "src/state/map-symbology";
 import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
-import { SpinnerIcon } from "src/icons";
+import { useFeatureLock } from "src/components/form/paywall";
+import { PaywallLockIcon } from "src/icons";
+import { RingSpinner } from "src/components/ring-spinner";
 import {
-  buildCustomerPointRowsAsync,
+  buildCustomerPointModelRows,
   type CustomerPointRow,
+  type CpAccessorCtx,
 } from "./customer-point-data-table-data";
 import { buildCustomerPointColumns } from "./customer-point-data-table-columns";
+import { useDeferredGridMount } from "./use-deferred-grid-mount";
+import { useLabelMaxLength } from "src/hooks/use-label-max-length";
+
+interface CustomerPointDataTableProps {
+  id: string;
+  type: "customer-point-table";
+  customerPointIds?: readonly number[];
+}
 
 export const CustomerPointDataTable = memo(
-  function CustomerPointDataTableInner() {
+  function CustomerPointDataTableInner({
+    id,
+    type,
+    customerPointIds,
+  }: CustomerPointDataTableProps) {
     const dataGridRef = useRef<DataGridRef>(null);
+    const [savedState, saveState] = usePanelGridState(id, type);
+    const registerHandle = useSetAtom(registerTableHandleAtom);
+    const unregisterHandle = useSetAtom(unregisterTableHandleAtom);
+
+    useEffect(
+      function publishCaptureHandle() {
+        const handle = {
+          captureState: () => {
+            const state = dataGridRef.current?.captureState();
+            if (state) saveState(state);
+          },
+        };
+        registerHandle(id, handle);
+        return () => unregisterHandle(id, handle);
+      },
+      [id, saveState, registerHandle, unregisterHandle],
+    );
+    const setDialogState = useSetAtom(dialogAtom);
     const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
+    const { patterns } = hydraulicModel;
     const { units, formatting } = useAtomValue(projectSettingsAtom);
     const { labelManager } = useAtomValue(modelFactoriesAtom);
     const { transact } = useModelTransaction();
     const translate = useTranslate();
     const translateUnit = useTranslateUnit();
     const isEditionBlocked = useIsEditionBlocked();
-    const selectCustomerPointInApp = useSelectCustomerPointInApp();
+    const {
+      isLocked: customAttributesLocked,
+      openPaywall: openCustomAttributesPaywall,
+    } = useFeatureLock("customAttributes");
+    const customerPointsVisible = useAtomValue(customerPointsVisibleAtom);
+    const selectCustomerPointsInApp = useSelectCustomerPointsInApp();
+    const zoomTo = useZoomTo();
     const deleteCustomerPoints = useDeleteCustomerPoints();
     const userTracking = useUserTracking();
+    const labelMaxLength = useLabelMaxLength();
 
-    const [rows, setRows] = useState<CustomerPointRow[] | null>(null);
-    const rowsRef = useRef(rows);
-    rowsRef.current = rows;
-
-    const columns = useMemo(
-      () =>
-        buildCustomerPointColumns(
-          translate,
-          translateUnit,
-          units,
-          formatting,
-          (label: string, rowIndex: number) => {
-            const cpId = rowsRef.current?.[rowIndex]?.id;
-            if (cpId === undefined) return true;
-            return labelManager.isLabelAvailable(label, "customerPoint", cpId);
-          },
-        ),
-      [translate, translateUnit, units, formatting, labelManager],
+    const scopedIds = useMemo(
+      () => (customerPointIds ? new Set(customerPointIds) : undefined),
+      [customerPointIds],
     );
 
-    useEffect(
-      function computeRows() {
-        const controller = new AbortController();
+    const rows = useMemo(
+      () => buildCustomerPointModelRows(hydraulicModel, scopedIds),
+      [hydraulicModel, scopedIds],
+    );
+    const rowsRef = useRef(rows);
+    rowsRef.current = rows;
+    // Defer mounting the grid so switching tabs stays responsive.
+    const gridReady = useDeferredGridMount();
 
-        void buildCustomerPointRowsAsync(
-          hydraulicModel,
-          units,
-          controller.signal,
-        ).then((result) => {
-          if (!controller.signal.aborted) setRows(result);
-        });
+    const patternOptions = useMemo(() => {
+      const options: { value: number; label: string }[] = [];
+      for (const [patternId, { label, type }] of patterns.entries()) {
+        if (type === "demand") {
+          options.push({ value: patternId, label });
+        }
+      }
+      return options;
+    }, [patterns]);
 
-        return () => controller.abort();
-      },
+    const accessorCtx = useMemo<CpAccessorCtx>(
+      () => ({ model: hydraulicModel, units }),
       [hydraulicModel, units],
     );
 
+    const customAttributes = useMemo(
+      () => getAttributes(hydraulicModel.customAttributes, "customerPoint"),
+      [hydraulicModel.customAttributes],
+    );
+
+    const columns = useMemo(() => {
+      const customAttributesLock = customAttributesLocked
+        ? {
+            openPaywall: openCustomAttributesPaywall,
+            icon: <PaywallLockIcon />,
+          }
+        : undefined;
+      return buildCustomerPointColumns(
+        translate,
+        translateUnit,
+        units,
+        formatting,
+        patternOptions,
+        (label, row) => {
+          const cpId = row.id;
+          if (cpId === undefined) return true;
+          return labelManager.isLabelAvailable(label, "customerPoint", cpId);
+        },
+        accessorCtx,
+        customAttributes,
+        customAttributesLock,
+        labelMaxLength,
+      );
+    }, [
+      translate,
+      translateUnit,
+      units,
+      formatting,
+      patternOptions,
+      labelManager,
+      accessorCtx,
+      customAttributes,
+      customAttributesLocked,
+      openCustomAttributesPaywall,
+      labelMaxLength,
+    ]);
+
     const onChange = useCallback(
-      (newRows: CustomerPointRow[]) => {
+      async (newRows: CustomerPointRow[]) => {
+        const changeSetBuilders: (() => ChangeSet)[] = [];
+        const demandAssignments: CustomerDemandAssignment[] = [];
+        const customEditCounts = new Map<string, number>();
+        let labelChanges = 0;
+        let oldDemandsTotal = 0;
+        let newDemandsTotal = 0;
+
+        const yieldIfSliceElapsed = createTimeSlicer();
         for (let i = 0; i < newRows.length; i++) {
+          await yieldIfSliceElapsed();
           const newRow = newRows[i];
           const oldRow = rowsRef.current?.[i];
-          if (!oldRow) continue;
+          // Only edited rows get a new object reference (patchRow); skipping the
+          // rest keeps this O(edited) instead of O(all rows) on every commit.
+          if (!oldRow || newRow === oldRow) continue;
 
           if (
             typeof newRow.label === "string" &&
@@ -95,26 +201,116 @@ export const CustomerPointDataTable = memo(
               newRow.id,
             )
           ) {
-            const moment = changeCustomerPointLabel(hydraulicModel, {
+            const labelData = {
               customerPointId: newRow.id,
               newLabel: newRow.label,
+            };
+            changeSetBuilders.push(() =>
+              changeCustomerPointLabel(hydraulicModel, labelData),
+            );
+            labelChanges += 1;
+          }
+
+          const baseDemandChanged = newRow.baseDemand !== oldRow.baseDemand;
+          const patternIdChanged = newRow.patternId !== oldRow.patternId;
+          if (baseDemandChanged || patternIdChanged) {
+            const existing = getCustomerPointDemands(
+              hydraulicModel.demands,
+              newRow.id,
+            );
+            const rest = existing.slice(1);
+            const nextBaseDemand = baseDemandChanged
+              ? (newRow.baseDemand ?? 0) // Unit conversion handled by the cell
+              : (existing[0]?.baseDemand ?? 0);
+            const nextPatternId = patternIdChanged
+              ? (newRow.patternId ?? undefined)
+              : (existing[0]?.patternId ?? undefined);
+            const isEmptyDefault =
+              nextBaseDemand === 0 && nextPatternId === undefined;
+            const newDemands =
+              isEmptyDefault && rest.length === 0
+                ? []
+                : [
+                    { baseDemand: nextBaseDemand, patternId: nextPatternId },
+                    ...rest,
+                  ];
+
+            demandAssignments.push({
+              customerPointId: newRow.id,
+              demands: newDemands,
             });
-            transact(moment);
-            userTracking.capture({
-              name: "customerPointActions.labelChanged",
-              oldLabel: oldRow.label,
-              newLabel: newRow.label,
-            });
+            oldDemandsTotal += existing.length;
+            newDemandsTotal += newDemands.length;
+          }
+
+          if (customAttributes.length > 0) {
+            const customChanges = [];
+            for (const attribute of customAttributes) {
+              const key = attribute.id;
+              if (!Object.prototype.hasOwnProperty.call(newRow, key)) continue;
+              const value = (newRow as Record<string, unknown>)[key];
+              customChanges.push({
+                property: key,
+                value: value === undefined ? null : value,
+              });
+              customEditCounts.set(key, (customEditCounts.get(key) ?? 0) + 1);
+            }
+            if (customChanges.length > 0) {
+              const propertiesData = {
+                customerPointIds: [newRow.id],
+                changes: customChanges,
+              };
+              changeSetBuilders.push(() =>
+                changeCustomerPointProperties(hydraulicModel, propertiesData),
+              );
+            }
           }
         }
-      },
-      [hydraulicModel, labelManager, transact, userTracking],
-    );
 
-    const getCpIdFromRow = useCallback(
-      (sortedRows: CustomerPointRow[], rowIndex: number) =>
-        sortedRows[rowIndex]?.id,
-      [],
+        if (demandAssignments.length > 0) {
+          changeSetBuilders.push(() =>
+            changeDemandAssignment(hydraulicModel, demandAssignments),
+          );
+        }
+
+        const applied = transact(() =>
+          mergeChangeSets(
+            changeSetBuilders.map((build) => build()),
+            "editCustomerPointTable",
+          ),
+        );
+        if (!applied) return;
+
+        if (labelChanges > 0) {
+          userTracking.capture({
+            name: "customerPointActions.labelChanged",
+            count: labelChanges,
+          });
+        }
+        if (demandAssignments.length > 0) {
+          userTracking.capture({
+            name: "customerPointDemands.edited",
+            oldCount: oldDemandsTotal,
+            newCount: newDemandsTotal,
+          });
+        }
+        for (const [property, count] of customEditCounts) {
+          const attribute = getAttribute(
+            hydraulicModel.customAttributes,
+            "customerPoint",
+            property,
+          );
+          userTracking.capture({
+            name: "customAttribute.batchEdited",
+            assetType: "customerPoint",
+            attributeType: attribute?.type ?? "text",
+            property,
+            label: attribute?.label ?? "",
+            count,
+          });
+        }
+      },
+      [hydraulicModel, labelManager, transact, userTracking, customAttributes],
     );
 
     const getCpIdsFromRange = useCallback(
@@ -152,18 +348,21 @@ export const CustomerPointDataTable = memo(
         {
           label: translate("selectInMap"),
           icon: <PointerClickIcon />,
+          disabled: () => !customerPointsVisible,
           onSelect: (selection, sortedRows) => {
-            const id = getCpIdFromRow(
+            const ids = getCpIdsFromRange(
               sortedRows as CustomerPointRow[],
               selection.min.row,
+              selection.max.row,
             );
-            if (id === undefined) return;
-            selectCustomerPointInApp(id);
+            if (ids.length === 0) return;
+            selectCustomerPointsInApp(ids);
+            zoomTo(USelection.fromIds([], ids));
             userTracking.capture({
               name: "dataTables.selectedInMap",
               type: "customerPoint",
               source: "cell-context",
-              count: 1,
+              count: ids.length,
             });
           },
         },
@@ -171,11 +370,13 @@ export const CustomerPointDataTable = memo(
       ],
       [
         translate,
-        selectCustomerPointInApp,
-        getCpIdFromRow,
+        selectCustomerPointsInApp,
+        zoomTo,
+        getCpIdsFromRange,
         isEditionBlocked,
         deleteAction,
         userTracking,
+        customerPointsVisible,
       ],
     );
 
@@ -184,18 +385,21 @@ export const CustomerPointDataTable = memo(
         {
           label: translate("selectInMap"),
           icon: <PointerClickIcon />,
+          disabled: () => !customerPointsVisible,
           onSelect: (selection, sortedRows) => {
-            const id = getCpIdFromRow(
+            const ids = getCpIdsFromRange(
               sortedRows as CustomerPointRow[],
               selection.min.row,
+              selection.max.row,
             );
-            if (id === undefined) return;
-            selectCustomerPointInApp(id);
+            if (ids.length === 0) return;
+            selectCustomerPointsInApp(ids);
+            zoomTo(USelection.fromIds([], ids));
             userTracking.capture({
               name: "dataTables.selectedInMap",
               type: "customerPoint",
               source: "gutter-context",
-              count: 1,
+              count: ids.length,
             });
           },
         },
@@ -203,11 +407,13 @@ export const CustomerPointDataTable = memo(
       ],
       [
         translate,
-        selectCustomerPointInApp,
-        getCpIdFromRow,
+        selectCustomerPointsInApp,
+        zoomTo,
+        getCpIdsFromRange,
         isEditionBlocked,
         deleteAction,
         userTracking,
+        customerPointsVisible,
       ],
     );
 
@@ -225,19 +431,50 @@ export const CustomerPointDataTable = memo(
 
     const handleCopy = useCallback(
       (info: ClipboardCopyInfo) => {
-        const { rows, cols, allRows, allCols, columnIds } = info;
-        userTracking.capture({
-          name: "dataTables.copied",
-          type: "customerPoint",
+        const {
+          requestedRows,
           rows,
           cols,
           allRows,
           allCols,
-          withHeaders: false,
+          columnIds,
+          includeHeaders,
+        } = info;
+        const truncated = rows < requestedRows;
+        userTracking.capture({
+          name: "dataTables.copied",
+          type: "customerPoint",
+          requestedRows,
+          rows,
+          cols,
+          allRows,
+          allCols,
+          withHeaders: includeHeaders,
           columnIds,
         });
 
-        if (allRows) {
+        if (truncated) {
+          notify({
+            variant: "default",
+            title: translate(
+              "dataTables.copy.truncatedTitle",
+              rows.toLocaleString(),
+              requestedRows.toLocaleString(),
+            ),
+            description: translate("dataTables.copy.truncatedDescription"),
+            duration: 8000,
+            position: "bottom-center",
+            action: {
+              label: translate("dataTables.copy.exportAction"),
+              variant: "default",
+              align: "inline",
+              onClick: () => setDialogState({ type: "exportAssetData" }),
+            },
+          });
+          return;
+        }
+
+        if (allRows && !includeHeaders) {
           notify({
             variant: "default",
             title: translate("dataTables.copy.includeHeadersPrompt"),
@@ -251,48 +488,55 @@ export const CustomerPointDataTable = memo(
                 void dataGridRef.current?.copySelection({
                   includeHeaders: true,
                 });
-                userTracking.capture({
-                  name: "dataTables.copied",
-                  type: "customerPoint",
-                  rows,
-                  cols,
-                  allRows,
-                  allCols,
-                  withHeaders: true,
-                  columnIds,
-                });
               },
             },
+          });
+        }
+      },
+      [userTracking, translate, setDialogState],
+    );
+
+    const handlePaste = useCallback(
+      (info: ClipboardPasteInfo) => {
+        const { requestedRows, ...tracked } = info;
+        userTracking.capture({
+          name: "dataTables.pasted",
+          type: "customerPoint",
+          ...tracked,
+        });
+        // Only when a clipboard cap (`maxClipboardRows`) is set and hit — disabled today.
+        if (info.rows < requestedRows) {
+          notify({
+            variant: "default",
+            title: translate(
+              "dataTables.paste.cappedTitle",
+              info.rows.toLocaleString(),
+            ),
+            description: translate("dataTables.paste.cappedDescription"),
+            duration: 8000,
+            position: "bottom-center",
           });
         }
       },
       [userTracking, translate],
     );
 
-    const handlePaste = useCallback(
-      (info: ClipboardPasteInfo) => {
-        userTracking.capture({
-          name: "dataTables.pasted",
-          type: "customerPoint",
-          ...info,
-        });
-      },
-      [userTracking],
-    );
-
     return (
       <div className="flex-1 min-h-0 relative">
-        {rows === null ? (
-          <div className="absolute inset-0 flex items-center justify-center text-gray-400 dark:text-gray-600">
-            <SpinnerIcon />
+        {!gridReady ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <RingSpinner size="lg" />
           </div>
         ) : (
           <DataGrid
             ref={dataGridRef}
+            initialGridState={savedState}
             data={rows}
             columns={columns}
             onChange={onChange}
             createRow={() => ({}) as CustomerPointRow}
+            getRowId={(row) => String(row.id)}
+            patchRow={patchModelRow}
             gutterColumn="selection"
             resizable
             sortable
@@ -303,6 +547,7 @@ export const CustomerPointDataTable = memo(
             onColumnSort={handleSort}
             onCopy={handleCopy}
             onPaste={handlePaste}
+            pinnedColumns={{ left: ["label"] }}
           />
         )}
       </div>

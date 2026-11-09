@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { useAtomValue, useAtom } from "jotai";
+import { useAtomValue } from "jotai";
 import { Form, Formik } from "formik";
 
 import {
@@ -10,9 +10,8 @@ import {
 import { useTranslate } from "src/hooks/use-translate";
 import { simulationSettingsDerivedAtom } from "src/state/derived-branch-state";
 import { projectSettingsAtom } from "src/state/project-settings";
-import * as db from "src/lib/db";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useSimulationSettingsTransaction } from "src/hooks/persistence/use-simulation-settings-transaction";
+import { useProjectSettingsTransaction } from "src/hooks/persistence/use-project-settings-transaction";
 
 import { SimulationSettingsSidebar } from "./simulation-settings-sidebar";
 import {
@@ -47,8 +46,8 @@ export const SimulationSettingsDialog = () => {
   const simulationSettings = useAtomValue(simulationSettingsDerivedAtom);
   const { transact: transactSimulationSettings } =
     useSimulationSettingsTransaction();
-  const [projectSettings, setProjectSettings] = useAtom(projectSettingsAtom);
-  const isOurFileOn = useFeatureFlag("FLAG_OUR_FILE");
+  const { transact: transactProjectSettings } = useProjectSettingsTransaction();
+  const projectSettings = useAtomValue(projectSettingsAtom);
 
   const sectionIds = useMemo(buildSectionIds, []);
 
@@ -60,9 +59,10 @@ export const SimulationSettingsDialog = () => {
   const handleSubmit = useCallback(
     async (values: FormValues) => {
       if (hasChanges(values, simulationSettings)) {
-        transactSimulationSettings(
+        const applied = transactSimulationSettings(
           buildUpdatedSettings(values, simulationSettings),
         );
+        if (!applied) return;
       }
       if (
         values.qualityMassUnit !== projectSettings.units.chemicalConcentration
@@ -74,20 +74,17 @@ export const SimulationSettingsDialog = () => {
             chemicalConcentration: values.qualityMassUnit,
           },
         };
-        setProjectSettings(newProjectSettings);
-        if (isOurFileOn) {
-          await db.saveProjectSettings(newProjectSettings);
-        }
+        const applied = await transactProjectSettings(newProjectSettings);
+        if (!applied) return;
       }
       closeDialog();
     },
     [
       simulationSettings,
       transactSimulationSettings,
+      transactProjectSettings,
       projectSettings,
-      setProjectSettings,
       closeDialog,
-      isOurFileOn,
     ],
   );
 
@@ -114,7 +111,7 @@ export const SimulationSettingsDialog = () => {
                 activeSection={activeSection}
                 onSelectSection={scrollToSection}
               />
-              <div className="border-l border-gray-200 flex-1 flex flex-col min-h-0">
+              <div className="border-l flex-1 flex flex-col min-h-0">
                 <SimulationSettingsContent ref={scrollContainerRef}>
                   <SettingsSection sectionId="general">
                     <GeneralSection />

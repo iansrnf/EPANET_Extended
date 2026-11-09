@@ -1,29 +1,37 @@
-import { HydraulicModel } from "src/hydraulic-model";
-import { getSortedValues } from "src/hydraulic-model/assets-map";
+import { HydraulicModel, Pipe } from "src/hydraulic-model";
+import { effectiveRoughness } from "@epanet-js/hydraulic-model";
+import { getSortedValues } from "@epanet-js/hydraulic-model";
 import { EPSResultsReader } from "src/simulation/epanet/eps-results-reader";
 import {
   type ResultsReader,
   type SimulationProperty,
   isSimulationProperty,
-} from "src/simulation/results-reader";
+} from "@epanet-js/simulation";
 
 export {
   simulationProperties,
   isSimulationProperty,
   type SimulationProperty,
-} from "src/simulation/results-reader";
+} from "@epanet-js/simulation";
+
+const getSimulationValues = (
+  resultsReader: ResultsReader,
+  property: SimulationProperty,
+  { absValues = false }: { absValues?: boolean } = {},
+): Float32Array => {
+  const values = resultsReader.getAllValues(property);
+  if (absValues) {
+    for (let i = 0; i < values.length; i++) values[i] = Math.abs(values[i]);
+  }
+  return values;
+};
 
 export const getSortedSimulationValues = (
   resultsReader: ResultsReader,
   property: SimulationProperty,
-  { absValues = false }: { absValues?: boolean } = {},
-): number[] => {
-  let values = resultsReader.getAllValues(property);
-  if (absValues) {
-    values = values.map(Math.abs);
-  }
-  return values.sort((a, b) => a - b);
-};
+  options?: { absValues?: boolean },
+): number[] =>
+  Array.from(getSimulationValues(resultsReader, property, options).sort());
 
 export type BreaksDataMode = "currentStep" | "initial" | "allSteps";
 
@@ -81,27 +89,23 @@ const getAllStepsSortedValues = async (
   const timestepCount = epsReader.timestepCount;
   if (timestepCount <= 0) return null;
 
-  const firstReader = await epsReader.getResultsForTimestep(0);
-  const firstValues = getSortedSimulationValues(firstReader, property, options);
-  const valuesPerTimestep = firstValues.length;
-  if (timestepCount === 1) return firstValues;
-
-  const allValues = new Float32Array(valuesPerTimestep * timestepCount);
-  for (let i = 0; i < valuesPerTimestep; i++) {
-    allValues[i] = firstValues[i];
-  }
-
-  for (let t = 1; t < timestepCount; t++) {
+  let allValues = new Float32Array(0);
+  let totalValues = 0;
+  for (let t = 0; t < timestepCount; t++) {
     const reader = await epsReader.getResultsForTimestep(t);
-    const values = getSortedSimulationValues(reader, property, options);
-    const offset = t * valuesPerTimestep;
-    for (let i = 0; i < values.length; i++) {
-      allValues[offset + i] = values[i];
+    const values = getSimulationValues(reader, property, options);
+    if (totalValues + values.length > allValues.length) {
+      const grown = new Float32Array(
+        totalValues + values.length * (timestepCount - t),
+      );
+      grown.set(allValues.subarray(0, totalValues));
+      allValues = grown;
     }
+    allValues.set(values, totalValues);
+    totalValues += values.length;
   }
 
-  allValues.sort();
-  return Array.from(allValues);
+  return Array.from(allValues.subarray(0, totalValues).sort());
 };
 
 const getInitialSortedValues = async (
@@ -152,5 +156,22 @@ export const getSortedDataForProperty = (
   if (resultsReader && isSimulationProperty(property)) {
     return getSortedSimulationValues(resultsReader, property, options);
   }
+  if (property === "roughness") {
+    return sortedEffectiveRoughness(hydraulicModel);
+  }
   return getSortedValues(hydraulicModel.assets, property, options);
+};
+
+const sortedEffectiveRoughness = (hydraulicModel: HydraulicModel): number[] => {
+  const values: number[] = [];
+  for (const asset of hydraulicModel.assets.values()) {
+    if (asset.type !== "pipe") continue;
+
+    const value = effectiveRoughness(
+      asset as Pipe,
+      hydraulicModel.pipeMaterials,
+    );
+    if (value !== null) values.push(value);
+  }
+  return values.sort((a, b) => a - b);
 };

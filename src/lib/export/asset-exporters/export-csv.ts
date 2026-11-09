@@ -1,21 +1,36 @@
+import { TranslateFn } from "@epanet-js/i18n";
 import { Asset, HydraulicModel, Projection } from "src/hydraulic-model";
 import { ResultsReader } from "src/simulation";
 import { AssetExportOptions, ExportedAssetTypes, ExportedFile } from "../types";
-import { CustomerPoint } from "src/hydraulic-model/customer-points";
-import { FILE_NAMES } from "./constants";
+import { CustomerPoint } from "@epanet-js/hydraulic-model";
+import { FILE_NAMES, ZONES_FILE_NAME } from "./constants";
 import { NUM_DECIMAL_PLACES, COORDINATE_DECIMAL_PLACES } from "../constants";
-import { createProjectionMapper } from "src/lib/projections";
+import { createProjectionMapper } from "@epanet-js/projections";
+import {
+  buildExportDefaults,
+  resolveExportValue,
+} from "./optional-field-defaults";
+import { exportableProperties } from "./excluded-fields";
+import {
+  VALVE_TARGET_NODE_FIELD,
+  valveTargetNodeLabel,
+} from "./valve-target-node";
+import { buildPropertyNameResolver } from "./property-names";
 import { Position } from "geojson";
+import { exportedZones, zoneFieldKeys, zoneFieldValue } from "./zone-fields";
 
 export const exportCsv = (
   hydraulicModel: HydraulicModel,
   projection: Projection,
+  translate: TranslateFn,
   options?: AssetExportOptions,
 ): ExportedFile[] => {
   const includeSimulationResults =
     (options?.includeSimulationResults ?? false) && !!options?.resultsReader;
-  const selectedAssets = options?.selectedAssets ?? new Set<number>();
+  const selectedAssets = options?.assetIdsFilter ?? null;
+  const selectedCustomerPoints = options?.customerPointIdFilter ?? null;
   const resultsReader = options?.resultsReader;
+  const defaults = buildExportDefaults(hydraulicModel);
   const charsPerCol = 64;
   const numCols = 64;
   const numRows =
@@ -24,12 +39,17 @@ export const exportCsv = (
   const size = numCols * numRows * charsPerCol;
   const parts: string[] = new Array(numCols + 1);
   const encoder = new TextEncoder();
-  const hasAssetSelection = selectedAssets.size > 0;
 
   const transformCoord = createProjectionMapper(projection).toSource;
   const getSimulationResults = buildSimulationResultsReader(resultsReader);
   const { buffers, offsets } = allocateBuffers(size);
   const { properties, simulationProperties } = allocateProperties();
+  const resolvePropertyName = buildPropertyNameResolver(
+    hydraulicModel.customAttributes,
+    translate,
+  );
+  const headerName = (type: ExportedAssetTypes, property: string) =>
+    escapeCsvField(resolvePropertyName(type, property));
 
   const encode = (type: ExportedAssetTypes) => {
     const buffer = buffers[type];
@@ -44,7 +64,10 @@ export const exportCsv = (
     parts.length = 0;
     let partIdx = 0;
 
-    properties[asset.type] = asset.listProperties();
+    properties[asset.type] = exportableProperties(
+      asset.type,
+      asset.listProperties(),
+    );
     if (asset.isNode) {
       properties[asset.type].unshift("positionX", "positionY");
     }
@@ -56,15 +79,15 @@ export const exportCsv = (
 
     properties[asset.type].forEach((property) => {
       if (property === "connections") {
-        parts[partIdx++] = "startNode";
-        parts[partIdx++] = "endNode";
+        parts[partIdx++] = headerName(asset.type, "startNode");
+        parts[partIdx++] = headerName(asset.type, "endNode");
       } else {
-        parts[partIdx++] = property;
+        parts[partIdx++] = headerName(asset.type, property);
       }
     });
 
     simulationProperties[asset.type].forEach((property) => {
-      parts[partIdx++] = property;
+      parts[partIdx++] = headerName(asset.type, property);
     });
 
     encode(asset.type);
@@ -74,13 +97,13 @@ export const exportCsv = (
     parts.length = 0;
     let partIdx = 0;
 
-    parts[partIdx++] = "label";
-    parts[partIdx++] = "positionX";
-    parts[partIdx++] = "positionY";
-    parts[partIdx++] = "junctionConnection";
-    parts[partIdx++] = "pipeConnection";
-    parts[partIdx++] = "connectionX";
-    parts[partIdx++] = "connectionY";
+    parts[partIdx++] = headerName("customerPoint", "label");
+    parts[partIdx++] = headerName("customerPoint", "positionX");
+    parts[partIdx++] = headerName("customerPoint", "positionY");
+    parts[partIdx++] = headerName("customerPoint", "junctionConnection");
+    parts[partIdx++] = headerName("customerPoint", "pipeConnection");
+    parts[partIdx++] = headerName("customerPoint", "connectionX");
+    parts[partIdx++] = headerName("customerPoint", "connectionY");
 
     encode("customerPoint");
   };
@@ -160,12 +183,22 @@ export const exportCsv = (
     };
 
     properties[asset.type].forEach((property) => {
+      if (property === VALVE_TARGET_NODE_FIELD) {
+        parts[partIdx++] = valveTargetNodeLabel(hydraulicModel, asset);
+        return;
+      }
+
       const isPosition = property === "positionX" || property === "positionY";
       const isConnections = property === "connections";
 
       const value = isPosition
         ? getPosition(asset, property)
-        : asset.getProperty(property);
+        : resolveExportValue(
+            asset,
+            property,
+            asset.getProperty(property),
+            defaults,
+          );
 
       const isObject = typeof value === "object";
 
@@ -203,16 +236,35 @@ export const exportCsv = (
       writeHeader(asset, Object.keys(simulationValues));
     }
 
-    if (hasAssetSelection && !selectedAssets.has(asset.id)) return;
+    if (selectedAssets && !selectedAssets.has(asset.id)) return;
     writeAsset(asset, simulationValues);
   });
 
   if (hydraulicModel.customerPoints.size > 0) {
     writeCustomerPointsHeader();
-    hydraulicModel.customerPoints.forEach((point) => writeCustomerPoint(point));
+    hydraulicModel.customerPoints.forEach((point) => {
+      if (selectedCustomerPoints && !selectedCustomerPoints.has(point.id))
+        return;
+      writeCustomerPoint(point);
+    });
   }
 
-  return Object.entries(buffers)
+  const zones = exportedZones(hydraulicModel, options);
+  const zoneFiles: ExportedFile[] = [];
+  if (zones.length > 0) {
+    const keys = zoneFieldKeys(hydraulicModel);
+    const lines = [
+      keys
+        .map((key) => escapeCsvField(resolvePropertyName("zone", key)))
+        .join(","),
+      ...zones.map((zone) =>
+        keys.map((key) => formatCsvValue(zoneFieldValue(zone, key))).join(","),
+      ),
+    ];
+    zoneFiles.push(csvFile(ZONES_FILE_NAME, `${lines.join("\n")}\n`));
+  }
+
+  const assetFiles = Object.entries(buffers)
     .filter(([t]) => offsets[t as ExportedAssetTypes] > 0)
     .map(([t, buffer]) => {
       const type = t as ExportedAssetTypes;
@@ -229,7 +281,30 @@ export const exportCsv = (
         }),
       };
     });
+
+  return [...assetFiles, ...zoneFiles];
 };
+
+const csvFile = (name: string, content: string): ExportedFile => ({
+  fileName: `${name}.csv`,
+  extensions: [".csv"],
+  mimeTypes: ["text/csv"],
+  description: "CSV File",
+  blob: new Blob([content], { type: "text/csv" }),
+});
+
+const formatCsvValue = (value: string | number | null): string => {
+  if (value === null) return "";
+  if (typeof value === "number") {
+    return Math.trunc(value) === value
+      ? value.toString()
+      : value.toFixed(NUM_DECIMAL_PLACES);
+  }
+  return escapeCsvField(value);
+};
+
+const escapeCsvField = (value: string): string =>
+  /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 
 const buildSimulationResultsReader = (resultsReader?: ResultsReader) => {
   if (!resultsReader) {

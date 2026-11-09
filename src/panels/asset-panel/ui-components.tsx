@@ -3,29 +3,38 @@ import {
   useState,
   useMemo,
   useCallback,
-  KeyboardEventHandler,
+  type ComponentProps,
+  type KeyboardEventHandler,
 } from "react";
 import type { PropertyComparison } from "src/hooks/use-asset-comparison";
 import { EditableTextField } from "src/components/form/editable-text-field";
 import { TextField } from "src/components/form/text-field";
 import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
-import { Unit, convertTo } from "src/quantity";
-import { localizeDecimal } from "src/infra/i18n/numbers";
+import { useLabelMaxLength } from "src/hooks/use-label-max-length";
+import { Unit, convertTo } from "@epanet-js/quantity";
+import { localizeDecimal } from "@epanet-js/i18n";
 import { useValueDisplay } from "src/hooks/use-value-display";
-import type { QuantityProperty } from "src/lib/project-settings/quantities-spec";
-import { Selector, SelectorOption } from "src/components/form/selector";
-import { CreatableSelector } from "src/components/form/creatable-selector";
+import type { QuantityProperty } from "@epanet-js/project-settings";
+import {
+  Selector,
+  SelectorAction,
+  SelectorListOption,
+} from "@epanet-js/ui-kit";
 import { NumericField } from "src/components/form/numeric-field";
 import { Checkbox } from "src/components/form/Checkbox";
-import { PipeStatus } from "src/hydraulic-model/asset-types/pipe";
 import {
+  PipeStatus,
   PumpDefinitionType,
   PumpStatus,
-} from "src/hydraulic-model/asset-types/pump";
-import { ValveKind, ValveStatus } from "src/hydraulic-model/asset-types/valve";
-import type { TankMixingModel } from "src/hydraulic-model/asset-types/tank";
-import type { ChemicalSourceType } from "src/hydraulic-model/asset-types/node";
+  ValveKind,
+  ValveStatus,
+  type TankMixingModel,
+  type ChemicalSourceType,
+  CustomerPoint,
+  LabelManager,
+  type LabelType,
+} from "@epanet-js/hydraulic-model";
 import { PanelActions } from "./actions";
 import {
   InlineField,
@@ -42,7 +51,6 @@ import {
   StyledPopoverArrow,
   StyledPopoverContent,
 } from "src/components/elements";
-import { CustomerPoint } from "src/hydraulic-model/customer-points";
 import {
   Patterns,
   calculateAverageDemand,
@@ -54,10 +62,17 @@ import { ephemeralStateAtom } from "src/state/drawing";
 import { assetPanelFooterAtom } from "src/state/quick-graph";
 import { MultipleValuesIcon } from "src/icons";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { PaywallFeature } from "src/state/dialog";
+import {
+  PaywallLockButton,
+  PaywallOverlay,
+  useFeatureLock,
+} from "src/components/form/paywall";
 
 export const AssetEditorContent = ({
   label,
   type,
+  labelType,
   isNew,
   onLabelChange,
   footer,
@@ -66,6 +81,7 @@ export const AssetEditorContent = ({
 }: {
   label: string;
   type: string;
+  labelType: LabelType;
   isNew?: boolean;
   onLabelChange: (newLabel: string) => string | undefined;
   footer?: React.ReactNode;
@@ -82,42 +98,48 @@ export const AssetEditorContent = ({
   );
 
   return (
-    <SectionList
-      header={
-        <Header
-          label={label}
-          type={type}
-          isNew={isNew}
-          onLabelChange={onLabelChange}
-          readOnly={readOnly}
-        />
-      }
-      footer={footer}
-      isStickyFooter={footerState.isPinned}
-      stickyFooterHeight={footerState.height}
-      onStickyFooterHeightChange={handleFooterHeightChange}
-      padding={3}
-      overflow={true}
-    >
-      {children}
-    </SectionList>
+    <div className="contents" data-asset-panel>
+      <SectionList
+        header={
+          <Header
+            label={label}
+            type={type}
+            labelType={labelType}
+            isNew={isNew}
+            onLabelChange={onLabelChange}
+            readOnly={readOnly}
+          />
+        }
+        footer={footer}
+        isStickyFooter={footerState.isPinned}
+        stickyFooterHeight={footerState.height}
+        onStickyFooterHeightChange={handleFooterHeightChange}
+        padding={3}
+        overflow={true}
+      >
+        {children}
+      </SectionList>
+    </div>
   );
 };
 
 const Header = ({
   label,
   type,
+  labelType,
   isNew,
   onLabelChange,
   readOnly = false,
 }: {
   label: string;
   type: string;
+  labelType: LabelType;
   isNew?: boolean;
   onLabelChange: (newLabel: string) => string | undefined;
   readOnly?: boolean;
 }) => {
   const [error, setError] = useState<string | null>(null);
+  const labelMaxLength = useLabelMaxLength();
 
   const handleChange = useCallback(
     (newLabel: string): boolean => {
@@ -135,37 +157,72 @@ const Header = ({
   return (
     <div className={clsx("px-3 pt-4 pb-3 relative")}>
       {isNew && (
-        <div className="absolute left-0 top-0 bottom-0 w-1 bg-purple-500 rounded-full" />
+        <div className="absolute left-0 top-0 bottom-0 w-1 bg-accent rounded-full" />
       )}
       <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <EditableTextField
-            label={label}
-            value={label}
-            onChangeValue={handleChange}
-            onReset={clearError}
-            onDirty={clearError}
-            hasError={!!error}
-            readOnly={readOnly}
-            allowedChars={/(?![\s;])[\x00-\xFF]/}
-            maxByteLength={31}
-            styleOptions={{
-              padding: "sm",
-              ghostBorder: true,
-              fontWeight: "semibold",
-              textSize: "sm",
-            }}
-          />
-        </div>
+        <EditableTextField
+          label={label}
+          value={label}
+          onChangeValue={handleChange}
+          onReset={clearError}
+          onDirty={clearError}
+          hasError={!!error}
+          readOnly={readOnly}
+          className="shrink-0 max-w-[calc(100%-6.5rem)]"
+          sanitize={(raw) =>
+            LabelManager.sanitizeLabel(raw, labelType, labelMaxLength)
+          }
+          styleOptions={{
+            padding: "sm",
+            ghostBorder: true,
+            fontWeight: "semibold",
+            textSize: "sm",
+            width: "content",
+          }}
+        />
         <PanelActions />
       </div>
       {error && (
-        <span className="text-xs text-orange-600 dark:text-orange-400 block mt-1 pl-1">
+        <span className="text-size-small text-warning block mt-1 pl-1">
           {error}
         </span>
       )}
-      <span className="text-sm text-gray-500 pl-1">{type}</span>
+      <span className="text-size-base text-subtle pl-1">{type}</span>
     </div>
+  );
+};
+
+type PaywalledInlineFieldProps = Omit<
+  ComponentProps<typeof InlineField>,
+  "labelAction"
+> & {
+  paywall?: PaywallFeature;
+};
+
+export const PaywalledInlineField = ({
+  paywall,
+  children,
+  ...inlineFieldProps
+}: PaywalledInlineFieldProps) => {
+  const { isLocked } = useFeatureLock(paywall);
+  const { name } = inlineFieldProps;
+  return (
+    <InlineField
+      {...inlineFieldProps}
+      labelAction={
+        isLocked ? (
+          <PaywallLockButton feature={paywall!} label={name} />
+        ) : undefined
+      }
+    >
+      {isLocked ? (
+        <PaywallOverlay feature={paywall!} ariaLabel={name}>
+          {children}
+        </PaywallOverlay>
+      ) : (
+        children
+      )}
+    </InlineField>
   );
 };
 
@@ -173,10 +230,12 @@ export const TextRow = ({
   name,
   value,
   comparison,
+  paywall,
 }: {
   name: string;
   value: string;
   comparison?: PropertyComparison;
+  paywall?: PaywallFeature;
 }) => {
   const translate = useTranslate();
   const label = translate(name);
@@ -187,43 +246,51 @@ export const TextRow = ({
       : undefined;
 
   return (
-    <InlineField
+    <PaywalledInlineField
       name={label}
       labelSize="md"
       hasChanged={comparison?.hasChanged}
       baseDisplayValue={baseDisplayValue}
+      paywall={paywall}
     >
       <TextField>{value}</TextField>
-    </InlineField>
+    </PaywalledInlineField>
   );
 };
 
-export const QuantityRow = <P extends string>({
+export const QuantityRow = <
+  P extends string,
+  V extends number | null | undefined = number | null,
+>({
   name,
   value,
   unit,
-  positiveOnly = false,
   readOnly = false,
-  isNullable = true,
+  disabled = false,
+  isOptional = false,
+  commitInvalidValues,
   placeholder = "",
+  defaultValue,
   comparison,
   onChange,
+  validate,
   displayName,
+  paywall,
 }: {
   name: P;
-  value: number | null;
+  value: V;
   unit: Unit;
-  positiveOnly?: boolean;
-  isNullable?: boolean;
+  isOptional?: boolean;
+  commitInvalidValues?: boolean;
   readOnly?: boolean;
+  disabled?: boolean;
   placeholder?: string;
+  defaultValue?: number | null;
   comparison?: PropertyComparison;
-  onChange?: (
-    name: P,
-    newValue: number | null,
-    oldValue: number | null,
-  ) => void;
+  onChange?: (name: P, newValue: V, oldValue: V) => void;
+  validate?: (value: number) => boolean;
   displayName?: string;
+  paywall?: PaywallFeature;
 }) => {
   const translate = useTranslate();
   const translateUnit = useTranslateUnit();
@@ -231,125 +298,60 @@ export const QuantityRow = <P extends string>({
   const { displayValue: formatValue } = useValueDisplay();
 
   const displayValue =
-    value === null
-      ? isNullable && placeholder
-        ? ""
-        : translate("notAvailable")
-      : formatValue(value, name as QuantityProperty);
+    value == null ? "" : formatValue(value, name as QuantityProperty);
+
+  const hasDefault = defaultValue != null;
+  const displayPlaceholder = hasDefault
+    ? formatValue(defaultValue, name as QuantityProperty)
+    : placeholder;
 
   const translatedName = displayName ?? translate(name);
   const label = unit
     ? `${translatedName} (${translateUnit(unit)})`
     : `${translatedName}`;
 
-  const baseDisplayValue =
-    comparison?.hasChanged && comparison.baseValue != null
+  // The base value keeps its own fallback: `placeholder` is a static default
+  // that also holds on the base branch, while `defaultValue` is resolved per
+  // branch and says nothing about what the base branch had.
+  const baseDisplayValue = comparison?.hasChanged
+    ? comparison.baseValue != null
       ? formatValue(comparison.baseValue as number, name as QuantityProperty)
-      : undefined;
-
-  const handleChange = (newValue: number, isEmpty: boolean) => {
-    lastChange.current = Date.now();
-    const resolvedValue =
-      isEmpty && isNullable && placeholder ? null : newValue;
-    onChange && onChange(name, resolvedValue, value);
-  };
-
-  return (
-    <InlineField
-      name={label}
-      labelSize="md"
-      hasChanged={comparison?.hasChanged}
-      baseDisplayValue={baseDisplayValue}
-    >
-      {readOnly ? (
-        <TextField padding="md">{displayValue}</TextField>
-      ) : (
-        <NumericField
-          key={lastChange.current + displayValue}
-          label={label}
-          positiveOnly={positiveOnly}
-          isNullable={isNullable}
-          readOnly={readOnly}
-          displayValue={displayValue}
-          placeholder={placeholder}
-          onChangeValue={handleChange}
-          styleOptions={{
-            padding: "md",
-            ghostBorder: readOnly,
-            textSize: "sm",
-          }}
-        />
-      )}
-    </InlineField>
-  );
-};
-
-export const IntegerRow = <P extends string>({
-  name,
-  value,
-  positiveOnly = false,
-  readOnly = false,
-  isNullable = true,
-  placeholder = "",
-  comparison,
-  onChange,
-  displayName,
-}: {
-  name: P;
-  value: number | null;
-  positiveOnly?: boolean;
-  isNullable?: boolean;
-  readOnly?: boolean;
-  placeholder?: string;
-  comparison?: PropertyComparison;
-  onChange?: (
-    name: P,
-    newValue: number | null,
-    oldValue: number | null,
-  ) => void;
-  displayName?: string;
-}) => {
-  const translate = useTranslate();
-  const lastChange = useRef<number>(0);
-
-  const displayValue = value === null ? "" : String(value);
-  const label = displayName ?? translate(name);
-
-  const baseDisplayValue =
-    comparison?.hasChanged && comparison.baseValue != null
-      ? String(comparison.baseValue)
-      : undefined;
+      : isOptional && placeholder !== ""
+        ? placeholder
+        : translate("none")
+    : undefined;
 
   const handleChange = (newValue: number, isEmpty: boolean) => {
     lastChange.current = Date.now();
     if (isEmpty) {
-      if (isNullable) onChange && onChange(name, null, value);
+      if (isOptional) onChange && onChange(name, undefined as V, value);
+      else onChange && onChange(name, null as V, value);
       return;
     }
-    if (!Number.isFinite(newValue)) return;
-    const truncated = Math.trunc(newValue);
-    if (positiveOnly && truncated <= 0) return;
-    onChange && onChange(name, truncated, value);
+    onChange && onChange(name, newValue as V, value);
   };
 
   return (
-    <InlineField
+    <PaywalledInlineField
       name={label}
       labelSize="md"
       hasChanged={comparison?.hasChanged}
       baseDisplayValue={baseDisplayValue}
+      paywall={paywall}
     >
       {readOnly ? (
-        <TextField padding="md">{displayValue}</TextField>
+        <TextField padding="md">{displayValue || displayPlaceholder}</TextField>
       ) : (
         <NumericField
           key={lastChange.current + displayValue}
           label={label}
-          positiveOnly={positiveOnly}
-          isNullable={isNullable}
+          isRequired={!isOptional && !hasDefault}
+          commitInvalidValues={commitInvalidValues}
+          validate={validate}
           readOnly={readOnly}
+          disabled={disabled}
           displayValue={displayValue}
-          placeholder={placeholder}
+          placeholder={displayPlaceholder}
           onChangeValue={handleChange}
           styleOptions={{
             padding: "md",
@@ -358,39 +360,141 @@ export const IntegerRow = <P extends string>({
           }}
         />
       )}
-    </InlineField>
+    </PaywalledInlineField>
   );
 };
 
-export const CreatableTextRow = <P extends string>({
+export const IntegerRow = <
+  P extends string,
+  V extends number | null | undefined = number | null,
+>({
+  name,
+  value,
+  readOnly = false,
+  isOptional = false,
+  commitInvalidValues = false,
+  placeholder = "",
+  comparison,
+  onChange,
+  displayName,
+  paywall,
+  validate,
+}: {
+  name: P;
+  value: V;
+  isOptional?: boolean;
+  commitInvalidValues?: boolean;
+  readOnly?: boolean;
+  placeholder?: string;
+  comparison?: PropertyComparison;
+  onChange?: (name: P, newValue: V, oldValue: V) => void;
+  displayName?: string;
+  paywall?: PaywallFeature;
+  validate?: (value: number) => boolean;
+}) => {
+  const translate = useTranslate();
+  const lastChange = useRef<number>(0);
+
+  const displayValue = value == null ? "" : String(value);
+  const label = displayName ?? translate(name);
+
+  const baseDisplayValue = comparison?.hasChanged
+    ? comparison.baseValue != null
+      ? String(comparison.baseValue)
+      : isOptional && placeholder !== ""
+        ? placeholder
+        : translate("none")
+    : undefined;
+
+  const handleChange = (newValue: number, isEmpty: boolean) => {
+    lastChange.current = Date.now();
+    if (isEmpty) {
+      if (isOptional) onChange && onChange(name, undefined as V, value);
+      else onChange && onChange(name, null as V, value);
+      return;
+    }
+    if (!Number.isFinite(newValue)) return;
+    const truncated = Math.trunc(newValue);
+    onChange && onChange(name, truncated as V, value);
+  };
+
+  return (
+    <PaywalledInlineField
+      name={label}
+      labelSize="md"
+      hasChanged={comparison?.hasChanged}
+      baseDisplayValue={baseDisplayValue}
+      paywall={paywall}
+    >
+      {readOnly ? (
+        <TextField padding="md">{displayValue}</TextField>
+      ) : (
+        <NumericField
+          key={lastChange.current + displayValue}
+          label={label}
+          isRequired={!isOptional}
+          commitInvalidValues={commitInvalidValues}
+          readOnly={readOnly}
+          displayValue={displayValue}
+          placeholder={placeholder}
+          onChangeValue={handleChange}
+          validate={validate}
+          styleOptions={{
+            padding: "md",
+            ghostBorder: readOnly,
+            textSize: "sm",
+          }}
+        />
+      )}
+    </PaywalledInlineField>
+  );
+};
+
+export const CreatableTextRow = <
+  P extends string,
+  V extends string | null | undefined = string | null,
+>({
   name,
   value,
   options,
   readOnly = false,
+  isOptional = false,
   placeholder,
   comparison,
   onChange,
+  paywall,
+  validateNew,
 }: {
   name: P;
-  value: string | null;
+  value: V;
   options: string[];
   readOnly?: boolean;
+  isOptional?: boolean;
   placeholder?: string;
   comparison?: PropertyComparison;
-  onChange?: (
-    name: P,
-    newValue: string | null,
-    oldValue: string | null,
-  ) => void;
+  onChange?: (name: P, newValue: V, oldValue: V) => void;
+  paywall?: PaywallFeature;
+  validateNew?: (query: string) => boolean;
 }) => {
   const translate = useTranslate();
   const label = translate(name);
   const resolvedPlaceholder = placeholder ?? translate("none");
 
-  const baseDisplayValue =
-    comparison?.hasChanged && comparison.baseValue != null
+  const baseDisplayValue = comparison?.hasChanged
+    ? comparison.baseValue != null
       ? String(comparison.baseValue)
-      : undefined;
+      : translate("none")
+    : undefined;
+
+  // The stored value may differ in case from the option standing for it, so the
+  // option is matched loosely and its own label shown, rather than listing a
+  // near-duplicate that only differs in case.
+  const selectedOption = useMemo(() => {
+    if (!value) return null;
+    return (
+      options.find((o) => o.toLowerCase() === value.toLowerCase()) ?? value
+    );
+  }, [options, value]);
 
   const handleChange = useCallback(
     (newValue: string | null) => {
@@ -402,32 +506,38 @@ export const CreatableTextRow = <P extends string>({
               (o) => o.toLowerCase() === normalized.toLowerCase(),
             ) ?? normalized);
       if (canonical === value) return;
-      onChange && onChange(name, canonical, value);
+      const emitted = (
+        canonical === null && isOptional ? undefined : canonical
+      ) as V;
+      onChange && onChange(name, emitted, value);
     },
-    [name, onChange, options, value],
+    [name, onChange, options, value, isOptional],
   );
 
   return (
-    <InlineField
+    <PaywalledInlineField
       name={label}
       labelSize="md"
       hasChanged={comparison?.hasChanged}
       baseDisplayValue={baseDisplayValue}
+      paywall={paywall}
     >
       {readOnly ? (
         <TextField padding="md">{value ?? ""}</TextField>
       ) : (
-        <CreatableSelector
-          options={options}
-          selected={value}
+        <Selector
+          options={options.map((o) => ({ value: o, label: o }))}
+          selected={selectedOption}
+          nullable
+          allowNew
           onChange={handleChange}
           placeholder={resolvedPlaceholder}
+          clearLabel={resolvedPlaceholder}
           ariaLabel={label}
-          searchPlaceholder={translate("searchOrTypeNew")}
-          createLabel={(query) => translate("addNewValue", query)}
+          validateNew={validateNew}
         />
       )}
-    </InlineField>
+    </PaywalledInlineField>
   );
 };
 
@@ -449,107 +559,6 @@ type SelectRowValue =
   | "none"
   | number;
 
-type SelectRowPropsBase<P extends string, T extends SelectRowValue> = {
-  name: P;
-  label?: string;
-  options: SelectorOption<T>[] | SelectorOption<T>[][];
-  listClassName?: string;
-  stickyGroupClassName?: string;
-  stickyFirstGroup?: boolean;
-  comparison?: PropertyComparison;
-  readOnly?: boolean;
-};
-
-type SelectRowPropsNonNullable<
-  P extends string,
-  T extends SelectRowValue,
-> = SelectRowPropsBase<P, T> & {
-  selected: T;
-  nullable?: false;
-  onChange?: (name: P, newValue: T, oldValue: T) => void;
-  placeholder?: undefined;
-};
-
-type SelectRowPropsNullable<
-  P extends string,
-  T extends SelectRowValue,
-> = SelectRowPropsBase<P, T> & {
-  selected: T | null;
-  nullable: true;
-  placeholder: string;
-  onChange?: (name: P, newValue: T | null, oldValue: T | null) => void;
-};
-
-type SelectorRowProps<P extends string, T extends SelectRowValue> =
-  | SelectRowPropsNullable<P, T>
-  | SelectRowPropsNonNullable<P, T>;
-
-export function SelectRow<P extends string, T extends SelectRowValue>({
-  name,
-  label,
-  selected,
-  options,
-  listClassName,
-  stickyGroupClassName,
-  stickyFirstGroup,
-  comparison,
-  readOnly,
-  nullable = false,
-  placeholder = undefined,
-  onChange,
-}: SelectorRowProps<P, T>) {
-  const translate = useTranslate();
-  const actualLabel = label || translate(name);
-
-  const flatOptions = options.flat();
-
-  const baseDisplayValue = comparison?.hasChanged
-    ? comparison.baseValue != null
-      ? (flatOptions.find((o) => o.value === comparison.baseValue)?.label ??
-        String(comparison.baseValue))
-      : `(${translate("none").toLocaleLowerCase()})`
-    : undefined;
-
-  const selectedOption = flatOptions.find((o) => o.value === selected);
-
-  return (
-    <InlineField
-      name={actualLabel}
-      labelSize="md"
-      hasChanged={comparison?.hasChanged}
-      baseDisplayValue={baseDisplayValue}
-    >
-      {readOnly ? (
-        <TextField padding="md">{selectedOption?.label ?? ""}</TextField>
-      ) : (
-        <div className="w-full">
-          <Selector
-            ariaLabel={actualLabel}
-            options={options}
-            selected={selected}
-            nullable={nullable as true}
-            onChange={(newValue, oldValue) =>
-              onChange?.(name, newValue as T, oldValue as T)
-            }
-            placeholder={placeholder as string}
-            listClassName={listClassName}
-            stickyGroupClassName={stickyGroupClassName}
-            stickyFirstGroup={stickyFirstGroup}
-            disableFocusOnClose={true}
-            styleOptions={{
-              border: true,
-              textSize: "text-sm",
-              paddingY: 2,
-            }}
-          />
-        </div>
-      )}
-    </InlineField>
-  );
-}
-
-const LIBRARY_SENTINEL = -1;
-
 type LibrarySelectRowProps<P extends string> = {
   name: P;
   collection: Map<number, { id: number; label: string; type?: string }>;
@@ -567,7 +576,144 @@ type LibrarySelectRowProps<P extends string> = {
   excludeId?: number;
   readOnly?: boolean;
   comparison?: PropertyComparison;
+  paywall?: PaywallFeature;
+  isOptional?: boolean;
 };
+
+type SelectRowPropsBase<P extends string, T extends SelectRowValue> = {
+  name: P;
+  label?: string;
+  options: SelectorListOption<T>[];
+  listClassName?: string;
+  actions?: SelectorAction[];
+  comparison?: PropertyComparison;
+  readOnly?: boolean;
+  disabled?: boolean;
+  paywall?: PaywallFeature;
+  isOptional?: boolean;
+  onHighlightChange?: (value: T | null) => void;
+};
+
+type SelectRowPropsNonNullable<
+  P extends string,
+  T extends SelectRowValue,
+> = SelectRowPropsBase<P, T> & {
+  selected: T;
+  nullable?: false;
+  onChange?: (name: P, newValue: T, oldValue: T) => void;
+  placeholder?: undefined;
+  clearLabel?: never;
+};
+
+type SelectRowPropsNullable<
+  P extends string,
+  T extends SelectRowValue,
+> = SelectRowPropsBase<P, T> & {
+  selected: T | null;
+  nullable: true;
+  placeholder: string;
+  clearLabel?: string;
+  onChange?: (name: P, newValue: T | null, oldValue: T | null) => void;
+};
+
+type SelectorRowProps<P extends string, T extends SelectRowValue> =
+  | SelectRowPropsNullable<P, T>
+  | SelectRowPropsNonNullable<P, T>;
+
+export function SelectRow<P extends string, T extends SelectRowValue>({
+  name,
+  label,
+  selected,
+  options,
+  listClassName,
+  actions,
+  comparison,
+  readOnly,
+  disabled = false,
+  paywall,
+  nullable = false,
+  placeholder = undefined,
+  clearLabel,
+  onChange,
+  isOptional = true,
+  onHighlightChange,
+}: SelectorRowProps<P, T>) {
+  const translate = useTranslate();
+  const actualLabel = label || translate(name);
+
+  const hasError = !isOptional && selected === null;
+
+  const baseDisplayValue = comparison?.hasChanged
+    ? comparison.baseValue != null
+      ? (options.find((o) => o.value === comparison.baseValue)?.label ??
+        String(comparison.baseValue))
+      : (clearLabel ?? `(${translate("none").toLocaleLowerCase()})`)
+    : undefined;
+
+  const selectedOption = options.find((o) => o.value === selected);
+
+  return (
+    <PaywalledInlineField
+      name={actualLabel}
+      labelSize="md"
+      hasChanged={comparison?.hasChanged}
+      baseDisplayValue={baseDisplayValue}
+      paywall={paywall}
+    >
+      {readOnly ? (
+        <TextField padding="md">{selectedOption?.label ?? ""}</TextField>
+      ) : (
+        <div
+          className="w-full"
+          onMouseEnter={
+            onHighlightChange ? () => onHighlightChange(selected) : undefined
+          }
+          onMouseLeave={
+            onHighlightChange ? () => onHighlightChange(null) : undefined
+          }
+        >
+          <Selector
+            ariaLabel={actualLabel}
+            options={options}
+            selected={selected}
+            invalid={hasError}
+            disabled={disabled}
+            nullable={nullable as true}
+            onChange={(newValue, oldValue) =>
+              onChange?.(name, newValue as T, oldValue as T)
+            }
+            placeholder={placeholder as string}
+            clearLabel={clearLabel}
+            listClassName={listClassName}
+            actions={actions}
+            onActiveOptionChange={onHighlightChange}
+            styleOptions={{
+              border: true,
+              textSize: "text-size-base",
+              paddingY: 2,
+              variant: hasError ? "warning" : "default",
+            }}
+          />
+        </div>
+      )}
+    </PaywalledInlineField>
+  );
+}
+
+const useLibraryItems = (
+  collection: LibrarySelectRowProps<string>["collection"],
+  filterByType: string,
+  excludeId: number | undefined,
+) =>
+  useMemo(() => {
+    const out: SelectorListOption<number>[] = [];
+    for (const item of collection.values()) {
+      if (item.type !== filterByType) continue;
+      if (item.id === excludeId) continue;
+      out.push({ value: item.id, label: item.label });
+    }
+    return out;
+  }, [collection, filterByType, excludeId]);
 
 export function LibrarySelectRow<P extends string>({
   name,
@@ -582,58 +728,30 @@ export function LibrarySelectRow<P extends string>({
   excludeId,
   readOnly,
   comparison,
+  paywall,
+  isOptional,
 }: LibrarySelectRowProps<P>) {
   const translate = useTranslate();
+  const items = useLibraryItems(collection, filterByType, excludeId);
 
-  const options = useMemo(() => {
-    const libraryGroup: SelectorOption<number>[] = [
-      { label: libraryLabel, value: LIBRARY_SENTINEL },
-    ];
-    const itemGroup: SelectorOption<number>[] = [];
-    for (const item of collection.values()) {
-      if (item.type !== filterByType) continue;
-      if (item.id === excludeId) continue;
-      itemGroup.push({ value: item.id, label: item.label });
-    }
-    const emptyGroup: SelectorOption<number>[] = emptyOptionLabel
-      ? [{ value: 0, label: emptyOptionLabel }]
-      : [];
-
-    const selectableOptions = itemGroup.length
-      ? [...emptyGroup, ...itemGroup]
-      : [];
-    return [libraryGroup, selectableOptions];
-  }, [collection, filterByType, libraryLabel, emptyOptionLabel, excludeId]);
-
-  const handleChange = useCallback(
-    (_name: P, newValue: number | null, oldValue: number | null) => {
-      if (newValue === null) return;
-      if (newValue === LIBRARY_SENTINEL) {
-        onOpenLibrary();
-        return;
-      }
-      onChange?.(_name, newValue === 0 ? null : newValue, oldValue);
-    },
-    [onOpenLibrary, onChange],
-  );
+  const resolvedPlaceholder = readOnly
+    ? (placeholder ?? emptyOptionLabel ?? "")
+    : (placeholder ?? emptyOptionLabel ?? `${translate("select")}...`);
 
   return (
     <SelectRow
       name={name}
       selected={selected}
-      options={options}
-      stickyGroupClassName="italic"
-      stickyFirstGroup
-      listClassName={emptyOptionLabel ? "first:italic" : ""}
+      options={items}
       nullable={true}
-      placeholder={
-        readOnly
-          ? (placeholder ?? emptyOptionLabel ?? "")
-          : (placeholder ?? emptyOptionLabel ?? `${translate("select")}...`)
-      }
-      onChange={handleChange}
+      placeholder={resolvedPlaceholder}
+      clearLabel={emptyOptionLabel}
+      actions={[{ label: libraryLabel, onSelect: onOpenLibrary }]}
+      onChange={onChange}
       readOnly={readOnly}
       comparison={comparison}
+      paywall={paywall}
+      isOptional={isOptional}
     />
   );
 }
@@ -645,6 +763,7 @@ export const SwitchRow = <P extends string>({
   comparison,
   readOnly = false,
   onChange,
+  paywall,
 }: {
   name: P;
   label?: string;
@@ -652,6 +771,7 @@ export const SwitchRow = <P extends string>({
   comparison?: PropertyComparison;
   readOnly?: boolean;
   onChange?: (property: P, newValue: boolean, oldValue: boolean) => void;
+  paywall?: PaywallFeature;
 }) => {
   const translate = useTranslate();
   const actualLabel = label || translate(name);
@@ -668,11 +788,12 @@ export const SwitchRow = <P extends string>({
   };
 
   return (
-    <InlineField
+    <PaywalledInlineField
       name={actualLabel}
       labelSize="md"
       hasChanged={comparison?.hasChanged}
       baseDisplayValue={baseDisplayValue}
+      paywall={paywall}
     >
       <div className="p-2 flex items-center h-[38px]">
         <Checkbox
@@ -682,7 +803,7 @@ export const SwitchRow = <P extends string>({
           disabled={readOnly || !onChange}
         />
       </div>
-    </InlineField>
+    </PaywalledInlineField>
   );
 };
 
@@ -750,7 +871,7 @@ export const ConnectedCustomersRow = ({
         <P.Trigger
           aria-label={`Connected customers: ${customerCount}`}
           onKeyDown={handleTriggerKeyDown}
-          className="text-left text-sm p-2 text-gray-700 bg-gray-100 border border-gray-300 rounded-xs hover:bg-gray-200 focus-visible:ring-inset focus-visible:ring-1 focus-visible:ring-purple-500 aria-expanded:ring-1 aria-expanded:ring-purple-500 w-full flex items-center gap-x-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:hover:bg-gray-600 tabular-nums"
+          className="text-left text-size-base p-2 text-default bg-base border border-strong rounded-xs hover:bg-base-hover focus-visible:ring-inset focus-visible:ring-1 focus-visible:ring-accent aria-expanded:ring-1 aria-expanded:ring-accent w-full flex items-center gap-x-2 tabular-nums"
         >
           <MultipleValuesIcon />
           {customerCount}
@@ -836,7 +957,7 @@ const CustomerPointsPopover = ({
 
   return (
     <div onKeyDown={handleContentKeyDown}>
-      <div className="font-sans text-gray-500 dark:text-gray-100 text-xs text-left py-2 flex font-bold border-b border-gray-200 dark:border-gray-700 rounded-t">
+      <div className="font-sans text-subtle dark:text-gray-100 text-size-small text-left py-2 flex font-bold border-b rounded-t">
         <div className="flex-auto px-2">{translate("customer")}</div>
         <div className="px-2">
           {translate("demand")} ({translateUnit(customerUnit)})
@@ -872,8 +993,8 @@ const CustomerPointsPopover = ({
                 role="listitem"
                 aria-label={`Customer point ${displayValue}: ${demandValue}`}
                 className="top-0 left-0 block w-full absolute py-2 px-2 flex items-center
-                hover:bg-gray-200 dark:hover:bg-gray-700
-                gap-x-2 even:bg-gray-100 dark:even:bg-gray-800"
+                  hover:bg-base-hover
+                  gap-x-2 even:bg-panel"
                 style={{
                   height: `${virtualRow.size}px`,
                   transform: `translateY(${virtualRow.start}px)`,
@@ -883,12 +1004,12 @@ const CustomerPointsPopover = ({
               >
                 <div
                   title={displayValue}
-                  className="flex-auto font-mono text-xs truncate"
+                  className="flex-auto font-mono text-size-small truncate"
                 >
                   {displayValue}
                 </div>
                 <div
-                  className="text-xs font-mono text-gray-600 dark:text-gray-300"
+                  className="text-size-small font-mono text-subtle dark:text-gray-300"
                   title={`${translate("demand")}: ${demandValue}`}
                 >
                   {demandValue}

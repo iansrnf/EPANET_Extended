@@ -2,12 +2,16 @@ import { getIssues } from "@placemarkio/check-geojson";
 import * as Comlink from "comlink";
 import { EitherHandler } from "./shared";
 import { bufferFeature } from "src/lib/buffer";
-import { runSimulation } from "src/simulation/epanet/worker";
+import {
+  runSimulation,
+  warmupSimulationEngine,
+} from "src/simulation/epanet/worker";
 
 export const lib = {
   getIssues,
   bufferFeature,
   runSimulation,
+  warmupSimulationEngine,
 };
 
 export type Lib = typeof lib;

@@ -5,10 +5,11 @@ import {
   encodeNumber,
   FixedSizeBufferBuilder,
   VariableSizeBufferBuilder,
-} from "src/lib/buffers";
-import { AssetId } from "../asset-types/base-asset";
-import { AssetIndexQueries } from "../asset-index";
-import { TopologyQueries, TopologyBuffers } from "./types";
+} from "@epanet-js/buffers";
+import { AssetId } from "@epanet-js/hydraulic-model";
+import { AssetIndexQueries } from "@epanet-js/hydraulic-model";
+import { TopologyQueries } from "@epanet-js/hydraulic-model";
+import type { TopologyBuffers } from "./topology-transferable";
 
 function encodeLinkConnections(
   connections: [number, number],

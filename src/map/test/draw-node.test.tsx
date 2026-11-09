@@ -3,9 +3,10 @@ import { stubElevation } from "./__helpers__/elevations";
 import { setInitialState } from "src/__helpers__/state";
 import { Mode } from "src/state/mode";
 import { renderMap } from "./__helpers__/map";
-import { stagingModelAtom } from "src/state/hydraulic-model";
+import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { selectionAtom } from "src/state/selection";
-import { Junction } from "src/hydraulic-model/asset-types/junction";
+import { USelection } from "src/selection";
+import { Junction } from "@epanet-js/hydraulic-model";
 import { getAssetsByType } from "src/__helpers__/asset-queries";
 import { vi } from "vitest";
 import { waitFor } from "@testing-library/react";
@@ -24,7 +25,12 @@ describe("Drawing a junction", () => {
     await fireMapClick(map, clickPoint);
 
     await waitFor(() => {
-      const features = getSourceFeatures(map, "delta-features");
+      // The junction may land in the delta live-set or be consolidated into main,
+      // depending on whether its edit coalesces with the initial style sync.
+      const features = [
+        ...getSourceFeatures(map, "main-features"),
+        ...getSourceFeatures(map, "delta-features"),
+      ];
       expect(features).toHaveLength(1);
 
       const feature = features[0];
@@ -44,7 +50,7 @@ describe("Drawing a junction", () => {
 
     await fireMapClick(map, clickPoint);
 
-    const { assets } = store.get(stagingModelAtom);
+    const { assets } = store.get(stagingModelDerivedAtom);
 
     const junctions = getAssetsByType<Junction>(assets, "junction");
 
@@ -56,10 +62,8 @@ describe("Drawing a junction", () => {
 
     await waitFor(() => {
       const selection = store.get(selectionAtom);
-      expect(selection.type).toBe("single");
-      if (selection.type === "single") {
-        expect(selection.id).toBe(junction.id);
-      }
+      expect(USelection.isSingleAsset(selection)).toBe(true);
+      expect(USelection.singleAssetId(selection)).toBe(junction.id);
     });
   });
 });

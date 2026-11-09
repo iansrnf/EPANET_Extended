@@ -31,7 +31,8 @@ export const PriorityAccessDialog = ({
     });
     setDialog({
       type: "upgrade",
-      source: { kind: "priorityAccess", featureName },
+      feature: featureName,
+      source: "priorityAccess",
     });
   };
 
@@ -52,7 +53,7 @@ export const PriorityAccessDialog = ({
         />
       }
     >
-      <div className="p-4 space-y-4 text-sm text-gray-700 dark:text-gray-300">
+      <div className="p-4 space-y-4 text-size-base text-default">
         <p>
           <Trans
             i18nKey="priorityAccess.description1"

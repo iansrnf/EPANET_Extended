@@ -1,0 +1,123 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect } from "vitest";
+import { Provider as JotaiProvider, createStore } from "jotai";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { TooltipProvider } from "@epanet-js/ui-kit";
+import { LabelManager } from "@epanet-js/hydraulic-model";
+import { HydraulicModel } from "src/hydraulic-model";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
+import { Store } from "src/state";
+import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
+import { branchStateAtom } from "src/state/branch-state";
+import { initialSimulationState } from "src/state/simulation";
+import { defaultSimulationSettings } from "src/simulation/simulation-settings";
+import { SessionHistory } from "src/lib/persistence/session-history";
+import { PersistenceContext } from "src/lib/persistence/context";
+import { Persistence } from "src/lib/persistence/persistence";
+import { MultiCustomerPointCustomAttributesSection } from "./multi-customer-point-custom-attributes-section";
+
+const IDS = { CP1: 1, CP2: 2 };
+
+const buildModel = (values: Record<number, number> = {}): HydraulicModel => {
+  const model = HydraulicModelBuilder.with()
+    .aCustomAttribute("customerPoint", {
+      id: "custom-1",
+      label: "Age",
+      type: "number",
+    })
+    .aCustomerPoint(IDS.CP1, { label: "CP1" })
+    .aCustomerPoint(IDS.CP2, { label: "CP2" })
+    .build();
+  for (const [id, value] of Object.entries(values)) {
+    model.customerPoints.get(Number(id))!.setProperty("custom-1", value);
+  }
+  return model;
+};
+
+const setInitialState = (
+  hydraulicModel: HydraulicModel = buildModel(),
+): Store => {
+  const store = createStore();
+  store.set(stagingModelDerivedAtom, hydraulicModel);
+  store.set(
+    branchStateAtom,
+    new Map([
+      [
+        "main",
+        {
+          version: hydraulicModel.version,
+          hydraulicModel,
+          labelManager: new LabelManager(),
+          sessionHistory: new SessionHistory(),
+          simulation: initialSimulationState,
+          simulationSourceId: "main",
+          simulationSettings: defaultSimulationSettings,
+        },
+      ],
+    ]),
+  );
+  return store;
+};
+
+const renderSection = (store: Store, customerPointIds: number[]) => {
+  const persistence = new Persistence(store);
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <JotaiProvider store={store}>
+        <PersistenceContext.Provider value={persistence}>
+          <TooltipProvider>
+            <MultiCustomerPointCustomAttributesSection
+              customerPointIds={customerPointIds}
+            />
+          </TooltipProvider>
+        </PersistenceContext.Provider>
+      </JotaiProvider>
+    </QueryClientProvider>,
+  );
+};
+
+describe("MultiCustomerPointCustomAttributesSection", () => {
+  it("shows the section with the custom attribute field", () => {
+    const store = setInitialState();
+    renderSection(store, [IDS.CP1, IDS.CP2]);
+
+    expect(screen.getByText("Custom attributes")).toBeInTheDocument();
+    expect(screen.getByLabelText(/value for: Age/i)).toBeInTheDocument();
+  });
+
+  it("shows a mixed placeholder and computes stats lazily on open", async () => {
+    const store = setInitialState(buildModel({ [IDS.CP1]: 10, [IDS.CP2]: 20 }));
+    renderSection(store, [IDS.CP1, IDS.CP2]);
+
+    expect(screen.getByPlaceholderText("2 values")).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: /stats for: Age/i }),
+    );
+
+    const minField = screen.getByLabelText<HTMLInputElement>(/value for: min/i);
+    const maxField = screen.getByLabelText<HTMLInputElement>(/value for: max/i);
+    expect(minField.value).toMatch(/^10(\.0+)?$/);
+    expect(maxField.value).toMatch(/^20(\.0+)?$/);
+  });
+
+  it("writes the edited value to every selected customer point", async () => {
+    const store = setInitialState();
+    renderSection(store, [IDS.CP1, IDS.CP2]);
+
+    const input = screen.getByLabelText(/value for: Age/i);
+    await userEvent.click(input);
+    await userEvent.keyboard("99{Enter}");
+
+    await waitFor(() => {
+      const model = store.get(stagingModelDerivedAtom);
+      expect(model.customerPoints.get(IDS.CP1)!.getProperty("custom-1")).toBe(
+        99,
+      );
+      expect(model.customerPoints.get(IDS.CP2)!.getProperty("custom-1")).toBe(
+        99,
+      );
+    });
+  });
+});

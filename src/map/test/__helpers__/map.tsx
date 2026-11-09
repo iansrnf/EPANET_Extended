@@ -6,8 +6,22 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Provider as JotaiProvider } from "jotai";
 import { PersistenceContext } from "src/lib/persistence/context";
 import { MapCanvas } from "src/map/map-canvas";
+import { stubFeaturesOn } from "src/__helpers__/feature-flags";
+import { vi } from "vitest";
 
-export const renderMap = async (store: Store): Promise<MapTestEngine> => {
+// renderMap mounts the real MapCanvas + updater, which prepares the icon sprite
+// (loading + decoding images — which jsdom can't do). Stub it to an empty sprite.
+vi.mock("../../icons", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../icons")>();
+  return { ...actual, prepareIconsSprite: () => Promise.resolve([]) };
+});
+
+export const renderMap = async (
+  store: Store,
+  enabledFlags: string[] = [],
+): Promise<MapTestEngine> => {
+  stubFeaturesOn(enabledFlags);
+
   let mapEngine: MapTestEngine | null = null;
   const persistence = new Persistence(store);
   render(

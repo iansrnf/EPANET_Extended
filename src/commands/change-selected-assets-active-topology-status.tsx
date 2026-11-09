@@ -1,7 +1,7 @@
 import { useAtomValue } from "jotai";
 import { useCallback } from "react";
-import { activateAssets } from "src/hydraulic-model/model-operations/activate-assets";
-import { deactivateAssets } from "src/hydraulic-model/model-operations/deactivate-assets";
+import { activateAssets } from "@epanet-js/hydraulic-model-operations";
+import { deactivateAssets } from "@epanet-js/hydraulic-model-operations";
 import { useUserTracking } from "src/infra/user-tracking";
 import { USelection } from "src/selection";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
@@ -16,7 +16,7 @@ export const useChangeSelectedAssetsActiveTopologyStatus = () => {
   const userTracking = useUserTracking();
   const { transact } = useModelTransaction();
 
-  const selectedIds = USelection.toIds(selection);
+  const selectedIds = USelection.getAssetIds(selection);
 
   const inactiveAssetIds = selectedIds.filter((assetId) => {
     const asset = hydraulicModel.assets.get(assetId);
@@ -36,8 +36,7 @@ export const useChangeSelectedAssetsActiveTopologyStatus = () => {
           count: inactiveAssetIds.length,
         });
 
-        const moment = activateAssets(hydraulicModel, { assetIds });
-        transact(moment);
+        transact(() => activateAssets(hydraulicModel, { assetIds }));
       } else {
         userTracking.capture({
           name: "assets.excludedFromActiveTopology",
@@ -45,8 +44,7 @@ export const useChangeSelectedAssetsActiveTopologyStatus = () => {
           count: assetIds.length,
         });
 
-        const moment = deactivateAssets(hydraulicModel, { assetIds });
-        transact(moment);
+        transact(() => deactivateAssets(hydraulicModel, { assetIds }));
       }
     },
     [selectedIds, inactiveAssetIds, hydraulicModel, userTracking, transact],

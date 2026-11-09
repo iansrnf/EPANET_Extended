@@ -1,4 +1,4 @@
-import type { UnitsSpec } from "src/lib/project-settings/quantities-spec";
+import type { UnitsSpec } from "@epanet-js/project-settings";
 import { initializeColorRule } from "./range-color-rule";
 import {
   NodeSymbology,
@@ -7,7 +7,7 @@ import {
 } from "./symbology-types";
 import { nullLabelRule } from "./labeling";
 import type { RangeEndpoints } from "./range-color-rule";
-import type { Unit } from "src/quantity";
+import type { Unit } from "@epanet-js/quantity";
 import { defaultPropertyColorConfigs } from "src/state/map-symbology";
 
 const VELOCITY_FALLBACK_ENDPOINTS: Record<string, RangeEndpoints> = {

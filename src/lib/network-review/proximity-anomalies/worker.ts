@@ -1,7 +1,9 @@
 import * as Comlink from "comlink";
-import { EncodedProximityAnomalies } from "./data";
-import { findProximityAnomalies } from "./find-proximity-anomalies";
-import { HydraulicModelBuffers } from "../hydraulic-model-buffers";
+import {
+  EncodedProximityAnomalies,
+  HydraulicModelBuffers,
+  findProximityAnomalies,
+} from "@epanet-js/network-review";
 
 export interface ProximityCheckWorkerAPI {
   findProximityAnomalies: (

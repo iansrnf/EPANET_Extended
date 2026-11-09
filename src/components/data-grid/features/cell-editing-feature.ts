@@ -10,6 +10,7 @@ import {
   type TableFeature,
   type Updater,
 } from "@tanstack/react-table";
+import { defaultPatchRow, type PatchRowFn } from "../utils/patch-row";
 
 export type CellPosition = { col: number; row: number };
 
@@ -137,7 +138,7 @@ export const CellEditingFeature: TableFeature = {
         return;
       }
       const onChange = table.options.onDataChange;
-      if (onChange) onChange(clearSelectedCells(table));
+      if (onChange) void onChange(clearSelectedCells(table));
     };
   },
 
@@ -225,27 +226,32 @@ function clearSelectedCells<TData extends RowData>(
     if (row) targetRows.set(row.original, i);
   }
 
-  return data.map((row) => {
+  const patchRow: PatchRowFn = table.options.patchRow ?? defaultPatchRow;
+
+  return data.map((row, dataIndex) => {
     const visibleIndex = targetRows.get(row);
     if (visibleIndex === undefined) return row;
 
-    const newRow = { ...(row as object) } as Record<string, unknown>;
+    const patches: Record<string, unknown> = {};
     for (
       let colIndex = selection.min.col;
       colIndex <= selection.max.col;
       colIndex++
     ) {
       const column = columns[colIndex];
-      if (!column || column.isReadOnly(visibleIndex)) continue;
+      // Read-only rules address rows by data index; `visibleIndex` is the
+      // sorted position, so use the data-array index here.
+      if (!column || column.isReadOnly(dataIndex)) continue;
 
       const accessorKey = column.id;
       if (!accessorKey) continue;
 
       const deleteValue = column.getDeleteValue();
+      if (deleteValue === undefined) continue;
       const value =
         typeof deleteValue === "function" ? deleteValue() : deleteValue;
-      newRow[accessorKey] = value ?? null;
+      patches[accessorKey] = value ?? null;
     }
-    return newRow as TData;
+    return patchRow(row, patches);
   });
 }

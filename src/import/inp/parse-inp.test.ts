@@ -1,11 +1,17 @@
 import { Junction, Pipe, Pump, Reservoir, Tank } from "src/hydraulic-model";
 import { parseInp } from "./parse-inp";
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { buildInp, chooseUnitSystem } from "src/simulation/build-inp";
-import { presets } from "src/lib/project-settings/quantities-spec";
+import { presets } from "@epanet-js/project-settings";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import { getByLabel } from "src/__helpers__/asset-queries";
-import { Valve } from "src/hydraulic-model/asset-types";
+import { Valve } from "@epanet-js/hydraulic-model";
+import { checksum } from "src/infra/checksum";
+
+const legacyAppMadeInp = (content: string, headerLines: string[] = []) => {
+  const body = [...headerLines, content].join("\n");
+  return `;MADE BY EPANET-JS [${checksum(body)}]\n${body}`;
+};
 
 describe("Parse inp with", () => {
   it("can read values separated by spaces", () => {
@@ -231,6 +237,95 @@ describe("Parse inp with", () => {
     expect(projectSettings.headlossFormula).toEqual("D-W");
   });
 
+  it("reads headloss formula regardless of capitalization", () => {
+    const inp = `
+    [OPTIONS]
+    Units\tLPS
+    Headloss\td-w
+    `;
+
+    const { projectSettings } = parseInp(inp);
+
+    expect(projectSettings.headlossFormula).toEqual("D-W");
+    expect(projectSettings.defaults.pipe.roughness).toEqual(0.1);
+  });
+
+  it("falls back to H-W and reports an issue when the headloss formula is unrecognized", () => {
+    const inp = `
+    [OPTIONS]
+    Units\tLPS
+    Headloss\tNOPE
+    `;
+
+    const { projectSettings, issues } = parseInp(inp);
+
+    expect(projectSettings.headlossFormula).toEqual("H-W");
+    expect(projectSettings.defaults.pipe.roughness).toEqual(130);
+    expect(issues?.nonDefaultOptions?.get("HEADLOSS")).toEqual("H-W");
+  });
+
+  it("falls back to LPS and reports an issue when the unit system is unrecognized", () => {
+    const inp = `
+    [OPTIONS]
+    Units\tCMS
+    `;
+
+    const { projectSettings, issues } = parseInp(inp);
+
+    expect(projectSettings.units.flow).toEqual("l/s");
+    expect(issues?.nonDefaultOptions?.get("UNITS")).toEqual("LPS");
+  });
+
+  it("falls back to LPS when the unit system is unrecognized and a pressure unit is set", () => {
+    const inp = `
+    [OPTIONS]
+    Units\tCMS
+    Pressure\tKPA
+    `;
+
+    const { projectSettings, issues } = parseInp(inp);
+
+    expect(projectSettings.units.flow).toEqual("l/s");
+    expect(projectSettings.units.pressure).toEqual("kPa");
+    expect(issues?.nonDefaultOptions?.get("UNITS")).toEqual("LPS");
+  });
+
+  it("keeps GPM when the unit system has no value", () => {
+    const inp = `
+    [OPTIONS]
+    Units
+    Pressure\tKPA
+    `;
+
+    const { projectSettings, issues } = parseInp(inp);
+
+    expect(projectSettings.units.flow).toEqual("gal/min");
+    expect(issues?.nonDefaultOptions?.has("UNITS")).toBeFalsy();
+  });
+
+  it("keeps GPM when no unit system is declared", () => {
+    const inp = `
+    [OPTIONS]
+    Headloss\tH-W
+    `;
+
+    const { projectSettings, issues } = parseInp(inp);
+
+    expect(projectSettings.units.flow).toEqual("gal/min");
+    expect(issues?.nonDefaultOptions?.has("UNITS")).toBeFalsy();
+  });
+
+  it("does not report supported unit systems as non-default", () => {
+    const inp = `
+    [OPTIONS]
+    Units\tGPM
+    `;
+
+    const { issues } = parseInp(inp);
+
+    expect(issues?.nonDefaultOptions?.has("UNITS")).toBeFalsy();
+  });
+
   it("says when inp contains unsupported sections", () => {
     const inp = `
     [LEAKAGE]
@@ -417,11 +512,12 @@ describe("Parse inp with", () => {
     const hydraulicModel = HydraulicModelBuilder.with()
       .aJunction(IDS.J1, { coordinates: [10, 1] })
       .build();
-    let inp = buildInp(hydraulicModel, {
-      simulationSettings: defaultSimulationSettings,
-      units: presets.LPS.units,
-      madeBy: true,
-    });
+    let inp = legacyAppMadeInp(
+      buildInp(hydraulicModel, {
+        simulationSettings: defaultSimulationSettings,
+        units: presets.LPS.units,
+      }),
+    );
 
     expect(parseInp(inp).isMadeByApp).toBeTruthy();
 
@@ -652,8 +748,31 @@ describe("Parse inp with", () => {
       const j2 = getByLabel(hydraulicModel.assets, "J2") as Junction;
 
       expect(j1.emitterCoefficient).toBe(0.5);
-      expect(j2.emitterCoefficient).toBe(0);
+      expect(j2.emitterCoefficient).toBeUndefined();
       expect(issues?.unsupportedSections?.has("[EMITTERS]")).toBeFalsy();
+    });
+
+    it("leaves emitter coefficient and initial quality undefined when omitted and null values are allowed", () => {
+      const inp = `
+      [JUNCTIONS]
+      J1  100
+      J2  200
+
+      [COORDINATES]
+      J1  10  20
+      J2  30  40
+
+      [EMITTERS]
+      J1  0.5
+      `;
+
+      const { hydraulicModel } = parseInp(inp);
+      const j1 = getByLabel(hydraulicModel.assets, "J1") as Junction;
+      const j2 = getByLabel(hydraulicModel.assets, "J2") as Junction;
+
+      expect(j1.emitterCoefficient).toBe(0.5);
+      expect(j2.emitterCoefficient).toBeUndefined();
+      expect(j1.initialQuality).toBeUndefined();
     });
 
     it("parses [REACTIONS] section with non-default values", () => {
@@ -702,8 +821,62 @@ describe("Parse inp with", () => {
     });
   });
 
-  describe("projection detection", () => {
-    it("returns projectionStatus wgs84 when coordinates are valid", () => {
+  describe("malformed coordinates", () => {
+    it("reports only the node with a non-numeric coordinate", () => {
+      const IDS = { J1: 1, J2: 2 } as const;
+      const inp = `
+      [JUNCTIONS]
+      ${IDS.J1}  100
+      ${IDS.J2}  200
+
+      [COORDINATES]
+      ${IDS.J1}  0.1  CHORIZO
+      ${IDS.J2}  10   10
+      `;
+
+      const { issues } = parseInp(inp);
+
+      expect(Array.from(issues!.malformedCoordinates!)).toEqual([
+        String(IDS.J1),
+      ]);
+    });
+
+    it("reports a row missing a coordinate value", () => {
+      const IDS = { J1: 1, J2: 2 } as const;
+      const inp = `
+      [JUNCTIONS]
+      ${IDS.J1}  100
+      ${IDS.J2}  200
+
+      [COORDINATES]
+      ${IDS.J1}  0.1
+      ${IDS.J2}  10   10
+      `;
+
+      const { issues } = parseInp(inp);
+
+      expect(Array.from(issues!.malformedCoordinates!)).toEqual([
+        String(IDS.J1),
+      ]);
+    });
+
+    it("does not also report the node as missing coordinates", () => {
+      const IDS = { J1: 1 } as const;
+      const inp = `
+      [JUNCTIONS]
+      ${IDS.J1}  100
+
+      [COORDINATES]
+      ${IDS.J1}  0.1  CHORIZO
+      `;
+
+      const { issues } = parseInp(inp);
+
+      expect(issues!.malformedCoordinates).toContain(String(IDS.J1));
+      expect(issues!.nodesMissingCoordinates).toBeUndefined();
+    });
+
+    it("reports a link with a non-numeric vertex", () => {
       const IDS = { J1: 1, J2: 2, P1: 3 } as const;
       const inp = `
       [JUNCTIONS]
@@ -714,8 +887,89 @@ describe("Parse inp with", () => {
       ${IDS.P1}  ${IDS.J1}  ${IDS.J2}  1000  100  100  0  Open
 
       [COORDINATES]
-      ${IDS.J1}  10  20
-      ${IDS.J2}  11  21
+      ${IDS.J1}  0   0
+      ${IDS.J2}  10  10
+
+      [VERTICES]
+      ${IDS.P1}  5  CHORIZO
+      `;
+
+      const { issues } = parseInp(inp);
+
+      expect(Array.from(issues!.malformedVertices!)).toEqual([String(IDS.P1)]);
+      expect(issues!.malformedCoordinates).toBeUndefined();
+    });
+
+    it("reports only the bad node in an xy-grid file", () => {
+      const IDS = { J1: 1, J2: 2, P1: 3 } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aJunction(IDS.J1, { coordinates: [0.1, NaN] })
+        .aJunction(IDS.J2, { coordinates: [10, 10] })
+        .aPipe(IDS.P1, { startNodeId: IDS.J1, endNodeId: IDS.J2 })
+        .build();
+      const inp = legacyAppMadeInp(
+        buildInp(hydraulicModel, {
+          simulationSettings: defaultSimulationSettings,
+          units: presets.LPS.units,
+          geolocation: true,
+          projection: {
+            type: "xy-grid",
+            id: "xy-grid",
+            name: "XY Grid",
+            centroid: [500000, 200000],
+          },
+        }),
+        [";PROJECTION xy-grid"],
+      );
+
+      const result = parseInp(inp);
+
+      expect(result.isMadeByApp).toBe(true);
+      expect(Array.from(result.issues!.malformedCoordinates!)).toEqual([
+        String(IDS.J1),
+      ]);
+    });
+
+    it("does not report finite coordinates outside the wgs84 range", () => {
+      const IDS = { J1: 1, J2: 2, P1: 3 } as const;
+      const inp = `
+      [JUNCTIONS]
+      ${IDS.J1}  100
+      ${IDS.J2}  200
+
+      [PIPES]
+      ${IDS.P1}  ${IDS.J1}  ${IDS.J2}  1000  100  100  0  Open
+
+      [COORDINATES]
+      ${IDS.J1}  500000  200000
+      ${IDS.J2}  501000  201000
+
+      [VERTICES]
+      ${IDS.P1}  500500  200500
+      `;
+
+      const result = parseInp(inp);
+
+      expect(result.issues?.malformedCoordinates).toBeUndefined();
+      expect(result.issues?.malformedVertices).toBeUndefined();
+      expect(result.projectionStatus).toBe("unknown");
+    });
+  });
+
+  describe("projection detection", () => {
+    it("returns projectionStatus wgs84 when coordinates are valid", () => {
+      const IDS = { J1: 1, J2: 2, P1: 3 } as const;
+      const inp = `
+      [JUNCTIONS]
+      ${IDS.J1}  100
+      ${IDS.J2}  200
+
+      [PIPES]
+      ${IDS.P1}  ${IDS.J1}  ${IDS.J2}  730  100  100  0  Open
+
+      [COORDINATES]
+      ${IDS.J1}  2.3  48.85
+      ${IDS.J2}  2.31  48.85
       `;
 
       const result = parseInp(inp);
@@ -782,17 +1036,19 @@ describe("Parse inp with", () => {
         .aJunction(IDS.J2, { coordinates: [11, 21] })
         .aPipe(IDS.P1, { startNodeId: IDS.J1, endNodeId: IDS.J2 })
         .build();
-      const inp = buildInp(hydraulicModel, {
-        simulationSettings: defaultSimulationSettings,
-        units: presets.LPS.units,
-        madeBy: true,
-        projection: {
-          type: "xy-grid",
-          id: "xy-grid",
-          name: "XY Grid",
-          centroid: [500000, 200000],
-        },
-      });
+      const inp = legacyAppMadeInp(
+        buildInp(hydraulicModel, {
+          simulationSettings: defaultSimulationSettings,
+          units: presets.LPS.units,
+          projection: {
+            type: "xy-grid",
+            id: "xy-grid",
+            name: "XY Grid",
+            centroid: [500000, 200000],
+          },
+        }),
+        [";PROJECTION xy-grid"],
+      );
 
       const result = parseInp(inp);
 
@@ -1105,7 +1361,7 @@ describe("quality section", () => {
     const j1 = getByLabel(hydraulicModel.assets, "J1") as Junction;
     const j2 = getByLabel(hydraulicModel.assets, "J2") as Junction;
 
-    expect(j1.initialQuality).toBe(0);
+    expect(j1.initialQuality).toBeUndefined();
     expect(j2.initialQuality).toBe(10);
   });
 
@@ -1248,10 +1504,10 @@ describe("chemical sources", () => {
     const j1 = getByLabel(hydraulicModel.assets, "J1") as Junction;
     const j2 = getByLabel(hydraulicModel.assets, "J2") as Junction;
 
-    expect(j1.chemicalSourceType).toBe("CONCEN");
+    expect(j1.chemicalSourceType).toBe("concen");
     expect(j1.chemicalSourceStrength).toBe(1.2);
     expect(j1.chemicalSourcePatternId).toBeDefined();
-    expect(j2.chemicalSourceType).toBe("MASS");
+    expect(j2.chemicalSourceType).toBe("mass");
     expect(j2.chemicalSourceStrength).toBe(12);
     expect(j2.chemicalSourcePatternId).toBeUndefined();
   });

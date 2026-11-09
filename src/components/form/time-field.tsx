@@ -116,9 +116,8 @@ export const TimeField = ({
     return (
       <span
         className={clsx(
-          "block w-full p-2 text-xs border rounded-xs",
-          "text-gray-500 bg-gray-50 border-gray-300",
-          "dark:bg-gray-800 dark:border-gray-600 dark:text-gray-400",
+          "block w-full p-2 text-size-small border rounded-xs",
+          "text-subtle bg-panel border-strong",
           readonly && "cursor-not-allowed",
         )}
         aria-label={`Value for: ${label}`}
@@ -167,7 +166,7 @@ export const formatSecondsToDisplay = (
   return `${hours}:${String(minutes).padStart(2, "0")}`;
 };
 
-const parseValueToSeconds = (value: string): number | undefined => {
+export const parseValueToSeconds = (value: string): number | undefined => {
   if (!value || value.trim() === "") return undefined;
   const trimmed = value.trim();
 
@@ -201,20 +200,18 @@ function styledInput({
   variant?: "default" | "warning";
 } = {}) {
   return clsx(
-    "text-gray-700 dark:text-gray-100",
+    "text-default",
     "p-2",
     "border focus-visible:border-transparent",
-    variant === "warning"
-      ? "border-orange-500 dark:border-orange-700"
-      : "border-gray-300 hover:border-gray-200",
+    variant === "warning" ? "border-warning" : "border-strong hover:border",
     {
-      "focus-visible:bg-purple-300/10 dark:focus-visible:bg-purple-700/40 dark:focus-visible:ring-purple-700 focus-visible:ring-purple-500":
+      "focus-visible:bg-purple-300/10 dark:focus-visible:bg-purple-700/40 focus-visible:ring-accent":
         variant === "default",
-      "focus-visible:bg-orange-300/10 dark:focus-visible:bg-orange-700/40 dark:focus-visible:ring-orange-700 focus-visible:ring-orange-500":
+      "focus-visible:bg-warning-subtle focus-visible:ring-warning":
         variant === "warning",
     },
-    "text-xs",
-    "placeholder:text-gray-400 dark:placeholder:text-gray-500 placeholder:italic",
+    "text-size-small",
+    "placeholder:text-subtle placeholder:italic",
     "bg-transparent rounded-xs block tabular-nums overflow-hidden whitespace-nowrap text-ellipsis focus-visible:ring-inset w-full",
   );
 }

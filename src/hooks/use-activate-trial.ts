@@ -1,28 +1,78 @@
-import { atom, useAtom } from "jotai";
+import { atom, useAtom, useAtomValue, useSetAtom } from "jotai";
+import { atomWithStorage } from "jotai/utils";
 import { notify } from "src/components/notifications";
 import { captureError } from "src/infra/error-tracking";
+import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
 import { useAuth } from "src/hooks/use-auth";
-import { ErrorIcon } from "src/icons";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { billingUrl } from "src/global-config";
+import { ErrorIcon, SuccessIcon, WarningIcon } from "src/icons";
 
 const activateTrialLoadingAtom = atom<boolean>(false);
+
+export const trialAfterSignInAtom = atom<boolean>(false);
+
+const refusedTrialEmailsAtom = atomWithStorage<string[]>(
+  "refusedTrialEmails",
+  [],
+);
+
+export const useIsTrialEmailRefused = (): boolean => {
+  const { user } = useAuth();
+  const refusedEmails = useAtomValue(refusedTrialEmailsAtom);
+  const isTrialEligibilityBypassOn = useFeatureFlag(
+    "FLAG_TRIAL_ELIGIBILITY_BYPASS",
+  );
+
+  return !isTrialEligibilityBypassOn && refusedEmails.includes(user.email);
+};
 
 export const useActivateTrial = () => {
   const translate = useTranslate();
   const [isLoading, setLoading] = useAtom(activateTrialLoadingAtom);
-  const { reload } = useAuth();
+  const setRefusedEmails = useSetAtom(refusedTrialEmailsAtom);
+  const { user, reload, getToken } = useAuth();
+  const userTracking = useUserTracking();
 
   const activateTrial = async (): Promise<boolean> => {
     setLoading(true);
     try {
-      const response = await fetch("/api/activate-trial", { method: "POST" });
+      const token = await getToken();
+      const response = await fetch(`${billingUrl}/trial`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       if (!response.ok) {
+        if (await isEmailRefused(response)) {
+          userTracking.capture({ name: "trial.refused" });
+          setLoading(false);
+          setRefusedEmails((emails) =>
+            emails.includes(user.email) ? emails : [...emails, user.email],
+          );
+          notify({
+            variant: "warning",
+            title: translate("trial.emailNotEligible"),
+            description: translate("trial.emailNotEligibleDetail"),
+            Icon: WarningIcon,
+            duration: Infinity,
+          });
+          return false;
+        }
+
         throw new Error(`Trial activation failed: ${response.statusText}`);
       }
 
+      userTracking.capture({ name: "trial.activated" });
       await reload();
       setLoading(false);
+      notify({
+        variant: "success",
+        title: translate("trial.activated"),
+        Icon: SuccessIcon,
+        duration: 3000,
+      });
       return true;
     } catch (error) {
       setLoading(false);
@@ -38,4 +88,13 @@ export const useActivateTrial = () => {
   };
 
   return { activateTrial, isLoading };
+};
+
+const isEmailRefused = async (response: Response): Promise<boolean> => {
+  try {
+    const { reason } = (await response.json()) as { reason?: string };
+    return reason === "emailNotEligible";
+  } catch {
+    return false;
+  }
 };

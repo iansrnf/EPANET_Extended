@@ -5,8 +5,12 @@ import type {
 import { B3Variant } from "src/components/elements";
 import { ActionItem } from "./action-item";
 import { useCallback } from "react";
-import { useZoomTo } from "src/hooks/use-zoom-to";
-import { IWrappedFeature } from "src/types";
+import { useZoomToSelection } from "src/commands/zoom-to-selection";
+import { useSelectZoneContents } from "src/commands/select-zone-contents";
+import {
+  selectedAssetsDerivedAtom,
+  selectedCustomerPointsDerivedAtom,
+} from "src/state/derived-branch-state";
 import { useTranslate } from "src/hooks/use-translate";
 import { useDeleteSelection } from "src/commands/delete-selection";
 import {
@@ -14,6 +18,7 @@ import {
   changeActiveTopologyShortcut,
 } from "src/commands/change-selected-assets-active-topology-status";
 import {
+  BookmarkIcon,
   DeleteIcon,
   ZoomToIcon,
   RedrawIcon,
@@ -21,32 +26,60 @@ import {
   ActivateTopologyIcon,
   DeactivateTopologyIcon,
   ChartLineIcon,
+  PolygonalSelectionIcon,
 } from "src/icons";
 import { useAtomValue } from "jotai";
 import { Mode, modeAtom } from "src/state/mode";
+import { selectionAtom } from "src/state/selection";
+import { USelection } from "src/selection";
 import { useSetRedrawMode } from "src/commands/set-redraw-mode";
+import { useIsDrawingAvailable } from "src/hooks/use-is-drawing-available";
 import { useReverseLink } from "src/commands/reverse-link";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useCustomGraph } from "src/hooks/use-custom-graph";
-import { useUserTracking } from "src/infra/user-tracking";
+import { useStartCollectionDraft } from "src/commands/collection-draft";
 
-export function useActions(
-  selectedWrappedFeatures: IWrappedFeature[],
-  source: ActionProps["as"],
-): Action[] {
+export function GeometryActions({ as }: { as: ActionProps["as"] }) {
+  const actions = useSelectionActions(as);
+
+  return (
+    <>
+      {actions
+        .filter((action) => action.applicable)
+        .map((action, i) => (
+          <ActionItem as={as} key={i} action={action} />
+        ))}
+    </>
+  );
+}
+
+function useSelectionActions(source: ActionProps["as"]): Action[] {
   const translate = useTranslate();
-  const zoomTo = useZoomTo();
+  const zoomToSelection = useZoomToSelection();
+  const selectZoneContents = useSelectZoneContents();
   const deleteSelection = useDeleteSelection();
-  const userTracking = useUserTracking();
   const {
     changeSelectedAssetsActiveTopologyStatus: activateDeactivateAction,
     allActive,
   } = useChangeSelectedAssetsActiveTopologyStatus();
   const { mode: currentMode } = useAtomValue(modeAtom);
   const setRedrawMode = useSetRedrawMode();
+  const isDrawingAvailable = useIsDrawingAvailable();
   const reverseLinkAction = useReverseLink();
-  const isCustomGraphsOn = useFeatureFlag("FLAG_CUSTOM_GRAPHS");
   const { openCustomGraph } = useCustomGraph();
+  const startCollectionDraft = useStartCollectionDraft();
+  const selectedAssets = useAtomValue(selectedAssetsDerivedAtom);
+  const selectedCustomerPoints = useAtomValue(
+    selectedCustomerPointsDerivedAtom,
+  );
+
+  const hasAssets = selectedAssets.length > 0;
+  const hasCustomerPoints = selectedCustomerPoints.length > 0;
+  const selection = useAtomValue(selectionAtom);
+  const selectionCounts = USelection.countByKind(selection);
+  const hasOnlyZones =
+    selectionCounts.zones > 0 &&
+    selectionCounts.assets === 0 &&
+    selectionCounts.customerPoints === 0;
 
   const onDelete = useCallback(() => {
     const eventSource = source === "context-item" ? "context-menu" : "toolbar";
@@ -57,7 +90,7 @@ export function useActions(
   const deleteAssetsAction = {
     label: translate("delete"),
     variant: "danger-quiet" as B3Variant,
-    applicable: true,
+    applicable: hasAssets || hasCustomerPoints || selectionCounts.zones > 0,
     icon: <DeleteIcon />,
     onSelect: onDelete,
   };
@@ -66,27 +99,51 @@ export function useActions(
     icon: <ZoomToIcon />,
     applicable: true,
     label: translate("zoomTo"),
-    onSelect: function doAddInnerRing() {
-      userTracking.capture({
-        name: "selection.zoomedTo",
-        source: source === "context-item" ? "map-context-menu" : "asset-panel",
-        count: selectedWrappedFeatures.length,
+    onSelect: function doZoomTo() {
+      zoomToSelection({
+        source: source === "context-item" ? "context-menu" : "toolbar",
       });
-      return Promise.resolve(zoomTo(selectedWrappedFeatures));
+      return Promise.resolve();
+    },
+  };
+
+  const selectZoneContentsAction = {
+    icon: <PolygonalSelectionIcon />,
+    applicable: hasOnlyZones,
+    label: translate("selectZoneContents"),
+    onSelect: function doSelectZoneContents() {
+      return selectZoneContents({
+        source: source === "context-item" ? "context-menu" : "toolbar",
+      });
+    },
+  };
+
+  const saveSelectionSetAction = {
+    icon: <BookmarkIcon />,
+    applicable: hasAssets || hasCustomerPoints || selectionCounts.zones > 0,
+    label: translate("collections.selectionSets.save"),
+    onSelect: function saveSelectionSet() {
+      startCollectionDraft({
+        kind: "selectionSets",
+        source: "context-menu",
+        label: "",
+      });
+      return Promise.resolve();
     },
   };
 
   const isOneLinkSelected =
-    selectedWrappedFeatures.length === 1 &&
-    selectedWrappedFeatures[0].feature.properties?.type &&
-    typeof selectedWrappedFeatures[0].feature.properties.type === "string" &&
+    !hasCustomerPoints &&
+    selectedAssets.length === 1 &&
+    selectedAssets[0].feature.properties?.type &&
+    typeof selectedAssets[0].feature.properties.type === "string" &&
     ["pipe", "pump", "valve"].includes(
-      selectedWrappedFeatures[0].feature.properties.type,
+      selectedAssets[0].feature.properties.type,
     );
 
   const redrawAction = {
     icon: <RedrawIcon />,
-    applicable: Boolean(isOneLinkSelected),
+    applicable: isDrawingAvailable && Boolean(isOneLinkSelected),
     label: translate("redraw"),
     selected: currentMode === Mode.REDRAW_LINK,
     onSelect: function redrawLink() {
@@ -99,7 +156,7 @@ export function useActions(
 
   const customGraphAction = {
     icon: <ChartLineIcon />,
-    applicable: true,
+    applicable: hasAssets,
     label: translate("customGraph.menuTitle"),
     onSelect: openCustomGraph,
   };
@@ -118,7 +175,7 @@ export function useActions(
 
   const changeActiveTopologyStatusAction = {
     icon: allActive ? <DeactivateTopologyIcon /> : <ActivateTopologyIcon />,
-    applicable: true,
+    applicable: hasAssets,
     label: allActive
       ? translate("deactivateAssets")
       : translate("activateAssets"),
@@ -131,40 +188,14 @@ export function useActions(
     },
   };
 
-  return isCustomGraphsOn
-    ? [
-        zoomToAction,
-        reverseAction,
-        redrawAction,
-        changeActiveTopologyStatusAction,
-        customGraphAction,
-        deleteAssetsAction,
-      ]
-    : [
-        zoomToAction,
-        reverseAction,
-        redrawAction,
-        changeActiveTopologyStatusAction,
-        deleteAssetsAction,
-      ];
-}
-
-export function GeometryActions({
-  as,
-  selectedWrappedFeatures,
-}: {
-  as: ActionProps["as"];
-  selectedWrappedFeatures: IWrappedFeature[];
-}) {
-  const actions = useActions(selectedWrappedFeatures, as);
-
-  return (
-    <>
-      {actions
-        .filter((action) => action.applicable)
-        .map((action, i) => (
-          <ActionItem as={as} key={i} action={action} />
-        ))}
-    </>
-  );
+  return [
+    zoomToAction,
+    selectZoneContentsAction,
+    saveSelectionSetAction,
+    reverseAction,
+    redrawAction,
+    changeActiveTopologyStatusAction,
+    customGraphAction,
+    deleteAssetsAction,
+  ];
 }

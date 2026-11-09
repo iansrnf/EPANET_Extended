@@ -4,11 +4,11 @@ import {
   CurvePoint,
   CurveType,
   stripTrailingEmptyPoints,
-} from "src/hydraulic-model/curves";
+} from "@epanet-js/hydraulic-model";
 import { type GridSelection } from "src/components/data-grid";
 import { CurveTable, type CurveTableRef } from "./curve-table";
 import { CurveErrorBanner } from "./curve-error-banner";
-import type { UnitsSpec } from "src/lib/project-settings/quantities-spec";
+import type { UnitsSpec } from "@epanet-js/project-settings";
 import clsx from "clsx";
 
 interface CurveDetailProps {

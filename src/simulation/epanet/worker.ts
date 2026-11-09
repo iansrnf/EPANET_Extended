@@ -1,305 +1,34 @@
 import {
-  CountType,
-  InitHydOption,
-  LinkProperty,
-  LinkType,
-  NodeProperty,
-  NodeType,
-  TimeParameter,
-  Project,
-} from "epanet-js";
-import { Workspace } from "epanet-js/slim";
-import { EpanetEngine } from "epanet-js/engines/v2.3.5";
-import { SimulationStatus } from "../result";
+  runSimulation as runEngineSimulation,
+  type EngineProgressCallback,
+  type EPSSimulationResult,
+} from "@epanet-js/simulation/engine";
 import { OPFSStorage } from "src/infra/storage";
-import { PROLOG_SIZE, EPILOG_SIZE } from "./simulation-metadata";
 
-export const RESULTS_OUT_KEY = "results.out";
-export const TANK_VOLUMES_KEY = "tank-volumes.bin";
-export const PUMP_STATUS_KEY = "pump-status.bin";
-export const NODE_STATS_KEY = "node_stats.bin";
+export {
+  RESULTS_OUT_KEY,
+  TANK_VOLUMES_KEY,
+  PUMP_STATUS_KEY,
+  NODE_STATS_KEY,
+} from "@epanet-js/simulation";
+export {
+  warmupSimulationEngine,
+  resetSimulationWorkerForTest,
+  type EPSSimulationResult,
+  type SimulationProgress,
+  type ProgressCallback,
+} from "@epanet-js/simulation/engine";
 
-export type EPSSimulationResult = {
-  status: SimulationStatus;
-  report: string;
-  metadata: ArrayBuffer;
-  jsError?: string;
-};
-
-export type SimulationProgress = {
-  currentTime: number;
-  totalDuration: number;
-  phase: "hydraulic" | "quality" | "finalizing";
-};
-
-export type ProgressCallback = (progress: SimulationProgress) => void;
-
-type WorkerProgressCallback = (
-  progress: SimulationProgress,
-) => boolean | void | Promise<boolean | void>;
-
-export const runSimulation = async (
+export const runSimulation = (
   inp: string,
   appId: string,
-  onProgress: WorkerProgressCallback,
+  onProgress: EngineProgressCallback,
   flags: Record<string, boolean> = {},
   scenarioKey?: string,
   runId?: string,
-): Promise<EPSSimulationResult> => {
-  // eslint-disable-next-line no-console
-  if (Object.keys(flags).length) console.log("Running with flags", flags);
-
-  const ws = new Workspace();
-  await ws.loadModuleVersion(EpanetEngine);
-
-  const model = new Project(ws);
-  ws.writeFile("net.inp", inp);
-
-  let timestepCount = 0;
-  let stopped = false;
-  try {
-    model.open("net.inp", "report.rpt", "results.out");
-
-    const missingDataAccumulator = new MissingSimulationDataAccumulator(model);
-    const totalDuration = model.getTimeParameter(TimeParameter.Duration);
-
-    model.openH();
-    model.initH(InitHydOption.SaveAndInit);
-    do {
-      timestepCount++;
-      const currentTime = model.runH();
-      missingDataAccumulator.appendTimestepData(model);
-      const keepGoing = await onProgress({
-        currentTime,
-        totalDuration,
-        phase: "hydraulic",
-      });
-      if (keepGoing === false) {
-        stopped = true;
-        break;
-      }
-    } while (model.nextH() > 0);
-
-    model.closeH();
-    try {
-      model.saveH();
-    } catch (e) {
-      if (!stopped) throw e;
-    }
-
-    if (flags.runQuality && !stopped) {
-      model.openQ();
-      model.initQ(InitHydOption.Save);
-      do {
-        const currentTime = model.runQ();
-        const keepGoing = await onProgress({
-          currentTime,
-          totalDuration,
-          phase: "quality",
-        });
-        if (keepGoing === false) {
-          stopped = true;
-          break;
-        }
-      } while (model.nextQ() > 0);
-      model.closeQ();
-    }
-
-    await onProgress({
-      currentTime: totalDuration,
-      totalDuration,
-      phase: "finalizing",
-    });
-
-    model.close();
-    const report = ws.readFile("report.rpt");
-
-    if (stopped) {
-      return {
-        status: "stopped",
-        report: curateReport(report),
-        metadata: new ArrayBuffer(PROLOG_SIZE + EPILOG_SIZE),
-      };
-    }
-
-    const { resultsBuffer, metadata } = extractResultsData(ws);
-
-    const storage = new OPFSStorage(appId, scenarioKey, runId);
-    await storage.save(RESULTS_OUT_KEY, resultsBuffer);
-    await storage.save(TANK_VOLUMES_KEY, missingDataAccumulator.tankVolumes());
-    await storage.save(PUMP_STATUS_KEY, missingDataAccumulator.pumpStatus());
-    await storage.save(NODE_STATS_KEY, missingDataAccumulator.nodeStats());
-
-    return {
-      status: report.includes("WARNING") ? "warning" : "success",
-      report: curateReport(report),
-      metadata,
-    };
-  } catch (error) {
-    try {
-      model.close();
-    } catch {
-      // WASM memory may be corrupted, ignore cleanup errors
-    }
-
-    let report = "";
-    try {
-      report = ws.readFile("report.rpt");
-    } catch {
-      // Report file may not be readable if WASM memory is corrupted
-    }
-
-    const errorMessage = (error as Error).message;
-    const isWasmMemoryError =
-      error instanceof WebAssembly.RuntimeError ||
-      errorMessage.includes("memory access out of bounds");
-    const isEpanetError = /EPANET Error|^Error \d+/.test(errorMessage);
-
-    const displayMessage = isWasmMemoryError
-      ? `The simulation ran out of memory at timestep ${timestepCount}. The network may be too large for the current engine. (${errorMessage})`
-      : errorMessage;
-
-    return {
-      status: "failure",
-      report: report.length > 0 ? curateReport(report) : displayMessage,
-      metadata: new ArrayBuffer(PROLOG_SIZE + EPILOG_SIZE),
-      jsError: isEpanetError ? undefined : displayMessage,
-    };
-  }
-};
-
-const curateReport = (input: string): string => {
-  const errorOnlyOncePerLine = /(Error [A-Za-z0-9]+:)(?=.*\1)/g;
-  return input.replace(errorOnlyOncePerLine, "");
-};
-
-const extractResultsData = (ws: Workspace) => {
-  const resultsOutBinary = ws.readFile("results.out", "binary");
-  const fileSize = resultsOutBinary.byteLength;
-  const metadata = new ArrayBuffer(PROLOG_SIZE + EPILOG_SIZE);
-  const metadataView = new Uint8Array(metadata);
-  metadataView.set(new Uint8Array(resultsOutBinary.buffer, 0, PROLOG_SIZE), 0);
-  metadataView.set(
-    new Uint8Array(
-      resultsOutBinary.buffer,
-      fileSize - EPILOG_SIZE,
-      EPILOG_SIZE,
-    ),
-    PROLOG_SIZE,
-  );
-
-  return {
-    resultsBuffer: resultsOutBinary.buffer as ArrayBuffer,
-    metadata,
-  };
-};
-
-class MissingSimulationDataAccumulator {
-  private nodeCount: number;
-  private linkCount: number;
-  private supplySourcesCount: number;
-  private pumpCount: number;
-  private supplySourceIndices: number[] = [];
-  private pumpIndices: number[] = [];
-  private tankVolumesPerTimestep: number[][] = [];
-  private pumpStatusPerTimestep: number[][] = [];
-  private readonly _nodeStats: {
-    headMin: Float32Array;
-    headMax: Float32Array;
-    pressureMin: Float32Array;
-    pressureMax: Float32Array;
-  };
-
-  constructor(model: Project) {
-    this.nodeCount = model.getCount(CountType.NodeCount);
-    this.linkCount = model.getCount(CountType.LinkCount);
-    this._nodeStats = {
-      headMin: new Float32Array(this.nodeCount).fill(Infinity),
-      headMax: new Float32Array(this.nodeCount).fill(-Infinity),
-      pressureMin: new Float32Array(this.nodeCount).fill(Infinity),
-      pressureMax: new Float32Array(this.nodeCount).fill(-Infinity),
-    };
-
-    for (let i = 1; i <= this.nodeCount; i++) {
-      const nodeType = model.getNodeType(i);
-      if (nodeType === NodeType.Tank || nodeType === NodeType.Reservoir) {
-        this.supplySourceIndices.push(i);
-      }
-    }
-    this.supplySourcesCount = this.supplySourceIndices.length;
-
-    for (let i = 1; i <= this.linkCount; i++) {
-      const linkType = model.getLinkType(i);
-      if (linkType === LinkType.Pump) {
-        this.pumpIndices.push(i);
-      }
-    }
-    this.pumpCount = this.pumpIndices.length;
-  }
-
-  appendTimestepData(model: Project) {
-    const heads = model.getNodeValues(NodeProperty.Head);
-    for (let i = 0; i < this.nodeCount; i++) {
-      const h = heads[i];
-      if (h < this._nodeStats.headMin[i]) this._nodeStats.headMin[i] = h;
-      if (h > this._nodeStats.headMax[i]) this._nodeStats.headMax[i] = h;
-    }
-
-    const pressures = model.getNodeValues(NodeProperty.Pressure);
-    for (let i = 0; i < this.nodeCount; i++) {
-      const p = pressures[i];
-      if (p < this._nodeStats.pressureMin[i])
-        this._nodeStats.pressureMin[i] = p;
-      if (p > this._nodeStats.pressureMax[i])
-        this._nodeStats.pressureMax[i] = p;
-    }
-
-    if (this.supplySourcesCount > 0) {
-      const volumes: number[] = [];
-      for (const nodeIndex of this.supplySourceIndices) {
-        const volume = model.getNodeValue(nodeIndex, NodeProperty.TankVolume);
-        volumes.push(volume);
-      }
-      this.tankVolumesPerTimestep.push(volumes);
-    }
-
-    if (this.pumpCount > 0) {
-      const statuses: number[] = [];
-      for (const linkIndex of this.pumpIndices) {
-        const status = model.getLinkValue(linkIndex, LinkProperty.PumpState);
-        statuses.push(status);
-      }
-      this.pumpStatusPerTimestep.push(statuses);
-    }
-  }
-
-  tankVolumes(): ArrayBuffer {
-    if (this.supplySourcesCount === 0) return new ArrayBuffer(0);
-
-    const tankVolumesBinary = new Float32Array(
-      this.tankVolumesPerTimestep.flat(),
-    );
-    return tankVolumesBinary.buffer as ArrayBuffer;
-  }
-
-  pumpStatus(): ArrayBuffer {
-    if (this.pumpCount === 0) return new ArrayBuffer(0);
-
-    const pumpStatusBinary = new Float32Array(
-      this.pumpStatusPerTimestep.flat(),
-    );
-    return pumpStatusBinary.buffer as ArrayBuffer;
-  }
-
-  nodeStats(): ArrayBuffer {
-    const N = this.nodeCount;
-    const out = new Float32Array(N * 4);
-    for (let i = 0; i < N; i++) {
-      out[i] = this._nodeStats.headMin[i]; // block 0: min head
-      out[N + i] = this._nodeStats.headMax[i]; // block 1: max head
-      out[2 * N + i] = this._nodeStats.pressureMin[i]; // block 2: min pressure
-      out[3 * N + i] = this._nodeStats.pressureMax[i]; // block 3: max pressure
-    }
-    return out.buffer as ArrayBuffer;
-  }
-}
+): Promise<EPSSimulationResult> =>
+  runEngineSimulation(inp, {
+    store: new OPFSStorage(appId, scenarioKey, runId),
+    onProgress,
+    flags,
+  });

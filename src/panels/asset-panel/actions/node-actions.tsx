@@ -1,23 +1,19 @@
 import { useCallback } from "react";
-import { useAtomValue } from "jotai";
 import { useTranslate } from "src/hooks/use-translate";
-import { useZoomTo } from "src/hooks/use-zoom-to";
+import { useZoomToSelection } from "src/commands/zoom-to-selection";
 import { useDeleteSelection } from "src/commands/delete-selection";
-import { ChartLineIcon, DeleteIcon, ZoomToIcon } from "src/icons";
-import { selectedFeaturesDerivedAtom } from "src/state/derived-branch-state";
-import { ActionButton, Action } from "src/components/action-button";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { BookmarkIcon, ChartLineIcon, DeleteIcon, ZoomToIcon } from "src/icons";
+import { Action } from "src/components/action-button";
+import { ActionsBar } from "src/components/actions-bar";
 import { useCustomGraph } from "src/hooks/use-custom-graph";
-import { useUserTracking } from "src/infra/user-tracking";
+import { useStartCollectionDraft } from "src/commands/collection-draft";
 
 export function useNodeActions(readonly = false): Action[] {
   const translate = useTranslate();
-  const zoomTo = useZoomTo();
+  const zoomToSelection = useZoomToSelection();
   const deleteSelection = useDeleteSelection();
-  const selectedWrappedFeatures = useAtomValue(selectedFeaturesDerivedAtom);
-  const isCustomGraphsOn = useFeatureFlag("FLAG_CUSTOM_GRAPHS");
   const { openCustomGraph } = useCustomGraph();
-  const userTracking = useUserTracking();
+  const startCollectionDraft = useStartCollectionDraft();
 
   const onDelete = useCallback(() => {
     deleteSelection({ source: "toolbar" });
@@ -28,6 +24,7 @@ export function useNodeActions(readonly = false): Action[] {
     label: translate("delete"),
     variant: "danger-quiet" as const,
     applicable: true,
+    priority: 1,
     disabled: readonly,
     icon: <DeleteIcon />,
     onSelect: onDelete,
@@ -36,39 +33,46 @@ export function useNodeActions(readonly = false): Action[] {
   const zoomToAction = {
     icon: <ZoomToIcon />,
     applicable: true,
+    priority: 3,
     label: translate("zoomTo"),
     onSelect: function doZoomTo() {
-      userTracking.capture({
-        name: "selection.zoomedTo",
-        source: "asset-panel",
-        count: selectedWrappedFeatures.length,
-      });
-      return Promise.resolve(zoomTo(selectedWrappedFeatures));
+      zoomToSelection({ source: "toolbar" });
+      return Promise.resolve();
     },
   };
 
   const customGraphAction = {
     icon: <ChartLineIcon />,
     applicable: true,
+    priority: 2,
     label: translate("customGraph.menuTitle"),
     onSelect: openCustomGraph,
   };
 
-  return isCustomGraphsOn
-    ? [zoomToAction, customGraphAction, deleteAssetsAction]
-    : [zoomToAction, deleteAssetsAction];
+  const saveSelectionSetAction = {
+    icon: <BookmarkIcon />,
+    applicable: true,
+    label: translate("collections.selectionSets.save"),
+    onSelect: function saveSelectionSet() {
+      startCollectionDraft({
+        kind: "selectionSets",
+        source: "toolbar",
+        label: "",
+      });
+      return Promise.resolve();
+    },
+  };
+
+  return [
+    zoomToAction,
+    saveSelectionSetAction,
+    customGraphAction,
+    deleteAssetsAction,
+  ];
 }
 
 export function NodeActions({ readonly = false }: { readonly?: boolean }) {
   const actions = useNodeActions(readonly);
 
-  return (
-    <div className="flex gap-1 h-8 -my-2">
-      {actions
-        .filter((action) => action.applicable)
-        .map((action, i) => (
-          <ActionButton key={i} action={action} />
-        ))}
-    </div>
-  );
+  return <ActionsBar actions={actions} className="h-8 -my-2" />;
 }

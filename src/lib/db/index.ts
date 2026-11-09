@@ -1,11 +1,47 @@
+export {
+  buildSimulationSettingsData,
+  serializeProjectSettings,
+  serializeSimulationSettings,
+} from "@epanet-js/ejsdb-mappers";
 export { openProject } from "./commands/open-project";
 export type { OpenProjectResult } from "./commands/open-project";
 export { newProject } from "./commands/new-project";
 export { fetchProject } from "./commands/fetch-project";
 export type { Project, FetchProjectPhase } from "./commands/fetch-project";
 export { saveProjectSettings } from "./commands/save-project-settings";
+export { saveCustomAttributes } from "./commands/save-custom-attributes";
+export {
+  insertSelectionSet,
+  renameSelectionSet,
+  moveSelectionSet,
+  deleteSelectionSet,
+} from "./commands/selection-sets";
+export {
+  insertSelectionSetGroup,
+  renameSelectionSetGroup,
+  moveSelectionSetGroup,
+  deleteSelectionSetGroups,
+} from "./commands/selection-set-groups";
+export {
+  serializeSelectionSetGroup,
+  serializeSelectionSetGroups,
+} from "./mappers/selection-set-groups/to-rows";
+export {
+  serializeSelectionSet,
+  serializeSelectionSets,
+} from "./mappers/selection-sets/to-rows";
+export { saveScript, deleteScript } from "./commands/scripts";
+export { serializeScript } from "./mappers/scripts/to-rows";
+export { saveBookmarks } from "./commands/save-bookmarks";
+export { serializeBookmarks } from "./mappers/bookmarks/to-rows";
 export { setAllSimulationSettings } from "./commands/set-all-simulation-settings";
-export { applyMomentToDb } from "./commands/apply-moment";
+export { applyChangeSetToDb } from "./commands/apply-change-set";
 export { importProject } from "./commands/import-project";
 export type { ImportProjectInput } from "./commands/import-project";
+export { ensureUniqueId, newUniqueId } from "./commands/ensure-unique-id";
 export { exportDb } from "./commands/export-db";
+export { exportDbFromPool } from "./commands/recover-db";
+export { configureDbStorage } from "./commands/configure-storage";
+export { setDbFileTagger } from "./commands/set-file-tagger";
+export { rebuildDbFromMemory } from "./commands/rebuild-from-memory";
+export type { RebuildPhase } from "./commands/rebuild-from-memory";

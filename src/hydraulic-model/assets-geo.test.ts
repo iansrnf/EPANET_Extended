@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { AssetIndexEncoder, AssetIndexView } from "./asset-index";
+import { AssetIndexEncoder, AssetIndexView } from "./asset-index-transferable";
 import {
   AssetsGeoIndex,
   AssetsGeoEncoder,
   AssetsGeoView,
   AssetsGeoQueries,
-} from "./assets-geo";
+} from "@epanet-js/hydraulic-model";
 import { HydraulicModel } from "./hydraulic-model";
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 
 describe("AssetsGeoView", () => {
   it("behaves the same way as AssetsGeoIndex", () => {

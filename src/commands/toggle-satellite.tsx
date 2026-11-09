@@ -1,54 +1,22 @@
 import { useAtomValue } from "jotai";
 import { useCallback } from "react";
-import { basemaps } from "src/map/basemaps";
-import { newFeatureId } from "src/lib/id";
-import {
-  maybeDeleteOldMapboxLayer,
-  useLayerConfigState,
-} from "src/map/layer-config";
+import { satelliteBasemapFor } from "src/map/basemaps";
+import { maybeDeleteOldMapboxLayer } from "src/map/layer-config";
 import { layerConfigAtom } from "src/state/map";
-import { useAuth } from "src/hooks/use-auth";
-import { ILayerConfig } from "src/types";
-
-export const satelliteLimitedZoom = 16;
+import { useSelectBasemap } from "src/commands/select-basemap";
 
 export const toggleSatelliteShorcut = "b";
 
 export const useToggleSatellite = () => {
   const layerConfigs = useAtomValue(layerConfigAtom);
-  const { applyChanges } = useLayerConfigState();
-  const { isSignedIn } = useAuth();
+  const selectBasemap = useSelectBasemap();
 
   const toggleSatellite = useCallback(() => {
     const items = [...layerConfigs.values()];
 
-    const { deleteLayerConfigs, oldAt, oldMapboxLayer } =
-      maybeDeleteOldMapboxLayer(items);
-
-    const newBaseMap =
-      oldMapboxLayer && oldMapboxLayer.name === basemaps.monochrome.name
-        ? basemaps.satellite
-        : basemaps.monochrome;
-
-    const newLayerConfig: ILayerConfig = {
-      ...newBaseMap,
-      visibility: true,
-      tms: false,
-      opacity: newBaseMap.opacity,
-      at: oldAt || "a0",
-      id: newFeatureId(),
-      labelVisibility: oldMapboxLayer ? oldMapboxLayer.labelVisibility : true,
-      sourceMaxZoom:
-        !isSignedIn && newBaseMap.name === basemaps.satellite.name
-          ? { "mapbox-satellite": satelliteLimitedZoom }
-          : {},
-    };
-
-    applyChanges({
-      deleteLayerConfigs,
-      putLayerConfigs: [newLayerConfig],
-    });
-  }, [layerConfigs, applyChanges, isSignedIn]);
+    const { oldMapboxLayer } = maybeDeleteOldMapboxLayer(items);
+    selectBasemap(satelliteBasemapFor(oldMapboxLayer));
+  }, [layerConfigs, selectBasemap]);
 
   return toggleSatellite;
 };

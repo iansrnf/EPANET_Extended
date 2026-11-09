@@ -1,3 +1,4 @@
+import { type TranslateFn } from "@epanet-js/i18n";
 import {
   Projection,
   type Asset,
@@ -9,16 +10,38 @@ import {
   type ExportedAssetTypes,
   type ExportedFile,
 } from "../../types";
-import { SHAPE_POINT, SHAPE_POLYLINE, WGS84_WKT, CPG_BYTES } from "./constants";
+import {
+  SHAPE_POINT,
+  SHAPE_POLYGON,
+  SHAPE_POLYLINE,
+  WGS84_WKT,
+  CPG_BYTES,
+} from "./constants";
 import { AssetWriter } from "./asset-writer";
 import { buildSchema } from "./schema";
-import { writePoint, writePolyLine } from "./geometry-writer";
+import {
+  polygonRecordBytes,
+  shapefileRings,
+  writePoint,
+  writePolyLine,
+  writePolygon,
+} from "./geometry-writer";
 import { writeDbfHeader, writeDbfRecord } from "./dbf-writer";
 import { writeShpHeader, writeShxHeader, patchBbox } from "./shp-header";
-import { FILE_NAMES } from "../constants";
-import { createProjectionMapper } from "src/lib/projections";
+import { FILE_NAMES, ZONES_FILE_NAME } from "../constants";
+import {
+  buildExportDefaults,
+  resolveExportProperties,
+} from "../optional-field-defaults";
+import { isExportableField } from "../excluded-fields";
+import {
+  VALVE_TARGET_NODE_FIELD,
+  valveTargetNodeLabel,
+} from "../valve-target-node";
+import { createProjectionMapper } from "@epanet-js/projections";
 import { type Position } from "geojson";
-import { getEsriWktString } from "src/lib/projections";
+import { getEsriWktString } from "@epanet-js/projections";
+import { exportedZones, zoneFieldKeys, zoneFieldValue } from "../zone-fields";
 
 const CUSTOMER_POINT_FIELDS = [
   "label",
@@ -33,12 +56,15 @@ const CUSTOMER_POINT_FIELDS = [
 export const exportShapefiles = async (
   hydraulicModel: HydraulicModel,
   projection: Projection,
+  _translate: TranslateFn,
   options?: AssetExportOptions,
 ): Promise<ExportedFile[]> => {
   const includeSimulationResults =
     (options?.includeSimulationResults ?? false) && !!options?.resultsReader;
-  const selectedAssets = options?.selectedAssets ?? new Set<number>();
+  const selectedAssets = options?.assetIdsFilter ?? null;
+  const selectedCustomerPoints = options?.customerPointIdFilter ?? null;
   const resultsReader = options?.resultsReader;
+  const defaults = buildExportDefaults(hydraulicModel);
   const writers: Record<ExportedAssetTypes, AssetWriter> = {
     junction: new AssetWriter(SHAPE_POINT),
     reservoir: new AssetWriter(SHAPE_POINT),
@@ -51,7 +77,6 @@ export const exportShapefiles = async (
 
   const encoder = new TextEncoder();
   const transformCoord = createProjectionMapper(projection).toSource;
-  const hasSelection = selectedAssets.size > 0;
   const getSimResults = buildSimulationResultsReader(resultsReader);
   const seenFields: Record<ExportedAssetTypes, Set<string>> = {
     junction: new Set(),
@@ -64,7 +89,7 @@ export const exportShapefiles = async (
   };
 
   for (const asset of hydraulicModel.assets.values()) {
-    if (hasSelection && !selectedAssets.has(asset.id)) continue;
+    if (selectedAssets && !selectedAssets.has(asset.id)) continue;
 
     const writer = writers[asset.type];
     writer.recordCount++;
@@ -79,6 +104,7 @@ export const exportShapefiles = async (
     const props = asset.feature.properties as Record<string, unknown>;
     for (const key in props) {
       if (key === "type") continue;
+      if (!isExportableField(asset.type, key)) continue;
       if (key === "connections") {
         seenFields[asset.type].add("startNode");
         seenFields[asset.type].add("endNode");
@@ -98,16 +124,23 @@ export const exportShapefiles = async (
     }
   }
 
-  writers["customerPoint"].recordCount = hydraulicModel.customerPoints.size;
-  writers["customerPoint"].shpBodyBytes =
-    28 * hydraulicModel.customerPoints.size;
+  const customerPointCount = selectedCustomerPoints
+    ? selectedCustomerPoints.size
+    : hydraulicModel.customerPoints.size;
+  writers["customerPoint"].recordCount = customerPointCount;
+  writers["customerPoint"].shpBodyBytes = 28 * customerPointCount;
 
   for (const type in writers) {
     const t = type as ExportedAssetTypes;
     const writer = writers[t];
     if (writer.recordCount === 0) continue;
 
-    writer.frozenSchema = buildSchema(seenFields[t], encoder);
+    writer.frozenSchema = buildSchema(
+      seenFields[t],
+      encoder,
+      t,
+      hydraulicModel.customAttributes,
+    );
     writer.allocate();
     writeShpHeader(writer);
     writeShxHeader(writer);
@@ -115,7 +148,7 @@ export const exportShapefiles = async (
   }
 
   for (const asset of hydraulicModel.assets.values()) {
-    if (hasSelection && !selectedAssets.has(asset.id)) continue;
+    if (selectedAssets && !selectedAssets.has(asset.id)) continue;
 
     const writer = writers[asset.type];
     const recordIndex = writer.nextRecordIndex();
@@ -140,12 +173,22 @@ export const exportShapefiles = async (
     writer.shxView.setUint32(writer.shxCursor + 4, contentLengthWords, false);
     writer.shxCursor += 8;
 
-    const props = { ...asset.feature.properties } as Record<string, unknown>;
+    const props = resolveExportProperties(
+      asset,
+      asset.feature.properties as Record<string, unknown>,
+      defaults,
+    );
     if ("connections" in props) {
       const [firstId, secondId] = props.connections as number[];
       props.startNode = hydraulicModel.assets.get(firstId)?.label ?? "";
       props.endNode = hydraulicModel.assets.get(secondId)?.label ?? "";
       delete props.connections;
+    }
+    if (VALVE_TARGET_NODE_FIELD in props) {
+      props[VALVE_TARGET_NODE_FIELD] = valveTargetNodeLabel(
+        hydraulicModel,
+        asset,
+      );
     }
     const simValues = includeSimulationResults
       ? (getSimResults[asset.type](asset) as Record<string, unknown>)
@@ -155,6 +198,8 @@ export const exportShapefiles = async (
 
   const customerPointWriter = writers["customerPoint"];
   for (const point of hydraulicModel.customerPoints.values()) {
+    if (selectedCustomerPoints && !selectedCustomerPoints.has(point.id))
+      continue;
     const recordIndex = customerPointWriter.nextRecordIndex();
     const shxOffsetWords = customerPointWriter.shpCursor / 2;
 
@@ -201,8 +246,62 @@ export const exportShapefiles = async (
     );
   }
 
-  for (const type in writers) {
-    const writer = writers[type as ExportedAssetTypes];
+  const zones = exportedZones(hydraulicModel, options);
+  const zoneWriter = new AssetWriter(SHAPE_POLYGON);
+  if (zones.length > 0) {
+    const zoneRings = zones.map((zone) =>
+      shapefileRings(
+        zone.geometry.coordinates.map((polygon) =>
+          polygon.map((ring) => ring.map(([x, y]) => transformCoord([x, y]))),
+        ),
+      ),
+    );
+    zoneWriter.recordCount = zones.length;
+    for (const rings of zoneRings) {
+      zoneWriter.shpBodyBytes += polygonRecordBytes(rings);
+    }
+    const keys = zoneFieldKeys(hydraulicModel);
+    zoneWriter.frozenSchema = buildSchema(
+      keys,
+      encoder,
+      "zone",
+      hydraulicModel.customAttributes,
+    );
+    zoneWriter.allocate();
+    writeShpHeader(zoneWriter);
+    writeShxHeader(zoneWriter);
+    writeDbfHeader(zoneWriter);
+
+    zones.forEach((zone, index) => {
+      const recordIndex = zoneWriter.nextRecordIndex();
+      const shxOffsetWords = zoneWriter.shpCursor / 2;
+      const contentLengthWords = writePolygon(
+        zoneWriter,
+        zoneRings[index],
+        recordIndex,
+      );
+      zoneWriter.shxView.setUint32(zoneWriter.shxCursor, shxOffsetWords, false);
+      zoneWriter.shxView.setUint32(
+        zoneWriter.shxCursor + 4,
+        contentLengthWords,
+        false,
+      );
+      zoneWriter.shxCursor += 8;
+
+      const props: Record<string, unknown> = {};
+      for (const key of keys) props[key] = zoneFieldValue(zone, key);
+      writeDbfRecord(zoneWriter, props, {}, encoder);
+    });
+  }
+
+  const outputs: [string, AssetWriter][] = [
+    ...(Object.keys(writers) as ExportedAssetTypes[]).map(
+      (type): [string, AssetWriter] => [FILE_NAMES[type], writers[type]],
+    ),
+    [ZONES_FILE_NAME, zoneWriter],
+  ];
+
+  for (const [, writer] of outputs) {
     if (writer.recordCount === 0) continue;
 
     patchBbox(writer);
@@ -212,11 +311,8 @@ export const exportShapefiles = async (
   const result: ExportedFile[] = [];
   const prjContent = await buildPrjContent(projection);
 
-  for (const t in writers) {
-    const type = t as ExportedAssetTypes;
-    const writer = writers[type];
+  for (const [fileName, writer] of outputs) {
     if (writer.recordCount === 0) continue;
-    const fileName = FILE_NAMES[type];
 
     result.push({
       fileName: `${fileName}.shp`,

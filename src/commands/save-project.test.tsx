@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { HydraulicModelBuilder } from "src/__helpers__/hydraulic-model-builder";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { projectFileInfoAtom } from "src/state/file-system";
+import { hasUnsavedChangesRevisionAtom } from "src/state/project-revision";
 import { Store } from "src/state";
 import userEvent from "@testing-library/user-event";
 import { useSaveProject } from "./save-project";
@@ -13,18 +14,34 @@ import {
   stubFileSavePermissionDenied,
 } from "src/__helpers__/browser-fs-mock";
 import * as errorTracking from "src/infra/error-tracking";
-import { stubFeatureOn } from "src/__helpers__/feature-flags";
 import { useInProcessDb } from "src/lib/db/__test-helpers__/in-process-db";
 import * as db from "src/lib/db";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import type { HydraulicModel } from "src/hydraulic-model";
 import { userSettingsAtom } from "src/state/user-settings";
+import { worktreeAtom } from "src/state/scenarios";
+import { stubUserTracking } from "src/__helpers__/user-tracking";
 
 const seedDb = async (hydraulicModel: HydraulicModel) => {
   await db.importProject({
     newDb: true,
     hydraulicModel,
     simulationSettings: defaultSimulationSettings,
+  });
+};
+
+const addScenario = (store: Store) => {
+  const worktree = store.get(worktreeAtom);
+  store.set(worktreeAtom, {
+    ...worktree,
+    branches: new Map(worktree.branches).set("scenario-1", {
+      id: "scenario-1",
+      name: "Scenario #1",
+      parentId: worktree.mainId,
+      status: "open",
+    }),
+    scenarios: ["scenario-1"],
+    highestScenarioNumber: 1,
   });
 };
 
@@ -40,7 +57,6 @@ describe("save project", () => {
   useInProcessDb();
 
   it("writes the project and shows a success notification", async () => {
-    stubFeatureOn("FLAG_OUR_FILE");
     const newHandle = stubFileSave({ fileName: "my-project.ejsdb" });
     const hydraulicModel = HydraulicModelBuilder.with().aJunction(1).build();
     const store = setInitialState({ hydraulicModel });
@@ -54,8 +70,42 @@ describe("save project", () => {
     expect(store.get(projectFileInfoAtom)?.handle).toBe(newHandle);
   });
 
+  it("records the project as saved", async () => {
+    stubFileSave({ fileName: "my-project.ejsdb" });
+    const hydraulicModel = HydraulicModelBuilder.with().aJunction(1).build();
+    const store = setInitialState({ hydraulicModel, isProjectSaved: false });
+    skipProjectSavedInfo(store);
+    await seedDb(hydraulicModel);
+
+    renderComponent({ store });
+    expect(store.get(hasUnsavedChangesRevisionAtom)).toBe(true);
+
+    await triggerSave();
+
+    expect(store.get(hasUnsavedChangesRevisionAtom)).toBe(false);
+  });
+
+  it("tracks how many scenarios the saved project has", async () => {
+    const userTracking = stubUserTracking();
+    stubFileSave({ fileName: "my-project.ejsdb" });
+    const hydraulicModel = HydraulicModelBuilder.with().aJunction(1).build();
+    const store = setInitialState({ hydraulicModel });
+    skipProjectSavedInfo(store);
+    addScenario(store);
+    await seedDb(hydraulicModel);
+
+    renderComponent({ store });
+    await triggerSave();
+
+    expect(userTracking.capture).toHaveBeenCalledWith({
+      name: "project.saved",
+      source: "test",
+      isSaveAs: false,
+      scenariosCount: 1,
+    });
+  });
+
   it("shows the cancel warning when the user dismisses the save dialog", async () => {
-    stubFeatureOn("FLAG_OUR_FILE");
     stubFileSaveAbort();
     const hydraulicModel = HydraulicModelBuilder.with().aJunction(1).build();
     const store = setInitialState({ hydraulicModel });
@@ -70,7 +120,6 @@ describe("save project", () => {
   });
 
   it("shows an error notification when persistence fails", async () => {
-    stubFeatureOn("FLAG_OUR_FILE");
     stubFileSave({ fileName: "my-project.ejsdb" });
     const hydraulicModel = HydraulicModelBuilder.with().aJunction(1).build();
     const store = setInitialState({ hydraulicModel });
@@ -94,7 +143,6 @@ describe("save project", () => {
   });
 
   it("notifies and does not report to Sentry when write permission is denied", async () => {
-    stubFeatureOn("FLAG_OUR_FILE");
     stubFileSavePermissionDenied();
     const hydraulicModel = HydraulicModelBuilder.with().aJunction(1).build();
     const store = setInitialState({ hydraulicModel });
@@ -118,7 +166,6 @@ describe("save project", () => {
   });
 
   it("treats a non-abort fileSave rejection as an error, not a cancel", async () => {
-    stubFeatureOn("FLAG_OUR_FILE");
     stubFileSaveError();
     const hydraulicModel = HydraulicModelBuilder.with().aJunction(1).build();
     const store = setInitialState({ hydraulicModel });

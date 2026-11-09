@@ -1,0 +1,574 @@
+import { useAtom, useAtomValue } from "jotai";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronRight, Lock } from "lucide-react";
+import { Button } from "src/components/elements";
+import { Action } from "src/components/action-button";
+import { useTranslate } from "src/hooks/use-translate";
+import { useZoomTo } from "src/hooks/use-zoom-to";
+import { useShowAssetPanel } from "src/commands/show-asset-panel";
+import { ErrorIcon, PointerClickIcon, WarningIcon } from "src/icons";
+import { usePermissions } from "src/hooks/use-permissions";
+import { PaywallFade, PaywallUpgradeBox } from "src/components/form/paywall";
+import { useUserTracking } from "src/infra/user-tracking";
+import { USelection, useSelection } from "src/selection";
+import { AssetId } from "@epanet-js/hydraulic-model";
+import { HydraulicModel } from "src/hydraulic-model";
+import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
+import { selectionAtom } from "src/state/selection";
+import { selectedReviewCheckAtom } from "src/state/network-review";
+import {
+  countValidationIssues,
+  EntityType,
+  validateModelAttributes,
+} from "src/lib/model-attributes-validation";
+import { groupIssues, ValidationGroup } from "./validation-groups";
+import { useCachedCheck } from "src/hooks/use-review-checks";
+import { CheckType } from "src/lib/network-review";
+import {
+  EmptyState,
+  LoadingState,
+  ToolDescription,
+  ToolHeader,
+  useCheckHeader,
+  useLoadingStatus,
+  VirtualizedIssuesList,
+} from "./common";
+import { ruleLabelKey } from "./rule-labels";
+
+const SeverityIcon = ({ severity }: { severity: "error" | "warning" }) => (
+  <span
+    className={
+      severity === "error"
+        ? "text-red-600 dark:text-red-400"
+        : "text-orange-500 dark:text-orange-400"
+    }
+  >
+    {severity === "error" ? <ErrorIcon /> : <WarningIcon />}
+  </span>
+);
+
+export const ModelAttributesValidation = ({
+  onGoBack,
+}: {
+  onGoBack: () => void;
+}) => {
+  const userTracking = useUserTracking();
+  const { canValidateModelAttributes } = usePermissions();
+  const { groups, checkModelAttributesValidation, isLoading, isReady } =
+    useCheckModelAttributesValidation();
+  const selection = useAtomValue(selectionAtom);
+  const {
+    selectAsset,
+    selectAssets,
+    selectCustomerPoint,
+    selectCustomerPoints,
+  } = useSelection(selection);
+  const zoomTo = useZoomTo();
+  const showAssetPanel = useShowAssetPanel();
+  const [detailRuleId, setDetailRuleId] = useState<string | null>(null);
+  const [selectedReviewCheck, setSelectedReviewCheck] = useAtom(
+    selectedReviewCheckAtom,
+  );
+
+  const issuesCount = groups.reduce(
+    (total, group) => total + group.entityIds.length,
+    0,
+  );
+  const lastIssuesCount = useRef(0);
+
+  useEffect(
+    function recomputeModelAttributesValidation() {
+      const abortController = new AbortController();
+      void checkModelAttributesValidation(abortController.signal);
+      return () => {
+        abortController.abort();
+      };
+    },
+    [checkModelAttributesValidation],
+  );
+
+  const zoomToEntities = useCallback(
+    (entityType: EntityType, entityIds: number[]) => {
+      const selection =
+        entityType === "customerPoint"
+          ? USelection.fromIds([], entityIds)
+          : USelection.fromIds(entityIds, []);
+      zoomTo(selection);
+    },
+    [zoomTo],
+  );
+
+  const selectEntities = useCallback(
+    (entityType: EntityType, entityIds: number[]) => {
+      if (entityType === "customerPoint") {
+        selectCustomerPoints(entityIds);
+      } else {
+        selectAssets(entityIds);
+      }
+      zoomToEntities(entityType, entityIds);
+    },
+    [selectAssets, selectCustomerPoints, zoomToEntities],
+  );
+
+  const selectEntity = useCallback(
+    (entityType: EntityType, entityId: number) => {
+      if (entityType === "customerPoint") {
+        selectCustomerPoint(entityId);
+      } else {
+        selectAsset(entityId);
+      }
+      zoomToEntities(entityType, [entityId]);
+    },
+    [selectAsset, selectCustomerPoint, zoomToEntities],
+  );
+
+  const openGroup = useCallback(
+    (group: ValidationGroup) => {
+      selectEntities(group.entityType, group.entityIds);
+      setDetailRuleId(group.ruleId);
+      userTracking.capture({
+        name: "networkReview.modelAttributesValidation.groupOpened",
+        ruleId: group.ruleId,
+        severity: group.severity,
+        count: group.entityIds.length,
+      });
+    },
+    [selectEntities, userTracking],
+  );
+
+  useEffect(() => {
+    if (lastIssuesCount.current !== issuesCount) {
+      lastIssuesCount.current = issuesCount;
+      userTracking.capture({
+        name: "networkReview.modelAttributesValidation.changed",
+        count: issuesCount,
+        rules: groups.map((group) => group.ruleId),
+      });
+    }
+  }, [issuesCount, groups, userTracking]);
+
+  const detailGroup = detailRuleId
+    ? (groups.find((group) => group.ruleId === detailRuleId) ?? null)
+    : null;
+
+  useEffect(
+    function leaveDetailWhenGroupResolved() {
+      if (isReady && detailRuleId && !detailGroup) {
+        setDetailRuleId(null);
+      }
+    },
+    [isReady, detailRuleId, detailGroup],
+  );
+
+  useEffect(
+    function showIssuesListWhenDeepLinked() {
+      if (selectedReviewCheck === CheckType.modelAttributesValidation) {
+        setDetailRuleId(null);
+        setSelectedReviewCheck(null);
+      }
+    },
+    [selectedReviewCheck, setSelectedReviewCheck],
+  );
+
+  const headerProps = useCheckHeader(
+    CheckType.modelAttributesValidation,
+    groups.length,
+    onGoBack,
+  );
+
+  if (detailGroup) {
+    return (
+      <ModelAttributesValidationDetail
+        group={detailGroup}
+        onGoBack={() => setDetailRuleId(null)}
+        onSelectEntity={(entityId) => {
+          selectEntity(detailGroup.entityType, entityId);
+          showAssetPanel({ source: "modelAttributesValidation" });
+        }}
+        onSelectAll={() => {
+          selectEntities(detailGroup.entityType, detailGroup.entityIds);
+          showAssetPanel({ source: "modelAttributesValidation" });
+          userTracking.capture({
+            name: "networkReview.modelAttributesValidation.bulkSelected",
+            ruleId: detailGroup.ruleId,
+            count: detailGroup.entityIds.length,
+          });
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="absolute inset-0 flex flex-col">
+      <ToolHeader
+        {...headerProps}
+        autoFocus={issuesCount === 0 && !isLoading}
+      />
+      <div className="relative grow flex flex-col">
+        {isReady ? (
+          <>
+            {groups.length > 0 ? (
+              canValidateModelAttributes ? (
+                <ModelAttributesValidationGroupList
+                  groups={groups}
+                  onOpen={openGroup}
+                  onGoBack={onGoBack}
+                />
+              ) : (
+                <ModelAttributesValidationLockedList groups={groups} />
+              )
+            ) : (
+              <>
+                <ToolDescription
+                  checkType={CheckType.modelAttributesValidation}
+                />
+                <EmptyState checkType={CheckType.modelAttributesValidation} />
+              </>
+            )}
+            {isLoading && <LoadingState overlay />}
+          </>
+        ) : (
+          <>
+            <ToolDescription checkType={CheckType.modelAttributesValidation} />
+            <LoadingState />
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const ModelAttributesValidationGroupList = ({
+  groups,
+  onOpen,
+  onGoBack,
+}: {
+  groups: ValidationGroup[];
+  onOpen: (group: ValidationGroup) => void;
+  onGoBack: () => void;
+}) => {
+  const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(function autoFocusOnMount() {
+    const timer = setTimeout(() => {
+      containerRef.current?.focus();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      const currentIndex = groups.findIndex(
+        (group) => group.ruleId === selectedRuleId,
+      );
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          setSelectedRuleId(
+            groups[Math.min(currentIndex + 1, groups.length - 1)].ruleId,
+          );
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          setSelectedRuleId(groups[Math.max(currentIndex - 1, 0)].ruleId);
+          break;
+        case "Enter":
+          e.preventDefault();
+          if (currentIndex !== -1) onOpen(groups[currentIndex]);
+          break;
+        case "Escape":
+          e.preventDefault();
+          onGoBack();
+          break;
+      }
+    },
+    [groups, selectedRuleId, onOpen, onGoBack],
+  );
+
+  return (
+    <div className="flex-auto flex flex-col min-h-0">
+      <ToolDescription checkType={CheckType.modelAttributesValidation} />
+      <div
+        ref={containerRef}
+        className="flex-auto overflow-y-auto placemark-scrollbar px-1"
+        style={{ contain: "strict" }}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+      >
+        {groups.map((group) => (
+          <ModelAttributesValidationGroupRow
+            key={group.ruleId}
+            group={group}
+            isSelected={selectedRuleId === group.ruleId}
+            onClick={() => onOpen(group)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const ModelAttributesValidationGroupRow = ({
+  group,
+  isSelected,
+  onClick,
+  locked = false,
+}: {
+  group: ValidationGroup;
+  isSelected: boolean;
+  onClick?: () => void;
+  locked?: boolean;
+}) => {
+  const translate = useTranslate();
+  const label = translate(ruleLabelKey(group.ruleId));
+  const affectedText = translate(
+    "networkReview.modelAttributesValidation.affectedCount",
+    group.entityIds.length,
+  );
+
+  return (
+    <Button
+      onClick={onClick}
+      variant={"quiet/list"}
+      aria-label={translate(
+        "networkReview.modelAttributesValidation.issueLabel",
+        label,
+        String(group.entityIds.length),
+      )}
+      aria-selected={isSelected}
+      className="group w-full"
+    >
+      <div className="grid grid-cols-[auto_1fr_auto] gap-x-2 items-start p-2 pr-0 text-size-base w-full text-left">
+        <div className="pt-[.125rem]">
+          <SeverityIcon severity={group.severity} />
+        </div>
+        <div className="flex flex-col items-start">
+          <span className="font-bold">{label}</span>
+          <span className="text-subtle">{affectedText}</span>
+        </div>
+        <div
+          className={`pt-[.125rem] transition-opacity ${
+            isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          }`}
+        >
+          {locked ? <Lock size={16} /> : <ChevronRight size={16} />}
+        </div>
+      </div>
+    </Button>
+  );
+};
+
+const ModelAttributesValidationLockedList = ({
+  groups,
+}: {
+  groups: ValidationGroup[];
+}) => {
+  const translate = useTranslate();
+
+  return (
+    <>
+      <PaywallFade
+        feature="modelAttributesValidation"
+        className="flex-auto flex flex-col min-h-0"
+      >
+        <ToolDescription checkType={CheckType.modelAttributesValidation} />
+        <div
+          className="flex-auto overflow-y-auto placemark-scrollbar px-1"
+          style={{ contain: "strict" }}
+        >
+          {groups.map((group) => (
+            <ModelAttributesValidationGroupRow
+              key={group.ruleId}
+              group={group}
+              isSelected={false}
+              locked
+            />
+          ))}
+        </div>
+      </PaywallFade>
+      <div className="absolute inset-x-0 bottom-0">
+        <PaywallUpgradeBox
+          feature="modelAttributesValidation"
+          title={translate(
+            "networkReview.modelAttributesValidation.upgrade.title",
+          )}
+          description={translate(
+            "networkReview.modelAttributesValidation.upgrade.description",
+          )}
+        />
+      </div>
+    </>
+  );
+};
+
+const ModelAttributesValidationDetail = ({
+  group,
+  onGoBack,
+  onSelectEntity,
+  onSelectAll,
+}: {
+  group: ValidationGroup;
+  onGoBack: () => void;
+  onSelectEntity: (entityId: AssetId) => void;
+  onSelectAll: () => void;
+}) => {
+  const translate = useTranslate();
+  const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
+  const [selectedEntityId, setSelectedEntityId] = useState<number | null>(null);
+
+  const selectEntity = useCallback(
+    (entityId: AssetId | null) => {
+      if (entityId === null) {
+        setSelectedEntityId(null);
+        return;
+      }
+      setSelectedEntityId(entityId);
+      onSelectEntity(entityId);
+    },
+    [onSelectEntity],
+  );
+
+  const selectAllAction: Action = {
+    icon: <PointerClickIcon />,
+    label: translate("selectAll"),
+    applicable: true,
+    onSelect: () => {
+      onSelectAll();
+      return Promise.resolve();
+    },
+  };
+
+  return (
+    <div className="absolute inset-0 flex flex-col">
+      <ToolHeader
+        onGoBack={onGoBack}
+        title={translate(ruleLabelKey(group.ruleId))}
+        summary={translate(
+          "networkReview.modelAttributesValidation.affectedCount",
+          group.entityIds.length,
+        )}
+        actions={[selectAllAction]}
+      />
+      <div className="relative grow flex flex-col">
+        <VirtualizedIssuesList
+          items={group.entityIds}
+          selectedItemId={selectedEntityId}
+          onSelect={selectEntity}
+          getItemId={getEntityId}
+          renderItem={(_index, entityId, selectedId, onClick) => (
+            <ModelAttributesValidationEntityRow
+              entityId={entityId}
+              label={entityLabel(hydraulicModel, group.entityType, entityId)}
+              isSelected={selectedId === entityId}
+              onClick={onClick}
+            />
+          )}
+          checkType={CheckType.modelAttributesValidation}
+          showDescription={false}
+          onGoBack={onGoBack}
+        />
+      </div>
+    </div>
+  );
+};
+
+const entityLabel = (
+  model: HydraulicModel,
+  entityType: EntityType,
+  entityId: AssetId,
+): string => {
+  const entity =
+    entityType === "customerPoint"
+      ? model.customerPoints.get(entityId)
+      : model.assets.get(entityId);
+
+  return entity?.label ?? String(entityId);
+};
+
+const getEntityId = (entityId: AssetId) => entityId;
+
+const ModelAttributesValidationEntityRow = ({
+  entityId,
+  label,
+  isSelected,
+  onClick,
+}: {
+  entityId: AssetId;
+  label: string;
+  isSelected: boolean;
+  onClick: (entityId: AssetId) => void;
+}) => {
+  return (
+    <Button
+      onClick={() => onClick(entityId)}
+      onMouseDown={(e) => e.preventDefault()}
+      variant={"quiet/list"}
+      size="xxs"
+      aria-label={label}
+      aria-selected={isSelected}
+      tabIndex={-1}
+      className="group w-full hover:bg-transparent dark:hover:bg-transparent aria-selected:bg-transparent! aria-selected:hover:bg-transparent!"
+    >
+      <div className="flex items-center h-8 px-2 pr-0 text-size-base w-full text-left">
+        <span className="truncate">{label}</span>
+      </div>
+    </Button>
+  );
+};
+
+const deferToAllowRender = () =>
+  new Promise((resolve) => setTimeout(resolve, 0));
+
+const useCheckModelAttributesValidation = () => {
+  const [groups, setGroups] = useState<ValidationGroup[]>([]);
+  const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
+  const { read, write } = useCachedCheck(CheckType.modelAttributesValidation);
+  const { startLoading, finishLoading, isLoading } = useLoadingStatus();
+  const isReady = useRef(false);
+
+  const checkModelAttributesValidation = useCallback(
+    async (signal?: AbortSignal) => {
+      const cachedIssues = read();
+      if (cachedIssues) {
+        setGroups(groupIssues(cachedIssues));
+        finishLoading();
+        isReady.current = true;
+        return;
+      }
+
+      const modelVersion = hydraulicModel.version;
+      startLoading();
+      await deferToAllowRender();
+
+      if (signal?.aborted) return;
+
+      try {
+        const issues = await validateModelAttributes(hydraulicModel, {
+          signal,
+        });
+
+        if (!signal?.aborted) {
+          write(issues, countValidationIssues(issues), modelVersion);
+          setGroups(groupIssues(issues));
+          finishLoading();
+          isReady.current = true;
+        }
+      } catch (error) {
+        if ((error as Error).name === "AbortError") {
+          return;
+        }
+        finishLoading();
+        throw error;
+      }
+    },
+    [hydraulicModel, startLoading, finishLoading, read, write],
+  );
+
+  return {
+    checkModelAttributesValidation,
+    groups,
+    isLoading,
+    isReady: isReady.current,
+  };
+};

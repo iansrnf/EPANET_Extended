@@ -5,22 +5,23 @@ import {
 } from "@clerk/nextjs";
 import { isAuthEnabled } from "src/global-config";
 import { nullUser, User } from "src/auth-types";
-import { Plan } from "src/lib/account-plans";
-import { allSupportedLanguages, Locale } from "src/infra/i18n/locale";
+import { Plan, SubscriptionStatus } from "@epanet-js/account-plans";
+import { allSupportedLanguages, Locale } from "@epanet-js/i18n/locale";
 
 export type UseAuthHook = () => {
   isLoaded: boolean;
   isSignedIn?: boolean;
   userId: string | null | undefined;
   user: User;
-  signOut: ({ redirectUrl }: { redirectUrl?: string }) => void;
+  signOut: (options?: { redirectUrl?: string }) => Promise<void>;
   reload: () => Promise<void>;
+  getToken: () => Promise<string | null>;
 };
 
 const AUTH_TIMEOUT_MS = 5000;
 
 const useAuthWithClerk: UseAuthHook = () => {
-  const { isSignedIn, userId, signOut, isLoaded } = useClerkAuth();
+  const { isSignedIn, userId, signOut, isLoaded, getToken } = useClerkAuth();
   const { user: clerkUser } = useClerkUser();
 
   const user: User = clerkUser
@@ -35,6 +36,9 @@ const useAuthWithClerk: UseAuthHook = () => {
         trialEndsAt: (clerkUser.publicMetadata?.trialEndsAt as string) ?? null,
         hasUsedTrial:
           (clerkUser.publicMetadata?.hasUsedTrial as boolean) ?? false,
+        subscriptionStatus:
+          (clerkUser.publicMetadata
+            ?.subscriptionStatus as SubscriptionStatus) ?? null,
         getLocale: () => {
           const savedLocale = clerkUser.unsafeMetadata?.locale as Locale;
           return savedLocale && allSupportedLanguages.includes(savedLocale)
@@ -56,7 +60,7 @@ const useAuthWithClerk: UseAuthHook = () => {
     await clerkUser?.reload();
   }, [clerkUser]);
 
-  return { isSignedIn, isLoaded, userId, user, signOut, reload };
+  return { isSignedIn, isLoaded, userId, user, signOut, reload, getToken };
 };
 
 const useAuthWithTimeout: UseAuthHook = () => {
@@ -105,8 +109,9 @@ const useAuthNull: UseAuthHook = () => {
     isSignedIn: false,
     userId: undefined,
     user: nullUser,
-    signOut: () => {},
+    signOut: async () => {},
     reload: async () => {},
+    getToken: () => Promise.resolve(null),
   };
 };
 

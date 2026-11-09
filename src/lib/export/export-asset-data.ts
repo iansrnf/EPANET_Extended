@@ -1,6 +1,7 @@
+import { TranslateFn } from "@epanet-js/i18n";
 import { HydraulicModel, Projection } from "src/hydraulic-model";
 import { AssetExporters } from "./asset-exporters";
-import { FileSystemHelpers } from "./file-system-helpers";
+import { FileSystemHelpers } from "src/infra/storage";
 import type { AssetExportOptions, ExportFormat } from "./types";
 
 export const exportAssetData = async (
@@ -8,10 +9,11 @@ export const exportAssetData = async (
   format: ExportFormat,
   hydraulicModel: HydraulicModel,
   projection: Projection,
+  translate: TranslateFn,
   options?: AssetExportOptions,
 ) => {
   if (format === "xlsx") {
-    await handleXlsx(fileName, hydraulicModel, projection, options);
+    await handleXlsx(fileName, hydraulicModel, projection, translate, options);
     return;
   }
 
@@ -24,6 +26,7 @@ export const exportAssetData = async (
   const exportedFiles = await exporters[format](
     hydraulicModel,
     projection,
+    translate,
     options,
   );
 
@@ -48,6 +51,7 @@ const handleXlsx = async (
   fileName: string,
   hydraulicModel: HydraulicModel,
   projection: Projection,
+  translate: TranslateFn,
   options?: AssetExportOptions,
 ) => {
   const xlsxFileName = `${fileName}.xlsx`;
@@ -58,9 +62,15 @@ const handleXlsx = async (
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         ".xlsx",
       )
-    : await FileSystemHelpers.openFileInOpfs(fileName);
+    : await FileSystemHelpers.openFileInOpfs(xlsxFileName);
 
-  await AssetExporters.exportXlsx(handle, hydraulicModel, projection, options);
+  await AssetExporters.exportXlsx(
+    handle,
+    hydraulicModel,
+    projection,
+    translate,
+    options,
+  );
 
   if (!FileSystemHelpers.isFileSystemAccessSupported()) {
     await FileSystemHelpers.triggerDownload(xlsxFileName, handle);

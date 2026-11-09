@@ -22,6 +22,8 @@ export interface Splits {
   layout: PanelLayout;
   bottom: number | string;
   bottomOpen: boolean;
+  vertical: number | string;
+  verticalOpen: boolean;
   rightOpen: boolean;
   right: number;
   leftOpen: boolean;
@@ -34,6 +36,8 @@ export const defaultSplits: Splits = {
   layout: "AUTO",
   bottom: 300,
   bottomOpen: false,
+  vertical: 300,
+  verticalOpen: true,
   rightOpen: true,
   right: 320,
   leftOpen: false,
@@ -41,12 +45,7 @@ export const defaultSplits: Splits = {
 };
 export const splitsAtom = atom<Splits>(defaultSplits);
 
-export enum TabOption {
-  Asset = "Asset",
-  Map = "Map",
-}
-
-export const tabAtom = atom<TabOption>(TabOption.Asset);
+export const isNarrowViewportAtom = atom(false);
 
 export type MultiAssetPanelCollapse = {
   junction: boolean;
@@ -55,22 +54,55 @@ export type MultiAssetPanelCollapse = {
   valve: boolean;
   reservoir: boolean;
   tank: boolean;
+  customerPoint: boolean;
+  zone: boolean;
 };
 
-export const multiAssetPanelCollapseAtom =
-  atomWithStorage<MultiAssetPanelCollapse>("multiAssetPanelCollapse", {
-    junction: true,
-    pipe: true,
-    pump: true,
-    valve: true,
-    reservoir: true,
-    tank: true,
-  });
+const DEFAULT_MULTI_ASSET_PANEL_COLLAPSE: MultiAssetPanelCollapse = {
+  junction: true,
+  pipe: true,
+  pump: true,
+  valve: true,
+  reservoir: true,
+  tank: true,
+  customerPoint: true,
+  zone: true,
+};
+
+const storedMultiAssetPanelCollapseAtom = atomWithStorage<
+  Partial<MultiAssetPanelCollapse>
+>("multiAssetPanelCollapse", DEFAULT_MULTI_ASSET_PANEL_COLLAPSE);
+
+export const multiAssetPanelCollapseAtom = atom<
+  MultiAssetPanelCollapse,
+  [
+    | MultiAssetPanelCollapse
+    | ((prev: MultiAssetPanelCollapse) => MultiAssetPanelCollapse),
+  ],
+  void
+>(
+  (get) => ({
+    ...DEFAULT_MULTI_ASSET_PANEL_COLLAPSE,
+    ...get(storedMultiAssetPanelCollapseAtom),
+  }),
+  (get, set, next) => {
+    const current: MultiAssetPanelCollapse = {
+      ...DEFAULT_MULTI_ASSET_PANEL_COLLAPSE,
+      ...get(storedMultiAssetPanelCollapseAtom),
+    };
+    set(
+      storedMultiAssetPanelCollapseAtom,
+      typeof next === "function" ? next(current) : next,
+    );
+  },
+);
 
 export type AssetPanelSectionExpanded = {
   connections: boolean;
   activeTopology: boolean;
   modelAttributes: boolean;
+  customAttributes: boolean;
+  controls: boolean;
   demands: boolean;
   quality: boolean;
   simulationResults: boolean;
@@ -83,6 +115,8 @@ export const assetPanelSectionsExpandedAtom =
     connections: true,
     activeTopology: true,
     modelAttributes: true,
+    customAttributes: true,
+    controls: true,
     demands: true,
     quality: true,
     simulationResults: true,
@@ -94,6 +128,7 @@ export type MapStylingPanelSectionExpanded = {
   nodeSymbology: boolean;
   linkSymbology: boolean;
   customerPoints: boolean;
+  zoneSymbology: boolean;
   elevations: boolean;
   layers: boolean;
   projection: boolean;
@@ -106,6 +141,7 @@ export const mapStylingPanelSectionsExpandedAtom =
       nodeSymbology: true,
       linkSymbology: true,
       customerPoints: true,
+      zoneSymbology: true,
       elevations: true,
       layers: true,
       projection: true,

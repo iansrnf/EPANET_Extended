@@ -1,78 +1,18 @@
-import { Topology } from "./topology";
-import { AssetsMap } from "./assets-map";
-import { nanoid } from "nanoid";
+import {
+  AssetsMap,
+  Asset,
+  buildControlsLookup,
+  deepCloneCustomAttributes,
+  type HydraulicModel,
+} from "@epanet-js/hydraulic-model";
 
-import { ConsecutiveIdsGenerator, IdGenerator } from "src/lib/id-generator";
-import { Demands, createEmptyDemands } from "./demands";
-import { CustomerPoints, initializeCustomerPoints } from "./customer-points";
-import { CustomerPointsLookup } from "./customer-points-lookup";
-import { AssetIndex } from "./asset-index";
-import { Asset } from "./asset-types";
-import { Curves } from "./curves";
-import { Controls, createEmptyControls } from "./controls";
-import { Patterns } from "./patterns";
-import { PressureLoggers, initializePressureLoggers } from "./pressure-loggers";
-
-export type HydraulicModel = {
-  version: string;
-  assets: AssetsMap;
-  customerPoints: CustomerPoints;
-  customerPointsLookup: CustomerPointsLookup;
-  topology: Topology;
-  assetIndex: AssetIndex;
-  demands: Demands;
-  curves: Curves;
-  patterns: Patterns;
-  controls: Controls;
-  pressureLoggers: PressureLoggers;
-};
-
+export type { HydraulicModel };
 export { AssetsMap };
-
-export const initializeHydraulicModel = ({
-  demands = createEmptyDemands(),
-  controls = createEmptyControls(),
-  idGenerator,
-  assets,
-  topology,
-  assetIndex,
-  customerPoints,
-  customerPointsLookup,
-  patterns,
-  curves,
-  pressureLoggers,
-}: {
-  demands?: Demands;
-  controls?: Controls;
-  idGenerator?: IdGenerator;
-  assets?: AssetsMap;
-  topology?: Topology;
-  assetIndex?: AssetIndex;
-  customerPoints?: CustomerPoints;
-  customerPointsLookup?: CustomerPointsLookup;
-  patterns?: Patterns;
-  curves?: Curves;
-  pressureLoggers?: PressureLoggers;
-} = {}): HydraulicModel => {
-  const assetIdGenerator = idGenerator ?? new ConsecutiveIdsGenerator();
-  const resolvedAssets = assets ?? new Map();
-  return {
-    version: nanoid(),
-    assets: resolvedAssets,
-    customerPoints: customerPoints ?? initializeCustomerPoints(),
-    customerPointsLookup: customerPointsLookup ?? new CustomerPointsLookup(),
-    topology: topology ?? new Topology(),
-    assetIndex: assetIndex ?? new AssetIndex(assetIdGenerator, resolvedAssets),
-    demands,
-    curves: curves ?? new Map(),
-    patterns: patterns ?? new Map(),
-    controls,
-    pressureLoggers: pressureLoggers ?? initializePressureLoggers(),
-  };
-};
+export { initializeHydraulicModel } from "@epanet-js/hydraulic-model";
 
 export const copyModel = (source: HydraulicModel): HydraulicModel => {
   const assets: AssetsMap = new Map(source.assets);
+  const controls = source.controls.map((control) => ({ ...control }));
 
   return {
     ...source,
@@ -87,8 +27,12 @@ export const copyModel = (source: HydraulicModel): HydraulicModel => {
     },
     curves: new Map(source.curves),
     patterns: new Map(source.patterns),
-    controls: { ...source.controls },
-    pressureLoggers: new PressureLoggers(source.pressureLoggers),
+    pipeMaterials: [...source.pipeMaterials],
+    rawControls: { ...source.rawControls },
+    controls,
+    controlsLookup: buildControlsLookup(controls),
+    customAttributes: deepCloneCustomAttributes(source.customAttributes),
+    zones: new Map(source.zones),
   };
 };
 

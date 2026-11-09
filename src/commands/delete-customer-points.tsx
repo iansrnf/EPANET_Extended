@@ -1,12 +1,12 @@
 import { useAtom, useAtomValue } from "jotai";
 import { useCallback } from "react";
-import { removeCustomerPoints } from "src/hydraulic-model/model-operations";
+import { removeCustomerPoints } from "@epanet-js/hydraulic-model-operations";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
 import { useUserTracking } from "src/infra/user-tracking";
 import { USelection } from "src/selection";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { selectionAtom } from "src/state/selection";
-import type { CustomerPointId } from "src/hydraulic-model/customer-points";
+import { type CustomerPointId } from "@epanet-js/hydraulic-model";
 
 export const useDeleteCustomerPoints = () => {
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
@@ -24,15 +24,18 @@ export const useDeleteCustomerPoints = () => {
         source,
       });
 
-      if (
-        selection.type === "singleCustomerPoint" &&
-        customerPointIds.includes(selection.id)
-      ) {
-        setSelection(USelection.none());
+      const selectedCpIds = USelection.getCustomerPointIds(selection);
+      const removed = new Set(customerPointIds);
+      if (selectedCpIds.some((id) => removed.has(id))) {
+        const remainingCps = selectedCpIds.filter((id) => !removed.has(id));
+        const assetIds = USelection.getAssetIds(selection).slice();
+        const zoneIds = USelection.getZoneIds(selection);
+        setSelection(USelection.fromIds(assetIds, remainingCps, zoneIds));
       }
 
-      const moment = removeCustomerPoints(hydraulicModel, { customerPointIds });
-      transact(moment);
+      transact(() =>
+        removeCustomerPoints(hydraulicModel, { customerPointIds }),
+      );
     },
     [hydraulicModel, selection, setSelection, transact, userTracking],
   );

@@ -1,26 +1,28 @@
 import { atom } from "jotai";
 import type { SetOptional } from "type-fest";
-import type { Sel } from "src/selection/types";
+import type { Sel } from "src/selection";
 import {
   ILayerConfig,
   ISymbology,
   LayerConfigMap,
   SYMBOLIZATION_NONE,
 } from "src/types";
-import { DEFAULT_CENTER, DEFAULT_ZOOM } from "src/map/map-engine";
-import type { InitialViewport } from "src/map/map-engine";
+import { DEFAULT_CENTER, DEFAULT_ZOOM } from "@epanet-js/map";
+import type { InitialViewport } from "@epanet-js/map";
 import { basemaps } from "src/map/basemaps";
+import {
+  MapEditionsTracker,
+  nullMapEditionsTracker,
+} from "src/map/map-editions-tracker";
 import { showGridAtom } from "src/state/map-projection";
 import { memoryMetaAtom } from "src/state/map-symbology";
-import type { SymbologySpec } from "src/map/symbology";
-import { nullSymbologySpec } from "src/map/symbology";
-import { symbologyAtom } from "src/state/map-symbology";
+import type { SymbologySpec, NodeSizeConfig } from "src/map/symbology";
+import { nullSymbologySpec, defaultNodeSizeConfig } from "src/map/symbology";
+import { symbologyAtom, nodeSizeAtom } from "src/state/map-symbology";
 import {
-  momentLogDerivedAtom,
   simulationDerivedAtom,
   simulationResultsDerivedAtom,
   customerPointsDerivedAtom,
-  stagingModelDerivedAtom,
 } from "src/state/derived-branch-state";
 import { selectionAtom } from "src/state/selection";
 import {
@@ -35,25 +37,24 @@ import {
 } from "src/state/simulation";
 import { offlineAtom } from "src/state/offline";
 import { mapOverlayFeaturesAtom } from "src/state/map-overlay";
+import { zoneFeaturesAtom } from "src/state/zone-features";
+import { zoneColorAssignmentsAtom } from "src/state/zone-color-assignments";
 import { highlightsAtom, type Highlight } from "src/state/highlights";
 import { USelection } from "src/selection";
 import type { AssetId } from "src/hydraulic-model";
-import type { CustomerPoints } from "src/hydraulic-model/customer-points";
-import type { PressureLoggers } from "src/hydraulic-model/pressure-loggers";
+import { type CustomerPoints } from "@epanet-js/hydraulic-model";
 import type { PreviewProperty } from "src/state/map-symbology";
-import type { ResultsReader } from "src/simulation/results-reader";
+import type { ResultsReader } from "@epanet-js/simulation";
 
-export type MomentPointer = {
-  pointer: number;
-  version: number;
-};
-
-export const mapSyncMomentAtom = atom<MomentPointer>({
-  pointer: -1,
-  version: 0,
-});
+export const mapEditionsTrackerAtom = atom<MapEditionsTracker>(
+  new MapEditionsTracker(),
+);
 
 export const mapLoadingAtom = atom<boolean>(false);
+
+export const mapBackendFallbackAtom = atom<boolean>(false);
+
+export const googleMapsSessionVersionAtom = atom(0);
 
 export const currentZoomAtom = atom<number>(DEFAULT_ZOOM);
 
@@ -86,12 +87,6 @@ export const layerConfigAtom = atom(
   },
 );
 
-export const satelliteModeOnAtom = atom<boolean>((get) => {
-  if (get(showGridAtom)) return false;
-  const layersConfig = get(layerConfigAtom);
-  return [...layersConfig.values()].some((layer) => layer.name === "Satellite");
-});
-
 export type CursorValue = React.CSSProperties["cursor"];
 export const cursorStyleAtom = atom<CursorValue>("default");
 
@@ -106,10 +101,7 @@ export type StylesConfig = {
 };
 
 export type MapState = {
-  momentLogId: string;
-  momentLogPointer: number;
-  syncMomentPointer: number;
-  syncMomentVersion: number;
+  editionsTracker: MapEditionsTracker;
   stylesConfig: StylesConfig;
   selection: Sel;
   ephemeralState: EphemeralEditingState;
@@ -121,23 +113,22 @@ export type MapState = {
   movedAssetIds: Set<AssetId>;
   isOffline: boolean;
   customerPoints: CustomerPoints;
-  pressureLoggers: PressureLoggers;
   currentZoom: number;
   mapOverlayFeatures: GeoJSON.Feature[];
+  zoneFeatures: GeoJSON.Feature[];
+  zoneColorAssignments: Record<number, string>;
   highlights: Highlight[];
+  nodeSize: NodeSizeConfig;
 };
 
 export const nullMapState: MapState = {
-  momentLogId: "",
-  momentLogPointer: -1,
-  syncMomentPointer: -1,
-  syncMomentVersion: 0,
+  editionsTracker: nullMapEditionsTracker,
   stylesConfig: {
     symbology: SYMBOLIZATION_NONE,
     previewProperty: null,
     layerConfigs: new Map(),
   },
-  selection: { type: "none" },
+  selection: USelection.none(),
   ephemeralState: { type: "none" },
   symbology: nullSymbologySpec,
   simulation: initialSimulationState,
@@ -147,16 +138,26 @@ export const nullMapState: MapState = {
   movedAssetIds: new Set(),
   isOffline: false,
   customerPoints: new Map(),
-  pressureLoggers: new Map(),
   currentZoom: DEFAULT_ZOOM,
   mapOverlayFeatures: [],
+  zoneFeatures: [],
+  zoneColorAssignments: {},
   highlights: [],
+  nodeSize: defaultNodeSizeConfig,
 } as const;
 
 export const stylesConfigAtom = atom<StylesConfig>((get) => {
   const isGridOn = get(showGridAtom);
   const layerConfigs = isGridOn ? new Map() : get(layerConfigAtom);
   const { symbology, label } = get(memoryMetaAtom);
+
+  if (
+    [...layerConfigs.values()].some(
+      (layer) => layer.type === "GOOGLE" && layer.visibility,
+    )
+  ) {
+    get(googleMapsSessionVersionAtom);
+  }
 
   return {
     symbology: symbology || SYMBOLIZATION_NONE,
@@ -166,8 +167,7 @@ export const stylesConfigAtom = atom<StylesConfig>((get) => {
 });
 
 export const mapStateDerivedAtom = atom<MapState>((get) => {
-  const momentLog = get(momentLogDerivedAtom);
-  const mapSyncMoment = get(mapSyncMomentAtom);
+  const editionsTracker = get(mapEditionsTrackerAtom);
   const stylesConfig = get(stylesConfigAtom);
   const selection = get(selectionAtom);
   const ephemeralState = get(ephemeralStateAtom);
@@ -176,20 +176,19 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
   const simulationStep = get(simulationStepAtom);
   const resultsReader = get(simulationResultsDerivedAtom);
   const customerPoints = get(customerPointsDerivedAtom);
-  const pressureLoggers = get(stagingModelDerivedAtom).pressureLoggers;
   const currentZoom = get(currentZoomAtom);
-  const selectedAssetIds = new Set(USelection.toIds(selection));
+  const selectedAssetIds = new Set(USelection.getAssetIds(selection));
 
   const movedAssetIds = get(movedAssetIdsAtom);
   const isOffline = get(offlineAtom);
   const mapOverlayFeatures = get(mapOverlayFeaturesAtom);
+  const zoneFeatures = get(zoneFeaturesAtom);
+  const zoneColorAssignments = get(zoneColorAssignmentsAtom);
   const highlights = get(highlightsAtom);
+  const nodeSize = get(nodeSizeAtom);
 
   return {
-    momentLogId: momentLog.id,
-    momentLogPointer: momentLog.getPointer(),
-    syncMomentPointer: mapSyncMoment.pointer,
-    syncMomentVersion: mapSyncMoment.version,
+    editionsTracker,
     stylesConfig,
     selection,
     ephemeralState,
@@ -201,9 +200,11 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
     movedAssetIds,
     isOffline,
     customerPoints,
-    pressureLoggers,
     currentZoom,
     mapOverlayFeatures,
+    zoneFeatures,
+    zoneColorAssignments,
     highlights,
+    nodeSize,
   };
 });

@@ -9,8 +9,6 @@ import {
   StyledItem,
   LogoIconAndWordmarkIcon,
 } from "./elements";
-import { DebugDropdown } from "./menu-bar/menu-bar-dropdown";
-import { isDebugOn } from "src/infra/debug-mode";
 import { useTranslate } from "src/hooks/use-translate";
 import {
   helpCenterUrl,
@@ -20,20 +18,23 @@ import {
 } from "src/global-config";
 import { useAuth } from "src/hooks/use-auth";
 import { SignedIn, SignedOut, UserButton } from "src/components/auth";
-import { useClerk } from "@clerk/nextjs";
+import { useAccountManager } from "src/hooks/use-account-manager";
 import { SignInButton, SignUpButton } from "./auth-buttons";
 import { useShowWelcome } from "src/commands/show-welcome";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useShowShortcuts } from "src/commands/show-shortcuts";
-import { getTrialDaysRemaining } from "src/lib/account-plans";
+import { TrialCta, resolveTrialCta } from "@epanet-js/account-plans";
 import { useEffectivePlan } from "src/hooks/use-effective-plan";
 import { usePermissions } from "src/hooks/use-permissions";
-import { useFeatureFlag } from "src/hooks/use-feature-flags";
+import { useBillingPortal } from "src/hooks/use-billing-portal";
 import { PlanLabel } from "./plan-label";
-import { useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { dialogAtom } from "src/state/dialog";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { LanguageSelector } from "./language-selector";
+import { useScriptingDocs } from "src/hooks/use-scripting-docs";
+import { getScripting } from "src/lib/scripting";
+import { contentViewAtom } from "src/state/content-view";
 
 import {
   GlobeIcon,
@@ -46,6 +47,7 @@ import {
   NewFromExampleIcon,
   CloseIcon,
   GithubIcon,
+  ScriptsIcon,
 } from "src/icons";
 
 export function MenuBarFallback() {
@@ -69,13 +71,12 @@ export const MenuBarPlay = memo(function MenuBar() {
   const showWelcome = useShowWelcome();
   const isMdOrLarger = useBreakpoint("md");
   const isSmOrLarger = useBreakpoint("sm");
-  const isActivateTrialOn = useFeatureFlag("FLAG_ACTIVATE_TRIAL");
   const effectivePlan = useEffectivePlan();
-  const { openOrganizationProfile } = useClerk();
+  const { openOrganizationProfile } = useAccountManager();
   const { canManageOrganization } = usePermissions();
 
   return (
-    <div className="flex justify-between h-12 pr-2 text-black dark:text-white">
+    <div className="flex justify-between h-12 pr-2 text-black">
       <div className="flex items-center">
         <div
           className="py-1 pl-2 pr-2 inline-flex cursor-pointer"
@@ -92,7 +93,10 @@ export const MenuBarPlay = memo(function MenuBar() {
               href={sourceCodeUrl}
               target="_blank"
               onClick={() => {
-                userTracking.capture({ name: "repo.visited", source: "menu" });
+                userTracking.capture({
+                  name: "repo.visited",
+                  source: "menu",
+                });
               }}
             >
               <Button variant="quiet">
@@ -100,7 +104,6 @@ export const MenuBarPlay = memo(function MenuBar() {
                 {translate("openSource")}
               </Button>
             </a>
-            {isDebugOn && <DebugDropdown />}
             <HelpDot />
             <LanguageSelector />
             <Divider />
@@ -112,7 +115,6 @@ export const MenuBarPlay = memo(function MenuBar() {
               {effectivePlan === "free" ? (
                 <TrialOrUpgradeButton
                   user={user}
-                  isActivateTrialOn={isActivateTrialOn}
                   translate={translate}
                   onUpgrade={() => {
                     userTracking.capture({
@@ -121,7 +123,8 @@ export const MenuBarPlay = memo(function MenuBar() {
                     });
                     setDialogState({
                       type: "upgrade",
-                      source: { kind: "menu" },
+                      feature: "upgradeMenu",
+                      source: "menu",
                     });
                   }}
                 />
@@ -172,6 +175,7 @@ export function HelpDot() {
   const showWelcome = useShowWelcome();
   const showShortcuts = useShowShortcuts();
   const userTracking = useUserTracking();
+  const scriptingDocs = useScriptingDocs();
 
   return (
     <DD.Root>
@@ -232,6 +236,23 @@ export function HelpDot() {
             {translate("utilities")}
           </StyledItem>
         </a>
+        {getScripting() && (
+          <a
+            href={scriptingDocs.apiPath}
+            target="_blank"
+            onClick={() => {
+              userTracking.capture({
+                name: "scriptingApi.visited",
+                source: "menu",
+              });
+            }}
+          >
+            <StyledItem>
+              <ScriptsIcon />
+              {translate("scripting.apiReference")}
+            </StyledItem>
+          </a>
+        )}
         <StyledItem
           onSelect={() => {
             userTracking.capture({
@@ -250,7 +271,7 @@ export function HelpDot() {
 }
 
 export const Divider = () => {
-  return <div className="border-r-2 border-gray-100 h-8 mr-1"></div>;
+  return <div className="border-r-2 h-8 mr-1"></div>;
 };
 
 export const SideMenu = () => {
@@ -261,10 +282,11 @@ export const SideMenu = () => {
   const setDialogState = useSetAtom(dialogAtom);
   const showWelcome = useShowWelcome();
   const { user } = useAuth();
-  const isActivateTrialOn = useFeatureFlag("FLAG_ACTIVATE_TRIAL");
   const effectivePlan = useEffectivePlan();
-  const { openOrganizationProfile } = useClerk();
+  const { openOrganizationProfile } = useAccountManager();
   const { canManageOrganization } = usePermissions();
+  const isModelBuildViewOpen =
+    useAtomValue(contentViewAtom)?.type === "modelBuild";
   const toggleMenu = () => {
     setIsOpen(!isOpen);
   };
@@ -272,7 +294,12 @@ export const SideMenu = () => {
   return (
     <div className="relative">
       <div className="flex justify-end md:hidden">
-        <Button variant="quiet" onClick={toggleMenu}>
+        <Button
+          className="h-8 w-8 justify-center"
+          size="xxs"
+          variant="quiet"
+          onClick={toggleMenu}
+        >
           <MenuIcon />
         </Button>
       </div>
@@ -280,7 +307,7 @@ export const SideMenu = () => {
       <div
         ref={menuRef}
         tabIndex={isOpen ? 0 : -1}
-        className={`fixed inset-y-0 right-0 w-full bg-white transform ${
+        className={`fixed inset-y-0 right-0 w-full bg-base transform ${
           isOpen ? "translate-x-0" : "translate-x-full"
         } transition-transform duration-300 ease-in-out md:hidden z-40`}
       >
@@ -300,29 +327,26 @@ export const SideMenu = () => {
                 </Button>
               </li>
             </ul>
-            <hr className="my-4 border-gray-200" />
-            <ul className="flex flex-col items-start gap-2  text-gray-200">
-              <li>
-                <a
-                  href={sourceCodeUrl}
-                  target="_blank"
-                  onClick={() => {
-                    setIsOpen(false);
-                    userTracking.capture({
-                      name: "repo.visited",
-                      source: "menu",
-                    });
-                  }}
-                >
-                  <Button variant="quiet">
-                    <GithubIcon />
-                    {translate("openSource")}
-                  </Button>
-                </a>
-              </li>
-              {isDebugOn && (
+            <hr className="my-4" />
+            <ul className="flex flex-col items-start gap-2 text-gray-200">
+              {!isModelBuildViewOpen && (
                 <li>
-                  <DebugDropdown />
+                  <a
+                    href={sourceCodeUrl}
+                    target="_blank"
+                    onClick={() => {
+                      setIsOpen(false);
+                      userTracking.capture({
+                        name: "repo.visited",
+                        source: "menu",
+                      });
+                    }}
+                  >
+                    <Button variant="quiet">
+                      <GithubIcon />
+                      {translate("openSource")}
+                    </Button>
+                  </a>
                 </li>
               )}
               <li>
@@ -357,7 +381,7 @@ export const SideMenu = () => {
                 </a>
               </li>
             </ul>
-            <hr className="my-4 border-gray-200" />
+            <hr className="my-4" />
             <SignedIn>
               <AccountSection layout="sidebar">
                 {effectivePlan !== "free" && (
@@ -373,7 +397,6 @@ export const SideMenu = () => {
                 {effectivePlan === "free" && (
                   <TrialOrUpgradeButton
                     user={user}
-                    isActivateTrialOn={isActivateTrialOn}
                     translate={translate}
                     size="full-width"
                     onUpgrade={() => {
@@ -384,9 +407,11 @@ export const SideMenu = () => {
                       setIsOpen(false);
                       setDialogState({
                         type: "upgrade",
-                        source: { kind: "menu" },
+                        feature: "upgradeMenu",
+                        source: "menu",
                       });
                     }}
+                    onNavigate={() => setIsOpen(false)}
                   />
                 )}
                 <UserButton />
@@ -437,40 +462,54 @@ const AccountSection = ({
   return <div className="hidden md:flex items-center gap-x-2">{children}</div>;
 };
 
-const TrialOrUpgradeButton = ({
+export const TrialOrUpgradeButton = ({
   user,
-  isActivateTrialOn,
   translate,
   size,
   onUpgrade,
+  onNavigate,
 }: {
   user: User;
-  isActivateTrialOn: boolean;
   translate: TranslateFn;
   size?: "full-width";
   onUpgrade: () => void;
+  onNavigate?: () => void;
 }) => {
-  const trial = useMemo(() => {
-    if (!isActivateTrialOn || !user.hasUsedTrial) return null;
-    if (!user.trialEndsAt) return null;
-
-    const days = getTrialDaysRemaining(user.trialEndsAt);
-    const isUrgent = days <= 0;
-    const label =
-      days < 0 ? translate("trial.expired") : translate("trial.status", days);
-    return { label, isUrgent };
-  }, [isActivateTrialOn, user.hasUsedTrial, user.trialEndsAt, translate]);
-
   const { canUpgrade } = usePermissions();
+  const userTracking = useUserTracking();
+  const { openBillingPortal } = useBillingPortal();
 
-  if (trial) {
-    const colorClass = trial.isUrgent
-      ? "text-orange-600 dark:text-orange-400"
-      : "text-purple-600 dark:text-purple-400";
+  const trial = useMemo(() => {
+    if (!canUpgrade) return { kind: "none" } as TrialCta;
+
+    return resolveTrialCta(user);
+  }, [canUpgrade, user]);
+
+  if (trial.kind !== "none") {
+    const isEnded = trial.kind === "ended";
+    const label = isEnded
+      ? translate("trial.expired")
+      : translate("trial.status", trial.daysRemaining);
+    const isUrgent = isEnded || trial.daysRemaining === 0;
+    const colorClass = isUrgent ? "text-warning" : "text-accent-hover";
+
+    const manageBilling = () => {
+      userTracking.capture({
+        name: "billingPortal.opened",
+        source: "menu",
+        trial: trial.kind,
+      });
+      onNavigate?.();
+      openBillingPortal();
+    };
 
     return (
-      <Button variant="quiet" size={size} onClick={onUpgrade}>
-        <span className={`${colorClass} font-medium`}>{trial.label}</span>
+      <Button
+        variant="quiet"
+        size={size}
+        onClick={isEnded && !trial.payable ? onUpgrade : manageBilling}
+      >
+        <span className={`${colorClass} font-medium`}>{label}</span>
       </Button>
     );
   }

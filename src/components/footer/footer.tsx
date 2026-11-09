@@ -1,7 +1,7 @@
 import { useAtomValue } from "jotai";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { useTranslate } from "src/hooks/use-translate";
-import { localizeDecimal } from "src/infra/i18n/numbers";
+import { localizeDecimal } from "@epanet-js/i18n";
 
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import { projectSettingsAtom } from "src/state/project-settings";
@@ -40,8 +40,8 @@ export const Footer = () => {
   const pressureUnitDisplay = translateUnit(projectSettings.units.pressure);
 
   return (
-    <nav className="fixed bottom-0 left-0 w-full bg-gray-50 border-t border-gray-300 shadow-lg z-10">
-      <div className="flex flex-row items-center text-sm text-gray-500 space-x-1">
+    <nav className="fixed bottom-0 left-0 w-full bg-panel border-t border-strong shadow-lg z-10">
+      <div className="flex flex-row items-center text-size-base text-subtle space-x-1">
         {!isLgOrLarger && (
           <div className="px-2">
             <CollapsedPopover
@@ -52,23 +52,23 @@ export const Footer = () => {
             />
           </div>
         )}
-        <div className="border-r-2 border-gray-100 h-10"></div>
+        <div className="border-r-2 h-10"></div>
         <ScenarioSwitcher />
-        <div className="border-r-2 border-gray-150 h-10"></div>
+        <div className="border-r-2 border-base h-10"></div>
         {isLgOrLarger && (
           <>
             <span className="px-4 py-2">
               {translate("flow")}: {flowUnitDisplay}
             </span>
-            <div className="border-r-2 border-gray-150 h-10"></div>
+            <div className="border-r-2 border-base h-10"></div>
             <span className="px-4 py-2">
               {translate("pressure")}: {pressureUnitDisplay}
             </span>
-            <div className="border-r-2 border-gray-150 h-10"></div>
+            <div className="border-r-2 border-base h-10"></div>
             <span className="px-4 py-2">
               {translate("headlossShort")}: {projectSettings.headlossFormula}
             </span>
-            <div className="border-r-2 border-gray-150 h-10"></div>
+            <div className="border-r-2 border-base h-10"></div>
           </>
         )}
         {isSmOrLarger && (
@@ -77,7 +77,7 @@ export const Footer = () => {
               {translate("demandMultiplier")}:{" "}
               {localizeDecimal(simulationSettings.globalDemandMultiplier)}
             </span>
-            <div className="border-r-2 border-gray-150 h-10"></div>
+            <div className="border-r-2 border-base h-10"></div>
           </>
         )}
         <span className="px-1">
@@ -107,35 +107,35 @@ const CollapsedPopover = ({
     <Popover.Root>
       <Popover.Trigger asChild>
         <Button variant="quiet">
-          <ChevronsLeftIcon className="text-gray-500" />
+          <ChevronsLeftIcon className="text-subtle" />
         </Button>
       </Popover.Trigger>
       <Popover.Portal>
         <StyledPopoverContent size="auto">
-          <div className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-4 text-sm text-gray-500 p-2">
+          <div className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-4 text-size-base text-subtle p-2">
             <span>{translate("autoLengths")}</span>
-            <span className="text-gray-700">{translate("on")}</span>
+            <span className="text-default">{translate("on")}</span>
 
             <span>{translate("autoElevations")}</span>
-            <span className="text-gray-700">
+            <span className="text-default">
               {translate(autoElevations ? "on" : "off")}
             </span>
 
             {!isLgOrLarger && (
               <>
                 <span>{translate("flow")}</span>
-                <span className="text-gray-700">{flowUnitDisplay}</span>
+                <span className="text-default">{flowUnitDisplay}</span>
                 <span>{translate("pressure")}</span>
-                <span className="text-gray-700">{pressureUnitDisplay}</span>
+                <span className="text-default">{pressureUnitDisplay}</span>
                 <span>{translate("headlossShort")}</span>
-                <span className="text-gray-700">{headlossFormula}</span>
+                <span className="text-default">{headlossFormula}</span>
               </>
             )}
 
             {!isSmOrLarger && (
               <>
                 <span>{translate("demandMultiplier")}</span>
-                <span className="text-gray-700">
+                <span className="text-default">
                   {localizeDecimal(demandMultiplier)}
                 </span>
               </>
@@ -166,48 +166,48 @@ const buildSimulationStatusStyles = (
     case "idle":
       return {
         Icon: CircleIcon,
-        colorClass: "text-gray-500",
+        colorClass: "text-subtle",
         text: translate("simulationReadyToRun"),
       };
     case "running":
       return {
         Icon: CircleIcon,
-        colorClass: "text-gray-500",
+        colorClass: "text-subtle",
         text: translate("simulationRunning"),
       };
     case "success":
       if (isOutdated(simulation, hydraulicModel, settingsVersion)) {
         return {
           Icon: OutdatedSimulationIcon,
-          colorClass: "text-orange-500",
+          colorClass: "text-warning",
           text: translate("simulationOutdated"),
         };
       }
 
       return {
         Icon: SuccessIcon,
-        colorClass: "text-green-500",
+        colorClass: "text-success",
         text: translate("simulationSuccess"),
       };
     case "failure":
       if (isOutdated(simulation, hydraulicModel, settingsVersion)) {
         return {
           Icon: OutdatedSimulationIcon,
-          colorClass: "text-orange-500",
+          colorClass: "text-warning",
           text: translate("simulationOutdated"),
         };
       }
 
       return {
         Icon: ErrorIcon,
-        colorClass: "text-red-500",
+        colorClass: "text-error",
         text: translate("simulationFailure"),
       };
     case "warning":
       if (isOutdated(simulation, hydraulicModel, settingsVersion)) {
         return {
           Icon: OutdatedSimulationIcon,
-          colorClass: "text-orange-500",
+          colorClass: "text-warning",
           text: translate("simulationOutdated"),
         };
       }
@@ -220,7 +220,7 @@ const buildSimulationStatusStyles = (
     case "stopped":
       return {
         Icon: StopSimulationIcon,
-        colorClass: "text-blue-500",
+        colorClass: "text-info",
         text: translate("simulationStopped"),
       };
   }
@@ -241,7 +241,7 @@ export const SimulationStatusText = () => {
 
   return (
     <div
-      className={`flex flex-row items-center space-x-2 text-sm ${colorClass}`}
+      className={`flex flex-row items-center space-x-2 text-size-base ${colorClass}`}
     >
       <Icon className="mr-1" />
       {text}

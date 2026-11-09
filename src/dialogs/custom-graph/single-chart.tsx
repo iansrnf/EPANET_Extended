@@ -10,7 +10,7 @@ import {
 import ReactECharts from "echarts-for-react";
 import type { EChartsOption } from "echarts";
 import { useTranslate } from "src/hooks/use-translate";
-import { localizeDecimal } from "src/infra/i18n/numbers";
+import { localizeDecimal } from "@epanet-js/i18n";
 import { colors } from "src/lib/constants";
 import { SingleGraphChartProps, GraphDefaultOptions } from ".";
 import {
@@ -257,7 +257,7 @@ export const SingleChart = memo(
           />
         </div>
         {hideLegend && showXAxisLabels && (
-          <p className="text-center text-gray-400 pb-1">
+          <p className="text-center text-subtle pb-1">
             {translate("customGraph.legendHidden")}
           </p>
         )}

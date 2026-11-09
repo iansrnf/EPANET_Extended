@@ -4,9 +4,10 @@ import {
   normalizeNumericInput,
   parseNumericInput,
 } from "src/components/form/numeric-input-utils";
-import { localizeDecimal } from "src/infra/i18n/numbers";
-import type { ColumnDef, RowData } from "@tanstack/react-table";
+import { localizeDecimal } from "@epanet-js/i18n";
+import type { RowData } from "@tanstack/react-table";
 import { CellProps, GridColumn } from "../types";
+import { type ColumnKey, resolveColumnKey } from "./column-key";
 import { useEditableTextInput } from "./use-editable-text-input";
 
 function formatLocaleNumber(
@@ -18,10 +19,14 @@ function formatLocaleNumber(
 }
 
 type FloatCellProps = CellProps<number | null> & {
-  nullValue?: number | null;
+  emptyValue?: number | null;
+  validate?: (value: number, rowIndex: number) => boolean;
+  commitInvalidValues?: boolean;
   decimals?: number;
   readonly?: boolean;
   placeholder?: string;
+  toDisplay?: (stored: number) => number;
+  fromDisplay?: (displayed: number) => number;
 };
 
 const FLOAT_QUICK_NAV_KEYS = [
@@ -34,32 +39,49 @@ const FLOAT_QUICK_NAV_KEYS = [
 
 export function FloatCell({
   value,
+  rowIndex,
   editMode,
   onChange,
   stopEditing,
-  nullValue = null,
+  emptyValue,
+  validate,
+  commitInvalidValues = false,
   decimals,
   readonly,
   placeholder,
+  toDisplay,
+  fromDisplay,
 }: FloatCellProps) {
+  // Stored value -> the value shown/edited in the cell (identity when no transform).
+  const toDisplayValue = useCallback(
+    (v: number | null): number | null =>
+      v === null || toDisplay === undefined ? v : toDisplay(v),
+    [toDisplay],
+  );
+
   const parse = useCallback(
     (raw: string): number | null | undefined => {
       const parsed = parseNumericInput(raw);
-      if (parsed !== null) return parsed;
-      if (raw.trim() === "") return nullValue;
+      if (parsed !== null) {
+        if (!commitInvalidValues && validate && !validate(parsed, rowIndex))
+          return undefined;
+        return fromDisplay ? fromDisplay(parsed) : parsed;
+      }
+      if (raw.trim() === "") return emptyValue;
       return undefined;
     },
-    [nullValue],
+    [emptyValue, validate, commitInvalidValues, fromDisplay, rowIndex],
   );
 
   const format = useCallback(
-    (v: number | null) => (v === null ? "" : formatLocaleNumber(v, decimals)),
-    [decimals],
+    (v: number | null) =>
+      v === null ? "" : formatLocaleNumber(toDisplayValue(v), decimals),
+    [decimals, toDisplayValue],
   );
 
   const formatForEdit = useCallback(
-    (v: number | null) => formatLocaleNumber(v),
-    [],
+    (v: number | null) => formatLocaleNumber(toDisplayValue(v)),
+    [toDisplayValue],
   );
 
   const {
@@ -91,21 +113,25 @@ export function FloatCell({
       if (newValue === editValue) return;
       if (rawValue.length > 0 && newValue.length === 0) return;
       setEditValue(newValue);
-      setHasError(
-        newValue.trim() !== "" && parseNumericInput(newValue) === null,
-      );
+      const parsed = parseNumericInput(newValue);
+      const isInvalidNumber = newValue.trim() !== "" && parsed === null;
+      const failsValidation =
+        validate !== undefined &&
+        parsed !== null &&
+        !validate(parsed, rowIndex);
+      setHasError(isInvalidNumber || failsValidation);
     },
-    [editValue, setEditValue, setHasError],
+    [editValue, validate, setEditValue, setHasError, rowIndex],
   );
 
-  const formattedValue = formatLocaleNumber(value, decimals);
+  const formattedValue = formatLocaleNumber(toDisplayValue(value), decimals);
   const baseDisplay = !editMode && value === null ? "" : formattedValue;
   const displayValue =
     !editMode && committedDisplay !== null ? committedDisplay : baseDisplay;
 
   if (readonly) {
     return (
-      <div className="w-full h-full flex items-center px-2 text-sm tabular-nums text-gray-500 bg-gray-50">
+      <div className="w-full h-full flex items-center px-2 text-size-base tabular-nums text-subtle bg-panel">
         {value === null && placeholder != null ? (
           <span className="italic">{placeholder}</span>
         ) : (
@@ -119,9 +145,7 @@ export function FloatCell({
     <div
       className={clsx(
         "w-full h-full flex items-center",
-        hasError &&
-          editMode &&
-          "z-2 bg-orange-100 dark:bg-orange-900/30 ring-1 ring-orange-500 dark:ring-orange-700",
+        hasError && editMode && "z-2 bg-warning-subtle ring-1 ring-warning",
       )}
     >
       <input
@@ -135,7 +159,7 @@ export function FloatCell({
         onKeyDown={handleKeyDown}
         readOnly={!editMode}
         className={clsx(
-          "w-full px-2 text-sm tabular-nums outline-hidden border-none ring-0 focus:outline-hidden focus:ring-0 bg-transparent truncate placeholder:italic placeholder:text-gray-400",
+          "w-full px-2 text-size-base tabular-nums outline-hidden border-none ring-0 focus:outline-hidden focus:ring-0 bg-transparent truncate placeholder:italic placeholder:text-subtle",
           // Mousetrap forces availability of global hot keys when not editing
           // pointer-events-none prevents text selection highlight when not editing
           !editMode && "mousetrap pointer-events-none",
@@ -146,51 +170,114 @@ export function FloatCell({
 }
 
 export function floatColumn<TData extends RowData = RowData>(
-  accessorKey: Extract<keyof TData, string> & string,
+  key: ColumnKey<TData, number | null>,
   options: {
     header: string;
     size?: number;
-    deleteValue?: number | null;
-    nullValue?: number | null;
+    emptyValue?: number | null;
+    validate?: (value: number, rowIndex: number) => boolean;
+    commitInvalidValues?: boolean;
+    required?: boolean;
     decimals?: number;
     isReadOnly?: boolean | ((rowIndex: number) => boolean);
-    placeholder?: string;
+    defaultValue?: number | null | ((rowIndex: number) => number | null);
+    placeholder?: string | ((rowIndex: number) => string | undefined);
+    toDisplay?: (stored: number) => number;
+    fromDisplay?: (displayed: number) => number;
   },
 ): GridColumn<TData> {
-  const { nullValue, decimals, isReadOnly: readonly, placeholder } = options;
+  const {
+    emptyValue,
+    validate,
+    commitInvalidValues,
+    required,
+    decimals,
+    isReadOnly: readonly,
+    defaultValue,
+    placeholder,
+    toDisplay,
+    fromDisplay,
+  } = options;
   const isStaticReadOnly = readonly === true;
   const isDynamicReadOnly = typeof readonly === "function";
   const resolveReadOnly = (rowIndex: number) =>
     typeof readonly === "function" ? readonly(rowIndex) : (readonly ?? false);
+  const resolvePlaceholder = (rowIndex: number): string | undefined => {
+    const resolved =
+      typeof defaultValue === "function"
+        ? defaultValue(rowIndex)
+        : defaultValue;
+    if (resolved == null)
+      return typeof placeholder === "function"
+        ? placeholder(rowIndex)
+        : placeholder;
+    return formatLocaleNumber(
+      toDisplay ? toDisplay(resolved) : resolved,
+      decimals,
+    );
+  };
 
   const CellComponent =
-    nullValue !== undefined ||
+    emptyValue !== undefined ||
+    validate !== undefined ||
+    commitInvalidValues !== undefined ||
     decimals !== undefined ||
     isStaticReadOnly ||
     isDynamicReadOnly ||
-    placeholder !== undefined
+    defaultValue !== undefined ||
+    placeholder !== undefined ||
+    toDisplay !== undefined ||
+    fromDisplay !== undefined
       ? (props: CellProps<number | null>) => (
           <FloatCell
             {...props}
-            nullValue={nullValue}
+            emptyValue={emptyValue}
+            validate={validate}
+            commitInvalidValues={commitInvalidValues}
             decimals={decimals}
             readonly={resolveReadOnly(props.rowIndex)}
-            placeholder={placeholder}
+            placeholder={resolvePlaceholder(props.rowIndex)}
+            toDisplay={toDisplay}
+            fromDisplay={fromDisplay}
           />
         )
       : FloatCell;
 
-  const column: ColumnDef<TData, number | null> = {
-    accessorKey,
+  const column = {
+    ...resolveColumnKey(key),
     header: options.header,
     size: options.size,
     meta: {
       cellComponent: CellComponent,
-      copyValue: (v) => formatLocaleNumber(v, decimals),
-      pasteValue: (v) => parseNumericInput(v) ?? nullValue ?? null,
-      deleteValue: options.deleteValue ?? null,
-      placeholder,
+      copyValue: (v: number | null) =>
+        formatLocaleNumber(
+          v !== null && toDisplay ? toDisplay(v) : v,
+          decimals,
+        ),
+      pasteValue: (v: string, _row: TData, rowIndex = -1) => {
+        const parsed = parseNumericInput(v);
+        if (parsed !== null) {
+          if (!commitInvalidValues && validate && !validate(parsed, rowIndex))
+            return undefined;
+          return fromDisplay ? fromDisplay(parsed) : parsed;
+        }
+        if (v.trim() === "") return emptyValue;
+        return undefined;
+      },
+      deleteValue: emptyValue,
+      placeholder: typeof placeholder === "string" ? placeholder : undefined,
       isReadOnly: readonly,
+      defaultValue,
+      ...(required !== undefined
+        ? {
+            hasWarning: (value: number | null, rowIndex = -1): boolean =>
+              value == null
+                ? required
+                : validate
+                  ? !validate(value, rowIndex)
+                  : false,
+          }
+        : {}),
     },
   };
   return column as GridColumn<TData>;

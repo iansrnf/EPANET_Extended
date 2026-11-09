@@ -1,13 +1,15 @@
-import { BinaryData } from "src/lib/buffers";
-import { AssetId } from "src/hydraulic-model/asset-types";
-import { AssetIndexView } from "src/hydraulic-model/asset-index";
+import { BinaryData } from "@epanet-js/buffers";
+import {
+  AssetId,
+  AllowedFlowDirection,
+  type AllowedFlowDirectionQueries,
+  type AllowedFlowDirectionValue,
+} from "@epanet-js/hydraulic-model";
+import { AssetIndexView } from "src/hydraulic-model/asset-index-transferable";
 import {
   FlowDirectionQueries,
   FlowDirection,
   FlowDirectionValue,
-  AllowedFlowDirectionQueries,
-  AllowedFlowDirection,
-  AllowedFlowDirectionValue,
 } from "./types";
 
 export interface AllowedFlowDirectionBuffers {

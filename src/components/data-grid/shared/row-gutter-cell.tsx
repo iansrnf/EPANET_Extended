@@ -24,21 +24,16 @@ export function RowGutterCell({
     <div
       role="rowheader"
       className={clsx(
-        "flex items-center justify-center text-xs shrink-0 cursor-pointer select-none h-8 sticky left-0 z-10",
+        "flex items-center justify-center text-size-small shrink-0 cursor-pointer select-none h-8 sticky left-0 z-10",
         isRowSelected && variant === "spreadsheet"
           ? "text-white"
-          : "text-gray-600",
+          : "text-subtle",
         "border border-transparent w-8",
         {
-          "border-b-gray-200":
+          "border-b-[--color-border]":
             (variant === "spreadsheet" && isLastRow) || !showRowNumbers,
         },
-        isRowSelected && variant === "spreadsheet"
-          ? "bg-purple-500"
-          : {
-              "bg-gray-100": variant === "spreadsheet",
-              "bg-gray-50": variant === "inline",
-            },
+        isRowSelected && variant === "spreadsheet" ? "bg-accent" : "bg-panel",
       )}
       onClick={onClick}
       onContextMenu={onContextMenu}

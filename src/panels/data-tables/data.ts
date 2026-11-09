@@ -1,91 +1,180 @@
-import type {
-  Junction,
-  Pipe,
-  Pump,
-  Valve,
-  Reservoir,
-  Tank,
-} from "src/hydraulic-model/asset-types";
-import type { AssetType } from "src/hydraulic-model/asset-types/types";
-import type { AssetId } from "src/hydraulic-model/asset-types/base-asset";
+import {
+  type Pipe,
+  type Pump,
+  type Valve,
+  type Tank,
+  type AssetType,
+  type AssetId,
+  tankVolumeCurveRange,
+  getActiveCustomerPoints,
+} from "@epanet-js/hydraulic-model";
 import {
   calculateAverageDemand,
   getJunctionDemands,
   getCustomerPointDemands,
   HydraulicModel,
 } from "src/hydraulic-model";
-import { tankVolumeCurveRange } from "src/hydraulic-model/asset-types/tank";
-import { getActiveCustomerPoints } from "src/hydraulic-model/customer-points";
+import type { CustomerPointId } from "@epanet-js/hydraulic-model";
 import type { TranslateFn } from "src/hooks/use-translate";
 import { ResultsReader } from "src/simulation";
 
 export type AssetRow = Record<string, unknown> & { id: AssetId };
 
-const CHUNK_SIZE = 200;
+export type AssetAccessorCtx = {
+  model: HydraulicModel;
+  simulation: ResultsReader | null;
+  translate: TranslateFn;
+};
 
-function yieldToMain(): Promise<void> {
-  const scheduler = (globalThis as Record<string, unknown>)["scheduler"] as
-    | {
-        postTask?: (
-          cb: () => void,
-          opts: { priority: string },
-        ) => Promise<void>;
-      }
-    | undefined;
-  if (scheduler?.postTask) {
-    return scheduler.postTask(() => {}, { priority: "user-visible" });
-  }
-  return new Promise((resolve) => setTimeout(resolve, 0));
+const ASSET_COMPUTED_KEYS: Record<AssetType, Set<string>> = {
+  junction: new Set([
+    "avgDemand",
+    "demandsCount",
+    "baseDemand",
+    "patternId",
+    "customerPointCount",
+    "avgCustomerDemand",
+  ]),
+  pipe: new Set([
+    "startNode",
+    "endNode",
+    "customerDemand",
+    "customerPointCount",
+  ]),
+  pump: new Set(["startNode", "endNode"]),
+  valve: new Set(["startNode", "endNode", "targetNodeId", "setting"]),
+  reservoir: new Set<string>([]),
+  tank: new Set(["minLevel", "maxLevel", "minVolume", "maxVolume"]),
+};
+
+export function isAssetComputedKey(type: AssetType, key: string): boolean {
+  return key.startsWith("sim_") || ASSET_COMPUTED_KEYS[type].has(key);
 }
 
-function buildRow(
-  assetType: AssetType,
-  id: AssetId,
-  hydraulicModel: HydraulicModel,
-  simulation: ResultsReader | null,
-  translate: TranslateFn,
-): AssetRow | null {
-  const asset = hydraulicModel.assets.get(id);
-  if (!asset) return null;
-  return {
-    ...buildAssetRow(assetType, asset),
-    ...(simulation ? buildSimRow(assetType, id, simulation, translate) : {}),
-    ...buildComputedFields(assetType, id, hydraulicModel),
+export function assetAccessor(
+  type: AssetType,
+  key: string,
+  ctx: AssetAccessorCtx,
+): (row: AssetRow) => unknown {
+  return (row) => {
+    const id = row.id;
+    if (key.startsWith("sim_")) {
+      if (!ctx.simulation) return null;
+      const simRow = buildSimRow(type, id, ctx.simulation, ctx.translate);
+      return simRow[key] ?? null;
+    }
+    return computeAssetComputedField(type, key, id, ctx.model);
   };
 }
 
-export async function buildRowsAsync(
-  assetType: AssetType,
-  assetIds: AssetId[],
-  hydraulicModel: HydraulicModel,
-  simulation: ResultsReader | null,
-  translate: TranslateFn,
-  signal?: AbortSignal,
-): Promise<AssetRow[]> {
-  const result: AssetRow[] = [];
-  for (
-    let chunkStart = 0;
-    chunkStart < assetIds.length;
-    chunkStart += CHUNK_SIZE
-  ) {
-    if (chunkStart > 0) await yieldToMain();
-    if (signal?.aborted) return result;
-    for (
-      let rowIndex = chunkStart;
-      rowIndex < Math.min(chunkStart + CHUNK_SIZE, assetIds.length);
-      rowIndex++
-    ) {
-      const row = buildRow(
-        assetType,
-        assetIds[rowIndex],
-        hydraulicModel,
-        simulation,
-        translate,
+const nodeLabel = (model: HydraulicModel, id: AssetId): string =>
+  model.assets.get(id)?.label ?? "";
+
+const sumCustomerAvgDemand = (
+  model: HydraulicModel,
+  customerPoints: { id: CustomerPointId }[],
+): number =>
+  customerPoints.reduce(
+    (sum, cp) =>
+      sum +
+      calculateAverageDemand(
+        getCustomerPointDemands(model.demands, cp.id),
+        model.patterns,
+      ),
+    0,
+  );
+
+function computeAssetComputedField(
+  type: AssetType,
+  key: string,
+  id: AssetId,
+  model: HydraulicModel,
+): unknown {
+  switch (key) {
+    case "startNode": {
+      const link = model.assets.get(id) as Pipe | Pump | Valve | undefined;
+      return link ? nodeLabel(model, link.connections[0]) : "";
+    }
+    case "endNode": {
+      const link = model.assets.get(id) as Pipe | Pump | Valve | undefined;
+      return link ? nodeLabel(model, link.connections[1]) : "";
+    }
+    case "baseDemand":
+      return getJunctionDemands(model.demands, id)[0]?.baseDemand ?? 0;
+    case "patternId":
+      return getJunctionDemands(model.demands, id)[0]?.patternId ?? null;
+    case "demandsCount":
+      return getJunctionDemands(model.demands, id).length;
+    case "avgDemand":
+      return calculateAverageDemand(
+        getJunctionDemands(model.demands, id),
+        model.patterns,
       );
-      if (row) result.push(row);
+    case "customerPointCount":
+      return type === "junction"
+        ? getActiveCustomerPoints(model.customerPointsLookup, model.assets, id)
+            .length
+        : Array.from(model.customerPointsLookup.getCustomerPoints(id)).length;
+    case "avgCustomerDemand":
+      return sumCustomerAvgDemand(
+        model,
+        getActiveCustomerPoints(model.customerPointsLookup, model.assets, id),
+      );
+    case "customerDemand":
+      return sumCustomerAvgDemand(
+        model,
+        Array.from(model.customerPointsLookup.getCustomerPoints(id)),
+      );
+    case "minLevel":
+    case "maxLevel":
+    case "minVolume":
+    case "maxVolume": {
+      const tank = model.assets.get(id) as Tank | undefined;
+      if (tank?.volumeCurveId) {
+        const curve = model.curves.get(tank.volumeCurveId);
+        if (curve && curve.points.length > 0) {
+          return tankVolumeCurveRange(curve)[key];
+        }
+      }
+      // No volume curve → the asset's own value.
+      return tank ? (tank as unknown as Record<string, unknown>)[key] : null;
+    }
+    case "setting": {
+      const valve = model.assets.get(id) as Valve | undefined;
+      if (!valve || model.controlsLookup.hasControls(valve.id)) return null;
+      return valve.setting;
+    }
+    case "targetNodeId": {
+      const valve = model.assets.get(id) as Valve | undefined;
+      if (!valve || valve.kind !== "prv") {
+        return null;
+      }
+      const hasTargetNode = valve.targetNodeId !== undefined;
+      const targetId = hasTargetNode
+        ? valve.targetNodeId
+        : valve.connections[1];
+      const target = model.assets.get(targetId);
+      return target?.isNode ? target.label : "";
+    }
+    default: {
+      const asset = model.assets.get(id);
+      return asset ? (asset as unknown as Record<string, unknown>)[key] : null;
     }
   }
-  return result;
+}
+
+export function buildAssetModelRows(
+  assetType: AssetType,
+  hydraulicModel: HydraulicModel,
+  onlyIds?: ReadonlySet<AssetId>,
+): AssetRow[] {
+  const rows: AssetRow[] = [];
+  for (const asset of hydraulicModel.assets.values()) {
+    if (asset.type !== assetType) continue;
+    if (onlyIds && !onlyIds.has(asset.id)) continue;
+    rows.push(asset as unknown as AssetRow);
+  }
+  return rows;
 }
 
 function buildSimRow(
@@ -181,192 +270,6 @@ function buildSimRow(
         sim_volume: sim?.volume ?? null,
         sim_netFlow: sim?.netFlow ?? null,
         ...qualityFields(sim),
-      };
-    }
-  }
-}
-
-function resolveConnectionLabels(
-  assetId: AssetId,
-  hydraulicModel: HydraulicModel,
-) {
-  const link = hydraulicModel.assets.get(assetId) as Pipe | Pump | Valve;
-  const [startNodeId, endNodeId] = link.connections;
-  return {
-    startNode: hydraulicModel.assets.get(startNodeId)?.label ?? "",
-    endNode: hydraulicModel.assets.get(endNodeId)?.label ?? "",
-  };
-}
-
-function buildComputedFields(
-  assetType: AssetType,
-  assetId: AssetId,
-  hydraulicModel: HydraulicModel,
-): Record<string, unknown> {
-  if (assetType === "junction") {
-    const junctionDemands = getJunctionDemands(hydraulicModel.demands, assetId);
-    const avgDemand = calculateAverageDemand(
-      junctionDemands,
-      hydraulicModel.patterns,
-    );
-    const customerPoints = getActiveCustomerPoints(
-      hydraulicModel.customerPointsLookup,
-      hydraulicModel.assets,
-      assetId,
-    );
-    const avgCustomerDemand = customerPoints.reduce(
-      (sum, cp) =>
-        sum +
-        calculateAverageDemand(
-          getCustomerPointDemands(hydraulicModel.demands, cp.id),
-          hydraulicModel.patterns,
-        ),
-      0,
-    );
-    return {
-      avgDemand,
-      avgCustomerDemand,
-      customerPointCount: customerPoints.length,
-    };
-  }
-
-  if (assetType === "tank") {
-    const tank = hydraulicModel.assets.get(assetId) as Tank;
-    if (tank.volumeCurveId) {
-      const curve = hydraulicModel.curves.get(tank.volumeCurveId);
-      if (curve && curve.points.length > 0) {
-        const { minLevel, maxLevel, minVolume, maxVolume } =
-          tankVolumeCurveRange(curve);
-        return { minLevel, maxLevel, minVolume, maxVolume };
-      }
-    }
-    return {};
-  }
-
-  if (assetType === "pump") {
-    return resolveConnectionLabels(assetId, hydraulicModel);
-  }
-
-  if (assetType === "valve") {
-    return resolveConnectionLabels(assetId, hydraulicModel);
-  }
-
-  if (assetType === "pipe") {
-    const customerPoints = Array.from(
-      hydraulicModel.customerPointsLookup.getCustomerPoints(assetId),
-    );
-    const customerDemand = customerPoints.reduce(
-      (sum, cp) =>
-        sum +
-        calculateAverageDemand(
-          getCustomerPointDemands(hydraulicModel.demands, cp.id),
-          hydraulicModel.patterns,
-        ),
-      0,
-    );
-    return {
-      ...resolveConnectionLabels(assetId, hydraulicModel),
-      customerDemand,
-      customerPointCount: customerPoints.length,
-    };
-  }
-
-  return {};
-}
-
-function buildAssetRow(
-  assetType: AssetType,
-  asset: Junction | Pipe | Pump | Valve | Reservoir | Tank,
-): AssetRow {
-  const base = { id: asset.id, label: asset.label, isActive: asset.isActive };
-  switch (assetType) {
-    case "junction": {
-      const a = asset as Junction;
-      return {
-        ...base,
-        elevation: a.elevation,
-        emitterCoefficient: a.emitterCoefficient,
-        initialQuality: a.initialQuality,
-        chemicalSourceType: a.chemicalSourceType,
-        chemicalSourceStrength: a.chemicalSourceStrength,
-        chemicalSourcePatternId: a.chemicalSourcePatternId,
-      };
-    }
-    case "pipe": {
-      const a = asset as Pipe;
-      return {
-        ...base,
-        initialStatus: a.initialStatus,
-        diameter: a.diameter,
-        length: a.length,
-        roughness: a.roughness,
-        minorLoss: a.minorLoss,
-        bulkReactionCoeff: a.bulkReactionCoeff,
-        wallReactionCoeff: a.wallReactionCoeff,
-        material: a.material,
-        year: a.year,
-      };
-    }
-    case "pump": {
-      const a = asset as Pump;
-      return {
-        ...base,
-        definitionType: a.definitionType,
-        initialStatus: a.initialStatus,
-        speed: a.speed,
-        power: a.power,
-        curveId: a.curveId,
-        energyPrice: a.energyPrice,
-        speedPatternId: a.speedPatternId,
-        efficiencyCurveId: a.efficiencyCurveId,
-        energyPricePatternId: a.energyPricePatternId,
-      };
-    }
-    case "valve": {
-      const a = asset as Valve;
-      return {
-        ...base,
-        kind: a.kind,
-        setting: a.setting,
-        initialStatus: a.initialStatus,
-        diameter: a.diameter,
-        minorLoss: a.minorLoss,
-        curveId: a.curveId,
-      };
-    }
-    case "reservoir": {
-      const a = asset as Reservoir;
-      return {
-        ...base,
-        elevation: a.elevation,
-        head: a.head,
-        headPatternId: a.headPatternId,
-        initialQuality: a.initialQuality,
-        chemicalSourceType: a.chemicalSourceType,
-        chemicalSourceStrength: a.chemicalSourceStrength,
-        chemicalSourcePatternId: a.chemicalSourcePatternId,
-      };
-    }
-    case "tank": {
-      const a = asset as Tank;
-      return {
-        ...base,
-        elevation: a.elevation,
-        initialLevel: a.initialLevel,
-        minLevel: a.minLevel,
-        maxLevel: a.maxLevel,
-        minVolume: a.minVolume,
-        maxVolume: a.maxVolume,
-        diameter: a.diameter,
-        volumeCurveId: a.volumeCurveId,
-        initialQuality: a.initialQuality,
-        bulkReactionCoeff: a.bulkReactionCoeff,
-        mixingModel: a.mixingModel,
-        mixingFraction: a.mixingFraction,
-        overflow: a.overflow,
-        chemicalSourceType: a.chemicalSourceType,
-        chemicalSourceStrength: a.chemicalSourceStrength,
-        chemicalSourcePatternId: a.chemicalSourcePatternId,
       };
     }
   }

@@ -1,7 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { LngLat } from "mapbox-gl";
-import { useElevations } from "src/map/elevations/use-elevations";
+import { useElevations } from "src/hooks/use-elevations";
 import {
   hglProfileAtom,
   profilePathAtom,
@@ -17,13 +16,13 @@ import {
   simulationResultsDerivedAtom,
 } from "src/state/derived-branch-state";
 import { projectSettingsAtom } from "src/state/project-settings";
-import { getDecimals, ProjectSettings } from "src/lib/project-settings";
+import { getDecimals, ProjectSettings } from "@epanet-js/project-settings";
 import { AssetId, AssetsMap } from "src/hydraulic-model";
-import { ResultsReader } from "src/simulation/results-reader";
+import { ResultsReader } from "@epanet-js/simulation";
 import { Highlight } from "src/state/highlights";
 import { traceDuration } from "src/infra/with-instrumentation";
 import { isDebugOn } from "src/infra/debug-mode";
-import { Unit } from "src/quantity";
+import { Unit } from "@epanet-js/quantity";
 import {
   buildPathSegments,
   PathSegment,
@@ -61,7 +60,7 @@ export type HglProfileData = {
   hasSimulation: boolean;
   hglDropsData: ([number, number] | null)[];
   terrain: TerrainPoint[] | null;
-  terrainData: [number, number][] | null;
+  terrainData: [number, number | null][] | null;
   hglRanges: (HglRange | null)[] | null;
   hglBandSegments: HglBandSegment[][] | null;
   elevationUnit: Unit;
@@ -256,9 +255,9 @@ function buildHglDropsData(
 
 function buildTerrainData(
   terrain: TerrainPoint[] | null,
-): [number, number][] | null {
+): [number, number | null][] | null {
   if (!terrain) return null;
-  return terrain.map<[number, number]>((t) => [
+  return terrain.map<[number, number | null]>((t) => [
     t.cumulativeLength,
     t.elevation,
   ]);
@@ -347,7 +346,8 @@ function computeProfilePoints(
       if (linkId !== undefined) {
         const link = assets.get(linkId);
         if (link && link.isLink) {
-          cumulativeLength += (link as unknown as { length: number }).length;
+          cumulativeLength +=
+            (link as unknown as { length: number | null }).length ?? 0;
         }
       }
     }
@@ -370,7 +370,8 @@ function computeProfileLinks(
       const link = assets.get(linkId);
       if (!link || !link.isLink) continue;
 
-      const linkLength = (link as unknown as { length: number }).length;
+      const linkLength =
+        (link as unknown as { length: number | null }).length ?? 0;
       const startLength = cumulativeLength;
       const endLength = cumulativeLength + linkLength;
       const midLength = startLength + linkLength / 2;
@@ -539,7 +540,7 @@ function useFetchTerrainOnce({
     const start = performance.now();
 
     void fetchElevations(
-      samples.map((s) => new LngLat(s.coordinates[0], s.coordinates[1])),
+      samples.map((s) => ({ lng: s.coordinates[0], lat: s.coordinates[1] })),
     ).then((elevations) => {
       if (cancelled) return;
 

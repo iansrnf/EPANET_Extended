@@ -1,14 +1,25 @@
 import { PostHogProvider, usePostHog } from "posthog-js/react";
 import { useCallback, useMemo } from "react";
 import { Asset, HeadlossFormula } from "src/hydraulic-model";
+import type { Control } from "@epanet-js/hydraulic-model";
+import type {
+  CustomAttributeAssetType,
+  CustomAttributeType,
+} from "@epanet-js/hydraulic-model";
 import { isDebugOn } from "./debug-mode";
 import { MODE_INFO } from "src/state/mode";
 import { SimulationState } from "src/state/simulation";
-import { Presets } from "src/lib/project-settings/quantities-spec";
+import { Presets } from "@epanet-js/project-settings";
 import { EpanetUnitSystem } from "src/simulation/build-inp";
 import { User } from "src/auth-types";
-import type { PaywallFeature, SimulationSummaryState } from "src/state/dialog";
+import type {
+  PaywallFeature,
+  SimulationSummaryState,
+  UpgradeOrigin,
+} from "src/state/dialog";
 import type { PlaybackSpeed } from "src/state/simulation-playback";
+import type { CollectionDraftSource } from "src/lib/collections";
+import type { ConverterVendor } from "src/lib/converters";
 import { usePrivacySettings } from "src/hooks/use-privacy-settings";
 import type { QualitySimulationType } from "src/simulation/simulation-settings";
 
@@ -85,6 +96,40 @@ type AssetPropertyEdited = {
   oldValue: number | string | null;
 };
 
+type AssetControlChanged = {
+  name: "assetControl.changed";
+  type: Asset["type"];
+  controlType: Control["type"];
+  previousType: Control["type"] | null;
+  stepsCount?: number;
+};
+
+type AssetControlRemoved = {
+  name: "assetControl.removed";
+  type: Asset["type"];
+  previousType: Control["type"] | null;
+  stepsCount?: number;
+};
+
+type AssetControlVariableSpeedControlChanged = {
+  name: "assetControl.variableSpeedControlChanged";
+  quantity?: "pressure" | "level" | "flow";
+  minSpeed?: number;
+  maxSpeed?: number;
+  hasRemoteTarget?: boolean;
+  hasLaggedPumps?: boolean;
+  hasSchedule?: boolean;
+  hasTankLevels?: boolean;
+};
+
+type AssetControlFlowModulatingControlChanged = {
+  name: "assetControl.flowModulatingControlChanged";
+  hasRemoteSensor?: boolean;
+  hasRemoteControlNode?: boolean;
+  interpolate?: boolean;
+  pointsCount?: number;
+};
+
 type AssetPropertyBatchEdited = {
   name: "assetProperty.batchEdited";
   type: Asset["type"];
@@ -97,6 +142,23 @@ type AssetPropertiesEdited = {
   name: "assetProperties.edited";
   type: Asset["type"];
   properties: string[];
+};
+
+type CustomAttributeEdited = {
+  name: "customAttribute.edited";
+  assetType: CustomAttributeAssetType;
+  attributeType: CustomAttributeType;
+  property: string;
+  label: string;
+};
+
+type CustomAttributeBatchEdited = {
+  name: "customAttribute.batchEdited";
+  assetType: CustomAttributeAssetType;
+  attributeType: CustomAttributeType;
+  property: string;
+  label: string;
+  count: number;
 };
 
 type AssetStatusEdited = {
@@ -139,13 +201,13 @@ type MultiSelectUpdated = {
 
 type SelectionNarrowedToAssetType = {
   name: "selection.narrowedToAssetType";
-  type: Asset["type"];
+  type: Asset["type"] | "customerPoint" | "zone";
   count: number;
 };
 
 type SelectionNarrowedToPropertyValue = {
   name: "selection.narrowedToPropertyValue";
-  type: Asset["type"];
+  type: Asset["type"] | "customerPoint" | "zone";
   property: string;
   count: number;
 };
@@ -162,8 +224,31 @@ type SelectionCleared = {
 
 type SelectionZoomedTo = {
   name: "selection.zoomedTo";
-  source: "asset-panel" | "map-context-menu";
+  source: "toolbar" | "context-menu";
   count: number;
+  description: string;
+};
+
+type ZoneContentsSelected = {
+  name: "zone.contentsSelected";
+  source: "toolbar" | "context-menu";
+  zoneCount: number;
+  count: number;
+};
+
+type ZonesDeleted = {
+  name: "zones.deleted";
+  count: number;
+  source: AssetDeleted["source"];
+};
+
+type ZoneLabelChanged = {
+  name: "zone.labelChanged";
+  count?: number;
+};
+
+type ZoneLabelDuplicate = {
+  name: "zone.labelDuplicate";
 };
 
 type AssetDeselected = {
@@ -200,6 +285,13 @@ export type AssetsExcludedFromActiveTopology = {
   count: number;
 };
 
+export type ElevationsRecomputed = {
+  name: "elevations.recomputed";
+  mode: "missing" | "all";
+  resolved: number;
+  unresolved: number;
+};
+
 type WelcomeSeen = {
   name: "welcome.seen";
 };
@@ -211,6 +303,7 @@ export type WelcomeOpened = {
     | "inpIssues"
     | "geocodeError"
     | "missingCoordinatesError"
+    | "malformedCoordinatesError"
     | "invalidFilesError"
     | "toolbar"
     | "networkRequired";
@@ -222,6 +315,10 @@ type ModelBuilderOpened = {
 };
 type ModelBuilderCompleted = {
   name: "modelBuilder.completed";
+};
+type ModelBuilderClosed = {
+  name: "modelBuilder.closed";
+  step: string | null;
 };
 
 type ExamplesOpened = {
@@ -246,6 +343,22 @@ type SimulationExecuted = {
   name: "simulation.executed";
   source: "shortcut" | "toolbar";
   qualityType: QualitySimulationType;
+};
+
+type SimulationValidationIssuesFound = {
+  name: "simulation.validation.issuesFound";
+  issueCount: number;
+  rules: string[];
+};
+
+type SimulationValidationResolved = {
+  name: "simulation.validation.resolved";
+  choice: "fixFirst" | "runAnyway";
+};
+
+type SimulationValidationCancelled = {
+  name: "simulation.validation.cancelled";
+  at: "checking" | "issuesFound" | "failed";
 };
 
 type SimulationTimestepChanged = {
@@ -292,15 +405,40 @@ export type RecentFileOpened = {
   kind: "inp" | "project";
 };
 
+export type ConvertModelStarted = {
+  name: "convertModel.started";
+  source: string;
+  vendor: ConverterVendor;
+  canImportSynergi: boolean;
+};
+
+export type ConvertModelCompleted = {
+  name: "convertModel.completed";
+  source: string;
+  vendor: ConverterVendor;
+  counts: Record<string, number>;
+  issues: string[];
+};
+
+export type ConvertModelFailed = {
+  name: "convertModel.failed";
+  source: string;
+  vendor: ConverterVendor;
+  issues: string[];
+};
+
 export type ImportInpCompleted = {
   name: "importInp.completed";
   source: string;
   counts: Record<string, number>;
   headlossFormula: HeadlossFormula;
   units: EpanetUnitSystem;
+  isMadeByApp: boolean;
   issues: (
     | `unsupportedSection-${string}`
     | "nodesMissingCoordinates"
+    | "malformedCoordinates"
+    | "malformedVertices"
     | "invalidVertices"
     | "invalidCoordinates"
     | `nonDefaultOption-${string}`
@@ -349,17 +487,78 @@ type InpExported = {
   name: "inp.exported";
   source: string;
   isSaveAs?: boolean;
+  lsxRequired?: boolean;
+  includesRemoteSetpointPrvs?: boolean;
+  includesVariableSpeedPumps?: boolean;
+  includesFlowModulatingValves?: boolean;
+  scenariosCount: number;
+};
+
+type InpExportLsxLinkClicked = {
+  name: "inpExport.lsxLinkClicked";
 };
 
 type ProjectSaved = {
   name: "project.saved";
   source: string;
   isSaveAs?: boolean;
+  scenariosCount: number;
+};
+
+type ScenarioExportStarted = {
+  name: "scenarioExport.started";
+  source: string;
+  canUseScenarios: boolean;
+};
+
+type ScenarioExportedAsProject = {
+  name: "scenario.exportedAsProject";
+  source: string;
+  scenariosCount: number;
+  durationMs: number;
+};
+
+type ScenarioExportCanceled = {
+  name: "scenarioExport.canceled";
+  source: string;
 };
 
 export type OpenProjectStarted = {
   name: "openProject.started";
   source: string;
+};
+
+export type ProjectFileTagChecked = {
+  name: "projectFile.tagChecked";
+  source: string;
+  integrity: "intact" | "tampered" | "untagged";
+  savedPlan: string | null;
+  currentPlan: string;
+  planMatches: boolean;
+  projectName: string;
+};
+
+export type SessionRecoveryOffered = {
+  name: "sessionRecovery.offered";
+  count?: number;
+};
+
+export type SessionRecoveryRecovered = {
+  name: "sessionRecovery.recovered";
+  count?: number;
+};
+
+export type SessionRecoveryFailed = {
+  name: "sessionRecovery.failed";
+};
+
+export type SessionRecoveryDiscarded = {
+  name: "sessionRecovery.discarded";
+};
+
+export type SessionRecoveryIgnored = {
+  name: "sessionRecovery.ignored";
+  count: number;
 };
 
 export type ProjectFileOpened = {
@@ -368,12 +567,22 @@ export type ProjectFileOpened = {
   counts: Record<string, number>;
   headlossFormula: HeadlossFormula;
   units: EpanetUnitSystem;
+  scenariosCount: number;
+  uniqueId?: string;
+  filename?: string;
+  projectName?: string;
 };
 
 export type ProjectFileOpenFailed = {
   name: "projectFile.openFailed";
   source: string;
-  reason: "tooNew" | "corrupt" | "migrationFailed" | "internal" | "exception";
+  reason:
+    | "tooNew"
+    | "corrupt"
+    | "migrationFailed"
+    | "scenariosFailed"
+    | "internal"
+    | "exception";
   fileVersion?: number;
   appVersion?: number;
 };
@@ -406,6 +615,15 @@ type InpIssuesExpanded = {
 };
 type CoordinatesIssuesExpanded = {
   name: "coordinatesIssues.expanded";
+};
+type ConvertModelIssuesSeen = {
+  name: "convertModelIssues.seen";
+};
+type ConvertModelFailedSeen = {
+  name: "convertModelFailed.seen";
+};
+type ConvertModelIssuesExpanded = {
+  name: "convertModelIssues.expanded";
 };
 type NetworkProjectionSource = "import" | "map-panel";
 type NetworkProjectionSeen = {
@@ -453,6 +671,9 @@ type NetworkProjectionClosed = {
 type MissingCoordinatesSeen = {
   name: "missingCoordinates.seen";
 };
+type MalformedCoordinatesSeen = {
+  name: "malformedCoordinates.seen";
+};
 type InvalidFilesErrorSeen = {
   name: "invalidFilesError.seen";
 };
@@ -494,6 +715,71 @@ type UtilitiesVisited = {
   source: "menu";
 };
 
+type ScriptRunStarted = {
+  name: "script.runStarted";
+  scriptName: string;
+  source: "editor" | "list" | "shortcut";
+  canRunScripts: boolean;
+  isExample: boolean;
+  exampleId: string;
+  isDemoNetwork: boolean;
+};
+
+type ScriptRunFinished = {
+  name: "script.runFinished";
+  scriptName: string;
+  status: "success" | "error" | "cancelled";
+  durationMs: number;
+  isExample: boolean;
+  errorName: string;
+  consoleLinesCount: number;
+  attachmentsCount: number;
+  selectionSetsCount: number;
+  bookmarksCount: number;
+  appliedSelection: boolean;
+  zoomed: boolean;
+};
+
+type ScriptSaved = {
+  name: "script.saved";
+  scriptName: string;
+  kind: "new" | "update" | "exampleCopy";
+  source: "editor" | "list";
+  scriptsCount: number;
+};
+
+type ScriptDeleted = {
+  name: "script.deleted";
+  scriptsCount: number;
+};
+
+type ScriptAttachmentDownloaded = {
+  name: "script.attachmentDownloaded";
+  sizeKb: number;
+};
+
+type ScriptAttachmentsZipDownloaded = {
+  name: "script.attachmentsZipDownloaded";
+  count: number;
+  sizeKb: number;
+};
+
+type ScriptLogCopied = {
+  name: "script.logCopied";
+  linesCount: number;
+  hasError: boolean;
+};
+
+type ScriptErrorLineOpened = {
+  name: "script.errorLineOpened";
+  openedScript: boolean;
+};
+
+type ScriptingApiVisited = {
+  name: "scriptingApi.visited";
+  source: "menu" | "editor";
+};
+
 type RepoVisited = {
   name: "repo.visited";
   source: "welcome" | "menu";
@@ -501,17 +787,28 @@ type RepoVisited = {
 
 type FoundersPartnerLinkVisited = {
   name: "foundersPartner.visited";
-  link: "affinityWater" | "optimatics" | "foundersPartners" | "atkinsRealis";
+  link:
+    | "affinityWater"
+    | "optimatics"
+    | "foundersPartners"
+    | "atkinsRealis"
+    | "anglianWater"
+    | "tetraTech";
 };
 
 type SignInStarted = {
   name: "signIn.started";
-  source: "menu";
+  source: "menu" | "scenarioSwitcher" | "exportScenario";
 };
 
 type SignUpStarted = {
   name: "signUp.started";
   source: "menu";
+};
+
+export type SignOutStarted = {
+  name: "signOut.started";
+  source: "userMenu";
 };
 
 type LogOutCompleted = {
@@ -526,11 +823,6 @@ type SubscriptionStarted = {
 type PageReloaded = {
   name: "page.reloaded";
   source: "errorFallback";
-};
-
-type LayersPopoverOpened = {
-  name: "layersPopover.opened";
-  source: "toolbar";
 };
 
 type LayerOpacityChanged = {
@@ -551,6 +843,11 @@ type LanguageChanged = {
 
 type ImportCustomerPointsStarted = {
   name: "importCustomerPoints.started";
+  source: string;
+};
+
+type ImportZonesStarted = {
+  name: "importZones.started";
   source: string;
 };
 
@@ -580,6 +877,42 @@ type ImportCustomerPointsAllocationRulesSaved = {
 
 type ImportCustomerPointsAllocationRulesEditCanceled = {
   name: "importCustomerPoints.allocationRules.editCanceled";
+};
+
+type AllocateCustomerPointsPipeMode = {
+  name: "allocateCustomerPoints.pipeMode";
+  mode: "allPipes" | "selectedPipes";
+};
+
+type AllocateCustomerPointsCustomerMode = {
+  name: "allocateCustomerPoints.customerMode";
+  mode: "allCustomers" | "zoneCustomers";
+};
+
+type AllocateCustomerPointsZoneSelected = {
+  name: "allocateCustomerPoints.zoneSelected";
+};
+
+type AllocateCustomerPointsNextClicked = {
+  name: "allocateCustomerPoints.nextClicked";
+  pipeMode: "allPipes" | "selectedPipes";
+  customerMode: "allCustomers" | "zoneCustomers";
+  hasZone: boolean;
+};
+
+type AllocateCustomerPointsCompleted = {
+  name: "allocateCustomerPoints.completed";
+  count: number;
+  rulesCount: number;
+  allocatedCount: number;
+  disconnectedCount: number;
+  pipeMode: "allPipes" | "selectedPipes";
+  customerMode: "allCustomers" | "zoneCustomers";
+  hasZone: boolean;
+};
+
+type AllocateCustomerPointsBack = {
+  name: "allocateCustomerPoints.back";
 };
 
 type ImportCustomerPointsDataInputNoValidPoints = {
@@ -695,6 +1028,71 @@ type ImportCustomerPointsWarningDialogCancel = {
   name: "importCustomerPoints.warningDialog.cancel";
 };
 
+type ImportZonesWarningDialogProceed = {
+  name: "importZones.warningDialog.proceed";
+};
+
+type ImportZonesWarningDialogCancel = {
+  name: "importZones.warningDialog.cancel";
+};
+
+type ImportZonesWizardNext = {
+  name: "importZones.dataInput.next" | "importZones.dataMapping.next";
+};
+
+type ImportZonesWizardBack = {
+  name: "importZones.dataMapping.back";
+};
+
+type ImportZonesWizardCancel = {
+  name: "importZones.dataInput.cancel" | "importZones.dataMapping.cancel";
+};
+
+type ImportZonesFileLoaded = {
+  name: "importZones.dataInput.fileLoaded";
+  fileName: string;
+  featuresCount: number;
+  propertiesCount: number;
+  coordinateConversion: boolean;
+};
+
+type ImportZonesParseError = {
+  name: "importZones.dataInput.parseError";
+  fileName: string;
+  errorCode: string;
+};
+
+type ImportZonesSelectLabel = {
+  name: "importZones.dataMapping.selectLabel";
+  property: string;
+};
+
+type ImportZonesCompleted = {
+  name: "importZones.completed";
+  zonesCount: number;
+  mergedCount: number;
+};
+
+type ZoneVisibilityChanged = {
+  name: "map.zonesVisibility.changed";
+  visible: boolean;
+};
+
+type ZoneColorRuleChanged = {
+  name: "map.zonesColorRule.changed";
+  colorRule: string | null;
+};
+
+type ZoneDefaultColorChanged = {
+  name: "map.zonesDefaultColor.changed";
+  color: string;
+};
+
+type ZoneLabelRuleChanged = {
+  name: "map.zonesLabelRule.changed";
+  labelRule: string | null;
+};
+
 type EarlyAccessClickedGet = {
   name: "earlyAccess.clickedGet";
   source: "earlyAccessDialog";
@@ -720,8 +1118,10 @@ type CustomerPointsDisconnected = {
 
 type CustomerPointLabelChanged = {
   name: "customerPointActions.labelChanged";
-  oldLabel: string;
-  newLabel: string;
+  // Single edit reports the labels; a batch (data-table paste) reports a count.
+  oldLabel?: string;
+  newLabel?: string;
+  count?: number;
 };
 
 type CustomerPointLabelDuplicate = {
@@ -764,14 +1164,14 @@ type SimulationReportAssetClicked = {
   assetType: Asset["type"] | null;
 };
 
-type NetworkReviewOpened = {
-  name: "networkReview.opened";
-  source: string;
+type AssetPanelOpened = {
+  name: "assetPanel.opened";
+  source: "draw" | "modelAttributesValidation";
 };
 
-type NetworkReviewClosed = {
-  name: "networkReview.closed";
-  source: string;
+type NetworkReviewOpened = {
+  name: "networkReview.opened";
+  source: "auto";
 };
 
 type NetworkReviewChecked = {
@@ -779,7 +1179,8 @@ type NetworkReviewChecked = {
     | "networkReview.orphanAssets.opened"
     | "networkReview.proximityAnomalies.opened"
     | "networkReview.connectivityTrace.opened"
-    | "networkReview.crossingPipes.opened";
+    | "networkReview.crossingPipes.opened"
+    | "networkReview.modelAttributesValidation.opened";
 };
 
 type NetworkReviewChanged =
@@ -797,12 +1198,75 @@ type NetworkReviewChanged =
       units: string;
     };
 
+type OrphanAssetFixed = {
+  name: "networkReview.orphanAssets.fixed";
+  kind: string;
+  assetId: number;
+  type: string;
+};
+
+type SubnetworkDisabled = {
+  name: "networkReview.connectivityTrace.fixed";
+  linkCount: number;
+  nodeCount: number;
+};
+
+type CrossingPipesConnected = {
+  name: "networkReview.crossingPipes.fixed";
+  pipeIds: number[];
+};
+
+type ProximityDistanceSet = {
+  name: "networkReview.proximityAnomalies.distanceSet";
+  distance: number;
+  units: string;
+};
+
+type NetworkReviewCheckArchived = {
+  name:
+    | "networkReview.proximityAnomalies.archived"
+    | "networkReview.crossingPipes.archived";
+};
+
+type NetworkReviewCheckRestored = {
+  name:
+    | "networkReview.proximityAnomalies.restored"
+    | "networkReview.crossingPipes.restored";
+};
+
+type ProximityAnomalyConnected = {
+  name: "networkReview.proximityAnomalies.fixed";
+  nodeId: number;
+  pipeId: number;
+  distance: number;
+};
+
+type ModelAttributesValidationChanged = {
+  name: "networkReview.modelAttributesValidation.changed";
+  count: number;
+  rules: string[];
+};
+
 type NetworkReviewBack = {
   name:
     | "networkReview.orphanAssets.back"
     | "networkReview.proximityAnomalies.back"
     | "networkReview.connectivityTrace.back"
-    | "networkReview.crossingPipes.back";
+    | "networkReview.crossingPipes.back"
+    | "networkReview.modelAttributesValidation.back";
+  count: number;
+};
+
+type ModelAttributesValidationGroupOpened = {
+  name: "networkReview.modelAttributesValidation.groupOpened";
+  ruleId: string;
+  severity: "error" | "warning";
+  count: number;
+};
+
+type ModelAttributesValidationBulkSelected = {
+  name: "networkReview.modelAttributesValidation.bulkSelected";
+  ruleId: string;
   count: number;
 };
 
@@ -837,6 +1301,17 @@ type ScenarioDeleted = {
   name: "scenario.deleted";
   scenarioId: string;
   scenarioName: string;
+};
+
+export type PaywallLockSource = "rename" | "delete" | "duplicate";
+
+type ScenarioDuplicated = {
+  name: "scenario.duplicated";
+  sourceScenarioId: string;
+  scenarioId: string;
+  scenarioName: string;
+  isDemoNetwork: boolean;
+  scenariosCount: number;
 };
 
 type ScenarioRenamed = {
@@ -892,6 +1367,75 @@ type PatternsUncategorized = {
   count: number;
 };
 
+type CurvesExported = {
+  name: "curves.exported";
+  format: "csv" | "xlsx";
+  count: number;
+};
+
+type PatternsExported = {
+  name: "patterns.exported";
+  format: "csv" | "xlsx";
+  count: number;
+};
+
+type CurvesImportedFromFile = {
+  name: "curves.importedFromFile";
+  status: "success" | "error" | "partial";
+  format?: "csv" | "xlsx";
+  count: number;
+};
+
+type PatternsImportedFromFile = {
+  name: "patterns.importedFromFile";
+  status: "success" | "error" | "partial";
+  format?: "csv" | "xlsx";
+  count: number;
+};
+
+type PipeLibraryOpened = {
+  name: "pipeLibrary.opened";
+  source: "toolbar";
+  canUsePipeLibrary: boolean;
+};
+
+type PipeLibraryMaterialChanged = {
+  name: "pipeLibrary.material.changed";
+  action: "added" | "renamed" | "duplicated" | "deleted";
+};
+
+type PipeLibraryRoughnessRowChanged = {
+  name: "pipeLibrary.roughnessRow.changed";
+  action: "insertedAbove" | "insertedBelow" | "deleted";
+};
+
+type PipeLibraryImportedFromModel = {
+  name: "pipeLibrary.importedFromModel";
+  materialsDetected: number;
+};
+
+type PipeLibrarySaved = {
+  name: "pipeLibrary.saved";
+  materialsCount: number;
+};
+
+type PipeLibraryExported = {
+  name: "pipeLibrary.exported";
+  format: "csv" | "xlsx";
+};
+
+type PipeLibraryImportedFromFile = {
+  name: "pipeLibrary.importedFromFile";
+  materialsCount: number;
+  status: "success" | "partial" | "error";
+  format?: "csv" | "xlsx";
+};
+
+type PipeLibraryClosed = {
+  name: "pipeLibrary.closed";
+  hadChanges: boolean;
+};
+
 type PumpLibraryOpened = {
   name: "pumpLibrary.opened";
   source: "toolbar" | "pump";
@@ -929,6 +1473,19 @@ type CurveDeleted = {
 type CurveChanged = {
   name: "curve.changed";
   property: "label" | "points" | "type";
+};
+
+type CustomAttributesOpened = {
+  name: "customAttributes.opened";
+  source: "toolbar";
+  canUseCustomAttributes: boolean;
+};
+
+type CustomAttributesUpdated = {
+  name: "customAttributes.updated";
+  count: number;
+  newLabels: string[];
+  newAttributeTypes: CustomAttributeType[];
 };
 
 type AssetDataExported = {
@@ -970,9 +1527,18 @@ export type UserEvent =
   | LinkReversed
   | AssetSelected
   | AssetDeselected
+  | ZoneContentsSelected
+  | ZoneLabelChanged
+  | ZoneLabelDuplicate
+  | AssetControlChanged
+  | AssetControlRemoved
+  | AssetControlVariableSpeedControlChanged
+  | AssetControlFlowModulatingControlChanged
   | AssetPropertyEdited
   | AssetPropertyBatchEdited
   | AssetPropertiesEdited
+  | CustomAttributeEdited
+  | CustomAttributeBatchEdited
   | AssetStatusEdited
   | AssetDefinitionTypeEdited
   | PumpCurveEdited
@@ -981,6 +1547,7 @@ export type UserEvent =
   | AssetDeleted
   | AssetsIncludedInActiveTopology
   | AssetsExcludedFromActiveTopology
+  | ElevationsRecomputed
   | WelcomeSeen
   | WelcomeOpened
   | WelcomeHidden
@@ -988,6 +1555,9 @@ export type UserEvent =
   | UnsavedChangesSeen
   | ExampleModelClicked
   | SimulationExecuted
+  | SimulationValidationIssuesFound
+  | SimulationValidationResolved
+  | SimulationValidationCancelled
   | SimulationTimestepChanged
   | SimulationPlaybackStopped
   | SimulationPlaybackStarted
@@ -996,6 +1566,12 @@ export type UserEvent =
   | OpenInpStarted
   | RecentFileOpened
   | ImportInpCompleted
+  | ConvertModelStarted
+  | ConvertModelCompleted
+  | ConvertModelFailed
+  | ConvertModelIssuesSeen
+  | ConvertModelFailedSeen
+  | ConvertModelIssuesExpanded
   | FilesDropped
   | InvalidFilesErrorSeen
   | DownloadErrorSeen
@@ -1003,7 +1579,11 @@ export type UserEvent =
   | NewModelCompleted
   | ModelSaved
   | InpExported
+  | InpExportLsxLinkClicked
   | ProjectSaved
+  | ScenarioExportStarted
+  | ScenarioExportedAsProject
+  | ScenarioExportCanceled
   | OpenProjectStarted
   | ProjectFileOpened
   | ProjectFileOpenFailed
@@ -1020,6 +1600,7 @@ export type UserEvent =
   | InpIssuesExpanded
   | CoordinatesIssuesExpanded
   | MissingCoordinatesSeen
+  | MalformedCoordinatesSeen
   | NetworkProjectionSeen
   | NetworkProjectionSearched
   | NetworkProjectionSelected
@@ -1033,14 +1614,23 @@ export type UserEvent =
   | HelpCenterVisited
   | RoadmapVisited
   | UtilitiesVisited
+  | ScriptingApiVisited
+  | ScriptRunStarted
+  | ScriptRunFinished
+  | ScriptSaved
+  | ScriptDeleted
+  | ScriptAttachmentDownloaded
+  | ScriptAttachmentsZipDownloaded
+  | ScriptLogCopied
+  | ScriptErrorLineOpened
   | RepoVisited
   | FoundersPartnerLinkVisited
   | SignUpStarted
   | SignInStarted
+  | SignOutStarted
   | LogOutCompleted
   | SubscriptionStarted
   | PageReloaded
-  | LayersPopoverOpened
   | LayerOpacityChanged
   | LanguageListOpened
   | LanguageChanged
@@ -1050,6 +1640,12 @@ export type UserEvent =
   | ImportCustomerPointsAllocationRulesEditStarted
   | ImportCustomerPointsAllocationRulesSaved
   | ImportCustomerPointsAllocationRulesEditCanceled
+  | AllocateCustomerPointsPipeMode
+  | AllocateCustomerPointsCustomerMode
+  | AllocateCustomerPointsZoneSelected
+  | AllocateCustomerPointsNextClicked
+  | AllocateCustomerPointsCompleted
+  | AllocateCustomerPointsBack
   | ImportCustomerPointsDataInputNoValidPoints
   | ImportCustomerPointsDataInputParseError
   | ImportCustomerPointsDataInputUnsupportedFormat
@@ -1065,6 +1661,20 @@ export type UserEvent =
   | ImportCustomerPointsWizardCancel
   | ImportCustomerPointsWarningDialogProceed
   | ImportCustomerPointsWarningDialogCancel
+  | ImportZonesWarningDialogProceed
+  | ImportZonesWarningDialogCancel
+  | ImportZonesStarted
+  | ImportZonesWizardNext
+  | ImportZonesWizardBack
+  | ImportZonesWizardCancel
+  | ImportZonesFileLoaded
+  | ImportZonesParseError
+  | ImportZonesSelectLabel
+  | ImportZonesCompleted
+  | ZoneVisibilityChanged
+  | ZoneColorRuleChanged
+  | ZoneDefaultColorChanged
+  | ZoneLabelRuleChanged
   | EarlyAccessClickedGet
   | CustomerPointsConnectStarted
   | CustomerPointsReconnectStarted
@@ -1073,6 +1683,7 @@ export type UserEvent =
   | CustomerPointLabelDuplicate
   | CustomerPointCreated
   | CustomerPointsRemoved
+  | ZonesDeleted
   | CustomerPointsConnectedCompleted
   | CustomerPointPanelOpened
   | CustomerPointPanelZoomTo
@@ -1080,21 +1691,33 @@ export type UserEvent =
   | SimulationReportAssetClicked
   | ModelBuilderOpened
   | ModelBuilderCompleted
+  | ModelBuilderClosed
   | ExamplesOpened
   | ImportCustomerPointsDataSelectDemandProperty
   | ImportCustomerPointsDataSelectLabelProperty
   | ImportCustomerPointsDataSelectPatternProperty
+  | AssetPanelOpened
   | NetworkReviewOpened
-  | NetworkReviewClosed
   | NetworkReviewChecked
   | NetworkReviewBack
   | NetworkReviewChanged
+  | OrphanAssetFixed
+  | SubnetworkDisabled
+  | CrossingPipesConnected
+  | ProximityAnomalyConnected
+  | NetworkReviewCheckArchived
+  | NetworkReviewCheckRestored
+  | ProximityDistanceSet
+  | ModelAttributesValidationChanged
+  | ModelAttributesValidationGroupOpened
+  | ModelAttributesValidationBulkSelected
   | SidePanelOpened
   | SidePanelClosed
   | ScenarioSwitcherOpened
   | ScenarioCreated
   | ScenarioSwitched
   | ScenarioDeleted
+  | ScenarioDuplicated
   | ScenarioRenamed
   | ScenarioDeleteDialogCancel
   | ScenarioToggled
@@ -1135,6 +1758,12 @@ export type UserEvent =
   | { name: "map.customerPoints.hidden" }
   | { name: "map.defaultColor.changed"; type: string }
   | {
+      name: "map.nodeSize.changed";
+      property: "minSize" | "maxSize" | "minVisibleZoom";
+      oldValue: number;
+      newValue: number;
+    }
+  | {
       name: "map.colorBy.changed";
       type: string;
       subtype: string;
@@ -1142,6 +1771,7 @@ export type UserEvent =
     }
   | { name: "map.colorRamp.changed"; rampName: string; property: string }
   | { name: "map.colorRamp.reversed"; rampName: string; property: string }
+  | { name: "map.zonePalette.changed"; paletteName: string }
   | { name: "colorRange.rangeMode.changed"; mode: string; property: string }
   | {
       name: "colorRange.classes.changed";
@@ -1184,7 +1814,7 @@ export type UserEvent =
       name: "checkout.started";
       plan: string;
       paymentType: string;
-      source?: string;
+      source?: UpgradeOrigin;
       sourceFeature?: string;
     }
   | { name: "studentLogin.clicked" }
@@ -1194,18 +1824,131 @@ export type UserEvent =
       name: "upgradeButton.clicked";
       source: "menu" | "customLayers" | "customElevations";
     }
+  | {
+      name: "billingPortal.opened";
+      source: "menu" | "userMenu";
+      trial: "running" | "ended" | "none";
+    }
+  | {
+      name: "upgradeDialog.seen";
+      source?: UpgradeOrigin;
+      sourceFeature?: string;
+    }
+  | {
+      name: "upgradeDialog.dismissed";
+      source?: UpgradeOrigin;
+      sourceFeature?: string;
+    }
   | { name: "simulationSettings.opened"; source: string }
   | { name: "controls.opened"; source: string }
   | { name: "patternsLibrary.opened"; source: string }
   | { name: "assetControls.opened"; source: string }
-  | { name: "dataTables.opened"; source: string }
-  | { name: "bottomPanel.tabSwitched"; tabId: string }
+  | {
+      name: "dataTables.opened";
+      source: string;
+      scope?: string;
+      tables?: string[];
+    }
+  | {
+      name: "dataTables.closed";
+      source: string;
+      panelType: string;
+    }
+  | { name: "bottomPanel.tabSwitched"; panelType: string }
+  | {
+      name: "bottomPanel.tabReordered";
+      panelType: string;
+      fromIndex: number;
+      toIndex: number;
+    }
   | {
       name: "bottomPanel.toggled";
       open: boolean;
-      activeTabId: string | null;
+      activePanelType: string | null;
       source: "toolbar" | "shortcut";
     }
+  | {
+      name: "leftPanel.toggled";
+      open: boolean;
+      activePanelType: string | null;
+      source: "toolbar" | "shortcut" | "activityBar";
+    }
+  | { name: "leftPanel.tabSwitched"; panelType: string }
+  | { name: "rightPanel.tabSwitched"; panelType: string }
+  | {
+      name: "verticalPanel.toggled";
+      open: boolean;
+      activePanelType: string | null;
+      source: "toolbar";
+    }
+  | { name: "verticalPanel.tabSwitched"; panelType: string }
+  | {
+      name: "verticalPanel.tabReordered";
+      panelType: string;
+      fromIndex: number;
+      toIndex: number;
+    }
+  | {
+      name: "rightPanel.tabReordered";
+      panelType: string;
+      fromIndex: number;
+      toIndex: number;
+    }
+  | {
+      name: "leftPanel.tabReordered";
+      panelType: string;
+      fromIndex: number;
+      toIndex: number;
+    }
+  | {
+      name: "selectionSet.created";
+      count: number;
+      totalSets: number;
+      inGroup: boolean;
+      source: CollectionDraftSource;
+    }
+  | {
+      name: "selectionSet.applied";
+      count: number;
+      missing: number;
+      zoom: boolean;
+      source: "panel";
+    }
+  | {
+      name: "selectionSet.draftStarted";
+      source: CollectionDraftSource;
+      canManageCollections: boolean;
+    }
+  | { name: "selectionSet.renamed"; source: "panel" }
+  | { name: "selectionSet.moved"; source: "panel" }
+  | { name: "selectionSet.deleted"; source: "panel" }
+  | {
+      name: "selectionSetGroup.created";
+      depth: number;
+      totalGroups: number;
+      source: "panel";
+    }
+  | { name: "selectionSetGroup.renamed"; source: "panel" }
+  | { name: "selectionSetGroup.moved"; depth: number; source: "panel" }
+  | {
+      name: "selectionSetGroup.deleted";
+      sets: number;
+      subgroups: number;
+      source: "panel";
+    }
+  | {
+      name: "bookmark.draftStarted";
+      source: CollectionDraftSource;
+      canManageCollections: boolean;
+    }
+  | {
+      name: "bookmark.created";
+      totalBookmarks: number;
+      source: CollectionDraftSource;
+    }
+  | { name: "bookmark.visited"; source: "panel" }
+  | { name: "bookmark.renamed"; source: "panel" }
+  | { name: "bookmark.deleted"; source: "panel" }
   | {
       name: "dataTables.cellEdited";
       type: Asset["type"];
@@ -1214,7 +1957,8 @@ export type UserEvent =
     }
   | {
       name: "dataTables.copied";
-      type: Asset["type"] | "customerPoint";
+      type: Asset["type"] | "customerPoint" | "zone";
+      requestedRows: number;
       rows: number;
       cols: number;
       allRows: boolean;
@@ -1224,7 +1968,7 @@ export type UserEvent =
     }
   | {
       name: "dataTables.pasted";
-      type: Asset["type"] | "customerPoint";
+      type: Asset["type"] | "customerPoint" | "zone";
       rows: number;
       cols: number;
       allRows: boolean;
@@ -1233,13 +1977,13 @@ export type UserEvent =
     }
   | {
       name: "dataTables.sorted";
-      type: Asset["type"] | "customerPoint";
+      type: Asset["type"] | "customerPoint" | "zone";
       property: string;
       direction: "asc" | "desc";
     }
   | {
       name: "dataTables.selectedInMap";
-      type: Asset["type"] | "customerPoint";
+      type: Asset["type"] | "customerPoint" | "zone";
       source: "cell-context" | "gutter-context";
       count: number;
     }
@@ -1288,25 +2032,35 @@ export type UserEvent =
   | {
       name: "pipeDrawingDefaults.changed";
       property: "diameter" | "roughness";
-      newValue: number;
+      newValue: number | null;
     }
   | { name: "unexpectedError.seen" }
+  | { name: "simulationOutOfMemory.seen" }
+  | { name: "simulationStorageError.seen" }
   | { name: "fitMapToNetworkExtent.clicked" }
   | {
       name: "controls.changed";
       simpleControlsCount: number;
       rulesCount: number;
     }
-  | { name: "paywall.seen"; feature: PaywallFeature }
-  | { name: "paywall.clickedChoosePlan"; feature: PaywallFeature }
-  | { name: "paywall.clickedPersonal"; feature: PaywallFeature }
-  | { name: "paywall.clickedTryDemo"; feature: PaywallFeature }
+  | {
+      name: "paywallLock.clicked";
+      feature: PaywallFeature;
+      source?: PaywallLockSource;
+    }
+  | {
+      name: "paywall.seen";
+      feature: PaywallFeature;
+      type: "paywall" | "upgrade";
+    }
   | { name: "paywall.clickedExplorePlans"; feature: PaywallFeature }
   | { name: "paywall.dismissed"; feature: PaywallFeature }
   | { name: "priorityAccess.seen"; featureName: string }
   | { name: "priorityAccess.clickedUpgrade"; featureName: string }
   | { name: "priorityAccess.dismissed"; featureName: string }
-  | { name: "trial.activated"; feature: PaywallFeature }
+  | { name: "trial.clickedStart"; source: UpgradeOrigin; feature: string }
+  | { name: "trial.activated" }
+  | { name: "trial.refused" }
   | { name: "firstScenario.dialogEnabled" }
   | { name: "firstScenario.dialogHidden" }
   | {
@@ -1319,7 +2073,7 @@ export type UserEvent =
       query: string;
       queryLength: number;
       resultsCount: number;
-      selectedKind?: "asset" | "customerPoint";
+      selectedKind?: "asset" | "customerPoint" | "zone";
       selectedAssetType?: Asset["type"];
       selectedFromRecents?: boolean;
       selectedIndex?: number;
@@ -1331,6 +2085,18 @@ export type UserEvent =
   | PatternsUpdated
   | PatternsDiscarded
   | PatternsUncategorized
+  | PatternsExported
+  | CurvesExported
+  | PatternsImportedFromFile
+  | CurvesImportedFromFile
+  | PipeLibraryOpened
+  | PipeLibraryMaterialChanged
+  | PipeLibraryRoughnessRowChanged
+  | PipeLibraryImportedFromModel
+  | PipeLibrarySaved
+  | PipeLibraryExported
+  | PipeLibraryImportedFromFile
+  | PipeLibraryClosed
   | PumpLibraryOpened
   | CurveLibraryOpened
   | CurvesUpdated
@@ -1339,11 +2105,19 @@ export type UserEvent =
   | CurveAdded
   | CurveDeleted
   | CurveChanged
+  | CustomAttributesOpened
+  | CustomAttributesUpdated
   | AssetDataExported
   | SimulationResultsExported
   | CustomGraphExported
   | CustomGraphOpened
-  | CustomGraphPropertySelected;
+  | CustomGraphPropertySelected
+  | SessionRecoveryOffered
+  | SessionRecoveryRecovered
+  | ProjectFileTagChecked
+  | SessionRecoveryFailed
+  | SessionRecoveryDiscarded
+  | SessionRecoveryIgnored;
 
 const debugPostHog = {
   capture: (...data: any[]) => {
@@ -1358,13 +2132,19 @@ const debugPostHog = {
     // eslint-disable-next-line
     console.log("USER_TRACKING:RESET");
   },
+  setUserProperties: (...data: any[]) => {
+    // eslint-disable-next-line
+    console.log("USER_TRACKING:SET_USER_PROPERTIES", ...data);
+  },
 };
 
 export const useUserTracking = () => {
   const posthog = usePostHog();
   const { privacySettings } = usePrivacySettings();
 
-  const isAnalyticsDisabled = privacySettings?.skipAnalytics === true;
+  const isAnalyticsDisabled =
+    process.env.NEXT_PUBLIC_SKIP_USER_TRACKING === "true" ||
+    privacySettings?.skipAnalytics === true;
 
   const capture = useCallback(
     (event: UserEvent) => {
@@ -1391,6 +2171,14 @@ export const useUserTracking = () => {
     [posthog],
   );
 
+  const setUserProperties = useCallback(
+    (properties: Metadata) => {
+      posthog.setPersonProperties(properties);
+      isDebugOn && debugPostHog.setUserProperties(properties);
+    },
+    [posthog],
+  );
+
   const isIdentified = useCallback(() => {
     return posthog._isIdentified();
   }, [posthog]);
@@ -1407,7 +2195,21 @@ export const useUserTracking = () => {
   }, [posthog]);
 
   return useMemo(
-    () => ({ identify, capture, isIdentified, reset, reloadFeatureFlags }),
-    [identify, capture, isIdentified, reset, reloadFeatureFlags],
+    () => ({
+      identify,
+      capture,
+      isIdentified,
+      reset,
+      reloadFeatureFlags,
+      setUserProperties,
+    }),
+    [
+      identify,
+      capture,
+      isIdentified,
+      reset,
+      reloadFeatureFlags,
+      setUserProperties,
+    ],
   );
 };

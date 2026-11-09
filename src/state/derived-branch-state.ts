@@ -1,27 +1,39 @@
 import { atom } from "jotai";
 import type { Getter, Setter } from "jotai";
 import { unwrap } from "jotai/utils";
-import type { HydraulicModel } from "src/hydraulic-model";
-import type { BranchState } from "src/state/branch-state";
-import { MomentLog } from "src/lib/persistence/moment-log";
-import { USelection } from "src/selection/selection";
+import {
+  type HydraulicModel,
+  initializeHydraulicModel,
+} from "src/hydraulic-model";
+import {
+  isBranchLoaded,
+  type BranchState,
+  type UnloadedBranchState,
+} from "src/state/branch-state";
+import { SessionHistory } from "src/lib/persistence/session-history";
+import { catchErrors } from "src/infra/errors";
+import { captureWarning } from "src/infra/error-tracking";
+import { USelection } from "src/selection";
 import { branchStateAtom } from "src/state/branch-state";
-import { dataAtom } from "src/state/data";
-import { inpFileInfoAtom, projectFileInfoAtom } from "src/state/file-system";
-import { nullHydraulicModel } from "src/state/hydraulic-model";
+import { selectionAtom } from "src/state/selection";
 import { worktreeAtom } from "src/state/scenarios";
 import {
   type SimulationState,
   initialSimulationState,
   simulationStepAtom,
 } from "src/state/simulation";
-import type { ResultsReader } from "src/simulation/results-reader";
+import type { ResultsReader } from "@epanet-js/simulation";
 import {
   type SimulationSettings,
   defaultSimulationSettings,
 } from "src/simulation/simulation-settings";
 
-function getActiveBranchState(get: Getter): BranchState | undefined {
+export const emptyHydraulicModel = (): HydraulicModel =>
+  initializeHydraulicModel({});
+
+function getActiveBranchState(
+  get: Getter,
+): BranchState | UnloadedBranchState | undefined {
   const worktree = get(worktreeAtom);
   return get(branchStateAtom).get(worktree.activeBranchId);
 }
@@ -34,7 +46,16 @@ function updateActiveBranchState(
   const worktree = get(worktreeAtom);
   const branchStates = get(branchStateAtom);
   const currentState = branchStates.get(worktree.activeBranchId);
-  if (!currentState) return;
+  if (!currentState) {
+    captureWarning("Branch state missing on active branch update", undefined, {
+      branchState: {
+        activeBranchId: worktree.activeBranchId,
+        mainId: worktree.mainId,
+        knownBranchIds: [...branchStates.keys()],
+      },
+    });
+    return;
+  }
   const updated = new Map(branchStates);
   updated.set(worktree.activeBranchId, { ...currentState, ...update });
   set(branchStateAtom, updated);
@@ -42,7 +63,10 @@ function updateActiveBranchState(
 
 export const stagingModelDerivedAtom = atom(
   (get): HydraulicModel => {
-    return getActiveBranchState(get)?.hydraulicModel ?? nullHydraulicModel;
+    const state = getActiveBranchState(get);
+    return state && isBranchLoaded(state)
+      ? state.hydraulicModel
+      : emptyHydraulicModel();
   },
   (get, set, value: HydraulicModel) => {
     updateActiveBranchState(get, set, {
@@ -54,11 +78,21 @@ export const stagingModelDerivedAtom = atom(
 
 export const baseModelDerivedAtom = atom((get): HydraulicModel => {
   const worktree = get(worktreeAtom);
-  const branchStates = get(branchStateAtom);
-  return (
-    branchStates.get(worktree.mainId)?.hydraulicModel ?? nullHydraulicModel
-  );
+  const mainState = get(branchStateAtom).get(worktree.mainId);
+  return mainState && isBranchLoaded(mainState)
+    ? mainState.hydraulicModel
+    : emptyHydraulicModel();
 });
+
+export const baseSimulationSettingsDerivedAtom = atom(
+  (get): SimulationSettings => {
+    const worktree = get(worktreeAtom);
+    return (
+      get(branchStateAtom).get(worktree.mainId)?.simulationSettings ??
+      defaultSimulationSettings
+    );
+  },
+);
 
 export const baseSimulationDerivedAtom = atom((get): SimulationState => {
   const worktree = get(worktreeAtom);
@@ -68,21 +102,21 @@ export const baseSimulationDerivedAtom = atom((get): SimulationState => {
   );
 });
 
-export const momentLogDerivedAtom = atom(
-  (get): MomentLog => {
-    return getActiveBranchState(get)?.momentLog ?? new MomentLog();
+export const sessionHistoryDerivedAtom = atom(
+  (get): SessionHistory => {
+    return getActiveBranchState(get)?.sessionHistory ?? new SessionHistory();
   },
-  (get, set, value: MomentLog) => {
-    updateActiveBranchState(get, set, { momentLog: value });
+  (get, set, value: SessionHistory) => {
+    updateActiveBranchState(get, set, { sessionHistory: value });
   },
 );
 
 export const canUndoDerivedAtom = atom((get): boolean => {
-  return get(momentLogDerivedAtom).nextUndo() !== null;
+  return get(sessionHistoryDerivedAtom).nextUndo() !== null;
 });
 
 export const canRedoDerivedAtom = atom((get): boolean => {
-  return get(momentLogDerivedAtom).nextRedo() !== null;
+  return get(sessionHistoryDerivedAtom).nextRedo() !== null;
 });
 
 export const simulationDerivedAtom = atom(
@@ -115,9 +149,17 @@ const simulationResultsAsyncDerivedAtom = atom(
       simulationState.epsResultsReader &&
       simulationStep !== null
     ) {
-      return await simulationState.epsResultsReader.getResultsForTimestep(
-        simulationStep,
+      const results = await catchErrors(
+        () =>
+          simulationState.epsResultsReader!.getResultsForTimestep(
+            simulationStep,
+          ),
+        {
+          as: "simulationResults: failed to read results",
+          onUnexpected: "warn",
+        },
       );
+      return results ?? null;
     }
     return null;
   },
@@ -151,25 +193,24 @@ export const customerPointsDerivedAtom = atom((get) => {
   return get(stagingModelDerivedAtom).customerPoints;
 });
 
-export const selectedFeaturesDerivedAtom = atom((get) => {
-  const data = get(dataAtom);
-  const hydraulicModel = get(stagingModelDerivedAtom);
-  return USelection.getSelectedFeatures({ ...data, hydraulicModel });
+export const selectedAssetsDerivedAtom = atom((get) => {
+  const selection = get(selectionAtom);
+  const { assets } = get(stagingModelDerivedAtom);
+  const features = [];
+  for (const id of USelection.getAssetIds(selection)) {
+    const asset = assets.get(id);
+    if (asset) features.push(asset);
+  }
+  return features;
 });
 
-export const hasUnsavedChangesDerivedAtom = atom<boolean>((get) => {
-  const projectInfo = get(projectFileInfoAtom);
-  const hydraulicModel = get(stagingModelDerivedAtom);
-
-  if (projectInfo) {
-    return projectInfo.modelVersion !== hydraulicModel.version;
+export const selectedCustomerPointsDerivedAtom = atom((get) => {
+  const selection = get(selectionAtom);
+  const { customerPoints } = get(stagingModelDerivedAtom);
+  const result = [];
+  for (const id of USelection.getCustomerPointIds(selection)) {
+    const cp = customerPoints.get(id);
+    if (cp) result.push(cp);
   }
-
-  const fileInfo = get(inpFileInfoAtom);
-  if (fileInfo) {
-    return fileInfo.modelVersion !== hydraulicModel.version;
-  }
-
-  const momentLog = get(momentLogDerivedAtom);
-  return momentLog.getDeltas().length > 0;
+  return result;
 });

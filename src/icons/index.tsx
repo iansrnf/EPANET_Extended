@@ -4,8 +4,14 @@ import {
   ArrowDownWideNarrow,
   ArrowDownUp,
   ArrowRight,
+  ArrowLeft,
   ArrowUpNarrowWide,
+  Archive,
+  GitPullRequestArrow,
   Bell,
+  BookOpen,
+  BookText,
+  Bookmark,
   ChartColumn,
   Check,
   ChevronDown,
@@ -29,8 +35,10 @@ import {
   File,
   FileBox,
   FileCode,
+  Braces,
   FilePlus,
   FilePlus2,
+  Database,
   FileSpreadsheet,
   FileText,
   Folder,
@@ -47,8 +55,11 @@ import {
   Info,
   Keyboard,
   Lasso,
+  Layers,
   Link2,
   Link2Off,
+  ListChecks,
+  ListPlus,
   Lock,
   Locate,
   LocateOff,
@@ -79,9 +90,11 @@ import {
   ScanText,
   Search,
   Settings,
+  SquareArrowOutUpRight,
   SquareDashed,
   SquareDashedMousePointer,
   SquareStack,
+  SquircleDashed,
   Star,
   Sun,
   Table,
@@ -100,13 +113,28 @@ import {
   CirclePause,
   Zap,
   ChartLine,
+  FolderDown,
+  FolderUp,
+  Clock,
+  GraduationCap,
+  Hammer,
+  SlidersHorizontal,
+  InfinityIcon as Infinite,
+  Gauge,
+  Bot,
+  Sparkles,
+  Funnel,
+  Tag,
+  ArrowUp,
 } from "lucide-react";
+import clsx from "clsx";
 
 export const iconSizes = {
   sm: 12,
   md: 16,
   lg: 20,
   xl: 24,
+  "2xl": 96,
 } as const;
 
 export type IconSizeKey = keyof typeof iconSizes;
@@ -125,32 +153,56 @@ export const getPixels = (rawSize: IconSizeKey | number) => {
   return iconSizes[rawSize];
 };
 
+export const iconClassName = (className?: string) =>
+  clsx("shrink-0", className);
+
 const icon = (Icon: LucideIcon): React.FC<IconProps> => {
   return ({ size: rawSize = "md", ...props }) => {
     const pixels = getPixels(rawSize);
 
-    return <Icon size={pixels} {...props} />;
+    return (
+      <Icon
+        size={pixels}
+        {...props}
+        className={iconClassName(props.className)}
+      />
+    );
   };
 };
 
 export const HelpIcon = icon(CircleQuestionMark);
+export const DocsIcon = icon(BookOpen);
 export const RoadmapIcon = icon(MapIcon);
+export const MapStylingIcon = icon(Layers);
 export const MapPinnedIcon = icon(MapPinned);
 export const MapPinXInsideIcon = icon(MapPinXInside);
 export const UtilitiesIcon = icon(ToolCase);
 export const InfoIcon = icon(Info);
 export const SuccessIcon = icon(CircleCheck);
 export const WarningIcon = icon(TriangleAlert);
+export const ExternalLinkIcon = icon(SquareArrowOutUpRight);
 export const ErrorIcon = icon(CircleX);
 export const StopSimulationIcon = icon(CirclePause);
 export const UserIcon = icon(User);
 export const RefreshIcon = icon(RefreshCw);
+export const ClockIcon = icon(Clock);
+export const GraduationCapIcon = icon(GraduationCap);
+export const HammerIcon = icon(Hammer);
+export const SlidersHorizontalIcon = icon(SlidersHorizontal);
+export const InfiniteIcon = icon(Infinite);
+export const GaugeIcon = icon(Gauge);
+export const BotIcon = icon(Bot);
+export const AiIcon = icon(Sparkles);
+export const FilterIcon = icon(Funnel);
+export const TagIcon = icon(Tag);
+export const ArrowUpIcon = icon(ArrowUp);
 export const SpinnerIcon: React.FC<IconProps> = (props) => (
   <RefreshIcon {...props} className={`${props.className ?? ""} animate-spin`} />
 );
 export const PencilIcon = icon(Pencil);
 export const RedrawIcon = icon(PencilLine);
 export const ArrowRightIcon = icon(ArrowRight);
+export const ArrowLeftIcon = icon(ArrowLeft);
 export const ChevronUpIcon = icon(ChevronUp);
 export const ChevronRightIcon = icon(ChevronRight);
 export const ChevronDownIcon = icon(ChevronDown);
@@ -168,9 +220,12 @@ export const FileAddIcon = icon(FilePlus);
 export const FilePlusCornerIcon = icon(FilePlus2);
 export const FileTextIcon = icon(FileText);
 export const FileSpreadsheetIcon = icon(FileSpreadsheet);
+export const DatabaseIcon = icon(Database);
 export const FileBoxIcon = icon(FileBox);
 export const FolderIcon = icon(Folder);
 export const FolderOpenIcon = icon(FolderOpen);
+export const FolderInputIcon = icon(FolderUp);
+export const FolderOutputIcon = icon(FolderDown);
 export const DeleteIcon = icon(Trash);
 export const ZoomToIcon = icon(Crosshair);
 export const ActivateTopologyIcon = icon(Route);
@@ -184,6 +239,8 @@ export const MenuIcon = icon(Menu);
 export const NewFromExampleIcon = icon(Sun);
 export const AddIcon = icon(Plus);
 export const UndoIcon = icon(Undo2);
+export const ArchiveIcon = icon(Archive);
+export const ConnectToPipeIcon = icon(GitPullRequestArrow);
 export const RedoIcon = icon(Redo2);
 export const SaveIcon = icon(Save);
 export const SaveAllIcon = icon(SaveAll);
@@ -215,6 +272,7 @@ export const DisconnectIcon = icon(Link2Off);
 export const HouseIcon = icon(House);
 export const ConnectivityTraceIcon = icon(Waypoints);
 export const OrphanNodeIcon = icon(CircleDotDashed);
+export const EmptyStateIcon = icon(SquircleDashed);
 export const NoIssuesIcon = icon(Goal);
 export const RectangularSelectionIcon = icon(SquareDashed);
 export const FreeHandSelectionIcon = icon(Lasso);
@@ -226,17 +284,24 @@ export const MoreActionsIcon = icon(EllipsisVertical);
 export const ScenarioIcon = icon(GitBranch);
 export const AddScenarioIcon = icon(GitBranchPlus);
 export const MainModelIcon = icon(Lock);
+export const PaywallLockIcon = icon(Lock);
 export const LocateIcon = icon(Locate);
 export const LocateOffIcon = icon(LocateOff);
 export const ControlsIcon = icon(FileCode);
+export const ScriptsIcon = icon(Braces);
 export const PatternsIcon = icon(ChartColumn);
 export const RenameIcon = icon(TextCursorInput);
 export const DuplicateIcon = icon(Copy);
 export const CopyIcon = icon(Copy);
 export const ClipboardPasteIcon = icon(ClipboardPaste);
 export const TableIcon = icon(Table);
+export const CustomAttributesIcon = icon(ListPlus);
 export const SelectPathIcon = icon(SquareDashedMousePointer);
 export const ChartLineIcon = icon(ChartLine);
+export const PipeLibraryIcon = icon(BookText);
+export const NetworkReviewIcon = icon(ListChecks);
+export const BookmarkIcon = icon(Bookmark);
+export { CustomZonesIcon as ZonesIcon } from "./custom-icons/zones-icon";
 
 export const ReverseIcon: React.FC<IconProps> = ({
   size: rawSize = "md",
@@ -248,6 +313,7 @@ export const ReverseIcon: React.FC<IconProps> = ({
     <ArrowDownUp
       size={pixels}
       {...props}
+      className={iconClassName(props.className)}
       style={{ transform: "rotate(90deg)", ...props.style }}
     />
   );
@@ -263,6 +329,7 @@ export const AnalysisToolsIcon: React.FC<IconProps> = ({
     <ScanText
       size={pixels}
       {...props}
+      className={iconClassName(props.className)}
       style={{ transform: "rotate(-90deg)", ...props.style }}
     />
   );
@@ -281,8 +348,6 @@ export { CustomPanelBottomActive as PanelBottomActiveIcon } from "./custom-icons
 export { CustomPanelLeftActive as PanelLeftActiveIcon } from "./custom-icons/panel-left-active";
 export { CustomPanelRightActive as PanelRightActiveIcon } from "./custom-icons/panel-right-active";
 export { CustomPolygonalSelection as PolygonalSelectionIcon } from "./custom-icons/polygonal-selection";
-export { CustomActiveTopologyEnableIcon as ActiveTopologyEnableIcon } from "./custom-icons/active-topology-enable";
-export { CustomActiveTopologyDisableIcon as ActiveTopologyDisableIcon } from "./custom-icons/active-topology-disable";
 export { CustomOperationalDataIcon as AdvancedSettingsIcon } from "./custom-icons/operational-data";
 export { CustomTableSelectAllIcon as TableSelectAllIcon } from "./custom-icons/table-select-all-icon";
 export { CustomUpstreamTraceIcon as UpstreamTraceIcon } from "./custom-icons/trace-upstream-icon";
@@ -290,4 +355,5 @@ export { CustomDownstreamTraceIcon as DownstreamTraceIcon } from "./custom-icons
 export { CustomBoundaryTraceIcon as BoundaryTraceIcon } from "./custom-icons/trace-boundary-icon";
 export { CustomCurveLibraryIcon as CurveLibraryIcon } from "./custom-icons/curve-library-icon";
 export { CustomHglProfileIcon as HglProfileIcon } from "./custom-icons/hgl-profile-icon";
-export { CustomPressureLoggerIcon as PressureLoggerIcon } from "./custom-icons/pressure-logger-icon";
+export { CustomMissingAttributeIcon as MissingAttributeIcon } from "./custom-icons/missing-attribute-icon";
+export { CustomAllocateCustomerPointsIcon as AllocateCustomerPointsIcon } from "./custom-icons/allocate-customer-points-icon";

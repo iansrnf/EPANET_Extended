@@ -2223,6 +2223,37 @@
       "add": "Add to folder"
     }
   },
+  "flowAnimation": {
+    "title": "Water flow",
+    "pause": "Pause water flow animation",
+    "play": "Play water flow animation",
+    "pauseAction": "Pause",
+    "playAction": "Play",
+    "description": "Dashes follow the simulated flow direction. Higher flows move faster and use the deeper end of your color range.",
+    "needsSimulation": "Run a simulation to animate water flow.",
+    "reducedMotion": "Animation is paused for reduced motion. Select Play to show water flowing through the pipes.",
+    "colors": {
+      "title": "Flow colors",
+      "description": "Choose up to 5 colors, ordered from light to deep.",
+      "edit": "Edit flow colors",
+      "low": "Low flow",
+      "high": "High flow",
+      "count": "Colors",
+      "countOption": "Color count: {{1}}",
+      "chooseColor": "Choose a color to edit",
+      "color": "Flow color {{1}}",
+      "hex": "Hex color",
+      "presetLabel": "Quick palettes",
+      "reset": "Reset colors",
+      "close": "Close flow colors",
+      "presets": {
+        "blue": "Blue",
+        "teal": "Teal",
+        "violet": "Violet",
+        "amber": "Amber"
+      }
+    }
+  },
   "tabs": {
     "scrollLeft": "Scroll tabs left",
     "scrollRight": "Scroll tabs right"

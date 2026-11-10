@@ -1,4 +1,6 @@
 import { atom } from "jotai";
+import { flowAnimationColorsAtom } from "src/state/flow-animation";
+import { DEFAULT_FLOW_COLORS } from "src/map/overlays/flow-animation-colors";
 import type { SetOptional } from "type-fest";
 import type { Sel } from "src/selection";
 import {
@@ -58,6 +60,8 @@ export const mapEditionsTrackerAtom = atom<MapEditionsTracker>(
 
 export const mapLoadingAtom = atom<boolean>(false);
 
+export const flowAnimationEnabledAtom = atom<boolean | null>(null);
+
 export const mapBackendFallbackAtom = atom<boolean>(false);
 
 export const googleMapsSessionVersionAtom = atom(0);
@@ -115,6 +119,8 @@ export type MapState = {
   simulation: SimulationState;
   simulationStep: number | null;
   resultsReader: ResultsReader | null;
+  flowAnimationEnabled: boolean | null;
+  flowAnimationColors: readonly string[];
   selectedAssetIds: Set<AssetId>;
   movedAssetIds: Set<AssetId>;
   isOffline: boolean;
@@ -142,6 +148,8 @@ export const nullMapState: MapState = {
   simulation: initialSimulationState,
   simulationStep: null,
   resultsReader: null,
+  flowAnimationEnabled: null,
+  flowAnimationColors: DEFAULT_FLOW_COLORS,
   selectedAssetIds: new Set(),
   movedAssetIds: new Set(),
   isOffline: false,
@@ -208,6 +216,8 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
     simulation,
     simulationStep,
     resultsReader,
+    flowAnimationEnabled: get(flowAnimationEnabledAtom),
+    flowAnimationColors: get(flowAnimationColorsAtom),
     selectedAssetIds,
     movedAssetIds,
     isOffline,

@@ -45,6 +45,7 @@ import { clickableLayers } from "./layers/layer";
 import { BasemapSelector } from "./basemap-selector";
 import { GoogleMapsAttribution } from "./google-maps-attribution";
 import { DeviceLocationControl } from "./device-location-control";
+import { FlowAnimationControl } from "./flow-animation-control";
 import { deviceLocationNavigationRevisionAtom } from "src/state/device-location";
 import { useFitToExtent } from "./use-fit-to-extent";
 import { CustomMapControlClick, FIT_TO_EXTENT_CONTROL } from "@epanet-js/map";
@@ -431,6 +432,7 @@ export const MapCanvas = memo(function MapCanvas({
       <BasemapSelector />
       <GoogleMapsAttribution map={mapInstance} />
       <DeviceLocationControl mapReady={mapInstance !== null} />
+      <FlowAnimationControl />
     </CM.Root>
   );
 });

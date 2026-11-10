@@ -1,5 +1,5 @@
 import { useAtomValue, useSetAtom, useStore } from "jotai";
-import { type MutableRefObject, useMemo, useRef } from "react";
+import { type MutableRefObject, useEffect, useMemo, useRef } from "react";
 import { projectSettingsAtom } from "src/state/project-settings";
 import type { EphemeralEditingState } from "src/state/drawing";
 import {
@@ -85,6 +85,7 @@ import {
   pipeLinkColorExpression,
   pipeArrowColorExpression,
 } from "./layers/pipes";
+import { FlowAnimation } from "./overlays/flow-animation";
 
 // An update cycle over this is flagged (debug builds only) — the
 // withDebugInstrumentation warning fires only when isDebugOn.
@@ -261,6 +262,13 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
   const ephemeralDeckLayersRef = useRef<CustomerPointsOverlay>([]);
   const gridRef = useRef<Grid | null>(null);
   const scaleControlRef = useRef<BoundScaleControl | null>(null);
+  const flowAnimationRef = useRef<FlowAnimation | null>(null);
+  useEffect(() => {
+    return () => {
+      flowAnimationRef.current?.destroy();
+      flowAnimationRef.current = null;
+    };
+  }, [map]);
   const translate = useTranslate();
   const translateUnit = useTranslateUnit();
   const selectedMapOperations = useMapOperations();
@@ -659,6 +667,35 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         setDeviceLocationViewportRequest((current) =>
           current === locationRequest ? null : current,
         );
+      }
+
+      const animateFlow =
+        mapState.flowAnimationEnabled !== false &&
+        mapState.ephemeralState.type === "none";
+      if (animateFlow && mapState.resultsReader && !flowAnimationRef.current) {
+        flowAnimationRef.current = new FlowAnimation(map);
+      }
+      if (
+        hasNewImport ||
+        hasNewStyles ||
+        hasNewEditions ||
+        hasNewResults ||
+        hasNewSymbologyRules ||
+        hasNewEphemeralState ||
+        mapState.flowAnimationEnabled !== previousMapState.flowAnimationEnabled
+      ) {
+        flowAnimationRef.current?.update({
+          assets,
+          results: mapState.resultsReader,
+          enabled: animateFlow,
+          allowReducedMotion: mapState.flowAnimationEnabled === true,
+          colors: mapState.flowAnimationColors,
+        });
+      }
+      if (
+        mapState.flowAnimationColors !== previousMapState.flowAnimationColors
+      ) {
+        flowAnimationRef.current?.setColors(mapState.flowAnimationColors);
       }
 
       lastAppliedMapStateRef.current = mapState;

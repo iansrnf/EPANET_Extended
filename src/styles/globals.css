@@ -3,6 +3,7 @@
 /* Design tokens (@theme, semantic colors, dark overrides, token utilities) now
    live in the ui-kit package so other apps can share them. */
 @import "@epanet-js/ui-kit/tokens.css";
+@import "./gscwd.css";
 
 /* Scan ui-kit sources so utility classes used only there (e.g. the selector
    spinner's top-2.5) are generated — see the ui-kit README contract. */

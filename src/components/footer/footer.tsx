@@ -40,7 +40,7 @@ export const Footer = () => {
   const pressureUnitDisplay = translateUnit(projectSettings.units.pressure);
 
   return (
-    <nav className="fixed bottom-0 left-0 w-full bg-panel border-t border-strong shadow-lg z-10">
+    <nav className="gscwd-app-footer fixed bottom-0 left-0 w-full bg-panel border-t border-strong shadow-lg z-10">
       <div className="flex flex-row items-center text-size-base text-subtle space-x-1">
         {!isLgOrLarger && (
           <div className="px-2">

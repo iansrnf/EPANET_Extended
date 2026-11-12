@@ -1,20 +1,20 @@
 {
-  "short_name": "epanet-js",
-  "name": "epanet-js: hydraulic network editor",
+  "short_name": "GSCWD",
+  "name": "GSCWD Water Network Workspace",
   "icons": [
     {
-      "src": "/favicon.png",
+      "src": "/gscwd-logo.png",
       "type": "image/png",
-      "sizes": "282x282"
+      "sizes": "200x200"
     }
   ],
   "start_url": "/app?source=pwa",
-  "background_color": "#3367D6",
+  "background_color": "#f3f9fd",
   "display": "standalone",
   "scope": "/",
-  "theme_color": "#3367D6",
+  "theme_color": "#07558c",
   "shortcuts": [],
-  "description": "Edit hydraulic network data",
+  "description": "General Santos City Water District water network mapping and hydraulic modeling workspace",
   "screenshots": [],
   "file_handlers": [
     {

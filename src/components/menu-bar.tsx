@@ -3,23 +3,15 @@ import type { User } from "src/auth-types";
 import type { TranslateFn } from "src/hooks/use-translate";
 import { FileInfo } from "src/components/file-info";
 import * as DD from "@radix-ui/react-dropdown-menu";
-import {
-  Button,
-  DDContent,
-  StyledItem,
-  LogoIconAndWordmarkIcon,
-} from "./elements";
+import { Button, DDContent, StyledItem } from "./elements";
+import { GscwdBrand } from "./gscwd-brand";
+import { GscwdWaterfront } from "./gscwd-waterfront";
+import styles from "./menu-bar.module.css";
 import { useTranslate } from "src/hooks/use-translate";
-import {
-  helpCenterUrl,
-  roadmapUrl,
-  sourceCodeUrl,
-  utilitiesUrl,
-} from "src/global-config";
+import { helpCenterUrl, roadmapUrl, utilitiesUrl } from "src/global-config";
 import { useAuth } from "src/hooks/use-auth";
 import { SignedIn, SignedOut, UserButton } from "src/components/auth";
 import { useAccountManager } from "src/hooks/use-account-manager";
-import { SignInButton, SignUpButton } from "./auth-buttons";
 import { useShowWelcome } from "src/commands/show-welcome";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useShowShortcuts } from "src/commands/show-shortcuts";
@@ -28,13 +20,12 @@ import { useEffectivePlan } from "src/hooks/use-effective-plan";
 import { usePermissions } from "src/hooks/use-permissions";
 import { useBillingPortal } from "src/hooks/use-billing-portal";
 import { PlanLabel } from "./plan-label";
-import { useAtomValue, useSetAtom } from "jotai";
+import { useSetAtom } from "jotai";
 import { dialogAtom } from "src/state/dialog";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { LanguageSelector } from "./language-selector";
 import { useScriptingDocs } from "src/hooks/use-scripting-docs";
 import { getScripting } from "src/lib/scripting";
-import { contentViewAtom } from "src/state/content-view";
 
 import {
   GlobeIcon,
@@ -46,21 +37,21 @@ import {
   UpgradeIcon,
   NewFromExampleIcon,
   CloseIcon,
-  GithubIcon,
+  UserIcon,
   ScriptsIcon,
 } from "src/icons";
 
 export function MenuBarFallback() {
-  return <div className="h-12 bg-gray-800"></div>;
+  return (
+    <header className={styles.header}>
+      <GscwdWaterfront className={styles.waterfront} />
+      <GscwdBrand />
+    </header>
+  );
 }
 
 export const HeaderLogoUpdated = () => {
-  return (
-    <span className="pl-1" title="Home">
-      <LogoIconAndWordmarkIcon size={98} />
-      <span className="sr-only">epanet-js</span>
-    </span>
-  );
+  return <GscwdBrand />;
 };
 
 export const MenuBarPlay = memo(function MenuBar() {
@@ -76,34 +67,27 @@ export const MenuBarPlay = memo(function MenuBar() {
   const { canManageOrganization } = usePermissions();
 
   return (
-    <div className="flex justify-between h-12 pr-2 text-black">
-      <div className="flex items-center">
-        <div
-          className="py-1 pl-2 pr-2 inline-flex cursor-pointer"
+    <header className={styles.header}>
+      <GscwdWaterfront className={styles.waterfront} />
+      <div className={styles.identity}>
+        <button
+          type="button"
+          className={styles.home}
+          aria-label={translate("welcomePage")}
+          title={translate("welcomePage")}
           onClick={() => showWelcome({ source: "menu" })}
         >
           <HeaderLogoUpdated />
-        </div>
-        {isSmOrLarger && <FileInfo />}
+        </button>
+        {isSmOrLarger && (
+          <div className={styles.file}>
+            <FileInfo />
+          </div>
+        )}
       </div>
-      <div className="flex items-center gap-x-1">
+      <div className={styles.actions}>
         {isMdOrLarger && (
           <>
-            <a
-              href={sourceCodeUrl}
-              target="_blank"
-              onClick={() => {
-                userTracking.capture({
-                  name: "repo.visited",
-                  source: "menu",
-                });
-              }}
-            >
-              <Button variant="quiet">
-                <GithubIcon />
-                {translate("openSource")}
-              </Button>
-            </a>
             <HelpDot />
             <LanguageSelector />
             <Divider />
@@ -145,28 +129,29 @@ export const MenuBarPlay = memo(function MenuBar() {
         <SignedOut>
           <div className="flex items-center gap-x-1">
             {isMdOrLarger && (
-              <SignInButton
-                onClick={() => {
-                  userTracking.capture({
-                    name: "signIn.started",
-                    source: "menu",
-                  });
-                }}
-              />
+              <Button
+                type="button"
+                variant="default"
+                disabled
+                className={styles.accountButton}
+              >
+                {translate("login")}
+              </Button>
             )}
-            <SignUpButton
-              onClick={() => {
-                userTracking.capture({
-                  name: "signUp.started",
-                  source: "menu",
-                });
-              }}
-            />
+            <Button
+              type="button"
+              variant="default"
+              disabled
+              className={styles.accountButton}
+            >
+              <UserIcon />
+              {translate("register")}
+            </Button>
           </div>
         </SignedOut>
         <SideMenu />
       </div>
-    </div>
+    </header>
   );
 });
 
@@ -285,8 +270,6 @@ export const SideMenu = () => {
   const effectivePlan = useEffectivePlan();
   const { openOrganizationProfile } = useAccountManager();
   const { canManageOrganization } = usePermissions();
-  const isModelBuildViewOpen =
-    useAtomValue(contentViewAtom)?.type === "modelBuild";
   const toggleMenu = () => {
     setIsOpen(!isOpen);
   };
@@ -295,9 +278,12 @@ export const SideMenu = () => {
     <div className="relative">
       <div className="flex justify-end md:hidden">
         <Button
-          className="h-8 w-8 justify-center"
+          className="h-11 w-11 justify-center"
           size="xxs"
           variant="quiet"
+          aria-label={translate("gscwd.navigation")}
+          aria-controls="gscwd-mobile-navigation"
+          aria-expanded={isOpen}
           onClick={toggleMenu}
         >
           <MenuIcon />
@@ -305,21 +291,28 @@ export const SideMenu = () => {
       </div>
 
       <div
+        id="gscwd-mobile-navigation"
         ref={menuRef}
+        hidden={!isOpen}
         tabIndex={isOpen ? 0 : -1}
-        className={`fixed inset-y-0 right-0 w-full bg-base transform ${
+        className={`gscwd-sidebar fixed inset-y-0 right-0 w-full bg-base transform ${
           isOpen ? "translate-x-0" : "translate-x-full"
         } transition-transform duration-300 ease-in-out md:hidden z-40`}
       >
         <div className="p-6">
           <div className="flex items-center justify-between pb-6">
             <HeaderLogoUpdated />
-            <Button variant="quiet" onClick={toggleMenu}>
+            <Button
+              variant="quiet"
+              className="h-11 w-11 justify-center"
+              aria-label={translate("dialog.close")}
+              onClick={toggleMenu}
+            >
               <CloseIcon />
             </Button>
           </div>{" "}
-          <nav>
-            <ul className="flex flex-col items-start gap-2 text-gray-200">
+          <nav aria-label={translate("gscwd.navigation")}>
+            <ul className="flex flex-col items-start gap-2 text-default">
               <li>
                 <Button variant="quiet">
                   <GlobeIcon />
@@ -328,27 +321,7 @@ export const SideMenu = () => {
               </li>
             </ul>
             <hr className="my-4" />
-            <ul className="flex flex-col items-start gap-2 text-gray-200">
-              {!isModelBuildViewOpen && (
-                <li>
-                  <a
-                    href={sourceCodeUrl}
-                    target="_blank"
-                    onClick={() => {
-                      setIsOpen(false);
-                      userTracking.capture({
-                        name: "repo.visited",
-                        source: "menu",
-                      });
-                    }}
-                  >
-                    <Button variant="quiet">
-                      <GithubIcon />
-                      {translate("openSource")}
-                    </Button>
-                  </a>
-                </li>
-              )}
+            <ul className="flex flex-col items-start gap-2 text-default">
               <li>
                 <Button
                   variant="quiet"
@@ -420,25 +393,26 @@ export const SideMenu = () => {
             <SignedOut>
               <ul className="flex-col items-start gap-4">
                 <li>
-                  <SignInButton
-                    onClick={() => {
-                      userTracking.capture({
-                        name: "signIn.started",
-                        source: "menu",
-                      });
-                    }}
-                  />
+                  <Button
+                    type="button"
+                    variant="default"
+                    disabled
+                    className={styles.accountButton}
+                  >
+                    {translate("login")}
+                  </Button>
                 </li>
                 <li className="py-4">
-                  <SignUpButton
+                  <Button
+                    type="button"
+                    variant="default"
                     size="full-width"
-                    onClick={() => {
-                      userTracking.capture({
-                        name: "signUp.started",
-                        source: "menu",
-                      });
-                    }}
-                  />
+                    disabled
+                    className={styles.accountButton}
+                  >
+                    <UserIcon />
+                    {translate("register")}
+                  </Button>
                 </li>
               </ul>
             </SignedOut>

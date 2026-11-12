@@ -55,7 +55,7 @@ export const ActivityBar = memo(function ActivityBarInner() {
       value={isOpen ? (activePanel?.id ?? "") : ""}
       orientation="vertical"
       activationMode="manual"
-      className="flex-none flex bg-popover"
+      className="gscwd-sidebar flex-none flex bg-popover"
     >
       <DndContext
         sensors={sensors}

@@ -186,7 +186,7 @@ export function EpanetApp() {
     <main className={"custom-cursor-family h-dvh flex flex-col bg-popover"}>
       <MapContext.Provider value={map}>
         <ScriptEditorProvider>
-          <div className={clsx(!isContentViewOpen && "h-24")}>
+          <div className="shrink-0">
             <MenuBarPlay />
             {!isContentViewOpen && (
               <Toolbar

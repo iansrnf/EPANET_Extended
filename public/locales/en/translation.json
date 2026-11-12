@@ -1,4 +1,17 @@
 {
+  "gscwd": {
+    "workspace": "Water network workspace",
+    "navigation": "Navigation",
+    "projectActions": "Project actions",
+    "welcome": "Welcome to your GSCWD workspace",
+    "welcomeTitle": "Your network. A clearer view.",
+    "welcomeDescription": "Plan, map, and understand your water network. Start a project or pick up where you left off.",
+    "sampleModels": "Sample models",
+    "demoDescription": "Explore the tools with a sample network, then build your own.",
+    "servicePromise": "Reliable water. Healthy community.",
+    "footerTitle": "Tubig at Serbisyo, Laging Konektado",
+    "removeRecent": "Remove {{1}} from recent projects"
+  },
   "logger": "Logger",
   "loggers": {
     "title": "Loggers",

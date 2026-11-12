@@ -29,25 +29,19 @@ import type { Metadata } from "next";
 const isIndexingAllowed = process.env.INDEXING_ALLOWED === "true";
 
 export const metadata: Metadata = {
-  title: "epanet-js",
+  title: "GSCWD | Water Network Workspace",
   description:
-    "Run EPANET in your browser with epanet-js — no download needed. Works on Mac, Linux, or Windows. Save files locally. Modern, enhanced, and built on the trusted EPANET engine.",
-  alternates: {
-    canonical: "https://app.epanetjs.com",
+    "General Santos City Water District's workspace for water network mapping, hydraulic modeling, and simulation.",
+  icons: {
+    icon: { url: "/gscwd-favicon.svg", type: "image/svg+xml", sizes: "any" },
+    apple: "/gscwd-logo.png",
   },
   robots: isIndexingAllowed ? undefined : { index: false },
   openGraph: {
-    title:
-      "epanet-js: EPANET in your browser — start water modeling now, no download required.",
+    title: "GSCWD | Water Network Workspace",
     description:
-      "Run EPANET in your browser with epanet-js — no download needed. Works on Mac, Linux, or Windows. Save files locally. Modern, enhanced, and built on the trusted EPANET engine.",
-    url: "https://app.epanetjs.com",
-    siteName: "epanet-js",
-    images: {
-      url: "https://app.epanetjs.com/banner.png",
-      width: 1200,
-      height: 630,
-    },
+      "General Santos City Water District's workspace for water network mapping, hydraulic modeling, and simulation.",
+    siteName: "General Santos City Water District",
   },
-  applicationName: "epanet-js",
+  applicationName: "GSCWD Water Network Workspace",
 };

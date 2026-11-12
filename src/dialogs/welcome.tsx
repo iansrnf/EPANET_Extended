@@ -16,11 +16,9 @@ import {
   quickStartTutorialUrl,
   termsAndConditionsUrl,
 } from "src/global-config";
-import {
-  Button,
-  Loading,
-  LogoIconAndWordmarkIcon,
-} from "../components/elements";
+import { Button, Loading } from "../components/elements";
+import { GscwdBrand } from "src/components/gscwd-brand";
+import { GscwdWaterfront } from "src/components/gscwd-waterfront";
 import {
   ArrowRightIcon,
   CloseIcon,
@@ -31,15 +29,10 @@ import {
   HelpIcon,
   EarlyAccessIcon,
 } from "src/icons";
-import { BaseDialog, DialogCloseX, useDialogState } from "../components/dialog";
+import { BaseDialog, useDialogState } from "../components/dialog";
+import * as Dialog from "@radix-ui/react-dialog";
 import { Callout } from "@epanet-js/ui-kit";
 import { DRUMCHAPEL, WATERDOWN } from "src/demo/demo-networks";
-import optimaticsLogoUrl from "src/assets/images/logos/optimatics-logo-black.webp";
-import affinityWaterLogoUrl from "src/assets/images/logos/affinity-water-logo.svg";
-import anglianWaterLogoUrl from "src/assets/images/logos/anglian-water-logo.webp";
-import atkinsRealisLogoUrl from "src/assets/images/logos/atkins-realis-logo.svg";
-import tetraTechLogoUrl from "src/assets/images/logos/tetra-tech-logo.svg";
-import iteratingLogoUrl from "src/assets/images/logos/iterating-logo-muted-padded.svg";
 import { useIsDrawingAvailable } from "src/hooks/use-is-drawing-available";
 import { useIsModelBuilderAvailable } from "src/hooks/use-is-model-builder-available";
 import type { RecentFileEntry } from "src/lib/recent-files";
@@ -55,48 +48,55 @@ export const WelcomeDialog = () => {
   const isModelBuilderAvailable = useIsModelBuilderAvailable();
   const { isSignedIn, isLoaded } = useAuth();
   const showEarlyAccess = isLoaded && !isSignedIn;
-
   const currentLocale = useLocale();
   const currentLanguage = languageConfig.find(
     (lang) => lang.code === currentLocale.locale,
   );
   const isExperimental = currentLanguage?.experimental ?? false;
-
   const { closeDialog } = useDialogState();
 
   return (
-    <BaseDialog size="lg" isOpen={true} onClose={closeDialog}>
+    <BaseDialog
+      size="xl"
+      accessibleTitle={translate("gscwd.welcome")}
+      isOpen={true}
+      onClose={closeDialog}
+      contentStyle={{ borderRadius: 24, overflow: "hidden" }}
+      overlayClassName="gscwd-welcome-overlay"
+    >
       <LocaleProvider>
-        <div className="relative grid sm:grid-cols-[min-content_1fr]">
-          <div className="absolute top-6 right-6 z-10">
-            <DialogCloseX />
-          </div>
-          <div className="bg-panel sm:border-r border-b sm:border-b-0 rounded-t-lg sm:rounded-t-none sm:rounded-tl-lg sm:rounded-bl-lg col-span-1 md:w-max flex flex-col p-6 gap-6">
-            <div className="pl-1">
-              <LogoIconAndWordmarkIcon size={147} />
+        <div className="gscwd-welcome">
+          <Dialog.Close
+            className="gscwd-welcome-close"
+            aria-label={translate("dialog.close")}
+          >
+            <CloseIcon />
+          </Dialog.Close>
+          <aside className="gscwd-welcome-sidebar">
+            <GscwdBrand variant="welcome" />
+            <div className="gscwd-workspace-label">
+              <span aria-hidden="true" />
+              {translate("gscwd.workspace")}
             </div>
-            <div className="sm:hidden">
-              <SmallDeviceWarning />
-            </div>
-            <div className="h-full flex flex-col gap-2">
+            <nav
+              className="gscwd-welcome-actions"
+              aria-label={translate("gscwd.projectActions")}
+            >
               {isDrawingAvailable && (
                 <Button
                   variant="quiet"
-                  onClick={() => {
-                    void createNew({ source: "welcome" });
-                  }}
-                  style={{ width: "100%" }}
+                  className="gscwd-welcome-action gscwd-welcome-action-start"
+                  onClick={() => void createNew({ source: "welcome" })}
                 >
                   <FileIcon />
                   {translate("startBlankProject")}
+                  <ArrowRightIcon className="ml-auto" />
                 </Button>
               )}
               <Button
                 variant="quiet"
-                onClick={() => {
-                  openProject({ source: "welcome" });
-                }}
-                style={{ width: "100%" }}
+                className="gscwd-welcome-action"
+                onClick={() => openProject({ source: "welcome" })}
               >
                 <FolderOpenIcon />
                 {translate("openModel")}
@@ -104,88 +104,102 @@ export const WelcomeDialog = () => {
               {isModelBuilderAvailable && (
                 <Button
                   variant="quiet"
-                  onClick={() => {
-                    openModelBuilder({ source: "welcome" });
-                  }}
-                  style={{ width: "100%" }}
-                  className="mt-4"
+                  className="gscwd-welcome-action"
+                  onClick={() => openModelBuilder({ source: "welcome" })}
                 >
                   <GlobeIcon />
                   {translate("importFromGIS")}
                   {showEarlyAccess && <EarlyAccessIcon size="sm" />}
                 </Button>
               )}
-
-              <div className="mt-4 flex items-start flex-col gap-2">
-                <a
-                  href={helpCenterUrl}
-                  target="_blank"
-                  onClick={() => {
-                    userTracking.capture({
-                      name: "helpCenter.visited",
-                      source: "welcome",
-                    });
-                  }}
-                  style={{ width: "100%" }}
-                >
-                  <Button variant="quiet" style={{ width: "100%" }}>
-                    <HelpIcon />
-                    {translate("helpCenter")}
-                  </Button>
-                </a>
-                <a
-                  href={quickStartTutorialUrl}
-                  target="_blank"
-                  onClick={() => {
-                    userTracking.capture({
-                      name: "quickStart.visited",
-                      source: "welcome",
-                    });
-                  }}
-                  style={{ width: "100%" }}
-                >
-                  <Button variant="primary" style={{ width: "100%" }}>
-                    <ArrowRightIcon />
-                    {translate("quickStartTutorial")}
-                  </Button>
-                </a>
-              </div>
-
-              <div className="flex flex-col gap-2 mt-auto text-size-small">
-                <a href={termsAndConditionsUrl} target="_blank">
-                  {translate("termsAndConditions")}
-                </a>
-                <a href={privacyPolicyUrl} target="_blank">
-                  {translate("privacyPolicy")}
-                </a>
-              </div>
-              <div className="flex items-center mt-2 text-size-small text-subtle">
-                By
-                <a href="https://iterating.ca" target="_blank">
-                  <img src={iteratingLogoUrl.src} className="h-8" />
-                </a>
-              </div>
+              <a
+                className="gscwd-welcome-action gscwd-help-link"
+                href={helpCenterUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() =>
+                  userTracking.capture({
+                    name: "helpCenter.visited",
+                    source: "welcome",
+                  })
+                }
+              >
+                <HelpIcon />
+                {translate("helpCenter")}
+              </a>
+              <a
+                className="gscwd-quick-start"
+                href={quickStartTutorialUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() =>
+                  userTracking.capture({
+                    name: "quickStart.visited",
+                    source: "welcome",
+                  })
+                }
+              >
+                {translate("quickStartTutorial")}
+                <ArrowRightIcon />
+              </a>
+            </nav>
+            <div className="gscwd-welcome-legal">
+              <a
+                href={termsAndConditionsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {translate("termsAndConditions")}
+              </a>
+              <a
+                href={privacyPolicyUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {translate("privacyPolicy")}
+              </a>
             </div>
-          </div>
-          <div className="p-6 min-w-0 flex flex-col overflow-hidden">
+            <div className="gscwd-sidebar-message">
+              <WaterMark />
+              <p>{translate("gscwd.servicePromise")}</p>
+              <span>General Santos City</span>
+            </div>
+          </aside>
+          <section
+            className="gscwd-welcome-content"
+            aria-labelledby="gscwd-welcome-title"
+          >
+            <div className="gscwd-welcome-intro">
+              <p className="gscwd-eyebrow">{translate("gscwd.welcome")}</p>
+              <h1 id="gscwd-welcome-title">
+                {translate("gscwd.welcomeTitle")}
+              </h1>
+              <p className="gscwd-welcome-description">
+                {translate("gscwd.welcomeDescription")}
+              </p>
+            </div>
             {isExperimental && (
-              <div className="mt-7 mb-3">
-                <Callout
-                  variant="info"
-                  title={translate("startNotificationLanguageTitle")}
-                  className="border rounded-lg"
-                >
-                  {translate("startNotificationLanguageDescription")}
-                </Callout>
-              </div>
+              <Callout
+                variant="info"
+                title={translate("startNotificationLanguageTitle")}
+                className="border rounded-lg mb-4"
+              >
+                {translate("startNotificationLanguageDescription")}
+              </Callout>
             )}
-
             <RecentNetworks />
-
-            <FoundingPartners />
-          </div>
+            <footer className="gscwd-welcome-footer">
+              <WaterMark />
+              <div>
+                <p>{translate("gscwd.footerTitle")}</p>
+                <span>General Santos City Water District</span>
+              </div>
+              <span className="gscwd-footer-line" aria-hidden="true" />
+            </footer>
+          </section>
+          <GscwdWaterfront className="gscwd-welcome-waterfront" />
         </div>
-        <div className="hidden sm:max-md:block mb-2">
+        <div className="md:hidden p-4 border-t">
           <SmallDeviceWarning />
         </div>
       </LocaleProvider>
@@ -193,84 +207,26 @@ export const WelcomeDialog = () => {
   );
 };
 
-const foundingPartners = [
-  {
-    link: "optimatics",
-    name: "Optimatics",
-    href: "https://optimatics.com/",
-    logoUrl: optimaticsLogoUrl.src,
-    className: "",
-    logoClassName: "block h-6.75 mt-3.25",
-  },
-  {
-    link: "affinityWater",
-    name: "Affinity Water",
-    href: "https://www.affinitywater.co.uk/",
-    logoUrl: affinityWaterLogoUrl.src,
-    className: "pt-3.5",
-    logoClassName: "block h-3.25",
-  },
-  {
-    link: "atkinsRealis",
-    name: "AtkinsRéalis",
-    href: "https://www.atkinsrealis.com/",
-    logoUrl: atkinsRealisLogoUrl.src,
-    className: "pt-2.75",
-    logoClassName: "block h-3.25",
-  },
-  {
-    link: "anglianWater",
-    name: "Anglian Water",
-    href: "https://www.anglianwater.co.uk/",
-    logoUrl: anglianWaterLogoUrl.src,
-    className: "pt-2.75 -mt-5.25",
-    logoClassName: "block h-9",
-  },
-  {
-    link: "tetraTech",
-    name: "Tetra Tech",
-    href: "https://www.tetratech.com/",
-    logoUrl: tetraTechLogoUrl.src,
-    className: "pt-2.75",
-    logoClassName: "block h-5.75",
-  },
-] as const;
-
-const FoundingPartners = () => {
-  const translate = useTranslate();
-  const userTracking = useUserTracking();
-
-  return (
-    <section className="mt-4 mb-1 text-size-small text-center shrink-0">
-      <h3 className="pb-4 text-subtle font-bold">
-        {translate("foundersPartnerTitle")}
-      </h3>
-      <ul className="flex place-content-between">
-        {foundingPartners.map((partner) => (
-          <li key={partner.link} className={partner.className}>
-            <a
-              className="block"
-              href={partner.href}
-              target="_blank"
-              onClick={() => {
-                userTracking.capture({
-                  name: "foundersPartner.visited",
-                  link: partner.link,
-                });
-              }}
-            >
-              <img
-                src={partner.logoUrl}
-                alt={partner.name}
-                className={partner.logoClassName}
-              />
-            </a>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-};
+const WaterMark = () => (
+  <svg
+    viewBox="0 0 32 40"
+    fill="none"
+    aria-hidden="true"
+    className="gscwd-water-mark"
+  >
+    <path
+      d="M16 2S3 17 3 25a13 13 0 0 0 26 0C29 17 16 2 16 2Z"
+      stroke="currentColor"
+      strokeWidth="2"
+    />
+    <path
+      d="M8 26c0 5 4 8 8 8M9 22c5-5 9 5 15 0"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+    />
+  </svg>
+);
 
 const SmallDeviceWarning = () => {
   const translate = useTranslate();
@@ -283,119 +239,102 @@ const SmallDeviceWarning = () => {
       <p>{translate("smallScreenExplain")}</p>
       <hr className="my-4" />
       <p className="pb-2">{translate("hereYourOptions")}:</p>
-      <div className="ml-2 space-y-2">
-        <ul>
+      <ul className="ml-2 space-y-2">
+        <li>
           <strong>{translate("continueAnyway")}</strong>:{" "}
           {translate("continueAnywayExplain")}
-        </ul>
-        <ul>
+        </li>
+        <li>
           <a className="underline" href={quickStartTutorialUrl}>
             <strong>{translate("watchQuickDemo")}</strong>
           </a>
           : {translate("watchQuickDemoExplain")}
-        </ul>
-        <ul>
+        </li>
+        <li>
           <a className="underline" href={landingPageUrl}>
             <strong>{translate("visitLandingPage")}</strong>
           </a>
           : {translate("visitLandingPageExplain")}
-        </ul>
-      </div>
+        </li>
+      </ul>
     </Callout>
   );
 };
 
 const DemoNetworks = () => {
   const translate = useTranslate();
-
-  const demoModels = [
-    {
-      name: DRUMCHAPEL.name,
-      description: translate("demoUKStyleDescription"),
-      url: DRUMCHAPEL.url,
-      thumbnailUrl: DRUMCHAPEL.thumbnailUrl,
-    },
-    {
-      name: WATERDOWN.name,
-      description: translate("demoUSStyleDescription"),
-      url: WATERDOWN.url,
-      thumbnailUrl: WATERDOWN.thumbnailUrl,
-    },
-  ];
-
   return (
-    <div className="pb-4">
-      <h2 className="pt-2 pb-2 font-bold text-subtle">
-        {translate("demoNetworksTitle")}
-      </h2>
-
-      <div className="grid grid-cols-2 gap-6 h-[270px]">
-        {demoModels.map((demoModel, i) => (
-          <DemoNetworkCard key={i} demoNetwork={demoModel} />
-        ))}
+    <section className="gscwd-networks" aria-labelledby="gscwd-demo-title">
+      <div className="gscwd-section-heading">
+        <h2 id="gscwd-demo-title">{translate("demoNetworksTitle")}</h2>
+        <span>{translate("gscwd.sampleModels")}</span>
       </div>
-    </div>
+      <p className="gscwd-section-description">
+        {translate("gscwd.demoDescription")}
+      </p>
+      <div className="gscwd-demo-grid">
+        <DemoNetworkCard
+          demoNetwork={{
+            ...DRUMCHAPEL,
+            description: translate("demoUKStyleDescription"),
+          }}
+        />
+        <DemoNetworkCard
+          demoNetwork={{
+            ...WATERDOWN,
+            description: translate("demoUSStyleDescription"),
+          }}
+        />
+      </div>
+    </section>
   );
 };
 
 const RecentNetworks = () => {
   const translate = useTranslate();
-  const {
-    recentFiles,
-    isLoading: isRecentFilesLoading,
-    removeRecent,
-    isSupported: isRecentFilesSupported,
-  } = useRecentFiles();
+  const { recentFiles, isLoading, removeRecent, isSupported } =
+    useRecentFiles();
   const openRecentFile = useOpenRecentFile();
-  const hasRecentFiles = recentFiles.length > 0;
 
-  const demoModels = [
-    {
-      name: DRUMCHAPEL.name,
-      description: translate("demoUKStyleDescription"),
-      url: DRUMCHAPEL.url,
-      thumbnailUrl: DRUMCHAPEL.thumbnailUrl,
-    },
-    {
-      name: WATERDOWN.name,
-      description: translate("demoUSStyleDescription"),
-      url: WATERDOWN.url,
-      thumbnailUrl: WATERDOWN.thumbnailUrl,
-    },
-  ];
-
-  if (!isRecentFilesSupported) return <DemoNetworks />;
-
-  if (!isRecentFilesLoading && !hasRecentFiles) return <DemoNetworks />;
-
-  if (isRecentFilesLoading)
+  if (!isSupported || (!isLoading && recentFiles.length === 0))
+    return <DemoNetworks />;
+  if (isLoading)
     return (
-      <div className="flex h-[310px]">
+      <div className="flex h-[300px]">
         <Loading />
       </div>
     );
 
   return (
-    <>
-      <h2 className="pt-2 pb-2 font-bold text-subtle">
-        {translate("recentNetworks")}
-      </h2>
-      <div className="overflow-y-auto min-h-0 scroll-shadows h-[270px]">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          {recentFiles.map((entry) => (
-            <RecentFileCard
-              key={entry.id}
-              entry={entry}
-              onOpen={() => openRecentFile(entry, "welcome")}
-              onRemove={() => void removeRecent(entry.id)}
-            />
-          ))}
-          {demoModels.map((demo, i) => (
-            <DemoAsRecentCard key={`demo-${i}`} demoNetwork={demo} />
-          ))}
-        </div>
+    <section className="gscwd-networks" aria-labelledby="gscwd-recent-title">
+      <div className="gscwd-section-heading">
+        <h2 id="gscwd-recent-title">{translate("recentNetworks")}</h2>
       </div>
-    </>
+      <div className="gscwd-recent-grid scroll-shadows">
+        {recentFiles.map((entry) => (
+          <RecentFileCard
+            key={entry.id}
+            entry={entry}
+            onOpen={() => openRecentFile(entry, "welcome")}
+            onRemove={() => void removeRecent(entry.id)}
+          />
+        ))}
+        <DemoNetworkCard
+          demoNetwork={{
+            ...DRUMCHAPEL,
+            description: translate("demoUKStyleDescription"),
+          }}
+          compact
+        />
+        <DemoNetworkCard
+          demoNetwork={{
+            ...WATERDOWN,
+            description: translate("demoUSStyleDescription"),
+          }}
+          compact
+        />
+      </div>
+    </section>
   );
 };
 
@@ -407,49 +346,47 @@ const RecentFileCard = ({
   entry: RecentFileEntry;
   onOpen: () => void;
   onRemove: () => void;
-}) => (
-  <div
-    className="group flex flex-col rounded-lg border shadow-xs cursor-pointer hover:bg-panel overflow-hidden min-w-0"
-    onClick={onOpen}
-  >
-    <div className="relative bg-panel shrink-0" style={{ aspectRatio: "5/4" }}>
-      <Button
-        variant="default"
-        size="xxs"
-        className="absolute top-1 right-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity"
-        onClick={(e) => {
-          e.stopPropagation();
-          onRemove();
-        }}
-        aria-label="Remove"
+}) => {
+  const translate = useTranslate();
+  const { locale } = useLocale();
+  return (
+    <div className="gscwd-recent-card">
+      <button
+        type="button"
+        className="gscwd-network-card gscwd-network-card-compact"
+        onClick={onOpen}
+      >
+        <div className="gscwd-card-preview">
+          {entry.thumbnail ? (
+            <img
+              src={entry.thumbnail}
+              alt=""
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <FileSpreadsheetIcon />
+          )}
+        </div>
+        <div className="gscwd-card-copy">
+          <span className="gscwd-card-name" title={entry.name}>
+            {entry.name}
+          </span>
+          <span className="gscwd-card-description">
+            {new Date(entry.openedAt).toLocaleString(locale)}
+          </span>
+        </div>
+      </button>
+      <button
+        type="button"
+        className="gscwd-remove-recent"
+        onClick={onRemove}
+        aria-label={translate("gscwd.removeRecent", entry.name)}
       >
         <CloseIcon />
-      </Button>
-      {entry.thumbnail ? (
-        <img
-          src={entry.thumbnail}
-          alt={entry.name}
-          className="w-full h-full object-cover"
-        />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center">
-          <FileSpreadsheetIcon className="text-disabled" />
-        </div>
-      )}
+      </button>
     </div>
-    <div className="p-2 flex flex-col gap-0.5 overflow-hidden">
-      <span
-        className="text-size-small font-medium text-default truncate"
-        title={entry.name}
-      >
-        {entry.name}
-      </span>
-      <span className="text-size-small text-subtle">
-        {`${new Date(entry.openedAt).toLocaleDateString()} ${new Date(entry.openedAt).toLocaleTimeString()}`}
-      </span>
-    </div>
-  </div>
-);
+  );
+};
 
 type DemoModel = {
   name: string;
@@ -458,58 +395,16 @@ type DemoModel = {
   thumbnailUrl: string;
 };
 
-const DemoAsRecentCard = ({ demoNetwork }: { demoNetwork: DemoModel }) => {
+const DemoNetworkCard = ({
+  demoNetwork,
+  compact = false,
+}: {
+  demoNetwork: DemoModel;
+  compact?: boolean;
+}) => {
   const translate = useTranslate();
   const userTracking = useUserTracking();
   const { openDemoNetwork } = useOpenDemoNetwork();
-
-  const handleClick = () => {
-    userTracking.capture({
-      name: "exampleModel.clicked",
-      modelName: demoNetwork.name,
-    });
-    void openDemoNetwork(demoNetwork.url);
-  };
-
-  return (
-    <div
-      className="flex flex-col rounded-lg border shadow-xs cursor-pointer hover:bg-panel overflow-hidden min-w-0"
-      onClick={handleClick}
-    >
-      <div
-        className="relative bg-panel shrink-0 overflow-hidden"
-        style={{ aspectRatio: "5/4" }}
-      >
-        <img
-          src={demoNetwork.thumbnailUrl}
-          alt={demoNetwork.name}
-          className="w-full h-full object-cover"
-        />
-      </div>
-      <div className="p-2 flex flex-col gap-0.5 overflow-hidden">
-        <div className="flex items-center gap-1">
-          <span
-            className="text-size-small font-medium text-default truncate"
-            title={demoNetwork.name}
-          >
-            {demoNetwork.name}
-          </span>
-          <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase bg-warning-subtle text-warning rounded-full shrink-0 leading-none">
-            {translate("demoShort")}
-          </span>
-        </div>
-        <span className="text-size-small text-subtle line-clamp-2">
-          {demoNetwork.description}
-        </span>
-      </div>
-    </div>
-  );
-};
-
-const DemoNetworkCard = ({ demoNetwork }: { demoNetwork: DemoModel }) => {
-  const userTracking = useUserTracking();
-  const { openDemoNetwork } = useOpenDemoNetwork();
-
   const handleOpenDemoModel = () => {
     userTracking.capture({
       name: "exampleModel.clicked",
@@ -518,26 +413,36 @@ const DemoNetworkCard = ({ demoNetwork }: { demoNetwork: DemoModel }) => {
     void openDemoNetwork(demoNetwork.url);
   };
   return (
-    <div
-      className="flex flex-col max-w-[250px] items-center gap-x-2 bg-base shadow-md rounded-lg border cursor-pointer hover:bg-gray-400/10"
+    <button
+      type="button"
+      className={
+        compact
+          ? "gscwd-network-card gscwd-network-card-compact"
+          : "gscwd-network-card"
+      }
       onClick={handleOpenDemoModel}
     >
-      <div className="shrink-0">
+      <div className="gscwd-card-preview">
         <Image
           src={demoNetwork.thumbnailUrl}
-          alt={demoNetwork.name}
-          width={247}
-          height={200}
+          alt=""
+          width={400}
+          height={240}
           quality={90}
-          className="rounded-tl-md rounded-tr-md object-cover"
+          className="w-full h-full object-cover"
         />
+        <span className="gscwd-demo-badge">{translate("demoShort")}</span>
       </div>
-      <div className="flex flex-col p-3">
-        <span className="text-subtle font-bold text-size-base">
-          {demoNetwork.name}
+      <div className="gscwd-card-copy">
+        <div className="flex items-center gap-3 min-w-0">
+          {!compact && <WaterMark />}
+          <span className="gscwd-card-name">{demoNetwork.name}</span>
+          <ArrowRightIcon className="ml-auto shrink-0 text-accent" />
+        </div>
+        <span className="gscwd-card-description">
+          {demoNetwork.description}
         </span>
-        <span className="text-size-small">{demoNetwork.description}</span>
       </div>
-    </div>
+    </button>
   );
 };

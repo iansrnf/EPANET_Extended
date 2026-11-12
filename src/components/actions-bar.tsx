@@ -10,9 +10,11 @@ import { Button, DDContent, Keycap, StyledItem } from "./elements";
 export function ActionsBar({
   actions,
   className,
+  minWidth = MIN_BAR_WIDTH,
 }: {
   actions: Action[];
   className?: string;
+  minWidth?: number;
 }) {
   const translate = useTranslate();
   const moreActionsLabel = translate("moreActions");
@@ -21,6 +23,7 @@ export function ActionsBar({
   const { containerRef, visibleCount } = useActionsThatFit(
     byUsage,
     moreActionsLabel,
+    minWidth,
   );
   const kept = new Set(byUsage.slice(0, visibleCount));
   const overflowing = applicable.filter((action) => !kept.has(action));
@@ -28,7 +31,7 @@ export function ActionsBar({
   return (
     <div
       ref={containerRef}
-      style={{ minWidth: MIN_BAR_WIDTH }}
+      style={{ minWidth }}
       className={clsx("flex shrink-0 justify-end", className)}
     >
       {applicable
@@ -127,7 +130,11 @@ const WIDTH_TOLERANCE = 1;
 
 const HIDDEN_FIRST = Number.MAX_SAFE_INTEGER;
 
-const useActionsThatFit = (actions: Action[], moreActionsLabel: string) => {
+const useActionsThatFit = (
+  actions: Action[],
+  moreActionsLabel: string,
+  minWidth: number,
+) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const measuredWidths = useRef(new Map<string, number>());
   const [visibleCount, setVisibleCount] = useState(actions.length);
@@ -157,7 +164,7 @@ const useActionsThatFit = (actions: Action[], moreActionsLabel: string) => {
         if (rowWidth <= 0) return;
 
         const available = Math.max(
-          MIN_BAR_WIDTH,
+          minWidth,
           rowWidth -
             keepTheirWidth.reduce(
               (total, sibling) => total + sibling.offsetWidth,
@@ -186,7 +193,7 @@ const useActionsThatFit = (actions: Action[], moreActionsLabel: string) => {
       for (const sibling of keepTheirWidth) observer.observe(sibling);
       return () => observer.disconnect();
     },
-    [whichActions, moreActionsLabel],
+    [whichActions, moreActionsLabel, minWidth],
   );
 
   return { containerRef, visibleCount };

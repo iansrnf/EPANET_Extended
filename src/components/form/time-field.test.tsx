@@ -1,9 +1,19 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { TimeField } from "./time-field";
+import { TimeField, formatSecondsToDisplay } from "./time-field";
 
 describe("TimeField", () => {
   describe("display formatting", () => {
+    it.each([
+      [86400, "24:00:00"],
+      [1440, "0:24:00"],
+      [24, "0:00:24"],
+    ] as const)(
+      "shows complete duration for %s seconds",
+      (seconds, expected) => {
+        expect(formatSecondsToDisplay(seconds, true)).toBe(expected);
+      },
+    );
     it("displays empty string when value is undefined", () => {
       render(
         <TimeField label="test" value={undefined} onChangeValue={vi.fn()} />,

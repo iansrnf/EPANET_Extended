@@ -14,6 +14,8 @@ import { CustomerPointPanel } from "./customer-point-panel";
 import { ZonePanel } from "./zone-panel";
 import { Asset } from "src/hydraulic-model";
 import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
+import { selectedLoggerAtom } from "src/state/loggers";
+import { LoggerPanel } from "./logger-panel";
 
 export default function FeatureEditor() {
   const selectedAssets = useAtomValue(selectedAssetsDerivedAtom);
@@ -23,6 +25,11 @@ export default function FeatureEditor() {
   const selection = useAtomValue(selectionAtom);
   const { units } = useAtomValue(projectSettingsAtom);
   const isEditionBlocked = useIsEditionBlocked();
+  const selectedLogger = useAtomValue(selectedLoggerAtom);
+
+  if (selectedLogger) {
+    return <LoggerPanel />;
+  }
 
   const { assets, customerPoints, zones } = USelection.countByKind(selection);
 

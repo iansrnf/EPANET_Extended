@@ -19,6 +19,7 @@ export const TimeField = ({
   disabled = false,
   readonly = false,
   placeholder,
+  showSeconds = false,
 }: {
   label: string;
   value: number | undefined;
@@ -30,8 +31,9 @@ export const TimeField = ({
   disabled?: boolean;
   readonly?: boolean;
   placeholder?: string;
+  showSeconds?: boolean;
 }) => {
-  const displayValue = formatSecondsToDisplay(value);
+  const displayValue = formatSecondsToDisplay(value, showSeconds);
   const inputRef = useRef<HTMLInputElement>(null);
   const [inputValue, setInputValue] = useState(displayValue);
   const [internalError, setError] = useState(false);
@@ -88,7 +90,7 @@ export const TimeField = ({
     const seconds = parseValueToSeconds(inputValue);
     const nullable = isNullable && defaultValue === undefined;
     const finalValue = nullable ? seconds : (seconds ?? defaultValue ?? 0);
-    setInputValue(formatSecondsToDisplay(finalValue));
+    setInputValue(formatSecondsToDisplay(finalValue, showSeconds));
     onChangeValue(finalValue);
 
     setDirty(false);
@@ -122,7 +124,9 @@ export const TimeField = ({
         )}
         aria-label={`Value for: ${label}`}
       >
-        {disabled ? "N/A" : formatSecondsToDisplay(value) || placeholder || "-"}
+        {disabled
+          ? "N/A"
+          : formatSecondsToDisplay(value, showSeconds) || placeholder || "-"}
       </span>
     );
   }
@@ -154,13 +158,14 @@ export const TimeField = ({
 
 export const formatSecondsToDisplay = (
   totalSeconds: number | undefined,
+  showSeconds = false,
 ): string => {
   if (totalSeconds === undefined) return "";
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
 
-  if (seconds !== 0) {
+  if (showSeconds || seconds !== 0) {
     return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
   }
   return `${hours}:${String(minutes).padStart(2, "0")}`;

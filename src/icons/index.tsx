@@ -63,6 +63,7 @@ import {
   Lock,
   Locate,
   LocateOff,
+  Maximize2,
   MapIcon,
   MapPinned,
   MapPinXInside,
@@ -94,6 +95,7 @@ import {
   SquareDashed,
   SquareDashedMousePointer,
   SquareStack,
+  Square,
   SquircleDashed,
   Star,
   Sun,
@@ -181,6 +183,7 @@ export const InfoIcon = icon(Info);
 export const SuccessIcon = icon(CircleCheck);
 export const WarningIcon = icon(TriangleAlert);
 export const ExternalLinkIcon = icon(SquareArrowOutUpRight);
+export const MaximizeIcon = icon(Maximize2);
 export const ErrorIcon = icon(CircleX);
 export const StopSimulationIcon = icon(CirclePause);
 export const UserIcon = icon(User);
@@ -248,6 +251,7 @@ export const OutdatedSimulationIcon = icon(History);
 export const RunSimulationIcon = icon(Zap);
 export const TimerIcon = icon(Timer);
 export const CustomerPointIcon = icon(House);
+export const LoggerIcon = icon(Gauge);
 export const ImportCustomerPointsIcon = icon(HousePlus);
 export const UnavailableIcon = icon(CircleSlash2);
 export const MultipleAssetsIcon = icon(SquareStack);
@@ -256,6 +260,7 @@ export const PanelLeftIcon = icon(PanelLeft);
 export const PanelRightIcon = icon(PanelRight);
 export const PauseIcon = icon(Pause);
 export const PlayIcon = icon(Play);
+export const StopIcon = icon(Square);
 export const MultipleValuesIcon = icon(SquareStack);
 export const JunctionIcon = icon(Circle);
 export const ReservoirIcon = icon(Triangle);

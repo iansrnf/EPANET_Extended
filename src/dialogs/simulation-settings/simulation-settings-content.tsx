@@ -1,9 +1,10 @@
-import { forwardRef, useCallback, useMemo, useState } from "react";
+import { forwardRef, useCallback, useId, useMemo, useState } from "react";
 import { useFormikContext } from "formik";
 import { useAtomValue } from "jotai";
 import clsx from "clsx";
 
 import { useTranslate } from "src/hooks/use-translate";
+import { useLocale } from "src/hooks/use-locale";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import {
   TimeField,
@@ -37,6 +38,18 @@ import {
   headlossFormulasFullNames,
 } from "@epanet-js/hydraulic-model";
 import { EditableTextField } from "src/components/form/editable-text-field";
+import { Input } from "src/components/elements";
+import {
+  applySimulationTimingPreset,
+  changeSimulationTimingAnalysisMode,
+  changeSimulationTimingDuration,
+  changeSimulationTimingInterval,
+  isSimulationTimingDraftValid,
+} from "src/lib/simulation-timing-draft";
+import {
+  getSimulationTimingPresetMaximumSteps,
+  type SimulationTimingPreset,
+} from "src/lib/simulation-timing-presets";
 import type {
   FormValues,
   SimulationModeOption,
@@ -186,12 +199,23 @@ export const GeneralSection = () => {
 
 export const TimesSection = () => {
   const translate = useTranslate();
+  const { locale } = useLocale();
   const readonly = useAtomValue(hasScenariosAtom);
   const { timing } = useAtomValue(simulationSettingsDerivedAtom);
-  const { values, setFieldValue } = useFormikContext<FormValues>();
+  const { values, setFieldValue, setValues } = useFormikContext<FormValues>();
   const { fieldErrors } = useTimeSettingsValidation();
+  const presetId = useId();
+  const stepCountId = useId();
+  const presetHintId = useId();
+  const stepCountErrorId = useId();
 
   const isEPS = values.simulationMode === "eps";
+  const maximumSteps = getSimulationTimingPresetMaximumSteps(
+    values.timingPreset,
+  );
+  const hasStepCountError = !isSimulationTimingDraftValid(values);
+  const formatCount = (count: number) =>
+    new Intl.NumberFormat(locale).format(count);
 
   const defaultTimestepPlaceholder = formatSecondsToDisplay(
     Math.round(
@@ -214,23 +238,39 @@ export const TimesSection = () => {
   ];
 
   const handleSimulationModeChange = (newValue: SimulationModeOption) => {
-    void setFieldValue("simulationMode", newValue);
-    if (newValue === "eps") {
-      if (!values.duration)
-        void setFieldValue("duration", timing.duration || 24 * ONE_HOUR);
-      if (!values.hydraulicTimestep)
-        void setFieldValue(
-          "hydraulicTimestep",
-          timing.hydraulicTimestep || ONE_HOUR,
-        );
-      if (!values.reportTimestep)
-        void setFieldValue("reportTimestep", timing.reportTimestep || ONE_HOUR);
-      if (!values.patternTimestep)
-        void setFieldValue(
-          "patternTimestep",
-          timing.patternTimestep || ONE_HOUR,
-        );
-    }
+    if (readonly) return;
+    void setValues((current) =>
+      changeSimulationTimingAnalysisMode(current, newValue),
+    );
+  };
+
+  const handlePresetChange = (preset: SimulationTimingPreset) => {
+    if (readonly || !isEPS) return;
+    void setValues((current) => applySimulationTimingPreset(current, preset));
+  };
+
+  const handleStepCountChange = (count: string) => {
+    if (readonly || !isEPS) return;
+    void setValues((current) =>
+      applySimulationTimingPreset(current, current.timingPreset, count),
+    );
+  };
+
+  const handleDurationChange = (duration: number | undefined) => {
+    if (readonly || !isEPS) return;
+    void setValues((current) =>
+      changeSimulationTimingDuration(current, duration),
+    );
+  };
+
+  const handleIntervalChange = (
+    field: "hydraulicTimestep" | "reportTimestep" | "patternTimestep",
+    interval: number | undefined,
+  ) => {
+    if (readonly || !isEPS) return;
+    void setValues((current) =>
+      changeSimulationTimingInterval(current, field, interval),
+    );
   };
 
   return (
@@ -246,6 +286,119 @@ export const TimesSection = () => {
           disabled={readonly}
         />
 
+        <div className="rounded-lg border bg-panel p-3 space-y-3">
+          <div className="space-y-1">
+            <h4 className="font-medium text-size-base">
+              {translate("simulationSettings.timingPreset.title")}
+            </h4>
+            <p className="text-size-small text-subtle">
+              {translate("simulationSettings.timingPreset.description")}
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label
+                htmlFor={presetId}
+                className="block text-size-small text-subtle"
+              >
+                {translate("simulationSettings.timingPreset.mode")}
+              </label>
+              <Selector
+                id={presetId}
+                ariaLabel={translate("simulationSettings.timingPreset.mode")}
+                selected={values.timingPreset}
+                options={[
+                  {
+                    value: "hourly",
+                    label: translate("simulationSettings.timingPreset.hourly"),
+                  },
+                  {
+                    value: "minutes",
+                    label: translate("simulationSettings.timingPreset.minutes"),
+                  },
+                  {
+                    value: "seconds",
+                    label: translate("simulationSettings.timingPreset.seconds"),
+                  },
+                ]}
+                onChange={handlePresetChange}
+                disabled={!isEPS || readonly}
+                triggerClassName="h-11 w-full rounded-md bg-base"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label
+                htmlFor={stepCountId}
+                className="block text-size-small text-subtle"
+              >
+                {translate("simulationSettings.timingPreset.totalSteps")}
+              </label>
+              <Input
+                id={stepCountId}
+                type="number"
+                inputMode="numeric"
+                min={1}
+                step={1}
+                max={maximumSteps}
+                value={values.timingStepCount}
+                required={isEPS && values.isTimingPresetActive}
+                placeholder={translate(
+                  "simulationSettings.timingPreset.custom",
+                )}
+                onChange={(event) => handleStepCountChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  }
+                }}
+                disabled={!isEPS || readonly}
+                aria-invalid={hasStepCountError}
+                aria-describedby={
+                  hasStepCountError ? stepCountErrorId : presetHintId
+                }
+                className="h-11 w-full rounded-md bg-base font-mono tabular-nums"
+              />
+            </div>
+          </div>
+          {hasStepCountError && (
+            <p
+              id={stepCountErrorId}
+              role="alert"
+              className="text-size-small text-error"
+            >
+              {translate(
+                "simulationSettings.timingPreset.invalidCount",
+                formatCount(maximumSteps),
+              )}
+            </p>
+          )}
+          <div className="flex flex-wrap items-baseline justify-between gap-2 border-t pt-3">
+            <span className="text-size-small text-subtle">
+              {translate("simulationSettings.totalDuration")}
+            </span>
+            <output className="font-mono font-semibold text-size-base tabular-nums">
+              {formatSecondsToDisplay(values.duration, true) || "—"}
+            </output>
+          </div>
+          <p
+            id={presetHintId}
+            className="text-size-small text-subtle leading-relaxed"
+          >
+            {!isEPS
+              ? translate("simulationSettings.timingPreset.steadyStateHint")
+              : !values.isTimingPresetActive
+                ? translate("simulationSettings.timingPreset.customHint")
+                : !hasStepCountError && values.timingStepCount
+                  ? translate(
+                      "simulationSettings.timingPreset.initialReportHint",
+                      formatCount(Number(values.timingStepCount)),
+                      formatCount(Number(values.timingStepCount) + 1),
+                    )
+                  : translate("simulationSettings.timingPreset.stepHint")}
+          </p>
+        </div>
+
         <TimeSetting
           label={translate("simulationSettings.totalDuration")}
           description={translate("simulationSettings.totalDurationDesc")}
@@ -253,8 +406,9 @@ export const TimesSection = () => {
           defaultValue={timing.duration || 24 * ONE_HOUR}
           disabled={!isEPS}
           readonly={readonly}
-          onChange={(v) => setFieldValue("duration", v)}
+          onChange={handleDurationChange}
           error={fieldErrors.duration}
+          showSeconds
         />
 
         <TimeSetting
@@ -264,7 +418,7 @@ export const TimesSection = () => {
           defaultValue={timing.hydraulicTimestep || ONE_HOUR}
           disabled={!isEPS}
           readonly={readonly}
-          onChange={(v) => setFieldValue("hydraulicTimestep", v)}
+          onChange={(v) => handleIntervalChange("hydraulicTimestep", v)}
           error={fieldErrors.hydraulicTimestep}
         />
 
@@ -275,7 +429,7 @@ export const TimesSection = () => {
           defaultValue={timing.reportTimestep || ONE_HOUR}
           disabled={!isEPS}
           readonly={readonly}
-          onChange={(v) => setFieldValue("reportTimestep", v)}
+          onChange={(v) => handleIntervalChange("reportTimestep", v)}
           error={fieldErrors.reportTimestep}
         />
 
@@ -286,7 +440,7 @@ export const TimesSection = () => {
           defaultValue={timing.patternTimestep || ONE_HOUR}
           disabled={!isEPS}
           readonly={readonly}
-          onChange={(v) => setFieldValue("patternTimestep", v)}
+          onChange={(v) => handleIntervalChange("patternTimestep", v)}
           error={fieldErrors.patternTimestep}
         />
 
@@ -866,6 +1020,7 @@ const TimeSetting = ({
   onChange,
   error = null,
   placeholder,
+  showSeconds = false,
 }: {
   label: string;
   description: string;
@@ -876,6 +1031,7 @@ const TimeSetting = ({
   onChange: (value: number | undefined) => void;
   error?: FieldError;
   placeholder?: string;
+  showSeconds?: boolean;
 }) => {
   const translate = useTranslate();
 
@@ -897,6 +1053,7 @@ const TimeSetting = ({
             disabled={disabled}
             readonly={readonly}
             placeholder={placeholder}
+            showSeconds={showSeconds}
           />
         </div>
         {errorMessage && (
@@ -962,8 +1119,7 @@ type SelectorSettingPropsNullable<T extends string | number> =
   };
 
 type SelectorSettingProps<T extends string | number> =
-  | SelectorSettingPropsNonNullable<T>
-  | SelectorSettingPropsNullable<T>;
+  SelectorSettingPropsNonNullable<T> | SelectorSettingPropsNullable<T>;
 
 const SelectorSetting = <T extends string | number>({
   label,
@@ -1089,9 +1245,9 @@ export const useTimeSettingsValidation = () => {
     ruleTimestep: getFieldError(isEPS, values.ruleTimestep),
   };
 
-  const hasValidationError = Object.values(fieldErrors).some(
-    (error) => error !== null,
-  );
+  const hasValidationError =
+    !isSimulationTimingDraftValid(values) ||
+    Object.values(fieldErrors).some((error) => error !== null);
 
   return { hasValidationError, fieldErrors };
 };

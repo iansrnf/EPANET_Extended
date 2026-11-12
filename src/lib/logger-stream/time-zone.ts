@@ -1,0 +1,2 @@
+export const LOGGER_TIME_ZONE = "Etc/GMT-8";
+export const LOGGER_TIME_ZONE_OFFSET_MILLISECONDS = 8 * 60 * 60 * 1000;

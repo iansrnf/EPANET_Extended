@@ -1,5 +1,4 @@
 import { useCallback, useContext } from "react";
-import { FeatureCollection } from "geojson";
 import { LngLatBoundsLike } from "mapbox-gl";
 import type { FileWithHandle } from "browser-fs-access";
 
@@ -32,7 +31,7 @@ import { markProjectUnsavedAtom } from "src/state/project-revision";
 import { dialogAtom } from "src/state/dialog";
 import { worktreeAtom } from "src/state/scenarios";
 import { MapContext, captureThumbnail } from "src/map";
-import { getExtent } from "@epanet-js/geometry";
+import { getProjectExtent } from "src/lib/project-extent";
 import { projectExtension } from "./save-project";
 import { inpExtension, useImportInp } from "./import-inp";
 import { useConvertFile } from "./convert-model";
@@ -212,13 +211,10 @@ export const useOpenProjectFile = () => {
           markProjectUnsaved();
         }
 
-        const features: FeatureCollection = {
-          type: "FeatureCollection",
-          features: [...result.hydraulicModel.assets.values()].map(
-            (a) => a.feature,
-          ),
-        };
-        getExtent(features).map((importedExtent) => {
+        getProjectExtent(
+          result.hydraulicModel.assets,
+          result.projectSettings.loggers,
+        ).map((importedExtent) => {
           map?.map.fitBounds(importedExtent as LngLatBoundsLike, {
             padding: 100,
             duration: 0,

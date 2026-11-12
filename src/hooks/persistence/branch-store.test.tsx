@@ -50,6 +50,11 @@ import { worktreeAtom } from "src/state/scenarios";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import { defaultProjectSettings } from "@epanet-js/project-settings";
 import type { Store } from "src/state";
+import { projectSettingsAtom } from "src/state/project-settings";
+import { loggerPreviewAtom } from "src/state/logger-map";
+import { selectedLoggerIdAtom } from "src/state/loggers";
+import { cursorStyleAtom } from "src/state/map";
+import { modeAtom, Mode } from "src/state/mode";
 
 type Recorded = {
   branchId: string;
@@ -569,6 +574,37 @@ describe("branch store", () => {
 
     afterEach(() => {
       registerBranchingRules(nullBranchingRules);
+    });
+
+    it("cancels a logger connection preview when changing scenarios", async () => {
+      const IDS = { L1: "1", J1: 1 } as const;
+      const store = await aProjectWithTwoScenarios();
+      store.set(projectSettingsAtom, {
+        ...store.get(projectSettingsAtom),
+        loggers: [
+          {
+            id: IDS.L1,
+            label: "Logger 1",
+            coordinates: [1, 1],
+            connection: null,
+          },
+        ],
+      });
+      store.set(selectedLoggerIdAtom, IDS.L1);
+      store.set(modeAtom, { mode: Mode.CONNECT_LOGGER });
+      store.set(loggerPreviewAtom, {
+        type: "connect",
+        loggerId: IDS.L1,
+        connection: { assetId: IDS.J1, snapPoint: [0, 0] },
+      });
+      store.set(cursorStyleAtom, "pointer");
+
+      await switchTo(store, "scenario-1");
+
+      expect(store.get(selectedLoggerIdAtom)).toBeNull();
+      expect(store.get(loggerPreviewAtom)).toBeNull();
+      expect(store.get(modeAtom).mode).toBe(Mode.NONE);
+      expect(store.get(cursorStyleAtom)).toBe("default");
     });
 
     it("opens with only main's model in memory", async () => {

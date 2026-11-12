@@ -78,6 +78,7 @@ import { contentViewAtom } from "src/state/content-view";
 import { ContentViews } from "src/views/content-views";
 import { ModelBuildViewUrl } from "src/views/model-build-view-url";
 import { DialogFromUrl } from "./dialog-from-url";
+import { useLoggerStreamLifecycle } from "src/hooks/use-logger-stream-lifecycle";
 
 type ResolvedLayout = "HORIZONTAL" | "VERTICAL" | "FLOATING";
 
@@ -92,6 +93,7 @@ const persistentTransformAtom = atom<Transform>({
 });
 
 export function EpanetApp() {
+  useLoggerStreamLifecycle();
   const areFeatureFlagsReady = useFeatureFlagsReady();
   const isDbReady = useDbStorageBootstrap(areFeatureFlagsReady);
   const areWorkersReady = useWorkersBootstrap(areFeatureFlagsReady);

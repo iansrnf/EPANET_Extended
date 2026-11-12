@@ -19,6 +19,8 @@ import { openProject } from "./open-project";
 import { useInProcessDb } from "../__test-helpers__/in-process-db";
 import { withTransaction } from "@epanet-js/ejsdb/worker-api";
 import { USelection } from "src/selection";
+import { deleteAssets } from "@epanet-js/hydraulic-model-operations";
+import { applyChangeSetToDb } from "./apply-change-set";
 
 describe("open integration", () => {
   useInProcessDb();
@@ -161,6 +163,110 @@ describe("open integration", () => {
     const openResult = await openProject(file);
     expect(openResult.status).toBe("ok");
     expect((await fetchProject()).projectSettings.uniqueId).toBeUndefined();
+  });
+
+  it("round-trips logger locations and connections in the saved project", async () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, L1: "1", L2: "2" } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [0, 0] })
+      .aJunction(IDS.J2, { coordinates: [10, 0] })
+      .aPipe(IDS.P1, { startNodeId: IDS.J1, endNodeId: IDS.J2 })
+      .build();
+    const projectSettings: ProjectSettings = {
+      ...defaultProjectSettings,
+      loggers: [
+        {
+          id: IDS.L1,
+          label: "Logger 1",
+          coordinates: [2, 1],
+          connection: { assetId: IDS.P1, snapPoint: [2, 0] },
+        },
+        {
+          id: IDS.L2,
+          label: "Logger 2",
+          coordinates: [1, 1],
+          connection: { assetId: IDS.J1, snapPoint: [0, 0] },
+        },
+      ],
+    };
+    await importProject({
+      newDb: true,
+      hydraulicModel,
+      projectSettings,
+      simulationSettings: defaultSimulationSettings,
+    });
+
+    const blob = await exportDb();
+    expect((await openProject(new File([blob], "loggers.epnt"))).status).toBe(
+      "ok",
+    );
+    expect((await fetchProject()).projectSettings.loggers).toEqual(
+      projectSettings.loggers,
+    );
+  });
+
+  it("migrates a saved project without loggers and keeps its network", async () => {
+    const IDS = { J1: 1 } as const;
+    await importProject({
+      newDb: true,
+      hydraulicModel: HydraulicModelBuilder.with().aJunction(IDS.J1).build(),
+      projectSettings: { ...defaultProjectSettings, name: "Before loggers" },
+      simulationSettings: defaultSimulationSettings,
+    });
+    await withTransaction("downgrade", (db) => {
+      db.exec(
+        "UPDATE project SET settings = json_remove(settings, '$.loggers')",
+      );
+      db.exec("PRAGMA user_version = 28");
+    });
+    const blob = await exportDb();
+
+    const result = await openProject(new File([blob], "before-loggers.epnt"));
+
+    expect(result).toMatchObject({ status: "migrated", fileVersion: 28 });
+    const project = await fetchProject();
+    expect(project.projectSettings.name).toBe("Before loggers");
+    expect(project.projectSettings.loggers).toEqual([]);
+    expect(project.hydraulicModel.assets.has(IDS.J1)).toBe(true);
+  });
+
+  it("does not reuse a deleted logger target ID after saving and reopening", async () => {
+    const IDS = { J1: 1, Target: 10, L1: "1" } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1)
+      .aJunction(IDS.Target)
+      .build();
+    await importProject({
+      newDb: true,
+      hydraulicModel,
+      projectSettings: {
+        ...defaultProjectSettings,
+        loggers: [
+          {
+            id: IDS.L1,
+            label: "Logger 1",
+            coordinates: [1, 1],
+            connection: { assetId: IDS.Target, snapPoint: [0, 0] },
+          },
+        ],
+      },
+      simulationSettings: defaultSimulationSettings,
+    });
+    await applyChangeSetToDb(
+      deleteAssets(hydraulicModel, { assetIds: [IDS.Target] }),
+      "forward",
+    );
+    const blob = await exportDb();
+
+    await openProject(new File([blob], "orphan-logger.ejsdb"));
+    const project = await fetchProject();
+    const newJunction = project.factories.assetFactory.createJunction();
+
+    expect(project.hydraulicModel.assets.has(IDS.Target)).toBe(false);
+    expect(project.projectSettings.loggers?.[0].connection?.assetId).toBe(
+      IDS.Target,
+    );
+    expect(newJunction.id).toBe(IDS.Target + 1);
   });
 
   it("preserves the uniqueId across a newDb=false rebuild that leaves settings untouched", async () => {

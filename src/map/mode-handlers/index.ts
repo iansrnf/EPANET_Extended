@@ -9,6 +9,7 @@ import { useConnectCustomerPointsHandlers } from "./connect-customer-points";
 import { useRedrawLinkHandlers } from "./redraw-link";
 import { useAreaSelectionHandlers } from "./area-selection";
 import { useTraceSelectHandlers } from "./trace-select";
+import { useDrawLoggerHandlers, useConnectLoggerHandlers } from "./loggers";
 
 export function useModeHandlers(handlerContext: HandlerContext) {
   const HANDLERS: Record<Mode, Handlers> = {
@@ -50,6 +51,8 @@ export function useModeHandlers(handlerContext: HandlerContext) {
       linkType: "valve",
     }),
     [Mode.DRAW_CUSTOMER_POINT]: useDrawCustomerPointHandlers(handlerContext),
+    [Mode.DRAW_LOGGER]: useDrawLoggerHandlers(handlerContext),
+    [Mode.CONNECT_LOGGER]: useConnectLoggerHandlers(handlerContext),
     [Mode.CONNECT_CUSTOMER_POINTS]:
       useConnectCustomerPointsHandlers(handlerContext),
     [Mode.REDRAW_LINK]: useRedrawLinkHandlers(handlerContext),

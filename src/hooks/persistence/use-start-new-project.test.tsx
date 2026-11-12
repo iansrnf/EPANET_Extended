@@ -21,6 +21,12 @@ import { modelFactoriesAtom } from "src/state/model-factories";
 import { panelContentStateAtom, panelsAtom, panelsIn } from "src/state/panels";
 import { createAssetTablePanel } from "src/panels/data-tables/create-panel";
 import { contentViewAtom } from "src/state/content-view";
+import { loggerPreviewAtom } from "src/state/logger-map";
+import { loggersAtom, selectedLoggerIdAtom } from "src/state/loggers";
+import { cursorStyleAtom } from "src/state/map";
+import { modeAtom, Mode } from "src/state/mode";
+import { loggerReadingsAtom, loggerStreamsAtom } from "src/state/logger-stream";
+import { createInitialLoggerStreamState } from "src/lib/logger-stream/types";
 import {
   useSeedDefaultProjectDb,
   useStartBlankProject,
@@ -30,7 +36,7 @@ import {
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const IDS = { J1: 1 } as const;
+const IDS = { J1: 1, L1: "1" } as const;
 
 const renderStartEmptyProject = (store: Store) =>
   renderHook(() => useStartBlankProject(), {
@@ -57,6 +63,37 @@ describe("useStartBlankProject", () => {
     store.set(projectFileInfoAtom, {
       name: "my-project.ejsdb",
     });
+    store.set(projectSettingsAtom, {
+      ...store.get(projectSettingsAtom),
+      loggers: [
+        {
+          id: IDS.L1,
+          label: "Logger 1",
+          coordinates: [1, 1],
+          connection: null,
+        },
+      ],
+    });
+    store.set(selectedLoggerIdAtom, IDS.L1);
+    const reading = {
+      deviceId: "L1",
+      type: "pressure",
+      timestamp: "2026-11-10T10:28:22",
+      pressure: 0,
+    };
+    store.set(
+      loggerStreamsAtom,
+      new Map([
+        [
+          IDS.L1,
+          { ...createInitialLoggerStreamState("L1"), reading, isRunning: true },
+        ],
+      ]),
+    );
+    store.set(loggerReadingsAtom, new Map([[IDS.L1, reading]]));
+    store.set(modeAtom, { mode: Mode.DRAW_LOGGER });
+    store.set(loggerPreviewAtom, { type: "draw", coordinates: [2, 2] });
+    store.set(cursorStyleAtom, "crosshair");
 
     expect(store.get(stagingModelDerivedAtom).assets.size).toBeGreaterThan(0);
 
@@ -69,6 +106,12 @@ describe("useStartBlankProject", () => {
     expect(store.get(baseModelDerivedAtom).assets.size).toBe(0);
     expect(store.get(inpFileInfoAtom)).toBeNull();
     expect(store.get(projectFileInfoAtom)).toBeNull();
+    expect(store.get(loggersAtom)).toEqual([]);
+    expect(store.get(selectedLoggerIdAtom)).toBeNull();
+    expect(store.get(loggerStreamsAtom).size).toBe(0);
+    expect(store.get(loggerReadingsAtom).size).toBe(0);
+    expect(store.get(loggerPreviewAtom)).toBeNull();
+    expect(store.get(cursorStyleAtom)).toBe("default");
   });
 
   it("closes the model build view", async () => {
@@ -234,5 +277,33 @@ describe("useSeedDefaultProjectDb", () => {
     expect(idPools.newId("asset")).toBe(1);
     expect(idPools.newId("pattern")).toBe(1);
     expect(idPools.newId("curve")).toBe(1);
+  });
+
+  it("keeps missing logger target IDs reserved when reseeding the project", async () => {
+    const IDS = { L1: "1", Target: 10 } as const;
+    const store = setInitialState();
+    store.set(projectSettingsAtom, {
+      ...store.get(projectSettingsAtom),
+      loggers: [
+        {
+          id: IDS.L1,
+          label: "Logger 1",
+          coordinates: [1, 1],
+          connection: { assetId: IDS.Target, snapPoint: [0, 0] },
+        },
+      ],
+    });
+    const { result } = renderSeedDefaultProjectDb(store);
+
+    await act(async () => {
+      await result.current();
+    });
+
+    expect(store.get(modelFactoriesAtom).assetFactory.createJunction().id).toBe(
+      IDS.Target + 1,
+    );
+    expect(
+      (await fetchProject()).factories.assetFactory.createJunction().id,
+    ).toBe(IDS.Target + 1);
   });
 });

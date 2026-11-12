@@ -170,6 +170,41 @@ const projectionSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
+const loggerCoordinatesSchema = z.tuple([
+  z.number().finite(),
+  z.number().finite(),
+]);
+
+const loggerSchema = z.object({
+  id: z.string().min(1),
+  label: z
+    .string()
+    .min(1)
+    .max(50)
+    .refine((label) => label === label.trim()),
+  coordinates: loggerCoordinatesSchema,
+  connection: z
+    .object({
+      assetId: z.number().int(),
+      snapPoint: loggerCoordinatesSchema,
+    })
+    .nullable(),
+});
+
+const loggersSchema = z
+  .array(loggerSchema)
+  .refine(
+    (loggers) =>
+      new Set(loggers.map((logger) => logger.id)).size === loggers.length,
+    "Logger IDs must be unique",
+  )
+  .refine(
+    (loggers) =>
+      new Set(loggers.map((logger) => logger.label.toLocaleLowerCase()))
+        .size === loggers.length,
+    "Logger labels must be unique",
+  );
+
 export const projectSettingsSchema = z.object({
   name: z.string(),
   units: unitsSpecSchema,
@@ -178,6 +213,7 @@ export const projectSettingsSchema = z.object({
   formatting: formattingSpecSchema,
   projection: projectionSchema,
   uniqueId: z.string().optional(),
+  loggers: loggersSchema.optional(),
 });
 
 // Inferred from the schema above so the format layer owns its own type rather

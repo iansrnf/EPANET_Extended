@@ -19,6 +19,7 @@ import {
   ValveIcon,
   PipeIcon,
   CustomerPointIcon,
+  LoggerIcon,
 } from "src/icons";
 
 export type DrawingModeOption = {
@@ -62,6 +63,11 @@ export const DRAWING_MODE_OPTIONS: readonly DrawingModeOption[] = [
     mode: Mode.DRAW_CUSTOMER_POINT,
     hotkey: "8",
     Icon: () => <CustomerPointIcon />,
+  },
+  {
+    mode: Mode.DRAW_LOGGER,
+    hotkey: "9",
+    Icon: () => <LoggerIcon />,
   },
 ] as const;
 

@@ -1,6 +1,7 @@
 import { memo, useCallback, useRef } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import { dialogAtom } from "src/state/dialog";
+import { LoggerPressureChartDialog } from "src/panels/logger-pressure-chart-dialog";
 import { recoverableSessionsAtom } from "src/state/session-recovery";
 import { match } from "ts-pattern";
 import * as dialogState from "src/state/dialog";
@@ -176,6 +177,9 @@ export const Dialogs = memo(function Dialogs() {
 
   if (dialog.type === "createNew") {
     return <CreateNewDialog />;
+  }
+  if (dialog.type === "loggerPressureChart") {
+    return <LoggerPressureChartDialog loggerId={dialog.loggerId} />;
   }
   if (dialog.type === "simulationReport") {
     return <SimulationReportDialog />;

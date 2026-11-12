@@ -23,6 +23,10 @@ import {
   goToMainShortcut,
 } from "src/commands/scenario-shortcuts";
 import { createScenarioShortcut } from "src/commands/create-scenario";
+import {
+  connectCustomersShortcut,
+  disconnectCustomersShortcut,
+} from "src/commands/customer-point-actions";
 
 export const SEARCH_KEYBINDING = "Command+k";
 
@@ -88,6 +92,7 @@ export function CheatsheetDialog() {
         { binding: "6", description: "pump" },
         { binding: "7", description: "valve" },
         { binding: "8", description: "customerPoint" as const },
+        { binding: "9", description: "loggers.title" },
       ],
     },
     {
@@ -149,6 +154,14 @@ export function CheatsheetDialog() {
         {
           binding: changeActiveTopologyShortcut,
           description: "toggleActiveTopology",
+        },
+        {
+          binding: connectCustomersShortcut,
+          description: "loggers.connectKeyboard",
+        },
+        {
+          binding: disconnectCustomersShortcut,
+          description: "loggers.disconnectKeyboard",
         },
         {
           binding: "Esc",

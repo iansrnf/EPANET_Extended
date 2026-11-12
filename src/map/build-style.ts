@@ -42,7 +42,7 @@ export async function buildBaseStyle({
 }: {
   layerConfigs: LayerConfigMap;
   translate: (key: string) => string;
-}): Promise<Style> {
+}): Promise<Style & { projection: { name: "mercator" } }> {
   let style = getEmptyStyle();
   let id = 0;
   const layers = [...layerConfigs.values()].reverse();
@@ -73,7 +73,7 @@ export async function buildBaseStyle({
     }
   }
 
-  return style;
+  return { ...style, projection: { name: "mercator" } };
 }
 
 export function defineEmptySources(style: Style) {

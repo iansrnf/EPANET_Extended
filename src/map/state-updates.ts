@@ -86,6 +86,7 @@ import {
   pipeArrowColorExpression,
 } from "./layers/pipes";
 import { FlowAnimation } from "./overlays/flow-animation";
+import { buildLoggersOverlay, type LoggersOverlay } from "./overlays/loggers";
 
 // An update cycle over this is flagged (debug builds only) — the
 // withDebugInstrumentation warning fires only when isDebugOn.
@@ -133,6 +134,7 @@ const detectChanges = (
   hasNewNodeSize: boolean;
   hasNewDeviceLocation: boolean;
   hasNewDeviceLocationViewportRequest: boolean;
+  hasNewLoggers: boolean;
 } => {
   return {
     hasNewImport: state.editionsTracker.id !== prev.editionsTracker.id,
@@ -185,6 +187,12 @@ const detectChanges = (
     hasNewHighlights: state.highlights !== prev.highlights,
     hasNewNodeSize: state.nodeSize !== prev.nodeSize,
     hasNewDeviceLocation: state.deviceLocation !== prev.deviceLocation,
+    hasNewLoggers:
+      state.loggers !== prev.loggers ||
+      state.selectedLoggerId !== prev.selectedLoggerId ||
+      state.loggerPreview !== prev.loggerPreview ||
+      state.loggerReadings !== prev.loggerReadings ||
+      state.loggerLocale !== prev.loggerLocale,
     hasNewDeviceLocationViewportRequest:
       state.deviceLocationViewportRequest !==
       prev.deviceLocationViewportRequest,
@@ -260,6 +268,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
   );
   const customerPointsOverlayRef = useRef<CustomerPointsOverlay>([]);
   const ephemeralDeckLayersRef = useRef<CustomerPointsOverlay>([]);
+  const loggersOverlayRef = useRef<LoggersOverlay>([]);
   const gridRef = useRef<Grid | null>(null);
   const scaleControlRef = useRef<BoundScaleControl | null>(null);
   const flowAnimationRef = useRef<FlowAnimation | null>(null);
@@ -331,6 +340,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         hasNewNodeSize,
         hasNewDeviceLocation,
         hasNewDeviceLocationViewportRequest,
+        hasNewLoggers,
       } = changes;
 
       const selectedIds = new Set(USelection.getAssetIds(mapState.selection));
@@ -582,6 +592,17 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         updateEphemeralStateSource(map, mapState.ephemeralState, assets);
       }
 
+      if (hasNewLoggers || hasNewEditions || hasNewStyles || hasNewImport) {
+        loggersOverlayRef.current = buildLoggersOverlay(
+          mapState.loggers,
+          assets,
+          mapState.selectedLoggerId,
+          mapState.loggerPreview,
+          mapState.loggerReadings,
+          mapState.loggerLocale,
+        );
+      }
+
       if (hasNewMapOverlay) {
         // update overlay state
         updateMapOverlaySource(map, mapState.mapOverlayFeatures);
@@ -618,7 +639,9 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         hasNewCustomerPointsSelection ||
         hasNewEphemeralState ||
         hasNewCustomerPoints ||
-        hasNewEditions
+        hasNewEditions ||
+        hasNewImport ||
+        hasNewLoggers
       ) {
         // update customer points overlay visibility
         const shouldHideCustomerPointsOverlay =
@@ -635,6 +658,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             ? []
             : customerPointsOverlayRef.current),
           ...ephemeralDeckLayersRef.current,
+          ...loggersOverlayRef.current,
         ];
         map.setOverlay(combinedOverlay);
       }

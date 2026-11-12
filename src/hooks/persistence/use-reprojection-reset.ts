@@ -6,7 +6,8 @@ import * as db from "src/lib/db";
 import { handleError } from "src/infra/errors";
 import type { HydraulicModel } from "src/hydraulic-model";
 import type { ProjectSettings } from "@epanet-js/project-settings";
-import { mapEditionsTrackerAtom } from "src/state/map";
+import { cursorStyleAtom, mapEditionsTrackerAtom } from "src/state/map";
+import { loggerPreviewAtom } from "src/state/logger-map";
 import { initialSimulationState } from "src/state/simulation";
 import {
   stagingModelDerivedAtom,
@@ -38,6 +39,8 @@ const resetAppState = (set: Setter) => {
   set(modeAtom, { mode: Mode.NONE });
   set(ephemeralStateAtom, { type: "none" });
   set(selectionAtom, USelection.none());
+  set(loggerPreviewAtom, null);
+  set(cursorStyleAtom, "default");
 };
 
 const clearSimulationStorage = async () => {

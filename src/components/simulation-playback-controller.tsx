@@ -40,7 +40,8 @@ export const SimulationPlaybackController = () => {
 
 const stopPlaybackOnDialogOpenAtom = atomEffect((get) => {
   const dialog = get(dialogAtom);
-  if (dialog !== null) get.peek(stopPlaybackCommandAtom).fn?.("auto");
+  if (dialog !== null && dialog.type !== "loggerPressureChart")
+    get.peek(stopPlaybackCommandAtom).fn?.("auto");
 });
 
 const stopPlaybackOnSimulationRunAtom = atomEffect((get) => {

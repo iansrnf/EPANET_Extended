@@ -52,7 +52,9 @@ import {
 import { initialSimulationState } from "src/state/simulation";
 import { worktreeAtom } from "src/state/scenarios";
 import { splitsAtom, defaultSplits } from "src/state/layout";
-import { mapEditionsTrackerAtom } from "src/state/map";
+import { cursorStyleAtom, mapEditionsTrackerAtom } from "src/state/map";
+import { loggerPreviewAtom } from "src/state/logger-map";
+import { resetLoggerStreamsAtom } from "src/state/logger-stream";
 import {
   nodeSymbologyAtom,
   linkSymbologyAtom,
@@ -116,8 +118,11 @@ export type ProjectLoadInput = {
 };
 
 export const resetAppState = (set: Setter, panels: Panel[]) => {
+  set(resetLoggerStreamsAtom);
   set(splitsAtom, defaultSplits);
   set(selectionAtom, USelection.none());
+  set(loggerPreviewAtom, null);
+  set(cursorStyleAtom, "default");
   set(mapEditionsTrackerAtom, new MapEditionsTracker());
   set(nodeSymbologyAtom, nullSymbologySpec.node);
   set(linkSymbologyAtom, nullSymbologySpec.link);
@@ -179,6 +184,10 @@ export const loadModel = (
   set(writesSucceededAtRebuildAtom, 0);
   set(opfsReinstallFailedAtom, false);
 
+  const assetIdGenerator = factories.idPools.forPool("asset");
+  for (const logger of projectSettings.loggers ?? []) {
+    if (logger.connection) assetIdGenerator.observe(logger.connection.assetId);
+  }
   set(modelFactoriesAtom, factories);
   const mergedProjectSettings: ProjectSettings = {
     ...projectSettings,

@@ -33,6 +33,7 @@ import {
 } from "src/state/simulation-playback";
 import { useTogglePlayback } from "src/commands/toggle-playback";
 import { useTranslate } from "src/hooks/use-translate";
+import { formatTimestepTime } from "src/lib/format-timestep-time";
 
 export const useHasPlayableTimesteps = () => {
   const simulationStep = useAtomValue(simulationStepAtom);
@@ -286,6 +287,10 @@ const TimestepDropdown = ({
     null,
   );
   const triggerStyles = triggerStylesFor({ paddingX: 1.5, paddingY: 1 });
+  const timeLabelWidth = Math.max(
+    8,
+    formatTimestepTime(timestepCount - 1, reportTimestep).length,
+  );
 
   const virtualizer = useVirtualizer({
     count: timestepCount,
@@ -309,13 +314,17 @@ const TimestepDropdown = ({
     >
       <Popover.Trigger
         aria-label="Select timestep"
-        className={triggerStyles}
+        className={clsx(triggerStyles, "shrink-0 font-mono tabular-nums")}
+        style={{ minWidth: `calc(${timeLabelWidth}ch + 2.5rem)` }}
         tabIndex={1}
       >
-        <div className="text-nowrap overflow-hidden text-ellipsis">
+        <div
+          className="text-nowrap tabular-nums"
+          style={{ minWidth: `${timeLabelWidth}ch` }}
+        >
           {formatTimestepTime(currentTimestepIndex, reportTimestep)}
         </div>
-        <div className="px-1">
+        <div className="shrink-0 px-1">
           <ChevronDownIcon />
         </div>
       </Popover.Trigger>
@@ -323,7 +332,8 @@ const TimestepDropdown = ({
         <Popover.Content
           align="end"
           sideOffset={4}
-          className="bg-base border text-size-base rounded-md shadow-md z-50 overflow-hidden min-w-(--radix-popover-trigger-width)"
+          className="bg-base border text-size-base rounded-md shadow-md z-50 overflow-hidden"
+          style={{ minWidth: "max(var(--radix-popover-trigger-width), 10rem)" }}
           onKeyDown={(event) => {
             if (event.code === "Escape" || event.code === "Enter") {
               event.stopPropagation();
@@ -355,7 +365,7 @@ const TimestepDropdown = ({
                       setIsOpen(false);
                     }}
                     className={clsx(
-                      "absolute left-0 right-0 flex items-center justify-between gap-4 px-2",
+                      "absolute left-0 right-0 flex items-center justify-between gap-2 px-2",
                       "text-left cursor-pointer hover:bg-base-hover focus:bg-base-hover rounded-xs",
                     )}
                     style={{
@@ -363,7 +373,9 @@ const TimestepDropdown = ({
                       transform: `translateY(${virtualRow.start}px)`,
                     }}
                   >
-                    <span>{formatTimestepTime(index, reportTimestep)}</span>
+                    <span className="text-nowrap font-mono tabular-nums">
+                      {formatTimestepTime(index, reportTimestep)}
+                    </span>
                     {isSelected && (
                       <CheckIcon className="text-accent ml-auto" />
                     )}
@@ -377,10 +389,3 @@ const TimestepDropdown = ({
     </Popover.Root>
   );
 };
-
-function formatTimestepTime(timestepIndex: number, intervalSeconds = 3600) {
-  const totalSeconds = timestepIndex * intervalSeconds;
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
-}

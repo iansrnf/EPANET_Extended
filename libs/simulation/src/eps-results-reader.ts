@@ -277,6 +277,15 @@ export class EPSResultsReader<S extends IKeyBufferStore = IKeyBufferStore> {
     return this.metadata.simulationMetadata.reportingTimeStep;
   }
 
+  get pressureUnits(): PressureUnits {
+    if (!this.metadata) {
+      throw new Error(
+        "EPSResultsReader not initialized. Call initialize() first.",
+      );
+    }
+    return this.metadata.simulationMetadata.pressureUnits;
+  }
+
   get qualityType(): QualityAnalysisType {
     if (!this.metadata) {
       throw new Error(

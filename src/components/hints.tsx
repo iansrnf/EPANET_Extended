@@ -291,6 +291,14 @@ export function Hints() {
         />
       );
     }
+    case Mode.DRAW_LOGGER: {
+      return <Hint hintId="DRAW_LOGGER" text={translate("loggers.drawHint")} />;
+    }
+    case Mode.CONNECT_LOGGER: {
+      return (
+        <Hint hintId="CONNECT_LOGGER" text={translate("loggers.connectHint")} />
+      );
+    }
     case Mode.SELECT_RECTANGULAR: {
       if (ephemeralState.type === "areaSelect" && ephemeralState.isDrawing) {
         return (

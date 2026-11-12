@@ -9,6 +9,8 @@ import { useDrawingMode } from "./set-drawing-mode";
 import { Mode } from "src/state/mode";
 import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { CommandContainer } from "./__helpers__/command-container";
+import { selectedLoggerIdAtom } from "src/state/loggers";
+import { loggerPreviewAtom } from "src/state/logger-map";
 
 const TestComponent = () => {
   const setDrawingMode = useDrawingMode();
@@ -52,6 +54,27 @@ const renderComponent = ({ store }: { store: Store }) => {
 };
 
 describe("useDrawingMode", () => {
+  it("clears logger selection and preview when leaving connection mode", async () => {
+    const store = setInitialState({
+      hydraulicModel: HydraulicModelBuilder.empty(),
+      mode: Mode.CONNECT_LOGGER,
+    });
+    store.set(selectedLoggerIdAtom, "logger-1");
+    store.set(loggerPreviewAtom, {
+      type: "connect",
+      loggerId: "logger-1",
+      connection: null,
+    });
+    renderComponent({ store });
+    const user = userEvent.setup();
+
+    await user.click(screen.getByTestId("set-pipe-mode"));
+
+    expect(store.get(selectedLoggerIdAtom)).toBeNull();
+    expect(store.get(loggerPreviewAtom)).toBeNull();
+    expect(store.get(modeAtom).mode).toBe(Mode.DRAW_PIPE);
+  });
+
   it("clears selection when changing from drawing mode to none mode", async () => {
     const IDS = { J1: 1 } as const;
     const hydraulicModel = HydraulicModelBuilder.with()

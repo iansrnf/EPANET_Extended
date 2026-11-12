@@ -2,8 +2,10 @@ import { useCallback } from "react";
 import { useAtomCallback } from "jotai/utils";
 import type { Map as MapboxMap, LngLatBoundsLike } from "mapbox-gl";
 import { assetsDerivedAtom } from "src/state/derived-branch-state";
-import { getExtent, isBBoxEmpty } from "@epanet-js/geometry";
+import { isBBoxEmpty } from "@epanet-js/geometry";
 import { useUserTracking } from "src/infra/user-tracking";
+import { loggersAtom } from "src/state/loggers";
+import { getProjectExtent } from "src/lib/project-extent";
 
 export function useFitToExtent() {
   const userTracking = useUserTracking();
@@ -13,10 +15,7 @@ export function useFitToExtent() {
       (get, _set, map: MapboxMap) => {
         const assets = get(assetsDerivedAtom);
 
-        if (assets.size === 0) return;
-
-        const features = [...assets.values()].map((asset) => asset.feature);
-        const extent = getExtent(features).extract();
+        const extent = getProjectExtent(assets, get(loggersAtom)).extract();
 
         if (!extent) return;
 

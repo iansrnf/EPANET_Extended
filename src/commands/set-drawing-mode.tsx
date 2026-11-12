@@ -4,6 +4,8 @@ import { ephemeralStateAtom } from "src/state/drawing";
 import { selectionAtom } from "src/state/selection";
 import { lastDrawingModeAtom, Mode, modeAtom } from "src/state/mode";
 import { USelection } from "src/selection";
+import { selectedLoggerIdAtom } from "src/state/loggers";
+import { loggerPreviewAtom } from "src/state/logger-map";
 
 const DRAWING_MODES = [
   Mode.DRAW_JUNCTION,
@@ -13,6 +15,7 @@ const DRAWING_MODES = [
   Mode.DRAW_PUMP,
   Mode.DRAW_VALVE,
   Mode.DRAW_CUSTOMER_POINT,
+  Mode.DRAW_LOGGER,
 ] as const;
 
 const SELECTION_MODES = [
@@ -40,6 +43,8 @@ export const drawingModeShorcuts: { [key in Mode]: string } = {
   [Mode.DRAW_PUMP]: "6",
   [Mode.DRAW_VALVE]: "7",
   [Mode.DRAW_CUSTOMER_POINT]: "8",
+  [Mode.DRAW_LOGGER]: "9",
+  [Mode.CONNECT_LOGGER]: "",
   [Mode.CONNECT_CUSTOMER_POINTS]: "",
   [Mode.REDRAW_LINK]: "",
   [Mode.BOUNDARY_TRACE_SELECT]: "",
@@ -53,10 +58,13 @@ export const useDrawingMode = () => {
   const setEphemeralState = useSetAtom(ephemeralStateAtom);
   const setSelection = useSetAtom(selectionAtom);
   const currentMode = useAtomValue(modeAtom);
+  const setSelectedLoggerId = useSetAtom(selectedLoggerIdAtom);
+  const setLoggerPreview = useSetAtom(loggerPreviewAtom);
 
   const setDrawingMode = useCallback(
     (mode: Mode) => {
       setEphemeralState({ type: "none" });
+      setLoggerPreview(null);
 
       if (currentMode.mode !== mode) {
         const fromSelectionMode = isSelectionMode(currentMode.mode);
@@ -64,6 +72,7 @@ export const useDrawingMode = () => {
 
         if (!(fromSelectionMode && toSelectionMode)) {
           setSelection(USelection.none());
+          setSelectedLoggerId(null);
         }
       }
 
@@ -71,7 +80,14 @@ export const useDrawingMode = () => {
         mode,
       });
     },
-    [setMode, setEphemeralState, setSelection, currentMode.mode],
+    [
+      setMode,
+      setEphemeralState,
+      setSelection,
+      setSelectedLoggerId,
+      setLoggerPreview,
+      currentMode.mode,
+    ],
   );
 
   return setDrawingMode;

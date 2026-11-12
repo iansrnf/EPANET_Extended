@@ -26,6 +26,8 @@ const DRAWING_MODES: Mode[] = [
   Mode.DRAW_PUMP,
   Mode.DRAW_VALVE,
   Mode.DRAW_TANK,
+  Mode.DRAW_LOGGER,
+  Mode.CONNECT_LOGGER,
   Mode.CONNECT_CUSTOMER_POINTS,
   Mode.REDRAW_LINK,
 ];

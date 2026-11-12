@@ -14,6 +14,8 @@ import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { modeAtom, Mode } from "src/state/mode";
 import { selectionAtom } from "src/state/selection";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
+import { selectedLoggerIdAtom } from "src/state/loggers";
+import { useLoggerActions } from "./logger-actions";
 export const deleteSelectedShortcuts = ["backspace", "del"];
 
 export const useDeleteSelection = () => {
@@ -23,6 +25,8 @@ export const useDeleteSelection = () => {
   const setEphemeralState = useSetAtom(ephemeralStateAtom);
   const { transact } = useModelTransaction();
   const userTracking = useUserTracking();
+  const selectedLoggerId = useAtomValue(selectedLoggerIdAtom);
+  const { deleteLogger } = useLoggerActions();
 
   const clearSelection = useCallback(() => {
     setSelection(USelection.none());
@@ -32,6 +36,10 @@ export const useDeleteSelection = () => {
 
   return useCallback(
     ({ source }: { source: AssetDeleted["source"] }) => {
+      if (selectedLoggerId !== null) {
+        void deleteLogger(selectedLoggerId);
+        return;
+      }
       const assetIds = USelection.getAssetIds(selection);
       const customerPointIds = USelection.getCustomerPointIds(selection);
       const zoneIds = USelection.getZoneIds(selection);
@@ -103,6 +111,14 @@ export const useDeleteSelection = () => {
         return mergeChangeSets(changeSets, "deleteSelection");
       });
     },
-    [hydraulicModel, selection, transact, clearSelection, userTracking],
+    [
+      hydraulicModel,
+      selection,
+      transact,
+      clearSelection,
+      userTracking,
+      selectedLoggerId,
+      deleteLogger,
+    ],
   );
 };

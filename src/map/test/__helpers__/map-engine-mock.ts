@@ -173,7 +173,8 @@ class MapTestEngine {
   hideLayers() {}
   showFeatures() {}
   hideFeatures() {}
-  setOverlay() {}
+  setOverlay = vi.fn((_layers: unknown[]) => {});
+  pickOverlayObjects = vi.fn().mockReturnValue([]);
   isStyleLoaded(): boolean {
     return this.isAlive();
   }

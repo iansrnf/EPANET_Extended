@@ -1,6 +1,7 @@
 import { UnitsSpec, FormattingSpec, presets } from "./quantities-spec";
 import { Projection, WGS84 } from "@epanet-js/projections";
 import { HeadlossFormula, type DefaultsSpec } from "@epanet-js/hydraulic-model";
+import type { Logger } from "./loggers";
 
 export const defaultProjectName = "";
 
@@ -12,6 +13,7 @@ export type ProjectSettings = {
   formatting: FormattingSpec;
   projection: Projection;
   uniqueId?: string;
+  loggers?: Logger[];
 };
 
 export const defaultProjectSettings: ProjectSettings = {

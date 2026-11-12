@@ -10,6 +10,7 @@ import {
 import { useTranslate } from "src/hooks/use-translate";
 import { simulationSettingsDerivedAtom } from "src/state/derived-branch-state";
 import { projectSettingsAtom } from "src/state/project-settings";
+import { isSimulationTimingDraftValid } from "src/lib/simulation-timing-draft";
 import { useSimulationSettingsTransaction } from "src/hooks/persistence/use-simulation-settings-transaction";
 import { useProjectSettingsTransaction } from "src/hooks/persistence/use-project-settings-transaction";
 
@@ -58,6 +59,7 @@ export const SimulationSettingsDialog = () => {
 
   const handleSubmit = useCallback(
     async (values: FormValues) => {
+      if (!isSimulationTimingDraftValid(values)) return;
       if (hasChanges(values, simulationSettings)) {
         const applied = transactSimulationSettings(
           buildUpdatedSettings(values, simulationSettings),

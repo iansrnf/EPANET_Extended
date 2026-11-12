@@ -30,6 +30,8 @@ import throttle from "lodash/throttle";
 import { useClickedAsset } from "../utils";
 import { modelFactoriesAtom } from "src/state/model-factories";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
+import { useLoggerInteractions } from "./logger-interactions";
+import { LOGGER_LAYER_ID } from "src/map/overlays/loggers";
 
 const stateUpdateTime = 16;
 
@@ -55,6 +57,10 @@ export function useNoneHandlers({
   readonly = false,
 }: HandlerContext): Handlers {
   const isUpdatingRef = useRef(false);
+  const loggerInteractions = useLoggerInteractions({
+    map,
+    readonly,
+  });
   const { getClickedAsset } = useClickedAsset(map, hydraulicModel.assets);
   const { assetFactory, labelManager } = useAtomValue(modelFactoriesAtom);
 
@@ -126,7 +132,11 @@ export function useNoneHandlers({
       });
 
       for (const pickInfo of pickedObjects) {
-        if (pickInfo.layer?.id === "customer-points-layer" && pickInfo.object) {
+        if (
+          (pickInfo.layer?.id === "customer-points-layer" ||
+            pickInfo.layer?.id === LOGGER_LAYER_ID) &&
+          pickInfo.object
+        ) {
           hasClickableElement = true;
           break;
         }
@@ -196,6 +206,7 @@ export function useNoneHandlers({
 
   const handleUp: Handlers["up"] = (e) => {
     if (isUpdatingRef.current) return;
+    if (loggerInteractions.up(e)) return;
 
     if (readonly) {
       resetMove();
@@ -311,6 +322,7 @@ export function useNoneHandlers({
     double: noop,
     down: (e) => {
       if (isUpdatingRef.current) return;
+      if (loggerInteractions.down(e)) return;
 
       if (USelection.isSingleAsset(selection)) {
         const [assetId] = getSelectionIds();
@@ -356,6 +368,7 @@ export function useNoneHandlers({
         e.preventDefault();
 
         if (isUpdatingRef.current) return;
+        if (loggerInteractions.move(e)) return;
 
         if (isMovingCustomerPoint) {
           if (readonly) {
@@ -466,6 +479,7 @@ export function useNoneHandlers({
     up: handleUp,
     click: (e) => {
       if (isUpdatingRef.current) return;
+      if (loggerInteractions.click(e)) return;
 
       const clickedAsset = getClickedAsset(e);
       e.preventDefault();
@@ -515,6 +529,7 @@ export function useNoneHandlers({
       }
     },
     exit() {
+      if (loggerInteractions.exit()) return;
       if (isMoving) {
         resetMove();
       } else if (isMovingCustomerPoint) {

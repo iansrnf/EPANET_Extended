@@ -231,6 +231,32 @@ describe("EPSResultsReader (unit tests)", () => {
     InMemoryStorage.resetAll();
   });
 
+  it.each([
+    [0, "psi"],
+    [1, "kPa"],
+    [2, "m"],
+    [3, "bar"],
+    [4, "ft"],
+  ] as const)(
+    "reads pressure unit %s as %s from run metadata",
+    async (code, unit) => {
+      const fixture = createFixture({
+        nodeCount: 1,
+        linkCount: 0,
+        resAndTankCount: 0,
+        pumpCount: 0,
+        timestepCount: 1,
+        pressureUnits: code,
+      });
+      const storage = new InMemoryStorage(`test-pressure-unit-${code}`);
+      await storage.save("results.out", fixture.resultsOut);
+      const reader = new EPSResultsReader(storage);
+      await reader.initialize(fixture.metadata, fixture.simulationIds);
+
+      expect(reader.pressureUnits).toBe(unit);
+    },
+  );
+
   describe("getTank level", () => {
     it("reads tank level from pressure value in results.out", async () => {
       // Setup: 3 nodes (1 junction + 1 reservoir + 1 tank), resAndTankCount=2

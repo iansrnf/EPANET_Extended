@@ -1,7 +1,7 @@
 import { useContext } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { isPlayingAtom } from "src/state/simulation-playback";
-import type { FeatureCollection } from "geojson";
+import type { FeatureCollection, Position } from "geojson";
 import type { LngLatBoundsLike } from "mapbox-gl";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
@@ -16,6 +16,7 @@ import {
   createProjectionMapper,
 } from "@epanet-js/projections";
 import { transformCoordinates } from "src/hydraulic-model/mutations/transform-coordinates";
+import { transformLoggersCoordinates } from "src/lib/loggers";
 import { chooseUnitSystem } from "src/simulation/build-inp";
 import { useFeatureFlag } from "src/hooks/use-feature-flags";
 import { useReprojectionReset } from "src/hooks/persistence/use-reprojection-reset";
@@ -54,15 +55,18 @@ export const ProjectionSection = () => {
         try {
           const currentMapper = createProjectionMapper(projection);
           const newMapper = createProjectionMapper(newProjection);
-          transformCoordinates(hydraulicModel, (p) => {
-            const source = currentMapper.toSource(p);
-            return newMapper.toWgs84(source);
-          });
+          const transformPosition = (position: Position) =>
+            newMapper.toWgs84(currentMapper.toSource(position));
+          transformCoordinates(hydraulicModel, transformPosition);
           await reprojectionReset({
             hydraulicModel: { ...hydraulicModel },
             projectSettings: {
               ...projectSettings,
               projection: newProjection,
+              loggers: transformLoggersCoordinates(
+                projectSettings.loggers,
+                transformPosition,
+              ),
             },
             autoElevations: newProjection.type !== "xy-grid",
           });

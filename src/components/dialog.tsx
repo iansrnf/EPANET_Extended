@@ -1,4 +1,9 @@
-import { useCallback, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import clsx from "clsx";
 import {
   Button,
@@ -96,6 +101,8 @@ interface BaseDialogProps {
   footer?: React.ReactNode;
   badge?: React.ReactNode;
   preventClose?: boolean;
+  contentStyle?: CSSProperties;
+  overlayClassName?: string;
 }
 
 export const BaseDialog = ({
@@ -108,6 +115,8 @@ export const BaseDialog = ({
   footer,
   badge,
   preventClose = false,
+  contentStyle,
+  overlayClassName,
 }: BaseDialogProps) => {
   const [contentEl, setContentEl] = useState<HTMLElement | null>(null);
 
@@ -117,12 +126,13 @@ export const BaseDialog = ({
       onOpenChange={(open) => !open && !preventClose && onClose()}
     >
       <Dialog.Portal>
-        <StyledDialogOverlay />
+        <StyledDialogOverlay className={overlayClassName} />
         <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
           <StyledDialogContent
             ref={setContentEl}
             size={size}
             height={height}
+            style={contentStyle}
             onOpenAutoFocus={(e) => e.preventDefault()}
             onEscapeKeyDown={
               preventClose ? (e) => e.preventDefault() : undefined

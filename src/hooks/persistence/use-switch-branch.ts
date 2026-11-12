@@ -10,7 +10,9 @@ import { branchStateAtom, isBranchLoaded } from "src/state/branch-state";
 import { worktreeAtom } from "src/state/scenarios";
 import { unloadBranch } from "./use-initialize-branch";
 import { modelFactoriesAtom } from "src/state/model-factories";
-import { mapEditionsTrackerAtom } from "src/state/map";
+import { cursorStyleAtom, mapEditionsTrackerAtom } from "src/state/map";
+import { loggerPreviewAtom } from "src/state/logger-map";
+import { modeAtom, Mode } from "src/state/mode";
 import { MapEditionsTracker } from "src/map/map-editions-tracker";
 import { selectionAtom } from "src/state/selection";
 import { USelection } from "src/selection";
@@ -74,6 +76,11 @@ export const useSwitchBranch = () => {
       updateFactories(get, set, targetState.labelManager);
       set(mapEditionsTrackerAtom, new MapEditionsTracker());
       validateSelection(get, set, targetState.hydraulicModel);
+      set(loggerPreviewAtom, null);
+      set(cursorStyleAtom, "default");
+      if (get(modeAtom).mode === Mode.CONNECT_LOGGER) {
+        set(modeAtom, { mode: Mode.NONE });
+      }
     }, []),
   );
 

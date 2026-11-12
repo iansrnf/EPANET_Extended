@@ -37,10 +37,7 @@ import type {
 } from "./schema/patches";
 
 type PatchRow =
-  | AssetPatchRow
-  | CustomerPointPatchRow
-  | CurvePatchRow
-  | PatternPatchRow;
+  AssetPatchRow | CustomerPointPatchRow | CurvePatchRow | PatternPatchRow;
 import type {
   WriteBatch,
   CustomAttributeValueUpdate,
@@ -1740,7 +1737,10 @@ export const api = {
               SELECT MAX(id) FROM tanks UNION ALL
               SELECT MAX(id) FROM pipes UNION ALL
               SELECT MAX(id) FROM pumps UNION ALL
-              SELECT MAX(id) FROM valves
+              SELECT MAX(id) FROM valves UNION ALL
+              SELECT MAX(json_extract(logger.value, '$.connection.assetId'))
+              FROM project, json_each(project.settings, '$.loggers') AS logger
+              WHERE project.id = 1
             )),
            (SELECT MAX(id) FROM customer_points),
            (SELECT MAX(id) FROM patterns),

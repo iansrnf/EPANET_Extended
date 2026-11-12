@@ -108,11 +108,7 @@ export type ProjectSavedInfoState = {
 };
 
 export type UpgradeOrigin =
-  | "paywall"
-  | "upgrade"
-  | "priorityAccess"
-  | "menu"
-  | "panel";
+  "paywall" | "upgrade" | "priorityAccess" | "menu" | "panel";
 
 export type UpgradeDialogState = {
   type: "upgrade";
@@ -309,6 +305,11 @@ export type CustomGraphDialogState = {
   type: "customGraph";
 };
 
+export type LoggerPressureChartDialogState = {
+  type: "loggerPressureChart";
+  loggerId: string;
+};
+
 export type AppLoadFailedDialogState = {
   type: "appLoadFailed";
   errorMessage?: string;
@@ -428,6 +429,7 @@ export type DialogState =
   | ExportTimeSeriesDialogState
   | NetworkProjectionDialogState
   | CustomGraphDialogState
+  | LoggerPressureChartDialogState
   | AppLoadFailedDialogState
   | RebuildStorageProgressDialogState
   | DbUnavailableDialogState

@@ -1,5 +1,12 @@
 import { atom } from "jotai";
 import { flowAnimationColorsAtom } from "src/state/flow-animation";
+import { loggersAtom, selectedLoggerIdAtom } from "src/state/loggers";
+import { loggerPreviewAtom, type LoggerPreview } from "src/state/logger-map";
+import type { Logger } from "@epanet-js/project-settings";
+import type { LoggerReading } from "src/lib/logger-stream";
+import { loggerReadingsAtom } from "src/state/logger-stream";
+import { localeAtom } from "src/state/locale";
+import { getLocale, type Locale } from "@epanet-js/i18n/locale";
 import { DEFAULT_FLOW_COLORS } from "src/map/overlays/flow-animation-colors";
 import type { SetOptional } from "type-fest";
 import type { Sel } from "src/selection";
@@ -125,6 +132,11 @@ export type MapState = {
   movedAssetIds: Set<AssetId>;
   isOffline: boolean;
   customerPoints: CustomerPoints;
+  loggers: Logger[];
+  selectedLoggerId: string | null;
+  loggerPreview: LoggerPreview;
+  loggerReadings: ReadonlyMap<string, LoggerReading>;
+  loggerLocale: Locale;
   currentZoom: number;
   mapOverlayFeatures: GeoJSON.Feature[];
   zoneFeatures: GeoJSON.Feature[];
@@ -154,6 +166,11 @@ export const nullMapState: MapState = {
   movedAssetIds: new Set(),
   isOffline: false,
   customerPoints: new Map(),
+  loggers: [],
+  selectedLoggerId: null,
+  loggerPreview: null,
+  loggerReadings: new Map<string, LoggerReading>(),
+  loggerLocale: getLocale(),
   currentZoom: DEFAULT_ZOOM,
   mapOverlayFeatures: [],
   zoneFeatures: [],
@@ -222,6 +239,11 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
     movedAssetIds,
     isOffline,
     customerPoints,
+    loggers: get(loggersAtom),
+    selectedLoggerId: get(selectedLoggerIdAtom),
+    loggerPreview: get(loggerPreviewAtom),
+    loggerReadings: get(loggerReadingsAtom),
+    loggerLocale: get(localeAtom),
     currentZoom,
     mapOverlayFeatures,
     zoneFeatures,

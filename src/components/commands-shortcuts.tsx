@@ -109,6 +109,8 @@ import {
   useCaptureDemoThumbnail,
 } from "src/commands/capture-demo-thumbnail";
 import { isDebugOn } from "src/infra/debug-mode";
+import { selectedLoggerIdAtom } from "src/state/loggers";
+import { useLoggerActions } from "src/commands/logger-actions";
 
 const IGNORE_ROLES = new Set(["menuitem"]);
 
@@ -128,6 +130,8 @@ export const CommandShortcuts = () => {
   const showSimulationSettings = useShowSimulationSettings();
   const connectCustomerPoints = useConnectCustomerPoints();
   const disconnectCustomerPoints = useDisconnectCustomerPoints();
+  const selectedLoggerId = useAtomValue(selectedLoggerIdAtom);
+  const { startConnection, disconnectLogger } = useLoggerActions();
   const setRedrawMode = useSetRedrawMode();
   const reverseLinkAction = useReverseLink();
   const simulation = useAtomValue(simulationDerivedAtom);
@@ -358,9 +362,18 @@ export const CommandShortcuts = () => {
     (e) => {
       e.preventDefault();
       if (isEditionBlocked) return;
+      if (selectedLoggerId !== null) {
+        startConnection(selectedLoggerId);
+        return;
+      }
       connectCustomerPoints({ source: "shortcut" });
     },
-    [connectCustomerPoints, isEditionBlocked],
+    [
+      connectCustomerPoints,
+      isEditionBlocked,
+      selectedLoggerId,
+      startConnection,
+    ],
     "Connect/Reconnect customer points",
   );
 
@@ -369,9 +382,18 @@ export const CommandShortcuts = () => {
     (e) => {
       e.preventDefault();
       if (isEditionBlocked) return;
+      if (selectedLoggerId !== null) {
+        void disconnectLogger(selectedLoggerId);
+        return;
+      }
       disconnectCustomerPoints({ source: "shortcut" });
     },
-    [disconnectCustomerPoints, isEditionBlocked],
+    [
+      disconnectCustomerPoints,
+      isEditionBlocked,
+      selectedLoggerId,
+      disconnectLogger,
+    ],
     "Disconnect customer points",
   );
 

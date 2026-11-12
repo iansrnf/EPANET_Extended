@@ -9,6 +9,10 @@ import {
   defaultHydraulicsValues,
 } from "src/simulation/simulation-settings";
 import { type PatternId } from "@epanet-js/hydraulic-model";
+import {
+  createSimulationTimingDraftFields,
+  type SimulationTimingDraftFields,
+} from "src/lib/simulation-timing-draft";
 
 export type OptionSubcategory = {
   id: string;
@@ -95,7 +99,7 @@ export const buildSectionIds = (): string[] => {
 
 export type SimulationModeOption = "steadyState" | "eps";
 
-export type FormValues = {
+export type FormValues = SimulationTimingDraftFields & {
   simulationMode: SimulationModeOption;
   duration: number | undefined;
   hydraulicTimestep: number | undefined;
@@ -147,6 +151,7 @@ export const buildInitialValues = (
 ): FormValues => {
   const { timing } = settings;
   return {
+    ...createSimulationTimingDraftFields(timing),
     simulationMode: timing.duration > 0 ? "eps" : "steadyState",
     duration: timing.duration,
     hydraulicTimestep: timing.hydraulicTimestep,

@@ -44,7 +44,7 @@ import {
 export function MenuBarFallback() {
   return (
     <header className={styles.header}>
-      <GscwdWaterfront className={styles.waterfront} />
+      <GscwdWaterfront className={styles.waterfront} variant="header" />
       <GscwdBrand />
     </header>
   );
@@ -68,7 +68,7 @@ export const MenuBarPlay = memo(function MenuBar() {
 
   return (
     <header className={styles.header}>
-      <GscwdWaterfront className={styles.waterfront} />
+      <GscwdWaterfront className={styles.waterfront} variant="header" />
       <div className={styles.identity}>
         <button
           type="button"

@@ -23,8 +23,7 @@ import type {
 import type { ScriptRow } from "./schema/scripts";
 
 export type NewDbResult =
-  | { status: "ok" }
-  | { status: "storage-error"; errorDetails: string };
+  { status: "ok" } | { status: "storage-error"; errorDetails: string };
 
 export type OpenDbResult =
   | {
@@ -97,6 +96,7 @@ export type ImportProjectPayload = {
   newDb: boolean;
   projectSettings: string | null;
   pipeLibrary: string | null;
+  pumpDefinitions: string | null;
   zones: ZoneRow[];
   selectionSetGroups: SelectionSetGroupRow[] | null;
   selectionSets: SelectionSetRow[] | null;
@@ -133,6 +133,7 @@ export type WriteBatch = {
   zoneUpserts: ZoneRow[];
   zonePatches: ZonePatchRow[];
   pipeLibraryReplacement: string | null;
+  pumpDefinitionsReplacement: string | null;
   rawControlsReplacement: string | null;
   controlsReplacement: string | null;
   customAttributesDefinition: string | null;
@@ -172,6 +173,7 @@ export const isEmptyWriteBatch = (payload: WriteBatch): boolean =>
   payload.zoneUpserts.length === 0 &&
   payload.zonePatches.length === 0 &&
   payload.pipeLibraryReplacement === null &&
+  payload.pumpDefinitionsReplacement === null &&
   payload.rawControlsReplacement === null &&
   payload.controlsReplacement === null &&
   payload.customAttributesDefinition === null &&
@@ -219,6 +221,7 @@ export const emptyWriteBatch = (): WriteBatch => ({
   zoneUpserts: [],
   zonePatches: [],
   pipeLibraryReplacement: null,
+  pumpDefinitionsReplacement: null,
   rawControlsReplacement: null,
   controlsReplacement: null,
   customAttributesDefinition: null,

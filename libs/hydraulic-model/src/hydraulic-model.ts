@@ -8,6 +8,7 @@ import { CustomerPointsLookup } from "./customer-points-lookup";
 import type { Curves } from "./curves";
 import type { Patterns } from "./patterns";
 import type { PipeMaterial } from "./pipe-materials";
+import type { PumpDefinition } from "@epanet-js/model-schema";
 import { AssetIndex } from "./asset-index";
 import { RawControls, createEmptyRawControls } from "./raw-controls";
 import {
@@ -33,6 +34,7 @@ export type HydraulicModel = {
   curves: Curves;
   patterns: Patterns;
   pipeMaterials: PipeMaterial[];
+  pumpDefinitions: PumpDefinition[];
   rawControls: RawControls;
   controls: Controls;
   controlsLookup: ControlsLookup;
@@ -54,6 +56,7 @@ export const initializeHydraulicModel = ({
   patterns,
   curves,
   pipeMaterials,
+  pumpDefinitions,
   customAttributes,
   zones,
 }: {
@@ -70,6 +73,7 @@ export const initializeHydraulicModel = ({
   patterns?: Patterns;
   curves?: Curves;
   pipeMaterials?: PipeMaterial[];
+  pumpDefinitions?: PumpDefinition[];
   customAttributes?: CustomAttributesDefinition;
   zones?: Zones;
 } = {}): HydraulicModel => {
@@ -86,6 +90,7 @@ export const initializeHydraulicModel = ({
     curves: curves ?? (new Map() as Curves),
     patterns: patterns ?? (new Map() as Patterns),
     pipeMaterials: pipeMaterials ?? [],
+    pumpDefinitions: pumpDefinitions ?? [],
     rawControls,
     controls,
     controlsLookup: buildControlsLookup(controls),

@@ -21,6 +21,7 @@ enum Entity : ubyte {
   PipeLibrary,
   RawControls,
   Zone,
+  PumpDefinitions,
 }
 
 enum Kind : ubyte { Create, Update, Delete }

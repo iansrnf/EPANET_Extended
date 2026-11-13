@@ -10,6 +10,8 @@ import {
   Tank,
   PatternId,
   HeadlossFormula,
+  getPumpDefinitionEpanetEfficiencyPoints,
+  type CurvePoint,
 } from "@epanet-js/hydraulic-model";
 import type { Timing, SimulationSettings } from "./simulation-settings";
 import {
@@ -514,6 +516,30 @@ function* generateInp(
     idMap.registerCurveId(curve);
   }
 
+  const definitionEfficiencies = new Map<
+    AssetId,
+    { id: string; points: CurvePoint[] }
+  >();
+  const definitions = new Map(
+    hydraulicModel.pumpDefinitions.map((definition) => [
+      definition.id,
+      definition,
+    ]),
+  );
+  for (const asset of hydraulicModel.assets.values()) {
+    if (asset.type !== "pump" || !asset.isActive) continue;
+    const pump = asset as Pump;
+    const definition = pump.pumpDefinitionId
+      ? definitions.get(pump.pumpDefinitionId)
+      : undefined;
+    if (!definition) continue;
+    const speed = pump.speed && pump.speed > 0 ? pump.speed : 1;
+    definitionEfficiencies.set(pump.id, {
+      id: idMap.localCurveId(`${pump.label}_eff`, `${pump.id}_eff`),
+      points: getPumpDefinitionEpanetEfficiencyPoints(definition, speed),
+    });
+  }
+
   // Pattern and curve usage is contributed by sections written after
   // [PATTERNS]/[CURVES] (sources, energy), so it must be collected up front.
   const { usedPatternIds, usedCurveIds } =
@@ -607,6 +633,7 @@ function* generateInp(
       usedCurveIds,
       opts.usedCurves,
       pumpLocalCurveId,
+      definitionEfficiencies,
     ),
     { alwaysWrite: true },
   );
@@ -739,7 +766,12 @@ function* generateInp(
   yield* emitSection(
     state,
     ["[ENERGY]"],
-    energyRows(hydraulicModel, idMap, opts.simulationSettings),
+    energyRows(
+      hydraulicModel,
+      idMap,
+      opts.simulationSettings,
+      definitionEfficiencies,
+    ),
   );
   if (opts.geolocation) {
     yield* emitSection(
@@ -1219,6 +1251,7 @@ function* curveRows(
   usedCurveIds: Set<number>,
   usedCurvesOnly: boolean,
   pumpLocalCurveId: PumpLocalCurveId,
+  definitionEfficiencies: Map<AssetId, { id: string; points: CurvePoint[] }>,
 ): Generator<string> {
   for (const asset of hydraulicModel.assets.values()) {
     if (asset.type !== "pump") continue;
@@ -1248,6 +1281,12 @@ function* curveRows(
     if (keyword) yield `;${keyword}:`;
     for (const point of curve.points) {
       yield [curveId, String(point.x), String(point.y)].join("\t");
+    }
+  }
+  for (const curve of definitionEfficiencies.values()) {
+    yield ";EFFICIENCY:";
+    for (const point of curve.points) {
+      yield [curve.id, String(point.x), String(point.y)].join("\t");
     }
   }
 }
@@ -1363,6 +1402,7 @@ function* energyRows(
   hydraulicModel: HydraulicModel,
   idMap: EpanetIds,
   settings: SimulationSettings,
+  definitionEfficiencies: Map<AssetId, { id: string; points: CurvePoint[] }>,
 ): Generator<string, void, undefined> {
   yield* globalEnergyRows(settings, idMap);
 
@@ -1372,7 +1412,10 @@ function* energyRows(
     if (!pump.isActive) continue;
 
     const linkId = idMap.linkId(pump);
-    if (pump.efficiencyCurveId) {
+    const definitionEfficiency = definitionEfficiencies.get(pump.id);
+    if (definitionEfficiency) {
+      yield `Pump ${linkId} Efficiency\t${definitionEfficiency.id}`;
+    } else if (pump.efficiencyCurveId) {
       yield `Pump ${linkId} Efficiency\t${idMap.curveId(pump.efficiencyCurveId)}`;
     }
     if (pump.energyPrice !== undefined) {

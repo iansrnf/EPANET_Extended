@@ -24,6 +24,18 @@ Build preparation copies the installed SQLite WASM binary and generates any publ
 
 See [LICENSE](LICENSE) for the upstream license terms.
 
+## Pump definitions
+
+Select a Pump on the map, then choose **Configure pump definition** in its asset sidebar. The editor is available from a selected pump and includes Head, Efficiency, and Motor tabs with live graphs, zoom, pan, and curve coefficients.
+
+Definitions support constant power, design point, standard three point, standard extended, custom extended, and multipoint head curves. Multipoint curves can use linear interpolation or a fitted power curve. Efficiency can be constant, based on a best efficiency point, or defined by multiple points; motor efficiency and optional drive efficiency are separate inputs.
+
+Create, name, duplicate, and reuse definitions across pumps. **Apply to pump** saves the draft and assigns the selected definition; edits to a shared definition update every assigned pump. Cancel offers to discard unsaved edits. Direct head or efficiency overrides in a data table detach that pump from its definition.
+
+The `.ejsdb` project format preserves complete definitions and their assignments, including undo and scenarios. Existing projects migrate automatically. EPANET INP export contains the derived head and combined efficiency curves; the additional definition settings remain in the project file.
+
+Energy calculations combine pump, motor, and drive efficiency at the initial relative speed. During changing-speed operation, EPANET applies its native efficiency approximation. The editor shows this limitation and EPANET's minimum simulated efficiency of 1%.
+
 ## HTTPS on the local VM
 
 The VM currently serves the app at `http://172.20.110.84:3006/`. Simulation automatically uses memory when browser file storage is unavailable, including when opening that HTTP address. The Simulate button remains available. Results use the browser's memory and are released when the page closes or reloads; large simulations can require more memory. Browser file storage remains the preferred mode when available.

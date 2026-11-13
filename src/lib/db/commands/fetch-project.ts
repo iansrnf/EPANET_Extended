@@ -28,6 +28,7 @@ import {
   buildJunctionDemandsData,
   buildCustomAttributesDefinition,
   buildPipeLibraryData,
+  buildPumpDefinitionsData,
   buildProjectSettingsData,
   buildSimulationSettingsData,
   buildZonesData,
@@ -105,6 +106,7 @@ export const fetchProject = async (
     const [
       settingsJson,
       pipeLibraryJson,
+      pumpDefinitionsJson,
       customAttributesJson,
       zonesRaw,
       selectionSetGroupsRaw,
@@ -122,6 +124,7 @@ export const fetchProject = async (
       Promise.all([
         worker.getProjectSettings(),
         worker.getPipeLibrary(),
+        worker.getPumpDefinitions(),
         worker.getCustomAttributesDefinition(),
         worker.getZones(),
         worker.getSelectionSetGroups(),
@@ -147,6 +150,7 @@ export const fetchProject = async (
       () => {
         const projectSettings = buildProjectSettingsData(settingsJson);
         const pipeLibrary = buildPipeLibraryData(pipeLibraryJson);
+        const pumpDefinitions = buildPumpDefinitionsData(pumpDefinitionsJson);
         const customAttributes =
           buildCustomAttributesDefinition(customAttributesJson);
         const selectionSetGroups = buildSelectionSetGroupsData(
@@ -202,6 +206,7 @@ export const fetchProject = async (
           patterns,
           curves,
           pipeMaterials: pipeLibrary,
+          pumpDefinitions,
           rawControls,
           controls,
           demands: {

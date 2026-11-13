@@ -20,6 +20,9 @@ interface LineGraphProps {
   onPointClick?: (index: number | null) => void;
   xAxisLabel?: string;
   yAxisLabel?: string;
+  zoomable?: boolean;
+  resetZoomLabel?: string;
+  zoomInstructions?: string;
 }
 
 export function LineGraph({
@@ -28,6 +31,9 @@ export function LineGraph({
   onPointClick,
   xAxisLabel,
   yAxisLabel,
+  zoomable = false,
+  resetZoomLabel = "Reset zoom",
+  zoomInstructions,
 }: LineGraphProps) {
   const translate = useTranslate();
   const chartRef = useRef<ReactECharts>(null);
@@ -44,7 +50,7 @@ export function LineGraph({
       type: "value",
       min,
       max,
-      interval,
+      interval: zoomable ? undefined : interval,
       name: xAxisLabel,
       nameLocation: "middle",
       nameGap: 24,
@@ -65,7 +71,7 @@ export function LineGraph({
         formatter: (value: number) => localizeDecimal(value, { decimals: 2 }),
       },
     };
-  }, [points, linePoints, xAxisLabel]);
+  }, [points, linePoints, xAxisLabel, zoomable]);
 
   const yAxis: EChartsOption["yAxis"] = useMemo(() => {
     const yValues = linePoints
@@ -76,7 +82,7 @@ export function LineGraph({
       type: "value",
       min,
       max,
-      interval,
+      interval: zoomable ? undefined : interval,
       name: yAxisLabel,
       nameLocation: "middle",
       nameGap: 40,
@@ -96,7 +102,7 @@ export function LineGraph({
         formatter: (value: number) => localizeDecimal(value, { decimals: 2 }),
       },
     };
-  }, [points, linePoints, yAxisLabel]);
+  }, [points, linePoints, yAxisLabel, zoomable]);
 
   const series: EChartsOption["series"] = useMemo(() => {
     const scatterData = points.map((p) => ({
@@ -119,7 +125,7 @@ export function LineGraph({
             width: 2,
           },
           emphasis: { disabled: true },
-          tooltip: { show: false },
+          tooltip: { show: zoomable },
         });
       }
     }
@@ -138,7 +144,7 @@ export function LineGraph({
     });
 
     return result;
-  }, [points, linePoints]);
+  }, [points, linePoints, zoomable]);
 
   const option: EChartsOption = useMemo(
     () => ({
@@ -153,6 +159,26 @@ export function LineGraph({
       xAxis,
       yAxis,
       series,
+      dataZoom: zoomable
+        ? [
+            {
+              type: "inside",
+              xAxisIndex: 0,
+              filterMode: "none",
+              zoomOnMouseWheel: true,
+              moveOnMouseMove: true,
+              moveOnMouseWheel: false,
+            },
+            {
+              type: "inside",
+              yAxisIndex: 0,
+              filterMode: "none",
+              zoomOnMouseWheel: true,
+              moveOnMouseMove: true,
+              moveOnMouseWheel: false,
+            },
+          ]
+        : undefined,
       tooltip: {
         trigger: "item",
         backgroundColor: "white",
@@ -171,7 +197,7 @@ export function LineGraph({
         },
       },
     }),
-    [xAxis, yAxis, series, xAxisLabel, yAxisLabel],
+    [xAxis, yAxis, series, xAxisLabel, yAxisLabel, zoomable],
   );
 
   useEffect(() => {
@@ -221,15 +247,39 @@ export function LineGraph({
   }
 
   return (
-    <div ref={containerRef} className="h-full w-full">
-      <ReactECharts
-        ref={chartRef}
-        option={option}
-        style={{ height: "100%", width: "100%" }}
-        opts={{ renderer: "svg" }}
-        notMerge={true}
-        onChartReady={onChartReady}
-      />
+    <div ref={containerRef} className="flex h-full w-full flex-col">
+      {zoomable && (
+        <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+          {zoomInstructions && (
+            <p className="text-size-small text-subtle">{zoomInstructions}</p>
+          )}
+          <button
+            type="button"
+            onClick={() =>
+              chartRef.current?.getEchartsInstance().dispatchAction({
+                type: "dataZoom",
+                batch: [
+                  { dataZoomIndex: 0, start: 0, end: 100 },
+                  { dataZoomIndex: 1, start: 0, end: 100 },
+                ],
+              })
+            }
+            className="min-h-11 shrink-0 rounded-md border bg-base px-3 py-2 text-size-small text-default hover:bg-base-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            {resetZoomLabel}
+          </button>
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
+        <ReactECharts
+          ref={chartRef}
+          option={option}
+          style={{ height: "100%", width: "100%" }}
+          opts={{ renderer: "svg" }}
+          notMerge={true}
+          onChartReady={onChartReady}
+        />
+      </div>
     </div>
   );
 }

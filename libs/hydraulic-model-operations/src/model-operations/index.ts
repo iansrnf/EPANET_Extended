@@ -21,6 +21,7 @@ export {
   changeZoneProperties,
 } from "./change-zone-property";
 export { changePipeMaterials } from "./change-pipe-materials";
+export { changePumpDefinitions } from "./change-pump-definitions";
 export { changeCustomAttributesDefinition } from "./change-custom-attributes-definition";
 export { changeElevations, type NodeElevation } from "./change-elevations";
 export { changeDemandAssignment } from "./change-demand-assignment";

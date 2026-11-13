@@ -45,6 +45,7 @@ export type PumpBuildData = {
   coordinates?: Position[];
   connections?: LinkConnections;
   definitionType?: PumpDefinitionType;
+  pumpDefinitionId?: string;
   power?: number;
   curve?: CurvePoint[];
   curveId?: CurveId;
@@ -234,6 +235,7 @@ export class AssetFactory {
     initialStatus = "on",
     connections = nullConnections,
     definitionType = "designPointCurve",
+    pumpDefinitionId,
     curveId,
     curve,
     power,
@@ -253,6 +255,7 @@ export class AssetFactory {
       length: null,
       initialStatus,
       definitionType,
+      pumpDefinitionId,
       power: power ?? null,
       speed,
       speedPatternId,

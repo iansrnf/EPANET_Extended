@@ -2,6 +2,7 @@ export * from "./enums";
 export * from "./cells";
 export * from "./controls";
 export * from "./pipe-library";
+export * from "./pump-definitions";
 export * from "./raw-controls";
 export * from "./custom-attributes";
 export * from "./zones";

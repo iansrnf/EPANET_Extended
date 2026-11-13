@@ -132,8 +132,7 @@ const buildJunction = (
     emitterCoefficient: nullable(row.emitter_coefficient),
     initialQuality: nullable(row.initial_quality),
     chemicalSourceType: nullable(row.chemical_source_type) as
-      | ChemicalSourceType
-      | undefined,
+      ChemicalSourceType | undefined,
     chemicalSourceStrength: nullable(row.chemical_source_strength),
     chemicalSourcePatternId: nullable(row.chemical_source_pattern_id),
     isActive: toBool(row.is_active),
@@ -152,8 +151,7 @@ const buildReservoir = (
     headPatternId: nullable(row.head_pattern_id),
     initialQuality: nullable(row.initial_quality),
     chemicalSourceType: nullable(row.chemical_source_type) as
-      | ChemicalSourceType
-      | undefined,
+      ChemicalSourceType | undefined,
     chemicalSourceStrength: nullable(row.chemical_source_strength),
     chemicalSourcePatternId: nullable(row.chemical_source_pattern_id),
     isActive: toBool(row.is_active),
@@ -176,8 +174,7 @@ const buildTank = (row: TankRow, assetFactory: AssetFactory): Tank =>
     initialQuality: nullable(row.initial_quality),
     bulkReactionCoeff: nullable(row.bulk_reaction_coeff),
     chemicalSourceType: nullable(row.chemical_source_type) as
-      | ChemicalSourceType
-      | undefined,
+      ChemicalSourceType | undefined,
     chemicalSourceStrength: nullable(row.chemical_source_strength),
     chemicalSourcePatternId: nullable(row.chemical_source_pattern_id),
     isActive: toBool(row.is_active),
@@ -210,6 +207,7 @@ const buildPump = (row: PumpRow, assetFactory: AssetFactory): Pump =>
     connections: [row.start_node_id, row.end_node_id],
     initialStatus: nullable(row.initial_status) as PumpStatus | undefined,
     definitionType: row.definition_type as PumpDefinitionType,
+    pumpDefinitionId: nullable(row.pump_definition_id),
     power: nullable(row.power),
     curveId: nullable(row.curve_id),
     curve: parsePumpCurvePoints(row),

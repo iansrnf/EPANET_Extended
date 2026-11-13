@@ -19,6 +19,7 @@ import {
   customAttributeSchema,
 } from "./custom-attributes";
 import { pipeLibrarySchema } from "./pipe-library";
+import { pumpDefinitionsSchema } from "./pump-definitions";
 import { rawControlsSchema } from "./raw-controls";
 import { zoneBboxSchema, zoneGeometrySchema } from "./zones";
 import {
@@ -108,6 +109,7 @@ const pump: FieldSchemas = {
   ...sharedLink,
   initialStatus: z.enum(pumpStatuses),
   definitionType: z.enum(pumpDefinitionTypes),
+  pumpDefinitionId: textCell,
   power: nullableReal,
   speed: realCell,
   speedPatternId: intCell,
@@ -202,6 +204,7 @@ export const fieldSchemas: Record<EntityKind, FieldSchemas> = {
   customerDemand: whole(demandsCell),
   customAttributesDefinition: whole(customAttributesPlainCell),
   pipeLibrary: whole(pipeLibrarySchema),
+  pumpDefinitions: whole(pumpDefinitionsSchema),
   rawControls: whole(rawControlsSchema),
   zone,
 };

@@ -12,6 +12,7 @@ import type {
   Curves,
   CustomerPoint,
   CustomerPointId,
+  HydraulicModel,
   Patterns,
   PipeMaterial,
   RawControls,
@@ -350,6 +351,12 @@ export const setPipeLibrary =
   (materials: PipeMaterial[]): Intent =>
   (model, out) => {
     putSingleton("pipeLibrary", model.pipeMaterials, materials, out);
+  };
+
+export const setPumpDefinitions =
+  (definitions: HydraulicModel["pumpDefinitions"]): Intent =>
+  (model, out) => {
+    putSingleton("pumpDefinitions", model.pumpDefinitions, definitions, out);
   };
 
 export const setRawControls =

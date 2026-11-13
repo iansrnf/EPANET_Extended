@@ -52,6 +52,7 @@ import { ControlsDialog } from "src/dialogs/controls-dialog";
 import { PatternsDialog } from "src/dialogs/patterns";
 import { PipeLibraryDialog } from "src/dialogs/pipe-library";
 import { PumpLibraryDialog } from "src/dialogs/pump-library";
+import { PumpDefinitionDialog } from "src/dialogs/pump-definition-dialog";
 import { CurveLibraryDialog } from "src/dialogs/curves";
 import { CustomAttributesDialog } from "src/dialogs/custom-attributes";
 import { DeleteScenarioConfirmationDialog } from "src/dialogs/delete-scenario-confirmation";
@@ -276,6 +277,9 @@ export const Dialogs = memo(function Dialogs() {
         initialSection={dialog.initialSection}
       />
     );
+  }
+  if (dialog.type === "pumpDefinition") {
+    return <PumpDefinitionDialog key={dialog.pumpId} pumpId={dialog.pumpId} />;
   }
   if (dialog.type === "curveLibrary") {
     return (

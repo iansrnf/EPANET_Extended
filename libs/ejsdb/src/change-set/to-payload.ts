@@ -283,6 +283,11 @@ const buildPayload = (changes: readonly EntityChange[]): WriteBatch => {
           wholeValueOf(change.fields),
         );
         break;
+      case "pumpDefinitions":
+        payload.pumpDefinitionsReplacement = JSON.stringify(
+          wholeValueOf(change.fields),
+        );
+        break;
       case "rawControls":
         payload.rawControlsReplacement = JSON.stringify(
           wholeValueOf(change.fields),

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { isCurveInUse } from "./curve-usage";
+import { isCurveInUse, isCurveOwnedByPumpDefinition } from "./curve-usage";
+import { createDefaultPumpDefinition } from "./pump-definitions";
 import type { Curves } from "./curves";
 import { initializeHydraulicModel } from "./hydraulic-model";
 import type { Asset } from "./asset-types";
@@ -56,6 +57,24 @@ describe("isCurveInUse", () => {
     );
 
     expect(isCurveInUse(hydraulicModel, IDS.CURVE)).toBe(false);
+  });
+
+  it("keeps definition-owned curves in use without assigned pumps", () => {
+    const definition = createDefaultPumpDefinition("1", "Booster");
+    definition.headCurveId = IDS.CURVE;
+    definition.efficiencyCurveId = IDS.OTHER_CURVE;
+    const model = initializeHydraulicModel({ pumpDefinitions: [definition] });
+
+    expect(isCurveInUse(model, IDS.CURVE)).toBe(true);
+    expect(isCurveInUse(model, IDS.OTHER_CURVE)).toBe(true);
+    expect(isCurveOwnedByPumpDefinition(model, IDS.CURVE)).toBe(true);
+    expect(isCurveOwnedByPumpDefinition(model, IDS.OTHER_CURVE)).toBe(true);
+
+    definition.head.type = "power";
+    expect(isCurveInUse(model, IDS.CURVE)).toBe(true);
+    model.pumpDefinitions = [];
+    expect(isCurveOwnedByPumpDefinition(model, IDS.CURVE)).toBe(false);
+    expect(isCurveInUse(model, IDS.CURVE)).toBe(false);
   });
 
   const curves = (

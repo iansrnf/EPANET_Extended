@@ -18,5 +18,6 @@ export enum Entity {
   CustomAttributesDefinition = 12,
   PipeLibrary = 13,
   RawControls = 14,
-  Zone = 15
+  Zone = 15,
+  PumpDefinitions = 16
 }

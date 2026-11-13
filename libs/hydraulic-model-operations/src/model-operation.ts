@@ -38,8 +38,7 @@ export type CustomerDemandAssignment = {
 };
 
 export type DemandAssignment =
-  | JunctionDemandAssignment
-  | CustomerDemandAssignment;
+  JunctionDemandAssignment | CustomerDemandAssignment;
 
 export type OperationCode =
   | "activateAssets"
@@ -57,6 +56,7 @@ export type OperationCode =
   | "changeLabel"
   | "changePatterns"
   | "changePipeMaterials"
+  | "changePumpDefinitions"
   | "changeProperties"
   | "changeProperty"
   | "changeRawControls"

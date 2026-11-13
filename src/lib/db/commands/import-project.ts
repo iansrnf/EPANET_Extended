@@ -16,6 +16,7 @@ import {
   serializeRawControls,
   serializeControls,
   serializePipeLibrary,
+  serializePumpDefinitions,
   junctionDemandsToRows,
   serializeProjectSettings,
   zonesToRows,
@@ -64,6 +65,9 @@ export const importProject = async (
       newDb: input.newDb ?? false,
       projectSettings,
       pipeLibrary,
+      pumpDefinitions: serializePumpDefinitions(
+        input.hydraulicModel.pumpDefinitions,
+      ),
       selectionSetGroups,
       selectionSets,
       bookmarks,

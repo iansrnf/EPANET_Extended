@@ -7,7 +7,6 @@ import {
   ControlsIcon,
   PatternsIcon,
   PipeLibraryIcon,
-  PumpLibraryIcon,
   CurveLibraryIcon,
   CustomAttributesIcon,
 } from "src/icons";
@@ -16,7 +15,6 @@ import { Button, DDContent, StyledItem } from "src/components/elements";
 import { useShowControls } from "src/commands/show-controls";
 import { useShowPatternsLibrary } from "src/commands/show-patterns-library";
 import { useShowPipeLibrary } from "src/commands/show-pipe-library";
-import { useShowPumpLibrary } from "src/commands/show-pump-library";
 import { useShowCurveLibrary } from "src/commands/show-curve-library";
 import { useShowCustomAttributes } from "src/commands/show-custom-attributes";
 
@@ -25,7 +23,6 @@ export const OperationalDataDropdown = () => {
   const showControls = useShowControls();
   const showPatternsLibrary = useShowPatternsLibrary();
   const showPipeLibrary = useShowPipeLibrary();
-  const showPumpLibrary = useShowPumpLibrary();
   const showCurveLibrary = useShowCurveLibrary();
   const showCustomAttributes = useShowCustomAttributes();
 
@@ -58,11 +55,6 @@ export const OperationalDataDropdown = () => {
             >
               <CurveLibraryIcon />
               {translate("curves.title")}
-            </StyledItem>
-
-            <StyledItem onSelect={() => showPumpLibrary({ source: "toolbar" })}>
-              <PumpLibraryIcon />
-              {translate("pumpLibrary")}
             </StyledItem>
 
             <StyledItem onSelect={() => showPipeLibrary({ source: "toolbar" })}>

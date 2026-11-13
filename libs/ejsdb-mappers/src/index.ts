@@ -18,6 +18,8 @@ export * from "./custom-attributes-definition/to-rows";
 export * from "./custom-attributes-definition/builders";
 export * from "./pipe-library/to-rows";
 export * from "./pipe-library/builders";
+export * from "./pump-definitions/to-rows";
+export * from "./pump-definitions/builders";
 export * from "./project-settings/to-rows";
 export * from "./project-settings/builders";
 export * from "./zones/to-rows";

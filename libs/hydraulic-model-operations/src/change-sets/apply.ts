@@ -51,6 +51,7 @@ export type ApplyReport = {
 };
 
 const CREATE_RANK: Record<EntityKind, number> = {
+  pumpDefinitions: -1,
   pipeLibrary: 0,
   rawControls: 1,
   customAttributesDefinition: 2,
@@ -358,6 +359,11 @@ const applyChanges = (
             break;
           case "pipeLibrary":
             model.pipeMaterials = wholeValueOf<PipeMaterial[]>(change.fields);
+            break;
+          case "pumpDefinitions":
+            model.pumpDefinitions = wholeValueOf<
+              HydraulicModel["pumpDefinitions"]
+            >(change.fields);
             break;
           case "rawControls":
             model.rawControls = wholeValueOf<RawControls>(change.fields);

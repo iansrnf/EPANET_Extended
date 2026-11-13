@@ -194,6 +194,7 @@ const toPumpRow = (pump: Pump): PumpRow =>
       length: null,
       initial_status: pump.initialStatus,
       definition_type: pump.definitionType,
+      pump_definition_id: pump.pumpDefinitionId ?? null,
       power: pump.power ?? null,
       speed: pump.speed ?? null,
       speed_pattern_id: toDbId(pump.speedPatternId),

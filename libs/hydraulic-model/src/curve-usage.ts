@@ -8,6 +8,7 @@ export const isCurveInUse = (
   hydraulicModel: HydraulicModel,
   curveId: CurveId,
 ): boolean => {
+  if (isCurveOwnedByPumpDefinition(hydraulicModel, curveId)) return true;
   for (const asset of hydraulicModel.assets.values()) {
     if (asset instanceof Pump) {
       if (asset.curveId === curveId || asset.efficiencyCurveId === curveId)
@@ -20,3 +21,13 @@ export const isCurveInUse = (
   }
   return false;
 };
+
+export const isCurveOwnedByPumpDefinition = (
+  hydraulicModel: HydraulicModel,
+  curveId: CurveId,
+): boolean =>
+  hydraulicModel.pumpDefinitions.some(
+    (definition) =>
+      definition.headCurveId === curveId ||
+      definition.efficiencyCurveId === curveId,
+  );

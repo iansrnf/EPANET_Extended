@@ -12,7 +12,7 @@ import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
 import { highlightsAtom } from "src/state/highlights";
 import { localizeDecimal } from "@epanet-js/i18n";
-import { InlineField, NestedSection } from "src/components/form/fields";
+import { NestedSection } from "src/components/form/fields";
 import { TextField } from "src/components/form/text-field";
 import { NumericTable, Cell } from "src/components/form/numeric-table";
 
@@ -187,10 +187,11 @@ export const PumpLevelBasedControls = ({
   }
 
   return (
-    <NestedSection className="pb-2">
-      <InlineField name={translate("tank")} labelSize="md">
+    <NestedSection className="py-2">
+      <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
+        <span className="text-size-base text-subtle">{translate("tank")}</span>
         <div
-          className="w-full"
+          className="min-w-0 w-full"
           onMouseEnter={() => highlightTankById(control.tankId)}
           onMouseLeave={clearHighlight}
         >
@@ -207,7 +208,7 @@ export const PumpLevelBasedControls = ({
             />
           )}
         </div>
-      </InlineField>
+      </div>
       <NumericTable
         labels={{
           horizontal: [levelLabel, translate("speed")],

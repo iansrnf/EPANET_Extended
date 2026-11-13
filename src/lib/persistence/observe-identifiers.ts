@@ -23,6 +23,7 @@ const identifiersByEntity: Record<EntityKind, Identifiers | null> = {
   allControls: null,
   customAttributesDefinition: null,
   pipeLibrary: null,
+  pumpDefinitions: null,
   rawControls: null,
   zone: { pool: "zone", labelType: "zone" },
 };

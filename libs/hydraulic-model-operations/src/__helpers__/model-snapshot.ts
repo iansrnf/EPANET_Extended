@@ -82,6 +82,7 @@ export const snapshot = (
     .map(canonical),
   rawControls: canonical(model.rawControls),
   pipeMaterials: canonical(model.pipeMaterials),
+  pumpDefinitions: canonical(model.pumpDefinitions),
   customAttributes: canonical(model.customAttributes),
   topology: [...model.assets.values()]
     .filter((asset) => asset.isLink)

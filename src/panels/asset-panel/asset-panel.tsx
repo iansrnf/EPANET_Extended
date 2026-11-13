@@ -126,7 +126,7 @@ import {
   ValveControlsEditor,
   type FlowModulatingValveTargets,
 } from "./flow-modulating-valve-controls-editor";
-import { PumpDefinitionDetails } from "./pump-definition-details";
+import { PumpDefinitionSummary } from "./pump-definition-summary";
 import { getAttribute, isCustomProperty } from "@epanet-js/hydraulic-model";
 import { CustomAttributesSection } from "./custom-attributes-section";
 import { NumericTable } from "src/components/form/numeric-table";
@@ -2496,7 +2496,6 @@ const PumpEditor = ({
   onStatusChange,
   onPropertyChange,
   onActiveTopologyStatusChange,
-  onBatchPropertyChange,
   onLabelChange,
   onControlChange,
   units,
@@ -2526,13 +2525,8 @@ const PumpEditor = ({
   const simulationSettings = useAtomValue(simulationSettingsDerivedAtom);
   const translate = useTranslate();
   const { footer } = useQuickGraph(pump.id, "pump");
-  const {
-    getComparison,
-    getCurveComparison,
-    getPatternComparison,
-    getPumpCurveComparison,
-    isNew,
-  } = useAssetComparison(pump);
+  const { getComparison, getCurveComparison, getPatternComparison, isNew } =
+    useAssetComparison(pump);
   const simulation = useSimulation();
   const pumpSimulation = simulation?.getPump(pump.id);
   const pumpEnergy = simulation?.getPumpEnergy(pump.id) ?? null;
@@ -2668,14 +2662,9 @@ const PumpEditor = ({
         section="modelAttributes"
         hasChanged={hasModelAttributesChanges}
       >
-        <PumpDefinitionDetails
+        <PumpDefinitionSummary
           pump={pump}
-          curves={hydraulicModel.curves}
-          units={units}
-          onChange={onBatchPropertyChange}
-          readonly={readonly}
-          getComparison={getComparison}
-          getPumpCurveComparison={getPumpCurveComparison}
+          definitions={hydraulicModel.pumpDefinitions}
         />
 
         <QuantityRow
@@ -2738,13 +2727,15 @@ const PumpEditor = ({
         section="energy"
         hasChanged={hasEnergyChanges}
       >
-        <PumpEfficiencyCurveField
-          pump={pump}
-          curves={hydraulicModel.curves}
-          globalEfficiency={simulationSettings.energyGlobalEfficiency}
-          onChange={onPropertyChange}
-          readOnly={readonly}
-        />
+        {!pump.pumpDefinitionId && (
+          <PumpEfficiencyCurveField
+            pump={pump}
+            curves={hydraulicModel.curves}
+            globalEfficiency={simulationSettings.energyGlobalEfficiency}
+            onChange={onPropertyChange}
+            readOnly={readonly}
+          />
+        )}
         <QuantityRow
           name="energyPrice"
           value={pump.energyPrice}
@@ -3045,8 +3036,7 @@ const ChemicalSourceEditor = ({
 
     if (typeComparison.hasChanged) {
       const baseType = typeComparison.baseValue as
-        | ChemicalSourceType
-        | undefined;
+        ChemicalSourceType | undefined;
       const baseLabel = baseType
         ? translate(`source.${baseType}`)
         : `(${translate("none").toLocaleLowerCase()})`;

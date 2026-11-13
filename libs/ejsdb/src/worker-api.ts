@@ -380,6 +380,12 @@ const updatePipeLibrary = (json: string) => {
   });
 };
 
+const updatePumpDefinitions = (json: string) => {
+  db!.exec("UPDATE project SET pump_definitions = ? WHERE id = 1", {
+    bind: [json],
+  });
+};
+
 const upsertRawControls = (data: string) => {
   db!.exec(`INSERT OR REPLACE INTO raw_controls (id, data) VALUES (1, ?)`, {
     bind: [data],
@@ -425,7 +431,7 @@ const BULK_CHUNK_SIZES = {
   reservoirs: 2300, // 13 cols × 2300 = 29900 params
   tanks: 1400, // 21 cols × 1400 = 29400 params
   pipes: 1800, // 16 cols × 1800 = 28800 params
-  pumps: 1600, // 18 cols × 1600 = 28800 params
+  pumps: 1600, // 19 cols × 1600 = 30400 params
   valves: 2000, // 15 cols × 2000 = 30000 params
   customer_points: 3200, //  9 cols × 3200 = 28800 params
   customer_point_demands: 7500, //  4 cols × 7500 = 30000 params
@@ -811,6 +817,7 @@ const bulkInsertPumps = (rows: readonly PumpRow[]) => {
       "length",
       "initial_status",
       "definition_type",
+      "pump_definition_id",
       "power",
       "speed",
       "speed_pattern_id",
@@ -833,6 +840,7 @@ const bulkInsertPumps = (rows: readonly PumpRow[]) => {
         row.length,
         row.initial_status,
         row.definition_type,
+        row.pump_definition_id,
         row.power,
         row.speed,
         row.speed_pattern_id,
@@ -1048,6 +1056,7 @@ const countImportProject = (payload: ImportProjectPayload) => ({
   newDb: payload.newDb ? 1 : 0,
   settings: payload.projectSettings !== null ? 1 : 0,
   pipeLib: payload.pipeLibrary !== null ? 1 : 0,
+  pumpDefs: payload.pumpDefinitions !== null ? 1 : 0,
   groups: payload.selectionSetGroups?.length ?? 0,
   selSets: payload.selectionSets?.length ?? 0,
   bookmarks: payload.bookmarks !== null ? 1 : 0,
@@ -1096,6 +1105,7 @@ const countWriteBatch = (payload: WriteBatch) => ({
   upZone: payload.zoneUpserts.length,
   patZone: payload.zonePatches.length,
   pipeLib: payload.pipeLibraryReplacement !== null ? 1 : 0,
+  pumpDefs: payload.pumpDefinitionsReplacement !== null ? 1 : 0,
   ctrl: payload.rawControlsReplacement !== null ? 1 : 0,
   ctrls: payload.controlsReplacement !== null ? 1 : 0,
 });
@@ -1220,6 +1230,9 @@ const applyWriteBatch = (label: string, payload: WriteBatch): Promise<void> =>
       applyCustomAttributeValues("zones", payload.zoneCustomAttributeValues);
       if (payload.pipeLibraryReplacement !== null) {
         updatePipeLibrary(payload.pipeLibraryReplacement);
+      }
+      if (payload.pumpDefinitionsReplacement !== null) {
+        updatePumpDefinitions(payload.pumpDefinitionsReplacement);
       }
       if (payload.rawControlsReplacement !== null) {
         upsertRawControls(payload.rawControlsReplacement);
@@ -1446,6 +1459,21 @@ export const api = {
       const rows = db.exec("SELECT pipe_library FROM project WHERE id = 1", {
         returnValue: "resultRows",
       }) as string[][];
+      if (rows.length === 0) return null;
+      return rows[0][0];
+    });
+  },
+
+  async getPumpDefinitions(): Promise<string | null> {
+    return timed("getPumpDefinitions", async () => {
+      await ready;
+      if (!db) throw new Error("No database open");
+      const rows = db.exec(
+        "SELECT pump_definitions FROM project WHERE id = 1",
+        {
+          returnValue: "resultRows",
+        },
+      ) as string[][];
       if (rows.length === 0) return null;
       return rows[0][0];
     });
@@ -1787,6 +1815,9 @@ export const api = {
         }
         if (payload.pipeLibrary !== null) {
           updatePipeLibrary(payload.pipeLibrary);
+        }
+        if (payload.pumpDefinitions !== null) {
+          updatePumpDefinitions(payload.pumpDefinitions);
         }
         if (payload.selectionSetGroups !== null) {
           replaceSelectionSetGroups(payload.selectionSetGroups);

@@ -36,6 +36,7 @@ const entityToFb: Record<EntityKind, Entity> = {
   customerDemand: Entity.CustomerDemand,
   customAttributesDefinition: Entity.CustomAttributesDefinition,
   pipeLibrary: Entity.PipeLibrary,
+  pumpDefinitions: Entity.PumpDefinitions,
   rawControls: Entity.RawControls,
   zone: Entity.Zone,
 };

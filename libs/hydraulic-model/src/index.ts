@@ -16,6 +16,7 @@ export * from "./id-pools";
 export * from "./curves";
 export * from "./curve-usage";
 export * from "./pump-curve-points";
+export * from "./pump-definitions";
 export * from "./patterns";
 export * from "./pattern-usage";
 export * from "./pipe-materials";

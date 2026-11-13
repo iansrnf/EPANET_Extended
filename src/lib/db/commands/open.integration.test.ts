@@ -214,6 +214,8 @@ describe("open integration", () => {
       simulationSettings: defaultSimulationSettings,
     });
     await withTransaction("downgrade", (db) => {
+      db.exec("ALTER TABLE project DROP COLUMN pump_definitions");
+      db.exec("ALTER TABLE pumps DROP COLUMN pump_definition_id");
       db.exec(
         "UPDATE project SET settings = json_remove(settings, '$.loggers')",
       );
@@ -339,6 +341,8 @@ describe("open integration", () => {
       simulationSettings: defaultSimulationSettings,
     });
     await withTransaction("downgrade", (db) => {
+      db.exec("ALTER TABLE project DROP COLUMN pump_definitions");
+      db.exec("ALTER TABLE pumps DROP COLUMN pump_definition_id");
       db.exec("DROP TABLE scenarios");
       db.exec("DROP TABLE scripts");
       db.exec("ALTER TABLE zones DROP COLUMN custom_attributes");
@@ -372,6 +376,8 @@ describe("open integration", () => {
       simulationSettings: defaultSimulationSettings,
     });
     await withTransaction("downgrade", (db) => {
+      db.exec("ALTER TABLE project DROP COLUMN pump_definitions");
+      db.exec("ALTER TABLE pumps DROP COLUMN pump_definition_id");
       db.exec("DROP TABLE scripts");
       db.exec("ALTER TABLE zones DROP COLUMN custom_attributes");
       db.exec("ALTER TABLE selection_sets DROP COLUMN zones");
@@ -417,6 +423,8 @@ describe("open integration", () => {
       simulationSettings: defaultSimulationSettings,
     });
     await withTransaction("downgrade", (db) => {
+      db.exec("ALTER TABLE project DROP COLUMN pump_definitions");
+      db.exec("ALTER TABLE pumps DROP COLUMN pump_definition_id");
       db.exec("ALTER TABLE zones DROP COLUMN custom_attributes");
       db.exec("ALTER TABLE selection_sets DROP COLUMN zones");
       db.exec("DROP TABLE selection_set_groups");
@@ -450,6 +458,8 @@ describe("open integration", () => {
       ],
     });
     await withTransaction("downgrade", (db) => {
+      db.exec("ALTER TABLE project DROP COLUMN pump_definitions");
+      db.exec("ALTER TABLE pumps DROP COLUMN pump_definition_id");
       db.exec("ALTER TABLE selection_sets DROP COLUMN zones");
       db.exec("DROP TABLE selection_set_groups");
       db.exec("ALTER TABLE selection_sets DROP COLUMN group_id");

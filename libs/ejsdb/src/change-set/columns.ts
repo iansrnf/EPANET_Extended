@@ -227,6 +227,7 @@ export const pumpMap: ColumnMap<PumpRow> = {
   ...sharedLinkMap,
   initialStatus: column<PumpRow>("initial_status", toNullable),
   definitionType: column<PumpRow>("definition_type"),
+  pumpDefinitionId: column<PumpRow>("pump_definition_id", toNullable),
   power: column<PumpRow>("power", toNullable),
   speed: column<PumpRow>("speed", toNullable),
   speedPatternId: column<PumpRow>("speed_pattern_id", toNullable),

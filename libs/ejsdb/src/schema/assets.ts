@@ -89,6 +89,7 @@ export const pumpRowSchema = z.object({
   ...linkRowShared,
   initial_status: z.enum(pumpStatuses).nullable(),
   definition_type: z.enum(pumpDefinitionTypes),
+  pump_definition_id: z.string().nullable(),
   power: nullableReal,
   speed: nullableReal,
   speed_pattern_id: fkId,

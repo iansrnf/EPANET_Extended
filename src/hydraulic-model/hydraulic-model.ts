@@ -28,6 +28,7 @@ export const copyModel = (source: HydraulicModel): HydraulicModel => {
     curves: new Map(source.curves),
     patterns: new Map(source.patterns),
     pipeMaterials: [...source.pipeMaterials],
+    pumpDefinitions: [...source.pumpDefinitions],
     rawControls: { ...source.rawControls },
     controls,
     controlsLookup: buildControlsLookup(controls),

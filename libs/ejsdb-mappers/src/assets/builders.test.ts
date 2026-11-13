@@ -75,6 +75,7 @@ const makePump = (overrides: Partial<PumpRow>): PumpRow => ({
   length: null,
   initial_status: null,
   definition_type: "power",
+  pump_definition_id: null,
   power: null,
   speed: null,
   speed_pattern_id: null,

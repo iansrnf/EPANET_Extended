@@ -91,6 +91,18 @@ function buildPatches(
       properties[property] = value;
     }
 
+    if (
+      asset.type === "pump" &&
+      asset.getProperty("pumpDefinitionId") &&
+      Object.entries(properties).some(
+        ([property, value]) =>
+          pumpDefinitionFields.has(property) &&
+          !samePropertyValue(asset.getProperty(property), value),
+      )
+    ) {
+      properties.pumpDefinitionId = undefined;
+    }
+
     if (Object.keys(properties).length > 0) {
       patches.push({
         id: assetId,
@@ -101,4 +113,22 @@ function buildPatches(
   }
 
   return patches;
+}
+
+const pumpDefinitionFields = new Set([
+  "definitionType",
+  "power",
+  "curve",
+  "curveId",
+  "efficiencyCurveId",
+]);
+
+function samePropertyValue(current: unknown, next: unknown): boolean {
+  if (current === next) return true;
+  if (current === null || next === null) return false;
+  return (
+    typeof current === "object" &&
+    typeof next === "object" &&
+    JSON.stringify(current) === JSON.stringify(next)
+  );
 }

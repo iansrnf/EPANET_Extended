@@ -22,6 +22,7 @@ export type PumpProperties = {
   type: "pump";
   initialStatus: PumpStatus;
   definitionType: PumpDefinitionType;
+  pumpDefinitionId?: string;
   power: number | null;
   speed?: number;
   speedPatternId?: PatternId;
@@ -42,6 +43,10 @@ export class Pump extends Link<PumpProperties> {
 
   get definitionType() {
     return this.properties.definitionType;
+  }
+
+  get pumpDefinitionId() {
+    return this.properties.pumpDefinitionId;
   }
 
   get power() {

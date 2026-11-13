@@ -16,6 +16,7 @@ export {
   setCustomerPoint,
   setDemands,
   setPipeLibrary,
+  setPumpDefinitions,
   setRawControls,
   setZone,
 } from "./intents";

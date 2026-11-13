@@ -243,6 +243,13 @@ export const PumpLibraryDialog = ({
   // so edits made while it runs would be silently overwritten.
   const [isImporting, setImporting] = useState(false);
   const isLocked = isEditionBlocked || isImporting;
+  const isDefinitionCurve =
+    selectedCurveId !== null &&
+    hydraulicModel.pumpDefinitions.some(
+      (definition) =>
+        definition.headCurveId === selectedCurveId ||
+        definition.efficiencyCurveId === selectedCurveId,
+    );
 
   return (
     <BaseDialog
@@ -286,7 +293,7 @@ export const PumpLibraryDialog = ({
               onAddCurve={handleAddCurve}
               onChangeCurve={handleCurveChange}
               onDeleteCurve={handleDeleteCurve}
-              readOnly={isLocked}
+              readOnly={isLocked || isDefinitionCurve}
             />
             <VerticalResizer
               width={sidebarWidth}
@@ -294,6 +301,11 @@ export const PumpLibraryDialog = ({
             />
           </div>
           <div className="flex-1 flex flex-col min-h-0 w-full">
+            {isDefinitionCurve && (
+              <p className="border-b bg-info-subtle px-4 py-3 text-size-base text-info">
+                {translate("pumpDefinitions.managedCurveHint")}
+              </p>
+            )}
             {importOutcome && (
               <ImportOutcomeReport
                 outcome={importOutcome}
@@ -312,7 +324,7 @@ export const PumpLibraryDialog = ({
                     onChange={(points) =>
                       handleCurveChange(selectedCurveId, { points })
                     }
-                    readOnly={isEditionBlocked || isUncategorized}
+                    readOnly={isLocked || isUncategorized || isDefinitionCurve}
                     curveType={curveType}
                     units={projectSettings.units}
                   />

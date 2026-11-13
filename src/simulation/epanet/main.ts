@@ -4,6 +4,7 @@ import { EPSSimulationResult, ProgressCallback } from "./worker";
 import { withDebugInstrumentation } from "src/infra/with-instrumentation";
 import { captureError, captureWarning } from "src/infra/error-tracking";
 import { enrichWorkerError } from "src/infra/worker";
+import type { IKeyBufferStore } from "src/infra/storage";
 
 let cancelRequested = false;
 
@@ -19,6 +20,7 @@ export const runSimulation = withDebugInstrumentation(
     flags: Record<string, boolean> = {},
     scenarioKey?: string,
     runId?: string,
+    resultsStorage?: IKeyBufferStore,
   ): Promise<EPSSimulationResult> => {
     cancelRequested = false;
     const proxiedCallback = Comlink.proxy(
@@ -36,9 +38,18 @@ export const runSimulation = withDebugInstrumentation(
         flags,
         scenarioKey,
         runId,
+        resultsStorage
+          ? Comlink.proxy((key: string, data: ArrayBuffer) =>
+              resultsStorage.save(key, data),
+            )
+          : undefined,
       );
     } catch (e) {
+      await resultsStorage?.clearRun();
       throw enrichWorkerError("simulation", e);
+    }
+    if (result.status !== "success" && result.status !== "warning") {
+      await resultsStorage?.clearRun();
     }
     if (result.jsError) {
       const contexts = result.simulationStats

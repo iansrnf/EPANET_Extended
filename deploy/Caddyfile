@@ -1,0 +1,5 @@
+{$EPANET_HOST} {
+	tls internal
+	encode zstd gzip
+	reverse_proxy {$EPANET_UPSTREAM:127.0.0.1:3006}
+}

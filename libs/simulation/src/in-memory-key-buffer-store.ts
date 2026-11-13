@@ -6,14 +6,21 @@ const sharedStorage = new Map<string, Map<string, ArrayBuffer>>();
 export class InMemoryKeyBufferStore
   implements IKeyBufferStore, ISyncKeyBufferReader
 {
-  constructor(private readonly appId: string) {
-    if (!sharedStorage.has(appId)) {
+  private readonly ownedData?: Map<string, ArrayBuffer>;
+
+  constructor(
+    private readonly appId: string,
+    { shared = true }: { shared?: boolean } = {},
+  ) {
+    if (!shared) {
+      this.ownedData = new Map();
+    } else if (!sharedStorage.has(appId)) {
       sharedStorage.set(appId, new Map());
     }
   }
 
   private get data(): Map<string, ArrayBuffer> {
-    return sharedStorage.get(this.appId)!;
+    return this.ownedData ?? sharedStorage.get(this.appId)!;
   }
 
   save(key: string, data: ArrayBuffer): Promise<void> {
@@ -91,6 +98,7 @@ export class InMemoryKeyBufferStore
   }
 
   clearRun(): Promise<void> {
+    this.ownedData?.clear();
     return Promise.resolve();
   }
 

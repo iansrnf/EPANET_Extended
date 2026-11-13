@@ -610,7 +610,7 @@
   "libraryCurve": "Library curve",
   "pumpHead": "Pump head",
   "simulate": "Simulate",
-  "simulateUnavailableNoBrowserStorage": "Simulation needs browser storage that this window cannot use. Private browsing blocks it, and older browsers do not support it. Try a normal window, or update your browser to the latest version.",
+  "simulateUnavailableNoBrowserStorage": "Simulation needs browser storage that this window cannot use. Open the app using HTTPS or localhost in a normal browser window, and use an up-to-date browser.",
   "simulation": "Simulation",
   "simulationReport": "Simulation report",
   "simulationReadyToRun": "Ready to run",

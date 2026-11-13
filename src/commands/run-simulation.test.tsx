@@ -15,6 +15,7 @@ import { lib } from "src/lib/worker";
 import { Mock } from "vitest";
 import { runSimulation as workerRunSimulation } from "src/simulation/epanet/worker";
 import { patchEpanetLoader } from "src/__helpers__/epanet-loader";
+import * as simulationStorage from "src/infra/storage";
 
 vi.mock("src/lib/worker", () => ({
   lib: {
@@ -46,10 +47,12 @@ describe("Run simulation", () => {
 
   beforeEach(() => {
     wireWebWorker();
+    vi.spyOn(simulationStorage, "isOPFSAvailable").mockResolvedValue(true);
     canValidateModelAttributes = false;
   });
   afterEach(() => {
     vi.clearAllMocks();
+    vi.mocked(simulationStorage.isOPFSAvailable).mockRestore();
     blockingChecksOverride = null;
   });
 
@@ -79,7 +82,41 @@ describe("Run simulation", () => {
       expect(
         "epsResultsReader" in simulation && simulation.epsResultsReader,
       ).toBeTruthy();
+      expect(simulation.runLocation?.runId).toBeTypeOf("string");
     });
+  });
+
+  it("runs and reads results when browser storage is unavailable", async () => {
+    vi.mocked(simulationStorage.isOPFSAvailable).mockResolvedValue(false);
+    const IDS = { r1: 1, j1: 2, p1: 3 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aReservoir(IDS.r1, { head: 100 })
+      .aJunction(IDS.j1, { elevation: 0 })
+      .aJunctionDemand(IDS.j1, [{ baseDemand: 1 }])
+      .aPipe(IDS.p1, {
+        startNodeId: IDS.r1,
+        endNodeId: IDS.j1,
+        length: 100,
+        diameter: 100,
+        roughness: 100,
+      })
+      .build();
+    const store = setInitialState({ hydraulicModel });
+    renderComponent({ store });
+
+    await triggerRun();
+
+    await waitFor(() => {
+      expect(store.get(simulationDerivedAtom).status).toBe("success");
+    });
+    const simulation = store.get(simulationDerivedAtom) as SimulationFinished;
+    const pressure = await simulation.epsResultsReader?.getTimeSeries(
+      IDS.j1,
+      "junction",
+      "pressure",
+    );
+    expect(pressure?.values[0]).toBeGreaterThan(0);
+    expect(simulation.runLocation).toBeUndefined();
   });
 
   it("persists the state when the simulation fails", async () => {
@@ -301,9 +338,6 @@ describe("Run simulation", () => {
     );
   };
 
-  // Both calls start in the same turn, which is what a double shortcut press
-  // does. Clicking the button twice would not: opfsAvailableAtom reads true
-  // only until its probe resolves, and under jsdom it resolves to false.
   const triggerRunTwice = async () => {
     await userEvent.click(
       screen.getByRole("button", { name: "runSimulationTwice" }),

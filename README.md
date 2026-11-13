@@ -24,6 +24,48 @@ Build preparation copies the installed SQLite WASM binary and generates any publ
 
 See [LICENSE](LICENSE) for the upstream license terms.
 
+## HTTPS on the local VM
+
+The VM currently serves the app at `http://172.20.110.84:3006/`. Simulation automatically uses memory when browser file storage is unavailable, including when opening that HTTP address. The Simulate button remains available. Results use the browser's memory and are released when the page closes or reloads; large simulations can require more memory. Browser file storage remains the preferred mode when available.
+
+Device location still requires HTTPS or localhost. Serve this app through HTTPS at `https://172.20.110.84/` using the included [Caddyfile](deploy/Caddyfile) to enable browser file storage and location together.
+
+Save or export any open project before switching addresses. HTTP and HTTPS have separate browser storage, so an unsaved session at the old address will not appear at the new address.
+
+Keep the existing app process on port `3006` running. When deploying source changes, rebuild and restart that process using its existing service configuration, or run these commands from the repository root:
+
+```sh
+pnpm build
+pnpm start --port 3006
+```
+
+[Install Caddy](https://caddyserver.com/docs/install) on the VM, allow inbound TCP ports `80` and `443` in its firewall, and run Caddy from another terminal in the repository root. On PowerShell:
+
+```powershell
+$env:EPANET_HOST = "172.20.110.84"
+caddy run --config deploy/Caddyfile --adapter caddyfile
+```
+
+On Linux or another POSIX shell:
+
+```sh
+EPANET_HOST=172.20.110.84 caddy run --config deploy/Caddyfile --adapter caddyfile
+```
+
+`EPANET_HOST` is required. The proxy forwards requests to `127.0.0.1:3006` by default; set `EPANET_UPSTREAM` if the app listens on a different address or port. Caddy also listens on port `80` to redirect HTTP to HTTPS; ports `80` and `443` must be free and Caddy must have permission to bind them. If Caddy is already running as a service, apply this configuration and environment through that service instead of starting a second instance. Keep both the application and Caddy running with the VM's service manager for persistent deployment.
+
+This configuration uses Caddy's internal certificate authority. **Install its public root certificate on every computer that opens the app.** Run `caddy environ` as the same VM account that runs Caddy, find `caddy.AppDataDir`, and copy `pki/authorities/local/root.crt` from that directory to each client. Import it into that computer's trusted root certificate store; browsers with their own certificate store also need to trust it. On Windows, use the **Trusted Root Certification Authorities** store. Distribute only `root.crt`; keep the CA's private keys on the VM. See [Caddy's local HTTPS documentation](https://caddyserver.com/docs/automatic-https#local-https) for certificate storage and trust details.
+
+Open `https://172.20.110.84/` after the certificate is trusted; the browser should show a secure connection without a certificate warning. Reopen the saved project, then use **Simulate** and allow the site's location request. Location also depends on the browser computer's operating system having a location fix. If the browser itself runs inside a VM, that VM may not provide one.
+
+For access from one computer without installing a certificate, an SSH tunnel is another option if SSH is enabled and you can sign in to the VM. Run the following on the computer where the browser runs using the VM account's working SSH key or password:
+
+```sh
+ssh -N -L 3001:127.0.0.1:3006 ictd2025@172.20.110.84
+```
+
+Keep the tunnel open and visit `http://localhost:3001/`. Browsers treat localhost as a secure context. This address also has separate browser storage, so save/export before switching.
+
 ## Google Maps basemaps
 
 The map control starts collapsed and shows the current provider and mode. Click its header or chevron to expand or collapse the controls.

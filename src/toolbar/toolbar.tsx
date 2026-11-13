@@ -1,5 +1,5 @@
 import { useTranslate } from "src/hooks/use-translate";
-import MenuAction, { DisabledMenuAction } from "src/components/menu-action";
+import MenuAction from "src/components/menu-action";
 import {
   FileTextIcon,
   UndoIcon,
@@ -20,7 +20,6 @@ import {
 import { useAtomValue, useSetAtom } from "jotai";
 import { splitsAtom } from "src/state/layout";
 import { commandBarOpenAtom } from "src/state/command-bar";
-import { opfsAvailableAtom } from "src/state/opfs";
 import {
   canRedoDerivedAtom,
   canUndoDerivedAtom,
@@ -84,7 +83,6 @@ export const Toolbar = ({
   const showDataTables = useShowDataTables();
   const showHglProfile = useShowHglProfile();
   const startProfileSelection = useStartProfileSelection();
-  const isOPFSAvailable = useAtomValue(opfsAvailableAtom);
   const { mode: currentMode } = useAtomValue(modeAtom);
 
   const { undo, redo } = useHistoryControl();
@@ -159,31 +157,22 @@ export const Toolbar = ({
 
   const simulationGroup = (
     <>
-      {!isOPFSAvailable ? (
-        <DisabledMenuAction
-          label={translate("simulate")}
-          reason={translate("simulateUnavailableNoBrowserStorage")}
-        >
-          <RunSimulationIcon className="stroke-yellow-600" />
-        </DisabledMenuAction>
-      ) : (
-        <MenuAction
-          label={translate("simulate")}
-          role="button"
-          onClick={() => {
-            userTracking.capture({
-              name: "simulation.executed",
-              source: "toolbar",
-              qualityType: simulationSettings.qualitySimulationType,
-            });
-            void runSimulation();
-          }}
-          expanded={true}
-          readOnlyHotkey={runSimulationShortcut}
-        >
-          <RunSimulationIcon className="stroke-yellow-600" />
-        </MenuAction>
-      )}
+      <MenuAction
+        label={translate("simulate")}
+        role="button"
+        onClick={() => {
+          userTracking.capture({
+            name: "simulation.executed",
+            source: "toolbar",
+            qualityType: simulationSettings.qualitySimulationType,
+          });
+          void runSimulation();
+        }}
+        expanded={true}
+        readOnlyHotkey={runSimulationShortcut}
+      >
+        <RunSimulationIcon className="stroke-yellow-600" />
+      </MenuAction>
       <MenuAction
         label={translate("simulationSettings.title")}
         role="button"

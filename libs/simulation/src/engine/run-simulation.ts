@@ -84,7 +84,7 @@ export const runSimulation = async (
     onProgress,
     flags = {},
   }: {
-    store: IKeyBufferStore;
+    store: Pick<IKeyBufferStore, "save">;
     onProgress: EngineProgressCallback;
     flags?: Record<string, boolean>;
   },

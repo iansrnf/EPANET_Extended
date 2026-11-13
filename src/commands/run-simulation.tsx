@@ -11,7 +11,6 @@ import {
 } from "src/state/derived-branch-state";
 import { branchStateAtom } from "src/state/branch-state";
 import { projectSettingsAtom } from "src/state/project-settings";
-import { opfsAvailableAtom } from "src/state/opfs";
 import { commitSimulationResultAtom } from "src/state/simulation-step";
 import { clearQuickGraphPropertyAtom } from "src/state/quick-graph";
 import { clearSymbologyForPropertyAtom } from "src/state/map-symbology";
@@ -21,7 +20,11 @@ import {
   EPSResultsReader,
 } from "src/simulation";
 import { getAppId } from "src/infra/app-instance";
-import { OPFSStorage } from "src/infra/storage";
+import {
+  OPFSStorage,
+  InMemoryStorage,
+  isOPFSAvailable,
+} from "src/infra/storage";
 import { worktreeAtom } from "src/state/scenarios";
 import { nanoid } from "src/lib/id";
 import { useUserTracking } from "src/infra/user-tracking";
@@ -60,8 +63,6 @@ export const useRunSimulation = () => {
           ignoreLabel?: string;
         },
       ) => {
-        if (!get(opfsAvailableAtom)) return;
-
         const hydraulicModel = get(stagingModelDerivedAtom);
         const simulationSettings = get(simulationSettingsDerivedAtom);
         const worktree = get(worktreeAtom);
@@ -103,6 +104,10 @@ export const useRunSimulation = () => {
           const appId = getAppId();
           const scenarioKey = worktree.activeBranchId;
           const runId = nanoid();
+          const hasBrowserStorage = await isOPFSAvailable();
+          const memoryStorage = hasBrowserStorage
+            ? undefined
+            : new InMemoryStorage(runId, { shared: false });
           const previousReader =
             "epsResultsReader" in currentSimulation
               ? currentSimulation.epsResultsReader
@@ -118,6 +123,7 @@ export const useRunSimulation = () => {
               { runQuality },
               scenarioKey,
               runId,
+              memoryStorage,
             );
 
           isCompleted = true;
@@ -125,9 +131,15 @@ export const useRunSimulation = () => {
           let epsReader: EPSResultsReader | undefined = undefined;
 
           if (status === "success" || status === "warning") {
-            const storage = new OPFSStorage(appId, scenarioKey, runId);
+            const storage =
+              memoryStorage ?? new OPFSStorage(appId, scenarioKey, runId);
             epsReader = new EPSResultsReader(storage);
-            await epsReader.initialize(metadata);
+            try {
+              await epsReader.initialize(metadata);
+            } catch (error) {
+              await memoryStorage?.clearRun();
+              throw error;
+            }
           }
 
           if (status === "success" || status === "warning") {
@@ -151,7 +163,10 @@ export const useRunSimulation = () => {
             modelVersion: hydraulicModel.version,
             settingsVersion: simulationSettings.version,
             epsResultsReader: epsReader,
-            runLocation: epsReader ? { appId, scenarioKey, runId } : undefined,
+            runLocation:
+              epsReader && hasBrowserStorage
+                ? { appId, scenarioKey, runId }
+                : undefined,
           };
           set(commitSimulationResultAtom, simulationState);
           set(simulationSourceIdDerivedAtom, scenarioKey);

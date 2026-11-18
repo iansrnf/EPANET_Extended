@@ -74,6 +74,7 @@ const loadModel = (
       hydraulicModel: importedModel,
       simulationSettings: get(simulationSettingsDerivedAtom),
     })
+    .then(() => db.saveCustomAttributes(importedModel.customAttributes))
     .catch((error) =>
       handleError(error, {
         as: "Customer points import reset: project import failed",

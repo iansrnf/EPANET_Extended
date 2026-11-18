@@ -42,6 +42,7 @@ import { createProjectionMapper } from "@epanet-js/projections";
 import { type Position } from "geojson";
 import { getEsriWktString } from "@epanet-js/projections";
 import { exportedZones, zoneFieldKeys, zoneFieldValue } from "../zone-fields";
+import { toArrayBufferView } from "src/infra/array-buffer-view";
 
 const CUSTOMER_POINT_FIELDS = [
   "label",
@@ -319,21 +320,21 @@ export const exportShapefiles = async (
       extensions: [".shp"],
       mimeTypes: ["application/octet-stream"],
       description: "Shapefile",
-      blob: new Blob([writer.shp]),
+      blob: new Blob([toArrayBufferView(writer.shp)]),
     });
     result.push({
       fileName: `${fileName}.shx`,
       extensions: [".shx"],
       mimeTypes: ["application/octet-stream"],
       description: "Shapefile Index",
-      blob: new Blob([writer.shx]),
+      blob: new Blob([toArrayBufferView(writer.shx)]),
     });
     result.push({
       fileName: `${fileName}.dbf`,
       extensions: [".dbf"],
       mimeTypes: ["application/octet-stream"],
       description: "Shapefile Attributes",
-      blob: new Blob([writer.dbf]),
+      blob: new Blob([toArrayBufferView(writer.dbf)]),
     });
     result.push({
       fileName: `${fileName}.prj`,

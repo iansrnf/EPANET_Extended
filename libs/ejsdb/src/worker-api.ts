@@ -1368,12 +1368,21 @@ export const api = {
             fileVersion = readUserVersion();
           } catch (e) {
             closeExistingDb();
-            return { status: "corrupt", errorDetails: formatErrorDetails(e) };
+            return {
+              status: "corrupt",
+              errorDetails: formatErrorDetails(e),
+              integrity,
+            };
           }
 
           if (fileVersion > migrations.length) {
             closeExistingDb();
-            return { status: "too-new", fileVersion, appVersion: APP_VERSION };
+            return {
+              status: "too-new",
+              fileVersion,
+              appVersion: APP_VERSION,
+              integrity,
+            };
           }
 
           let migrated = false;
@@ -1387,6 +1396,7 @@ export const api = {
                 errorDetails: formatErrorDetails(e),
                 fileVersion,
                 appVersion: APP_VERSION,
+                integrity,
               };
             }
             migrated = true;

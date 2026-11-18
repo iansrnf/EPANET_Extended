@@ -78,6 +78,7 @@ import {
   countSelected,
   descendantGroupIds,
   groupPath,
+  hasPathSeparator,
   largestContainedSet,
   matchesSelectionExactly,
   setsInGroupSubtree,
@@ -95,6 +96,7 @@ type ActionState =
       source: CollectionDraftSource;
       label: string;
       groupId: SelectionSetGroupId | null;
+      groupLabels: string[];
     }
   | { action: "creatingGroup"; parentId: SelectionSetGroupId | null }
   | { action: "renaming"; section: SectionType; id: string }
@@ -588,6 +590,10 @@ export const CollectionsPanel = () => {
     const trimmedLabel = label.trim();
     if (!trimmedLabel) return true;
 
+    const isBookmark =
+      "section" in actionState && actionState.section === "bookmarks";
+    if (!isBookmark && hasPathSeparator(trimmedLabel)) return true;
+
     if (actionState.action === "renamingGroup") {
       renameSelectionSetGroup({
         groupId: actionState.id,
@@ -606,6 +612,7 @@ export const CollectionsPanel = () => {
           label: trimmedLabel,
           source: actionState.source,
           groupId: actionState.groupId,
+          groupLabels: actionState.groupLabels,
         });
       } else {
         addBookmark({ label: trimmedLabel, source: actionState.source });
@@ -638,6 +645,7 @@ export const CollectionsPanel = () => {
       source: pendingDraft.source,
       label: pendingDraft.label,
       groupId,
+      groupLabels: pendingDraft.groupLabels ?? [],
     });
     if (groupId !== null) expandGroup(groupId);
     listRef.current?.openSection(pendingDraft.kind);

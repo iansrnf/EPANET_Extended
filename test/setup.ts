@@ -298,15 +298,21 @@ if (
     }),
   };
 
-  // jsdom performs no layout, so offsetWidth/offsetHeight are always 0.
-  // @tanstack/virtual-core reads them to size the scroll viewport (it used
-  // getBoundingClientRect before v3.17), which would otherwise virtualize
-  // every row away. Keep these in sync with the rect mock below.
+  // jsdom has no layout; virtualized viewports need both client and offset
+  // dimensions. Keep these in sync with the rect mock below.
   Object.defineProperty(window.HTMLElement.prototype, "offsetWidth", {
     configurable: true,
     get: () => 300,
   });
   Object.defineProperty(window.HTMLElement.prototype, "offsetHeight", {
+    configurable: true,
+    get: () => 128,
+  });
+  Object.defineProperty(window.HTMLElement.prototype, "clientWidth", {
+    configurable: true,
+    get: () => 300,
+  });
+  Object.defineProperty(window.HTMLElement.prototype, "clientHeight", {
     configurable: true,
     get: () => 128,
   });

@@ -1,4 +1,5 @@
 import { getWorker, timedWith } from "@epanet-js/ejsdb";
+import { toArrayBufferView } from "src/infra/array-buffer-view";
 
 export const exportDb = async (): Promise<Blob> => {
   return timedWith(
@@ -6,7 +7,9 @@ export const exportDb = async (): Promise<Blob> => {
     async () => {
       const worker = getWorker();
       const bytes = await worker.exportDb();
-      return new Blob([bytes], { type: "application/octet-stream" });
+      return new Blob([toArrayBufferView(bytes)], {
+        type: "application/octet-stream",
+      });
     },
     (blob) => ({ bytes: blob.size }),
   );

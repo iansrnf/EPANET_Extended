@@ -2,7 +2,6 @@ import { AssetId } from "../asset-types";
 import { TopologyQueries } from "../topology";
 import { crossingRules, stopRecorder } from "./crossing";
 import {
-  AllowedFlowDirectionQueries,
   TraceBarriers,
   TraceStart,
   TraceStopReason,
@@ -12,10 +11,9 @@ import {
 export function trace(
   start: TraceStart,
   topology: TopologyQueries,
-  status: AllowedFlowDirectionQueries,
   barriers: TraceBarriers,
 ): BarrierTraceResult {
-  const rules = crossingRules(topology, status, barriers);
+  const rules = crossingRules(topology, barriers);
   const stops = stopRecorder<TraceStopReason>();
   const visitedNodes = new Set<AssetId>();
   const visitedLinks = new Set<AssetId>();
@@ -49,11 +47,12 @@ export function trace(
 
     if (visitedNodes.has(nodeId)) continue;
 
-    if (rules.isNodeBarrier(nodeId)) {
+    const nodeStop = rules.nodeStopReason(nodeId);
+    if (nodeStop !== null) {
       if (fromNodeId !== null) {
         stops.record({
           assetId: nodeId,
-          reason: "barrier",
+          reason: nodeStop,
           fromNodeId,
           viaLinkId,
         });

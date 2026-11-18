@@ -136,8 +136,10 @@ const withNamedValues = (row: Row, names: string[]): Row => {
   return rest;
 };
 
+const LETTER = new RegExp("\\p{L}", "u");
+
 const namesItsColumns = (stated: string[]): boolean =>
-  stated.every((header) => header === "" || /\p{L}/u.test(header));
+  stated.every((header) => header === "" || LETTER.test(header));
 
 const positionOf = (
   row: Row,

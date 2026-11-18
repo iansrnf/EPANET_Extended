@@ -254,6 +254,7 @@ export function filterableSelectColumn<
     allowNew?: boolean;
     createLabel?: (query: string) => string;
     validateNew?: (query: string) => boolean;
+    validate?: (value: T) => boolean;
     onHighlightChange?: (value: T | null) => void;
   },
 ): GridColumn<TData> {
@@ -301,6 +302,10 @@ export function filterableSelectColumn<
         return undefined;
       },
       deleteValue: options.emptyValue,
+      hasWarning: (value: T | null) =>
+        value != null && options.validate !== undefined
+          ? !options.validate(value)
+          : false,
       isReadOnly: isEmpty ? true : options.isReadOnly,
       cellComponent: (props: CellProps<T | null>) => (
         <FilterableSelectCell
@@ -322,8 +327,7 @@ export function filterableSelectColumn<
           validateNew={options.validateNew}
           onHighlightChange={
             options.onHighlightChange as
-              | ((value: string | number | boolean | null) => void)
-              | undefined
+              ((value: string | number | boolean | null) => void) | undefined
           }
         />
       ),

@@ -20,6 +20,7 @@ vi.mock("../../icons", async (importOriginal) => {
 export const renderMap = async (
   store: Store,
   enabledFlags: string[] = [],
+  onMapChange?: (map: MapTestEngine | null) => void,
 ): Promise<MapTestEngine> => {
   stubFeaturesOn(enabledFlags);
 
@@ -33,6 +34,7 @@ export const renderMap = async (
             <MapCanvas
               setMap={(mapEngineInstance) => {
                 mapEngine = mapEngineInstance as unknown as MapTestEngine;
+                onMapChange?.(mapEngine);
               }}
             />
           </TooltipProvider>

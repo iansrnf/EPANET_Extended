@@ -1,8 +1,13 @@
 import * as Comlink from "comlink";
 
 import {
+  activeTopologyBarriers,
+  anyBarrier,
+  anyStartIsActive,
   AssetId,
   boundaryBarriers,
+  configuredActiveTopology,
+  configuredAllowedFlowDirections,
   trace,
   type TraceResult,
   type TraceStart,
@@ -14,14 +19,13 @@ import { encodeTraceData } from "./encode-trace-buffers";
 import {
   flowDirectionTransferables,
   allowedFlowDirectionTransferables,
+  activeTopologyTransferables,
 } from "./trace-buffers";
 import { topologyTransferables } from "src/hydraulic-model/topology/topology-transferable";
 import { assetIndexTransferables } from "src/hydraulic-model/asset-index-transferable";
 import { FlowDirection } from "./flow-direction";
-import { AllowedFlowDirection } from "./allowed-flow-direction";
 import { TraceMode } from "./types";
-import { upstreamTrace } from "./upstream-trace";
-import { downstreamTrace } from "./downstream-trace";
+import { upstreamTrace, downstreamTrace } from "./flow-trace";
 import { getTraceWorker } from "./get-worker";
 
 export interface TraceInput {
@@ -40,12 +44,9 @@ export const runTrace = async (
     throw new DOMException("Operation cancelled", "AbortError");
   }
 
-  const effectiveResultsReader =
-    input.mode === "boundary" ? null : resultsReader;
-
   const result = canUseWorker()
-    ? await runWithWorker(hydraulicModel, effectiveResultsReader, input, signal)
-    : runSync(hydraulicModel, effectiveResultsReader, input);
+    ? await runWithWorker(hydraulicModel, resultsReader, input, signal)
+    : runSync(hydraulicModel, resultsReader, input);
 
   return [...result.nodeIds, ...result.linkIds];
 };
@@ -56,10 +57,7 @@ function runSync(
   input: TraceInput,
 ): TraceResult {
   const status = new FlowDirection(model.assets, resultsReader);
-  const allowedFlowDirection = new AllowedFlowDirection(
-    model.assets,
-    resultsReader,
-  );
+  const allowedFlowDirection = configuredAllowedFlowDirections(model.assets);
   const start: TraceStart = {
     nodeIds: input.startNodeIds,
     linkIds: input.startLinkIds,
@@ -70,8 +68,17 @@ function runSync(
       return trace(
         start,
         model.topology,
-        allowedFlowDirection,
-        boundaryBarriers(model.assetIndex, allowedFlowDirection),
+        anyBarrier(
+          boundaryBarriers(
+            model.topology,
+            model.assetIndex,
+            allowedFlowDirection,
+          ),
+          activeTopologyBarriers(
+            configuredActiveTopology(model.assets),
+            anyStartIsActive(model.assets, start),
+          ),
+        ),
       );
     case "upstream":
       return upstreamTrace(start, model.topology, status);
@@ -90,7 +97,7 @@ const runWithWorker = async (
     throw new DOMException("Operation cancelled", "AbortError");
   }
 
-  const data = encodeTraceData(model, resultsReader, "array");
+  const data = encodeTraceData(model, resultsReader, input.mode);
   const start: TraceStart = {
     nodeIds: input.startNodeIds,
     linkIds: input.startLinkIds,
@@ -100,11 +107,17 @@ const runWithWorker = async (
     ...assetIndexTransferables(data.assetIndexBuffers),
     ...flowDirectionTransferables(data.flowDirectionBuffers),
     ...allowedFlowDirectionTransferables(data.allowedFlowDirectionBuffers),
+    ...activeTopologyTransferables(data.activeTopologyBuffers),
   ]);
 
   const workerAPI = getTraceWorker();
   try {
-    const result = await workerAPI.runTrace(input.mode, start, transferData);
+    const result = await workerAPI.runTrace(
+      input.mode,
+      start,
+      transferData,
+      anyStartIsActive(model.assets, start),
+    );
     if (signal?.aborted) {
       throw new DOMException("Operation cancelled", "AbortError");
     }

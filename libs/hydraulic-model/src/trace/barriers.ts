@@ -2,10 +2,13 @@ import { valveKinds, type ValveKind } from "@epanet-js/model-schema";
 import { AssetId, Valve } from "../asset-types";
 import { AssetIndexQueries } from "../asset-index";
 import { AssetsMap } from "../assets-map";
+import { TopologyQueries } from "../topology";
 import {
   AllowedFlowDirection,
   AllowedFlowDirectionQueries,
+  ActiveTopologyQueries,
   TraceBarriers,
+  TraceStart,
 } from "./types";
 
 const typeStopPresets = [
@@ -49,15 +52,8 @@ const typeBarriers = (
   presets: ReadonlySet<StopPreset>,
   assetIndex: AssetIndexQueries,
   status: AllowedFlowDirectionQueries,
-): TraceBarriers => ({
-  isNodeBarrier: (nodeId) => {
-    const nodeType = assetIndex.getNodeType(nodeId);
-    return (
-      (nodeType === "tank" && presets.has("tanks")) ||
-      (nodeType === "reservoir" && presets.has("reservoirs"))
-    );
-  },
-  isLinkBarrier: (linkId) => {
+): TraceBarriers => {
+  const isLinkOfStoppedType = (linkId: AssetId): boolean => {
     if (
       presets.has("closed") &&
       status.getAllowedFlowDirection(linkId) === AllowedFlowDirection.NONE
@@ -83,14 +79,57 @@ const typeBarriers = (
       default:
         return false;
     }
+  };
+
+  return {
+    nodeStopReason: (nodeId) => {
+      const nodeType = assetIndex.getNodeType(nodeId);
+      const isStopped =
+        (nodeType === "tank" && presets.has("tanks")) ||
+        (nodeType === "reservoir" && presets.has("reservoirs"));
+      return isStopped ? "barrier" : null;
+    },
+    linkStopReason: (linkId) =>
+      isLinkOfStoppedType(linkId) ? "barrier" : null,
+  };
+};
+
+export const respectingFlowDirection = (
+  barriers: TraceBarriers,
+  topology: TopologyQueries,
+  status: AllowedFlowDirectionQueries,
+): TraceBarriers => ({
+  nodeStopReason: (nodeId) => barriers.nodeStopReason(nodeId),
+  linkStopReason: (linkId, fromNodeId) => {
+    const direction = status.getAllowedFlowDirection(linkId);
+    if (direction === AllowedFlowDirection.NONE) return "closed";
+
+    const reason = barriers.linkStopReason(linkId, fromNodeId);
+    if (reason !== null) return reason;
+
+    if (direction === AllowedFlowDirection.BOTH) return null;
+    const [startNode, endNode] = topology.getNodes(linkId);
+    if (
+      direction === AllowedFlowDirection.DOWNSTREAM &&
+      fromNodeId !== startNode
+    )
+      return "direction";
+    if (direction === AllowedFlowDirection.UPSTREAM && fromNodeId !== endNode)
+      return "direction";
+    return null;
   },
 });
 
 export const boundaryBarriers = (
+  topology: TopologyQueries,
   assetIndex: AssetIndexQueries,
   status: AllowedFlowDirectionQueries,
 ): TraceBarriers =>
-  typeBarriers(new Set(boundaryStopPresets), assetIndex, status);
+  respectingFlowDirection(
+    typeBarriers(new Set(boundaryStopPresets), assetIndex, status),
+    topology,
+    status,
+  );
 
 export const presetBarriers = (
   presets: readonly StopPreset[],
@@ -101,16 +140,56 @@ export const presetBarriers = (
   const selected = new Set(presets);
   const byType = typeBarriers(selected, assetIndex, status);
   return {
-    isNodeBarrier: (nodeId) => byType.isNodeBarrier(nodeId),
-    isLinkBarrier: (linkId) => {
-      if (byType.isLinkBarrier(linkId)) return true;
+    nodeStopReason: (nodeId) => byType.nodeStopReason(nodeId),
+    linkStopReason: (linkId, fromNodeId) => {
+      const reason = byType.linkStopReason(linkId, fromNodeId);
+      if (reason !== null) return reason;
       const kind = valveKinds.getValveKind(linkId);
-      return kind !== undefined && selected.has(kind);
+      return kind !== undefined && selected.has(kind) ? "barrier" : null;
     },
   };
 };
 
+export const configuredActiveTopology = (
+  assets: AssetsMap,
+): ActiveTopologyQueries => ({
+  isLinkActive: (linkId) => assets.get(linkId)?.isActive ?? false,
+  isNodeActive: (nodeId) => assets.get(nodeId)?.isActive ?? false,
+});
+
+export const anyStartIsActive = (
+  assets: AssetsMap,
+  start: TraceStart,
+): boolean =>
+  [...start.nodeIds, ...start.linkIds].some((id) => assets.get(id)?.isActive);
+
+export const activeTopologyBarriers = (
+  activeTopology: ActiveTopologyQueries,
+  startsOnActiveAsset: boolean,
+): TraceBarriers => ({
+  nodeStopReason: (nodeId) =>
+    activeTopology.isNodeActive(nodeId) !== startsOnActiveAsset
+      ? "activeTopology"
+      : null,
+  linkStopReason: (linkId) =>
+    activeTopology.isLinkActive(linkId) !== startsOnActiveAsset
+      ? "activeTopology"
+      : null,
+});
+
 export const anyBarrier = (...barriers: TraceBarriers[]): TraceBarriers => ({
-  isNodeBarrier: (nodeId) => barriers.some((b) => b.isNodeBarrier(nodeId)),
-  isLinkBarrier: (linkId) => barriers.some((b) => b.isLinkBarrier(linkId)),
+  nodeStopReason: (nodeId) => {
+    for (const barrier of barriers) {
+      const reason = barrier.nodeStopReason(nodeId);
+      if (reason !== null) return reason;
+    }
+    return null;
+  },
+  linkStopReason: (linkId, fromNodeId) => {
+    for (const barrier of barriers) {
+      const reason = barrier.linkStopReason(linkId, fromNodeId);
+      if (reason !== null) return reason;
+    }
+    return null;
+  },
 });

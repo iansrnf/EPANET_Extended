@@ -1,5 +1,5 @@
 import {
-  Asset,
+  AssetId,
   CurvePoint,
   effectiveRoughness,
   FlowModulatingValveControl,
@@ -9,7 +9,9 @@ import {
   getPumpCurveErrors,
   inferredRoughness,
   Pipe,
+  Pump,
   HydraulicModel,
+  remoteFlowDirectionOf,
 } from "@epanet-js/hydraulic-model";
 import { EntityType, Rule, Severity, ValidatableEntity } from "./types";
 import {
@@ -23,6 +25,7 @@ import {
   FLOW_MODULATING_VALVE_MIN_POINTS,
   flowModulatingValvePointChecks,
 } from "./flow-modulating-valve-points";
+import { pumpBackfeedsItself } from "./pump-backfeed";
 
 const field =
   (name: string) =>
@@ -33,6 +36,9 @@ const readEntityProp = (entity: ValidatableEntity, name: string): unknown =>
   (entity as unknown as Record<string, unknown>)[name];
 
 type When = (entity: ValidatableEntity, model?: HydraulicModel) => boolean;
+
+const isActiveEntity: When = (entity) =>
+  readEntityProp(entity, "isActive") === true;
 
 const presence = (
   entityType: EntityType,
@@ -190,7 +196,7 @@ const flowModulatingControlOf = (
   model
     ? getLinkFlowModulatingValve(
         model.controls,
-        readEntityProp(entity, "id") as number,
+        readEntityProp(entity, "id") as AssetId,
       )
     : null;
 
@@ -231,12 +237,11 @@ const flowModulatingReferenceRule = (
     type: "model",
     entityType: "valve",
     field: fieldName,
-    accessor: (entity, model) => {
-      const control = flowModulatingControlOf(entity, model);
-      return control ? (model.assets.get(control[referenceId]) ?? null) : null;
-    },
-    appliesWhen: hasFlowModulatingControl,
-    check: (value) => !!value && (value as Asset).isActive,
+    accessor: (entity, model) =>
+      flowModulatingControlOf(entity, model)?.[referenceId] ?? null,
+    appliesWhen: (entity, model) =>
+      isActiveEntity(entity) && hasFlowModulatingControl(entity, model),
+    check: (value, _entity, model) => isActiveAsset(model, value as AssetId),
     severity: "error",
     message: "mustBeActive",
   };
@@ -249,13 +254,13 @@ const variableSpeedControlOf = (
   model
     ? getLinkVariableSpeedPump(
         model.controls,
-        readEntityProp(entity, "id") as number,
+        readEntityProp(entity, "id") as AssetId,
       )
     : null;
 
 const isActiveAsset = (
   model: HydraulicModel | undefined,
-  assetId: number,
+  assetId: AssetId,
 ): boolean => {
   const asset = model?.assets.get(assetId);
   return !!asset && asset.isActive;
@@ -269,24 +274,74 @@ const variableSpeedTargetRule = (
   type: "model",
   entityType: "pump",
   field: `variableSpeed${name}Target`,
-  accessor: variableSpeedControlOf,
+  accessor: (entity, model) =>
+    variableSpeedControlOf(entity, model)?.targetId ?? null,
   appliesWhen: (entity, model) =>
+    isActiveEntity(entity) &&
     variableSpeedControlOf(entity, model)?.quantity === quantity,
   check: (value, _entity, model) =>
-    !value ||
-    isActiveAsset(model, (value as VariableSpeedPumpControl).targetId),
+    value === null || isActiveAsset(model, value as AssetId),
   severity: "error",
   message: "mustBeActive",
 });
 
+const variableSpeedDischargeNotBackfeeding: Rule = {
+  id: "pump.variableSpeedDischarge.notBackfeeding",
+  type: "model",
+  entityType: "pump",
+  accessor: (entity) => entity,
+  appliesWhen: (entity, model) =>
+    isActiveEntity(entity) && variableSpeedControlOf(entity, model) !== null,
+  check: (_value, entity, model) =>
+    !entity || !model || !pumpBackfeedsItself(entity as Pump, model),
+  severity: "warning",
+  message: "backfeedsItself",
+};
+
+const variableSpeedFlowTargetSameDirection: Rule = {
+  id: "pump.variableSpeedFlowTarget.sameDirection",
+  type: "model",
+  entityType: "pump",
+  accessor: (entity, model) =>
+    variableSpeedControlOf(entity, model)?.targetId ?? null,
+  appliesWhen: (entity, model) =>
+    isActiveEntity(entity) &&
+    variableSpeedControlOf(entity, model)?.quantity === "flow",
+  check: (value, entity, model) => {
+    if (!entity || !model || value === null) return true;
+    const target = model.assets.get(value as AssetId);
+    if (!target || !target.isActive || !target.isLink) return true;
+    const pumpId = readEntityProp(entity, "id") as AssetId;
+    return remoteFlowDirectionOf(model, pumpId, target.id) === 1;
+  },
+  severity: "warning",
+  message: "mustFollowPumpDirection",
+};
+
+export const valveReferenceFields = [
+  "targetNode",
+  "flowModulatingSensorLink",
+  "flowModulatingControlNode",
+] as const;
+
+export type ValveReferenceField = (typeof valveReferenceFields)[number];
+
+export const pumpReferenceFields = [
+  "variableSpeedPressureTarget",
+  "variableSpeedFlowTarget",
+  "variableSpeedLevelTarget",
+  "variableSpeedLaggedPumps",
+  "variableSpeedTankLevels",
+] as const;
+
+export type PumpReferenceField = (typeof pumpReferenceFields)[number];
+
 export const RULES: Rule[] = [
   // Node elevation (reservoirs use head, not elevation, so are excluded)
-  ...(["junction", "tank"] as const).map(
-    (entityType): Rule => ({
-      ...presence(entityType, "elevation"),
-      id: "node.elevation.present",
-    }),
-  ),
+  ...(["junction", "tank"] as const).map((entityType): Rule => ({
+    ...presence(entityType, "elevation"),
+    id: "node.elevation.present",
+  })),
   // Reservoirs
   ...requiredNumeric("reservoir", "head"),
   // Tanks
@@ -338,9 +393,25 @@ export const RULES: Rule[] = [
   flowModulatingControlRule("flowsNonNegative", "mustBeNonNegative"),
   flowModulatingControlRule("pressuresPositive", "mustBePositive"),
   flowModulatingControlRule("flowsIncreasing", "mustBeIncreasing"),
-  flowModulatingControlRule("pressuresIncreasing", "mustBeIncreasing"),
   flowModulatingReferenceRule("sensorLink", "sensorLinkId"),
   flowModulatingReferenceRule("controlNode", "controlNodeId"),
+  {
+    id: "valve.targetNode.active",
+    type: "model",
+    entityType: "valve",
+    field: "targetNode",
+    accessor: (entity) => readEntityProp(entity, "targetNodeId") ?? null,
+    appliesWhen: (entity, model) =>
+      isActiveEntity(entity) &&
+      readEntityProp(entity, "kind") === "prv" &&
+      !hasFlowModulatingControl(entity, model),
+    check: (value, _entity, model) => {
+      const target = model?.assets.get(value as AssetId);
+      return !target || target.isActive;
+    },
+    severity: "error",
+    message: "mustBeActive",
+  },
   ...requiredNumeric(
     "pump",
     "power",
@@ -404,9 +475,10 @@ export const RULES: Rule[] = [
   // Pipes
   ...requiredNumeric("pipe", "diameter", "positive"),
   ...requiredNumeric("pipe", "length", "positive"),
-  ...requiredNumeric("pipe", "roughness", "positive").map(
-    (rule): Rule => ({ ...rule, accessor: effectiveRoughnessOf }),
-  ),
+  ...requiredNumeric("pipe", "roughness", "positive").map((rule): Rule => ({
+    ...rule,
+    accessor: effectiveRoughnessOf,
+  })),
   materialInLibrary,
   materialProvidesRoughness,
   {
@@ -424,17 +496,10 @@ export const RULES: Rule[] = [
   optionalNumeric("tank", "minVolume", "nonNegative", "error"),
   optionalNumeric("pump", "speed", "nonNegative", "error"),
   optionalNumeric("junction", "emitterCoefficient", "nonNegative", "warning"),
-  ...(["junction", "reservoir", "tank"] as const).map(
-    (entityType): Rule => ({
-      ...optionalNumeric(
-        entityType,
-        "initialQuality",
-        "nonNegative",
-        "warning",
-      ),
-      id: "node.initialQuality.nonNegative",
-    }),
-  ),
+  ...(["junction", "reservoir", "tank"] as const).map((entityType): Rule => ({
+    ...optionalNumeric(entityType, "initialQuality", "nonNegative", "warning"),
+    id: "node.initialQuality.nonNegative",
+  })),
   optionalNumeric(
     "tank",
     "mixingFraction",
@@ -443,18 +508,16 @@ export const RULES: Rule[] = [
     (entity) => readEntityProp(entity, "mixingModel") === "2comp",
   ),
   optionalNumeric("pump", "energyPrice", "nonNegative", "error"),
-  ...(["junction", "reservoir", "tank"] as const).map(
-    (entityType): Rule => ({
-      ...optionalNumeric(
-        entityType,
-        "chemicalSourceStrength",
-        "nonNegative",
-        "warning",
-        (entity) => readEntityProp(entity, "chemicalSourceType") != null,
-      ),
-      id: "node.chemicalSourceStrength.nonNegative",
-    }),
-  ),
+  ...(["junction", "reservoir", "tank"] as const).map((entityType): Rule => ({
+    ...optionalNumeric(
+      entityType,
+      "chemicalSourceStrength",
+      "nonNegative",
+      "warning",
+      (entity) => readEntityProp(entity, "chemicalSourceType") != null,
+    ),
+    id: "node.chemicalSourceStrength.nonNegative",
+  })),
   variableSpeedTargetRule("pressure", "Pressure"),
   variableSpeedTargetRule("flow", "Flow"),
   variableSpeedTargetRule("level", "Level"),
@@ -463,14 +526,13 @@ export const RULES: Rule[] = [
     type: "model",
     entityType: "pump",
     field: "variableSpeedLaggedPumps",
-    accessor: variableSpeedControlOf,
+    accessor: (entity, model) =>
+      variableSpeedControlOf(entity, model)?.laggedPumpIds ?? [],
     appliesWhen: (entity, model) =>
+      isActiveEntity(entity) &&
       (variableSpeedControlOf(entity, model)?.laggedPumpIds.length ?? 0) > 0,
     check: (value, _entity, model) =>
-      !value ||
-      (value as VariableSpeedPumpControl).laggedPumpIds.every((id) =>
-        isActiveAsset(model, id),
-      ),
+      (value as AssetId[]).every((id) => isActiveAsset(model, id)),
     severity: "error",
     message: "mustBeActive",
   },
@@ -479,16 +541,18 @@ export const RULES: Rule[] = [
     type: "model",
     entityType: "pump",
     field: "variableSpeedTankLevels",
-    accessor: variableSpeedControlOf,
+    accessor: (entity, model) =>
+      variableSpeedControlOf(entity, model)?.tankLevels?.tankId ?? null,
     appliesWhen: (entity, model) =>
+      isActiveEntity(entity) &&
       variableSpeedControlOf(entity, model)?.tankLevels != null,
-    check: (value, _entity, model) => {
-      const tankLevels = (value as VariableSpeedPumpControl | null)?.tankLevels;
-      return !tankLevels || isActiveAsset(model, tankLevels.tankId);
-    },
+    check: (value, _entity, model) =>
+      value === null || isActiveAsset(model, value as AssetId),
     severity: "error",
     message: "mustBeActive",
   },
+  variableSpeedDischargeNotBackfeeding,
+  variableSpeedFlowTargetSameDirection,
   // Customer points
   {
     id: "customerPoint.connected",

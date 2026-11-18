@@ -20,13 +20,9 @@ import { useFeatureLock } from "src/components/form/paywall";
 import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
 import { useModelTransaction } from "src/hooks/persistence/use-model-transaction";
 import { useUserTracking } from "src/infra/user-tracking";
-import { useSelectionSetsTransaction } from "src/hooks/persistence/use-selection-sets-transaction";
+import { useCreateSelectionSet } from "src/commands/selection-sets";
 import { useBookmarksTransaction } from "src/hooks/persistence/use-bookmarks-transaction";
-import {
-  countSelected,
-  newBookmark,
-  newSelectionSet,
-} from "src/lib/collections";
+import { newBookmark, setPath } from "src/lib/collections";
 import { USelection, type Sel } from "src/selection";
 import type { Zones } from "@epanet-js/hydraulic-model";
 import { chooseUnitSystem, defaultAccuracy } from "src/simulation/build-inp";
@@ -59,7 +55,11 @@ import {
 } from "src/state/scripts";
 import { selectionAtom } from "src/state/selection";
 import { simulationStepAtom } from "src/state/simulation";
-import { bookmarksAtom, selectionSetsAtom } from "src/state/collections";
+import {
+  bookmarksAtom,
+  selectionSetGroupsAtom,
+  selectionSetsAtom,
+} from "src/state/collections";
 import { useShowScriptOutput } from "./show-script-output";
 
 const MAX_CONSOLE_LINES = 1000;
@@ -83,7 +83,7 @@ export const useRunScript = () => {
   const isEditionBlocked = useIsEditionBlocked();
   const isEditionBlockedRef = useRef(isEditionBlocked);
   isEditionBlockedRef.current = isEditionBlocked;
-  const { create: createSelectionSet } = useSelectionSetsTransaction();
+  const createSelectionSet = useCreateSelectionSet();
   const { transact: saveBookmarks } = useBookmarksTransaction();
   const showScriptOutput = useShowScriptOutput();
 
@@ -100,22 +100,23 @@ export const useRunScript = () => {
   }, [map]);
 
   const applyEdits = useCallback(
-    (edits: Uint8Array, modelVersion: string) => {
+    (edits: Uint8Array, modelVersion: string): boolean => {
       const isModelUnchanged =
         store.get(stagingModelDerivedAtom).version === modelVersion;
       if (isEditionBlockedRef.current || !isModelUnchanged) {
         setDialog({ type: "changeNotApplied" });
-        return;
+        return false;
       }
       const changeSet = ChangeSet.fromBytes(edits);
       observeIdentifiers(store.get(modelFactoriesAtom), changeSet);
-      transact(() => changeSet);
+      if (!transact(() => changeSet)) return false;
       setSelection(
         withoutDeletedZones(
           store.get(selectionAtom),
           store.get(stagingModelDerivedAtom).zones,
         ),
       );
+      return true;
     },
     [store, setDialog, setSelection, transact],
   );
@@ -123,7 +124,7 @@ export const useRunScript = () => {
   const applyOutcome = useCallback(
     (outcome: ScriptRunOutcome, modelVersion: string) => {
       if (outcome.status !== "success") return;
-      if (outcome.edits) applyEdits(outcome.edits, modelVersion);
+      if (outcome.edits && !applyEdits(outcome.edits, modelVersion)) return;
       const { assets, customerPoints } = store.get(stagingModelDerivedAtom);
       const existing = ({ assetIds, customerPointIds }: ScriptTargets) =>
         USelection.fromIds(
@@ -143,9 +144,11 @@ export const useRunScript = () => {
       if (canManageCollections) {
         for (const { label, targets, commit } of outcome.selectionSets) {
           if (!commit) continue;
-          const members = existing(targets);
-          if (countSelected(members) === 0) continue;
-          createSelectionSet(newSelectionSet(label, members));
+          createSelectionSet({
+            label,
+            selection: existing(targets),
+            source: "script-output",
+          });
         }
         const bookmarks = outcome.bookmarks.filter(({ commit }) => commit);
         if (bookmarks.length > 0) {
@@ -232,12 +235,10 @@ export const useRunScript = () => {
         factories: store.get(modelFactoriesAtom),
         units: store.get(projectSettingsAtom).units,
         selected: selectedTargets(store.get(selectionAtom)),
-        selectionSets: store
-          .get(selectionSetsAtom)
-          .map(({ label, selection }) => ({
-            label,
-            targets: selectedTargets(selection),
-          })),
+        selectionSets: store.get(selectionSetsAtom).map((selectionSet) => ({
+          label: setPath(store.get(selectionSetGroupsAtom), selectionSet),
+          targets: selectedTargets(selectionSet.selection),
+        })),
         bookmarks: store
           .get(bookmarksAtom)
           .map(({ label, bbox: [west, south, east, north] }) => ({

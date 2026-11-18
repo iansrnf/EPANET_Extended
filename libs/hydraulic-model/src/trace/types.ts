@@ -33,11 +33,17 @@ export type TraceResult = {
 };
 
 export interface TraceBarriers {
-  isNodeBarrier(nodeId: AssetId): boolean;
-  isLinkBarrier(linkId: AssetId): boolean;
+  nodeStopReason(nodeId: AssetId): TraceStopReason | null;
+  linkStopReason(linkId: AssetId, fromNodeId: AssetId): TraceStopReason | null;
 }
 
-export type TraceStopReason = "barrier" | "closed" | "direction";
+export interface ActiveTopologyQueries {
+  isLinkActive(linkId: AssetId): boolean;
+  isNodeActive(nodeId: AssetId): boolean;
+}
+
+export type TraceStopReason =
+  "barrier" | "closed" | "direction" | "activeTopology";
 
 export type WeightedTraceStopReason = TraceStopReason | "limit";
 

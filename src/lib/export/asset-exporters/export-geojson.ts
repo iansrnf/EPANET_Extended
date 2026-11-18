@@ -26,6 +26,7 @@ import {
   PropertyNameResolver,
 } from "./property-names";
 import { exportedZones, zoneFieldKeys, zoneFieldValue } from "./zone-fields";
+import { toArrayBufferView } from "src/infra/array-buffer-view";
 
 const GEOJSON_END = `]}`;
 
@@ -221,7 +222,7 @@ export const exportGeoJson = (
         extensions: [".geojson"],
         mimeTypes: ["text/geo+json"],
         description: "GeoJSON File",
-        blob: new Blob([bufferView], {
+        blob: new Blob([toArrayBufferView(bufferView)], {
           type: "text/geo+json",
         }),
       };

@@ -1,6 +1,6 @@
 import type {
   CustomAttributeData,
-  ZoneAttributePlan,
+  CustomAttributePlan,
 } from "@epanet-js/converters";
 import {
   MAX_LABEL_LENGTH,
@@ -16,8 +16,8 @@ import {
 export const planZoneAttributes = (
   definition: CustomAttributesDefinition,
   declared: CustomAttributeData[],
-): { definition: CustomAttributesDefinition; plan: ZoneAttributePlan } => {
-  const plan: ZoneAttributePlan = new Map();
+): { definition: CustomAttributesDefinition; plan: CustomAttributePlan } => {
+  const plan: CustomAttributePlan = new Map();
   const attributes = [...getAttributes(definition, "zone")];
   const byLabel = new Map<string, CustomAttribute>(
     attributes.map((attribute) => [normalizeLabel(attribute.label), attribute]),

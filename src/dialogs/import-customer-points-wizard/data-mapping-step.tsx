@@ -1,6 +1,7 @@
 import React, {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -17,6 +18,7 @@ import { modelFactoriesAtom } from "src/state/model-factories";
 import {
   buildCustomerPointPreviewFactory,
   CustomerPoint,
+  LabelManager,
   MAX_CUSTOMER_POINT_LABEL_LENGTH,
 } from "@epanet-js/hydraulic-model";
 import {
@@ -33,16 +35,30 @@ import { buildCustomerPoints } from "./build-customer-points";
 import { collectImportIssues } from "./collect-import-issues";
 import { useLabelMaxLength } from "src/hooks/use-label-max-length";
 import { localizeDecimal } from "@epanet-js/i18n";
-import { WizardState, WizardActions, ParsedDataSummary } from "./types";
+import {
+  WizardState,
+  WizardActions,
+  ParsedDataSummary,
+  type BuildAllCustomerPoints,
+} from "./types";
 import { UnitsSpec } from "@epanet-js/project-settings";
 import { WizardActions as WizardActionsComponent } from "src/components/wizard";
 import { convertTo } from "@epanet-js/quantity";
-import { ChevronDownIcon, ChevronRightIcon, ErrorIcon } from "src/icons";
-import { Callout, Selector } from "@epanet-js/ui-kit";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  ErrorIcon,
+  PaywallLockIcon,
+} from "src/icons";
+import { Callout, MultiSelector, Selector } from "@epanet-js/ui-kit";
 import { NumericField } from "src/components/form/numeric-field";
 import { sourceErrorKey } from "./source-error-key";
 import { awaitsCoordinates } from "./use-wizard-state";
+import { useFeatureLock } from "src/components/form/paywall";
+import { planImportAttributes } from "src/lib/custom-attributes/plan-import-attributes";
+import { useFeatureFlag } from "src/hooks/use-feature-flags";
 const CONSTANT_PATTERN_ID = 0;
+const MAX_PREVIEW_ROWS = 15;
 
 /** Failures the attributes the user named are answerable for. */
 const COORDINATE_CODES = new Set([
@@ -65,7 +81,10 @@ export const DataMappingStep: React.FC<{
   const projectSettings = useAtomValue(projectSettingsAtom);
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
   const { labelManager, idPools } = useAtomValue(modelFactoriesAtom);
+  const isCpImportChangesetOn = useFeatureFlag("FLAG_CP_IMPORT_CHANGESET");
   const labelMaxLength = useLabelMaxLength();
+  const { isLocked: customAttributesLocked } =
+    useFeatureLock("customAttributes");
   const patterns = hydraulicModel.patterns;
   const customerDemandPerDayUnit = projectSettings.units.customerDemandPerDay;
   const {
@@ -75,6 +94,7 @@ export const DataMappingStep: React.FC<{
     sourceFiles,
     selectedDemandProperty,
     selectedLabelProperty,
+    selectedCustomAttributes,
     selectedPatternId,
     defaultDemand,
     setLoading,
@@ -82,6 +102,7 @@ export const DataMappingStep: React.FC<{
     setParsedDataSummary,
     setSelectedDemandProperty,
     setSelectedLabelProperty,
+    setSelectedCustomAttributes,
     setSelectedPatternId,
     setDefaultDemand,
     coordinateAttributes,
@@ -120,6 +141,7 @@ export const DataMappingStep: React.FC<{
       labelPropertyName: string | null,
       patternId: number | null,
       defaultDemandValue: number,
+      attributeNames: string[],
     ) => {
       if (awaitingCoordinates) return;
 
@@ -157,6 +179,7 @@ export const DataMappingStep: React.FC<{
             features,
             {
               mapping: { label: labelPropertyName, demand: demandPropertyName },
+              customAttributes: customAttributesLocked ? [] : attributeNames,
             },
             { signal },
           );
@@ -167,39 +190,73 @@ export const DataMappingStep: React.FC<{
         const demandImportUnit = projectSettings.units.customerDemandPerDay;
         const demandTargetUnit = projectSettings.units.customerDemand;
 
+        const declared = network.customAttributes ?? [];
+        const attributesPlan =
+          declared.length > 0
+            ? planImportAttributes(
+                hydraulicModel.customAttributes,
+                "customerPoint",
+                declared,
+              )
+            : undefined;
+
         const previewIdGenerator = idPools.forPool("customerPoint").copy();
+        const records = network.customerPoints ?? [];
+        const buildOptions = {
+          toDemand: (value: number) =>
+            convertTo({ value, unit: demandImportUnit }, demandTargetUnit),
+          patternId,
+          defaultDemand: defaultDemandValue,
+          labelMaxLength,
+          attributes: attributesPlan?.plan,
+        };
 
-        const built = await buildCustomerPoints(
-          network.customerPoints ?? [],
-          features,
-          {
-            factory: buildCustomerPointPreviewFactory(
-              labelManager,
-              previewIdGenerator,
-            ),
-            toDemand: (value) =>
-              convertTo({ value, unit: demandImportUnit }, demandTargetUnit),
-            patternId,
-            defaultDemand: defaultDemandValue,
-            labelMaxLength,
-            issues,
-            signal,
-          },
-        );
+        const built = await buildCustomerPoints(records, features, {
+          ...buildOptions,
+          factory: buildCustomerPointPreviewFactory(
+            isCpImportChangesetOn ? new LabelManager() : labelManager,
+            previewIdGenerator,
+          ),
+          createLimit: isCpImportChangesetOn ? MAX_PREVIEW_ROWS : undefined,
+          issues,
+          signal,
+        });
 
-        const { customerPoints, demands } = built;
+        const { customerPoints, demands, validCount } = built;
+
+        const buildAll: BuildAllCustomerPoints = (
+          factory,
+          { onProgress, signal: buildSignal },
+        ) =>
+          buildCustomerPoints(records, features, {
+            ...buildOptions,
+            factory,
+            issues: new CustomerPointsIssuesAccumulator(),
+            onProgress,
+            signal: buildSignal,
+          });
 
         setParsedDataSummary({
           validCustomerPoints: customerPoints,
-          idGenerator: previewIdGenerator,
+          validCount,
+          ...(isCpImportChangesetOn
+            ? { buildAll }
+            : { idGenerator: previewIdGenerator }),
           customerPointDemands: demands,
           issues: issues.buildResult(),
           totalCount: features.length,
           demandImportUnit,
+          attributes: attributesPlan && {
+            definition: attributesPlan.definition,
+            columns: declared.flatMap(({ ref, name }) => {
+              const attribute = attributesPlan.plan.get(ref);
+              return attribute ? [{ id: attribute.id, label: name }] : [];
+            }),
+          },
         });
         setLoading(false);
 
-        if (customerPoints.length === 0) {
+        if (validCount === 0) {
           userTracking.capture({
             name: "importCustomerPoints.dataMapping.noValidPoints",
             fileName: primaryFile.name,
@@ -208,7 +265,7 @@ export const DataMappingStep: React.FC<{
 
         userTracking.capture({
           name: "importCustomerPoints.dataMapping.customerPointsLoaded",
-          validCount: customerPoints.length,
+          validCount,
           issuesCount: issues.count(),
           totalCount: features.length,
           fileName: primaryFile.name,
@@ -232,7 +289,10 @@ export const DataMappingStep: React.FC<{
       namesCoordinates,
       coordinateAttributes,
       projectSettings.units,
+      customAttributesLocked,
+      hydraulicModel.customAttributes,
       labelManager,
+      isCpImportChangesetOn,
       idPools,
       labelMaxLength,
       setParsedDataSummary,
@@ -250,6 +310,10 @@ export const DataMappingStep: React.FC<{
         property: property ?? "(default)",
       });
       setSelectedDemandProperty(property);
+      const attributes = selectedCustomAttributes.filter(
+        (name) => name !== property,
+      );
+      setSelectedCustomAttributes(attributes);
       if (!inputData) return;
       setParsedDataSummary(null);
       void importSelection(
@@ -257,14 +321,17 @@ export const DataMappingStep: React.FC<{
         selectedLabelProperty,
         selectedPatternId,
         defaultDemand,
+        attributes,
       );
     },
     [
       userTracking,
       setSelectedDemandProperty,
+      setSelectedCustomAttributes,
       setParsedDataSummary,
       importSelection,
       inputData,
+      selectedCustomAttributes,
       selectedLabelProperty,
       selectedPatternId,
       defaultDemand,
@@ -282,6 +349,7 @@ export const DataMappingStep: React.FC<{
         selectedLabelProperty,
         selectedPatternId,
         safeValue,
+        selectedCustomAttributes,
       );
     },
     [
@@ -289,6 +357,7 @@ export const DataMappingStep: React.FC<{
       setParsedDataSummary,
       importSelection,
       inputData,
+      selectedCustomAttributes,
       selectedDemandProperty,
       selectedLabelProperty,
       selectedPatternId,
@@ -302,6 +371,10 @@ export const DataMappingStep: React.FC<{
         property,
       });
       setSelectedLabelProperty(property);
+      const attributes = selectedCustomAttributes.filter(
+        (name) => name !== property,
+      );
+      setSelectedCustomAttributes(attributes);
       if (!inputData) return;
       setParsedDataSummary(null);
       void importSelection(
@@ -309,11 +382,14 @@ export const DataMappingStep: React.FC<{
         property,
         selectedPatternId,
         defaultDemand,
+        attributes,
       );
     },
     [
       userTracking,
       setSelectedLabelProperty,
+      setSelectedCustomAttributes,
+      selectedCustomAttributes,
       selectedDemandProperty,
       setParsedDataSummary,
       importSelection,
@@ -330,12 +406,22 @@ export const DataMappingStep: React.FC<{
       setParsedDataSummary(null);
       setError(null);
       setCoordinatesRejected(false);
+      setSelectedCustomAttributes(
+        selectedCustomAttributes.filter((name) => name !== property),
+      );
 
       setCoordinateAttributes(
         next.x === null || next.y === null ? null : { x: next.x, y: next.y },
       );
     },
-    [namedAxes, setCoordinateAttributes, setParsedDataSummary, setError],
+    [
+      namedAxes,
+      selectedCustomAttributes,
+      setSelectedCustomAttributes,
+      setCoordinateAttributes,
+      setParsedDataSummary,
+      setError,
+    ],
   );
 
   const handlePatternChange = useCallback(
@@ -349,6 +435,7 @@ export const DataMappingStep: React.FC<{
           selectedLabelProperty,
           patternId,
           defaultDemand,
+          selectedCustomAttributes,
         );
       }
       userTracking.capture({
@@ -363,8 +450,38 @@ export const DataMappingStep: React.FC<{
       setParsedDataSummary,
       importSelection,
       inputData,
+      selectedCustomAttributes,
       selectedLabelProperty,
       patterns,
+      defaultDemand,
+    ],
+  );
+
+  const handleCustomAttributeToggle = useCallback(
+    (name: string) => {
+      if (customAttributesLocked) return;
+      const attributes = selectedCustomAttributes.includes(name)
+        ? selectedCustomAttributes.filter((selected) => selected !== name)
+        : [...selectedCustomAttributes, name];
+      setSelectedCustomAttributes(attributes);
+      if (!inputData) return;
+      void importSelection(
+        selectedDemandProperty,
+        selectedLabelProperty,
+        selectedPatternId,
+        defaultDemand,
+        attributes,
+      );
+    },
+    [
+      customAttributesLocked,
+      selectedCustomAttributes,
+      setSelectedCustomAttributes,
+      inputData,
+      importSelection,
+      selectedDemandProperty,
+      selectedLabelProperty,
+      selectedPatternId,
       defaultDemand,
     ],
   );
@@ -382,18 +499,27 @@ export const DataMappingStep: React.FC<{
         selectedLabelProperty,
         selectedPatternId,
         defaultDemand,
+        selectedCustomAttributes,
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputData, coordinateAttributes]);
 
   const showAttributesMapping = !!inputData;
+  const mappedProperties = new Set([
+    selectedLabelProperty,
+    selectedDemandProperty,
+    namesCoordinates ? namedAxes.x : null,
+    namesCoordinates ? namedAxes.y : null,
+  ]);
+  const customAttributeOptions = Array.from(inputData?.properties ?? []).filter(
+    (property) => !mappedProperties.has(property),
+  );
   const showLoading =
     inputData && isLoading && !parsedDataSummary && !awaitingCoordinates;
   const showDataPreview = parsedDataSummary;
   const showNoDataMessage = !inputData;
-  const validCount = parsedDataSummary?.validCustomerPoints.length || 0;
-  const MAX_PREVIEW_ROWS = 15;
+  const validCount = parsedDataSummary?.validCount || 0;
 
   const isNextDisabled =
     isLoading ||
@@ -417,8 +543,39 @@ export const DataMappingStep: React.FC<{
                 )}
               </p>
               <div className="@container space-y-4">
-                <div className="@lg:grid @lg:grid-cols-3 @lg:gap-x-4 @lg:items-start space-y-4 @lg:space-y-0">
-                  <div className="space-y-2">
+                <div className="@lg:grid @lg:grid-cols-3 @lg:gap-x-4 @lg:gap-y-4 @lg:items-start space-y-4 @lg:space-y-0">
+                  {namesCoordinates &&
+                    (["x", "y"] as const).map((axis) => (
+                      <div key={axis} className="space-y-2">
+                        <label className="block text-size-base text-default">
+                          {translate(
+                            `importCustomerPoints.wizard.dataMapping.coordinateSelector.${axis}`,
+                          )}
+                        </label>
+                        <Selector
+                          nullable
+                          placeholder={translate(
+                            "importCustomerPoints.wizard.dataMapping.coordinateSelector.choose",
+                          )}
+                          options={Array.from(inputData.properties).map(
+                            (prop) => ({ label: prop, value: prop }),
+                          )}
+                          selected={namedAxes[axis]}
+                          styleOptions={
+                            coordinatesRejected
+                              ? { variant: "warning" }
+                              : undefined
+                          }
+                          onChange={(value) =>
+                            handleCoordinateChange(axis, value ?? null)
+                          }
+                          ariaLabel={translate(
+                            `importCustomerPoints.wizard.dataMapping.coordinateSelector.${axis}`,
+                          )}
+                        />
+                      </div>
+                    ))}
+                  <div className="space-y-2 @lg:col-start-1">
                     <label className="block text-size-base text-default">
                       {translate(
                         "importCustomerPoints.wizard.dataMapping.labelSelector.label",
@@ -453,37 +610,14 @@ export const DataMappingStep: React.FC<{
                       )}
                     </p>
                   </div>
-                  {namesCoordinates &&
-                    (["x", "y"] as const).map((axis) => (
-                      <div key={axis} className="space-y-2">
-                        <label className="block text-size-base text-default">
-                          {translate(
-                            `importCustomerPoints.wizard.dataMapping.coordinateSelector.${axis}`,
-                          )}
-                        </label>
-                        <Selector
-                          nullable
-                          placeholder={translate(
-                            "importCustomerPoints.wizard.dataMapping.coordinateSelector.choose",
-                          )}
-                          options={Array.from(inputData.properties).map(
-                            (prop) => ({ label: prop, value: prop }),
-                          )}
-                          selected={namedAxes[axis]}
-                          styleOptions={
-                            coordinatesRejected
-                              ? { variant: "warning" }
-                              : undefined
-                          }
-                          onChange={(value) =>
-                            handleCoordinateChange(axis, value ?? null)
-                          }
-                          ariaLabel={translate(
-                            `importCustomerPoints.wizard.dataMapping.coordinateSelector.${axis}`,
-                          )}
-                        />
-                      </div>
-                    ))}
+                  <div className="space-y-2 @lg:col-span-2">
+                    <CustomAttributesSelector
+                      options={customAttributeOptions}
+                      selected={selectedCustomAttributes}
+                      isLocked={customAttributesLocked}
+                      onToggle={handleCustomAttributeToggle}
+                    />
+                  </div>
                 </div>
 
                 <div className="space-y-4 @lg:grid @lg:gap-x-4 @lg:gap-y-2 @lg:space-y-0 @lg:grid-cols-3 @lg:grid-rows-[repeat(3,auto)]">
@@ -627,6 +761,53 @@ export const DataMappingStep: React.FC<{
   );
 };
 
+const CustomAttributesSelector: React.FC<{
+  options: string[];
+  selected: string[];
+  isLocked: boolean;
+  onToggle: (name: string) => void;
+}> = ({ options, selected, isLocked, onToggle }) => {
+  const translate = useTranslate();
+  const selectorId = useId();
+
+  return (
+    <>
+      <label
+        htmlFor={selectorId}
+        className="flex items-center gap-1 min-w-0 text-size-base text-default"
+      >
+        <span className="shrink-0">{translate("customAttributes.title")}</span>
+        {isLocked && (
+          <>
+            <span aria-hidden className="shrink-0 flex items-center">
+              <PaywallLockIcon size="sm" />
+            </span>
+            <span className="min-w-0 truncate text-size-small text-subtle">
+              {translate("paywall.tooltip")}
+            </span>
+          </>
+        )}
+      </label>
+      <MultiSelector<string>
+        id={selectorId}
+        options={options.map((name) => ({ label: name, value: name }))}
+        selected={selected}
+        onOptionSelected={onToggle}
+        onOptionRemoved={onToggle}
+        valueLabel={translate(
+          "importCustomerPoints.wizard.dataMapping.attributesSelector.selectedCount",
+          String(selected.length),
+        )}
+        placeholder={translate(
+          "importCustomerPoints.wizard.dataMapping.attributesSelector.placeholder",
+        )}
+        disabled={options.length === 0}
+        side="bottom"
+      />
+    </>
+  );
+};
+
 type CustomerPointsTableProps = {
   customerPoints: CustomerPoint[];
   maxPreviewRows: number;
@@ -644,7 +825,8 @@ export const CustomerPointsTable: React.FC<CustomerPointsTableProps> = ({
   const translateUnit = useTranslateUnit();
   const customerDemandUnit = wizardState.units.customerDemand;
   const customerDemandPerDayUnit = wizardState.units.customerDemandPerDay;
-  const validCount = customerPoints.length;
+  const attributeColumns = parsedDataSummary.attributes?.columns ?? [];
+  const { validCount } = parsedDataSummary;
   const validPreview = customerPoints.slice(0, maxPreviewRows);
   const validHasMore = validCount > maxPreviewRows;
 
@@ -690,6 +872,14 @@ export const CustomerPointsTable: React.FC<CustomerPointsTableProps> = ({
                   "importCustomerPoints.wizard.dataMapping.table.demand",
                 )} (${translateUnit(customerDemandPerDayUnit)})`}
               </th>
+              {attributeColumns.map(({ id, label }) => (
+                <th
+                  key={id}
+                  className="px-3 py-2 text-left text-size-small font-medium text-subtle tracking-wider border-b"
+                >
+                  {label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -723,6 +913,11 @@ export const CustomerPointsTable: React.FC<CustomerPointsTableProps> = ({
                     ),
                   )}
                 </td>
+                {attributeColumns.map(({ id }) => (
+                  <td key={id} className="px-3 py-2 border-b">
+                    {String(point.getProperty(id) ?? "")}
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>

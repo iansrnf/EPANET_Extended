@@ -18,6 +18,7 @@ import {
 import { buildPropertyNameResolver } from "./property-names";
 import { Position } from "geojson";
 import { exportedZones, zoneFieldKeys, zoneFieldValue } from "./zone-fields";
+import { toArrayBufferView } from "src/infra/array-buffer-view";
 
 export const exportCsv = (
   hydraulicModel: HydraulicModel,
@@ -276,7 +277,7 @@ export const exportCsv = (
         extensions: [".csv"],
         mimeTypes: ["text/csv"],
         description: "CSV File",
-        blob: new Blob([bufferView], {
+        blob: new Blob([toArrayBufferView(bufferView)], {
           type: "text/csv",
         }),
       };

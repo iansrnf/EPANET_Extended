@@ -21,6 +21,7 @@ type FeatureState = Record<string, string | boolean | number>;
 
 class MapTestEngine {
   handlers: React.MutableRefObject<MapHandlers>;
+  restoreContext: () => void;
   private removed = false;
   private sources: Map<string, GeoJSONSourceRaw> = new Map();
   private features: Map<string, any[]> = new Map();
@@ -29,11 +30,14 @@ class MapTestEngine {
   constructor({
     _element,
     handlers,
+    onContextRestored,
   }: {
     _element: HTMLDivElement;
     handlers: React.MutableRefObject<MapHandlers>;
+    onContextRestored: () => void;
   }) {
     this.handlers = handlers;
+    this.restoreContext = onContextRestored;
     this.sources.set("delta-features", {
       type: "geojson",
       data: { type: "FeatureCollection", features: [] },

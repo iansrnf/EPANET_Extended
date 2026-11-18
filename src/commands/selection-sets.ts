@@ -10,8 +10,12 @@ import {
   type SelectionSetId,
   countSelected,
   existingSelection,
+  hasPathSeparator,
   newSelectionSet,
+  splitSetPath,
 } from "src/lib/collections";
+import type { Sel } from "src/selection";
+import { useEnsureSelectionSetGroupPath } from "src/commands/selection-set-groups";
 import { useSelectionSetsTransaction } from "src/hooks/persistence/use-selection-sets-transaction";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
 import { selectionAtom } from "src/state/selection";
@@ -19,9 +23,10 @@ import { selectionSetsAtom } from "src/state/collections";
 
 export const MIN_SELECTION_SET_SIZE = 1;
 
-export const useSaveSelectionSet = () => {
+export const useCreateSelectionSet = () => {
   const userTracking = useUserTracking();
   const { create } = useSelectionSetsTransaction();
+  const ensureGroupPath = useEnsureSelectionSetGroupPath();
 
   return useAtomCallback(
     useCallback(
@@ -29,20 +34,37 @@ export const useSaveSelectionSet = () => {
         get,
         _set,
         {
-          label,
+          label: name,
+          selection,
           source,
-          groupId = null,
+          groupId: parentId = null,
+          groupLabels: outerGroupLabels = [],
         }: {
           label: string;
+          selection: Sel;
           source: CollectionDraftSource;
           groupId?: SelectionSetGroupId | null;
+          groupLabels?: string[];
         },
-      ) => {
-        const selection = get(selectionAtom);
+      ): "created" | "skipped" | "failed" => {
         const count = countSelected(selection);
-        if (count < MIN_SELECTION_SET_SIZE) return;
+        if (count < MIN_SELECTION_SET_SIZE) return "skipped";
 
-        if (!create(newSelectionSet(label, selection, groupId))) return;
+        const { groupLabels, label } = hasPathSeparator(name)
+          ? splitSetPath(name)
+          : { groupLabels: [], label: name };
+        if (!label) return "skipped";
+
+        const ensured = ensureGroupPath({
+          groupLabels: [...outerGroupLabels, ...groupLabels],
+          parentId,
+          source: source === "script-output" ? "script-output" : "panel",
+        });
+        if (!ensured) return "failed";
+        const { groupId } = ensured;
+
+        if (!create(newSelectionSet(label, selection, groupId)))
+          return "failed";
 
         userTracking.capture({
           name: "selectionSet.created",
@@ -51,8 +73,31 @@ export const useSaveSelectionSet = () => {
           inGroup: groupId !== null,
           source,
         });
+        return "created";
       },
-      [userTracking, create],
+      [userTracking, create, ensureGroupPath],
+    ),
+  );
+};
+
+export const useSaveSelectionSet = () => {
+  const createSelectionSet = useCreateSelectionSet();
+
+  return useAtomCallback(
+    useCallback(
+      (
+        get,
+        _set,
+        input: {
+          label: string;
+          source: CollectionDraftSource;
+          groupId?: SelectionSetGroupId | null;
+          groupLabels?: string[];
+        },
+      ) => {
+        createSelectionSet({ ...input, selection: get(selectionAtom) });
+      },
+      [createSelectionSet],
     ),
   );
 };

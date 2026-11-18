@@ -1,19 +1,40 @@
-import { CustomerPoint, CustomerPointId } from "@epanet-js/hydraulic-model";
+import {
+  CustomAttributeId,
+  CustomAttributesDefinition,
+  CustomerPoint,
+  CustomerPointFactory,
+  CustomerPointId,
+} from "@epanet-js/hydraulic-model";
 import { Demand } from "@epanet-js/hydraulic-model";
 import { CustomerPointsParserIssues } from "./issues";
 import { Unit } from "@epanet-js/quantity";
 import { IdGenerator } from "@epanet-js/id-generator";
 import type { CoordinateAttributes } from "@epanet-js/gis-importers";
+import type { BuiltCustomerPoints } from "./build-customer-points";
 
 export type WizardStep = 1 | 2 | 3;
 
+export type BuildAllCustomerPoints = (
+  factory: CustomerPointFactory,
+  options: {
+    onProgress: (processed: number, total: number) => void;
+    signal: AbortSignal;
+  },
+) => Promise<BuiltCustomerPoints>;
+
 export type ParsedDataSummary = {
   validCustomerPoints: CustomerPoint[];
+  validCount: number;
+  buildAll?: BuildAllCustomerPoints;
   idGenerator?: IdGenerator;
   customerPointDemands: Map<CustomerPointId, Demand[]>;
   issues: CustomerPointsParserIssues | null;
   totalCount: number;
   demandImportUnit: Unit;
+  attributes?: {
+    definition: CustomAttributesDefinition;
+    columns: { id: CustomAttributeId; label: string }[];
+  };
 };
 
 export type InputData = {
@@ -30,6 +51,7 @@ export type WizardState = {
   inputData: InputData | null;
   selectedDemandProperty: string | null;
   selectedLabelProperty: string | null;
+  selectedCustomAttributes: string[];
   coordinateAttributes: CoordinateAttributes | null;
   isLoading: boolean;
   error: string | null;
@@ -48,6 +70,7 @@ export type WizardActions = {
   setInputData: (data: InputData | null) => void;
   setSelectedDemandProperty: (property: string | null) => void;
   setSelectedLabelProperty: (property: string | null) => void;
+  setSelectedCustomAttributes: (attributes: string[]) => void;
   setCoordinateAttributes: (attributes: CoordinateAttributes | null) => void;
   resetWizardData: () => void;
   setError: (error: string | null) => void;

@@ -3,6 +3,7 @@ import { useSetAtom } from "jotai";
 import { FileWithHandle } from "browser-fs-access";
 import {
   buildModel,
+  type BuildModelResult,
   type Converter,
   type NetworkData,
 } from "@epanet-js/converters";
@@ -36,7 +37,13 @@ import {
   useStartNewProject,
 } from "src/hooks/persistence/use-start-new-project";
 import { saveCustomAttributes } from "src/lib/db";
-import { newSelectionSet } from "src/lib/collections";
+import {
+  newSelectionSet,
+  newSelectionSetGroup,
+  type SelectionSet,
+  type SelectionSetGroup,
+  type SelectionSetGroupId,
+} from "src/lib/collections";
 import { USelection } from "src/selection";
 import { MapContext } from "src/map";
 
@@ -54,6 +61,9 @@ export const useConvertFile = () => {
   const remoteSetpointPrv = useFeatureFlag("FLAG_SYNERGI_REMOTE_SETPOINT_PRV");
   const variableSpeedPumps = useFeatureFlag(
     "FLAG_SYNERGI_VARIABLE_SPEED_PUMPS",
+  );
+  const flowModulatingValves = useFeatureFlag(
+    "FLAG_SYNERGI_FLOW_MODULATING_VALVES",
   );
   const setDialogState = useSetAtom(dialogAtom);
   const setInpFileInfo = useSetAtom(inpFileInfoAtom);
@@ -93,6 +103,7 @@ export const useConvertFile = () => {
           freeDischargeInlet,
           remoteSetpointPrv,
           variableSpeedPumps,
+          flowModulatingValves,
         });
         const { network, issues } = await converter.parseNetworkData({
           files: [file],
@@ -112,6 +123,7 @@ export const useConvertFile = () => {
 
         const {
           hydraulicModel,
+          selectionSetGroups,
           selectionSets,
           factories,
           projectSettings,
@@ -125,9 +137,7 @@ export const useConvertFile = () => {
 
         const started = await startNewProject({
           hydraulicModel,
-          selectionSets: selectionSets.map(({ label, assetIds }) =>
-            newSelectionSet(label, USelection.fromIds(assetIds, [])),
-          ),
+          ...toCollections(selectionSetGroups, selectionSets),
           factories,
           projectSettings: {
             ...defaultProjectSettings,
@@ -199,6 +209,7 @@ export const useConvertFile = () => {
       freeDischargeInlet,
       remoteSetpointPrv,
       variableSpeedPumps,
+      flowModulatingValves,
       projections,
       labelMaxLength,
       startNewProject,
@@ -320,4 +331,31 @@ const withSourceHydraulics = (
     ...(flowChange === undefined ? {} : { flowChange }),
     timing,
   };
+};
+
+const toCollections = (
+  builtGroups: BuildModelResult["selectionSetGroups"],
+  builtSets: BuildModelResult["selectionSets"],
+): {
+  selectionSetGroups: SelectionSetGroup[];
+  selectionSets: SelectionSet[];
+} => {
+  const idByRef = new Map<string, SelectionSetGroupId>();
+  const groupIdOf = (ref: string | undefined) =>
+    ref === undefined ? null : (idByRef.get(ref) ?? null);
+
+  const selectionSetGroups = builtGroups.map(({ ref, label, parentRef }) => {
+    const group = newSelectionSetGroup(label, groupIdOf(parentRef));
+    idByRef.set(ref, group.id);
+    return group;
+  });
+  const selectionSets = builtSets.map(({ label, groupRef, assetIds }) =>
+    newSelectionSet(
+      label,
+      USelection.fromIds(assetIds, []),
+      groupIdOf(groupRef),
+    ),
+  );
+
+  return { selectionSetGroups, selectionSets };
 };

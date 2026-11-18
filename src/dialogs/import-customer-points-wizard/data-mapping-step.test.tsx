@@ -3,10 +3,24 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { setInitialState } from "src/__helpers__/state";
 import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
+import {
+  LabelManager,
+  initializeModelFactories,
+} from "@epanet-js/hydraulic-model";
+import { buildIdPools } from "src/lib/id-pools";
 import { stubUserTracking } from "src/__helpers__/user-tracking";
 import { stubProjectionsReady } from "src/__helpers__/projections";
+import { stubFeatureOff, stubFeatureOn } from "src/__helpers__/feature-flags";
+import { modelFactoriesAtom } from "src/state/model-factories";
 import { setWizardState } from "./__helpers__/wizard-state";
 import { renderWizard } from "./__helpers__/render-wizard";
+
+const permissions = { canUseCustomAttributes: true };
+
+vi.mock("src/hooks/use-permissions", async () => ({
+  ...(await vi.importActual("src/hooks/use-permissions")),
+  usePermissions: () => permissions,
+}));
 
 const aPoint = (
   coordinates: [number, number],
@@ -28,6 +42,53 @@ describe("DataMappingStep", () => {
   beforeEach(() => {
     stubUserTracking();
     stubProjectionsReady();
+    permissions.canUseCustomAttributes = true;
+  });
+
+  describe("generated labels over existing customer points", () => {
+    const renderOverExistingLabel = () => {
+      const store = setInitialState({
+        hydraulicModel: HydraulicModelBuilder.with().build(),
+      });
+      const labelManager = new LabelManager();
+      labelManager.generateFor("customerPoint", 1);
+      store.set(
+        modelFactoriesAtom,
+        initializeModelFactories({
+          idPools: buildIdPools({
+            asset: 0,
+            customerPoint: 1,
+            pattern: 0,
+            curve: 0,
+            zone: 0,
+          }),
+          labelManager,
+        }),
+      );
+
+      setWizardState(store, {
+        sourceFiles: [aSourceFile([aPoint([0.001, 0.001], { value: 1 })])],
+        inputData: { properties: new Set(["value"]) },
+      });
+
+      renderWizard(store);
+    };
+
+    it("restarts the numbering when the import commits a change set", async () => {
+      stubFeatureOn("FLAG_CP_IMPORT_CHANGESET");
+
+      renderOverExistingLabel();
+
+      expect(await screen.findByTitle("CP1")).toBeInTheDocument();
+    });
+
+    it("avoids the existing labels on the reset path", async () => {
+      stubFeatureOff("FLAG_CP_IMPORT_CHANGESET");
+
+      renderOverExistingLabel();
+
+      expect(await screen.findByTitle("CP2")).toBeInTheDocument();
+    });
   });
 
   describe("optional demand attribute + default value", () => {
@@ -253,6 +314,77 @@ describe("DataMappingStep", () => {
       expect(screen.getByText("CP2")).toBeInTheDocument();
       expect(screen.queryByText("CP3")).not.toBeInTheDocument();
       expect(screen.queryByText("CP4")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("custom attributes", () => {
+    const pointsWithAttributes = () => [
+      aPoint([0.001, 0.001], { name: "Alpha", zone: "NORTH" }),
+      aPoint([0.002, 0.002], { name: "Beta", zone: "SOUTH" }),
+    ];
+
+    const renderMappingStep = async () => {
+      const store = setInitialState({
+        hydraulicModel: HydraulicModelBuilder.with().build(),
+      });
+      setWizardState(store, {
+        sourceFiles: [aSourceFile(pointsWithAttributes())],
+        inputData: { properties: new Set(["name", "zone"]) },
+      });
+      renderWizard(store);
+      await waitFor(() => {
+        expect(screen.getByText(/Customer points \(2\)/)).toBeInTheDocument();
+      });
+    };
+
+    const selector = () =>
+      screen.getByRole("combobox", { name: /custom attributes/i });
+
+    it("previews the selected attribute as a column", async () => {
+      const user = userEvent.setup();
+      await renderMappingStep();
+
+      await user.click(selector());
+      await user.click(await screen.findByRole("option", { name: "zone" }));
+
+      expect(
+        await screen.findByRole("columnheader", { name: "zone" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("NORTH")).toBeInTheDocument();
+      expect(screen.getByText("SOUTH")).toBeInTheDocument();
+    });
+
+    it("does not offer the attribute used as the label", async () => {
+      const user = userEvent.setup();
+      await renderMappingStep();
+
+      await user.click(screen.getByRole("combobox", { name: "Label" }));
+      await user.click(await screen.findByRole("option", { name: "name" }));
+      await waitFor(() => {
+        expect(screen.getByText("Alpha")).toBeInTheDocument();
+      });
+
+      await user.click(selector());
+
+      expect(
+        await screen.findByRole("option", { name: "zone" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("option", { name: "name" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("selects nothing while the feature is locked", async () => {
+      permissions.canUseCustomAttributes = false;
+      const user = userEvent.setup();
+      await renderMappingStep();
+
+      await user.click(selector());
+      await user.click(await screen.findByRole("option", { name: "zone" }));
+
+      expect(
+        screen.queryByRole("columnheader", { name: "zone" }),
+      ).not.toBeInTheDocument();
     });
   });
 });

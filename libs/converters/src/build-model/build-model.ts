@@ -4,6 +4,7 @@ import type {
   ControlLinkRef,
   ControlNodeRef,
   CustomAttributeValues,
+  FlowModulatedSetpointControlData,
   TankLevelControlData,
   TimedSettingControlData,
   VariableSpeedPumpControlData,
@@ -23,10 +24,15 @@ import type {
   ZoneData,
 } from "../network-data";
 import { IssueCollector } from "../issues";
-import { buildZones, type ZoneAttributePlan } from "./build-zones";
+import { buildZones } from "./build-zones";
+import {
+  resolveCustomAttributeValues,
+  type CustomAttributePlan,
+} from "./custom-attributes";
 import {
   buildSelectionSets,
   type BuiltSelectionSet,
+  type BuiltSelectionSetGroup,
 } from "./build-selection-sets";
 import { inferNodeIsActive } from "./active-topology";
 import {
@@ -55,9 +61,9 @@ import {
   AssetType,
   CustomAttribute,
   CustomAttributeAssetType,
-  CustomAttributeId,
   CustomerPointFactory,
   CustomAttributesDefinition,
+  FlowModulatingValveControl,
   LevelSettingControl,
   SimpleControl,
   Valve,
@@ -98,6 +104,7 @@ export type BuildModelOptions = {
 
 export type BuildModelResult = {
   hydraulicModel: HydraulicModel;
+  selectionSetGroups: BuiltSelectionSetGroup[];
   selectionSets: BuiltSelectionSet[];
   issues: Issue[];
   factories: ModelFactories;
@@ -199,6 +206,7 @@ export const buildModel = (
   const linkContext: LinkContext = {
     ...context,
     linkIdByRef: new Map<string, AssetId>(),
+    linkLabelByRef: new Map<string, string>(),
     lengthUnit: spec.units.length,
     defaultRoughness: getDefaultRoughness(headlossFormula),
     toLength: converterFor(network.units.length, spec.units.length),
@@ -245,11 +253,12 @@ export const buildModel = (
   const { zones } = buildZones(
     reprojectZones(network.zones, toWgs84),
     factories.zoneFactory,
-    zoneAttributePlan(network, customAttributes.ids),
+    customAttributes.ids.get("zone"),
   );
   hydraulicModel.zones = zones;
 
-  const selectionSets = buildSelectionSets(
+  const { selectionSetGroups, selectionSets } = buildSelectionSets(
+    network.selectionSetGroups,
     network.selectionSets,
     {
       nodeIdByRef: (ref) => nodeIdByRef.get(ref)?.id,
@@ -260,6 +269,7 @@ export const buildModel = (
 
   return {
     hydraulicModel,
+    selectionSetGroups,
     selectionSets,
     issues: issues.build(),
     factories,
@@ -277,10 +287,7 @@ export const buildModel = (
   };
 };
 
-type CustomAttributeIds = Map<
-  CustomAttributeAssetType,
-  Map<string, CustomAttributeId>
->;
+type CustomAttributeIds = Map<CustomAttributeAssetType, CustomAttributePlan>;
 
 const customAttributeAssetTypes: CustomAttributeAssetType[] = [
   "junction",
@@ -328,17 +335,17 @@ const planCustomAttributes = (
   for (const type of customAttributeAssetTypes) {
     const carried = carriedByType.get(type) as Set<string>;
     const attributes: CustomAttribute[] = [];
-    const idByRef = new Map<string, CustomAttributeId>();
+    const plan: CustomAttributePlan = new Map();
 
     for (const { ref, name, type: valueType } of network.customAttributes) {
       if (!carried.has(ref)) continue;
 
       const id = buildCustomAttributeId(seed++);
-      idByRef.set(ref, id);
+      plan.set(ref, { id, type: valueType });
       attributes.push({ id, label: name, type: valueType });
     }
 
-    ids.set(type, idByRef);
+    ids.set(type, plan);
     if (attributes.length > 0) {
       definition = setAttributes(definition, type, attributes);
     }
@@ -347,36 +354,15 @@ const planCustomAttributes = (
   return { definition, ids };
 };
 
-const zoneAttributePlan = (
-  network: NetworkData,
-  ids: CustomAttributeIds,
-): ZoneAttributePlan => {
-  const idByRef = ids.get("zone");
-  const plan: ZoneAttributePlan = new Map();
-  if (idByRef === undefined) return plan;
-
-  for (const { ref, type } of network.customAttributes) {
-    const id = idByRef.get(ref);
-    if (id !== undefined) plan.set(ref, { id, type });
-  }
-  return plan;
-};
-
 const resolveCustomAttributes = (
   values: CustomAttributeValues | undefined,
-  idByRef: Map<string, CustomAttributeId> | undefined,
+  plan: CustomAttributePlan | undefined,
 ): Record<string, string | number> | undefined => {
-  if (values === undefined || idByRef === undefined) return undefined;
+  if (values === undefined || plan === undefined) return undefined;
 
-  const resolved: Record<string, string | number> = {};
-  for (const [ref, value] of Object.entries(values)) {
-    const id = idByRef.get(ref);
-    if (id === undefined) continue;
-
-    resolved[id] = value;
-  }
-
-  return resolved;
+  return Object.fromEntries(
+    resolveCustomAttributeValues({ customAttributes: values }, plan),
+  );
 };
 
 const reprojectZones = (
@@ -417,6 +403,7 @@ type NodeContext = {
 
 type LinkContext = NodeContext & {
   linkIdByRef: Map<string, AssetId>;
+  linkLabelByRef: Map<string, string>;
   lengthUnit: Unit;
   defaultRoughness: number;
   toLength: (value: number) => number;
@@ -636,6 +623,7 @@ const addPipe = (
     roughness: pipeData.roughness,
     minorLoss: pipeData.minorLoss,
     material: pipeData.material,
+    year: pipeData.year,
     initialStatus: pipeData.initialStatus,
   });
 
@@ -772,7 +760,7 @@ const addValve = (
   if (geometry === null) return;
 
   const kind = valveKindOf(valveData);
-  const targetNodeId = remoteTargetOf(valveData, kind, context, issues);
+  const targetNodeId = remoteTargetOf(valveData, kind, context);
   const valve = assetFactory.createValve({
     ...linkProperties(valveData, "valve", geometry, context),
     kind,
@@ -790,25 +778,26 @@ const addValve = (
     geometry.connections,
     context,
   );
+
+  if (valveData.targetNodeRef !== undefined && targetNodeId === undefined) {
+    issues.add({
+      code: "remotePressureControlUnsupported",
+      severity: "warning",
+      ref: valveData.ref,
+      label: valve.label,
+    });
+  }
 };
 
 const remoteTargetOf = (
-  { ref, targetNodeRef }: ValveData,
+  { targetNodeRef }: ValveData,
   kind: ValveKind,
   { nodeIdByRef }: LinkContext,
-  issues: IssueCollector,
 ): AssetId | undefined => {
   if (targetNodeRef === undefined) return undefined;
 
   const target = nodeIdByRef.get(targetNodeRef);
-  if (kind === "prv" && target !== undefined) return target.id;
-
-  issues.add({
-    code: "remotePressureControlUnsupported",
-    severity: "warning",
-    ref,
-  });
-  return undefined;
+  return kind === "prv" ? target?.id : undefined;
 };
 
 const unknownValveFallback = "tcv" as const satisfies ValveKind;
@@ -863,12 +852,13 @@ const registerLink = (
   link: LinkAsset,
   ref: string,
   connections: LinkConnections,
-  { linkIdByRef }: LinkContext,
+  { linkIdByRef, linkLabelByRef }: LinkContext,
 ) => {
   hydraulicModel.assets.set(link.id, link);
   hydraulicModel.assetIndex.addLink(link.id);
   hydraulicModel.topology.addLink(link.id, connections[0], connections[1]);
   linkIdByRef.set(ref, link.id);
+  linkLabelByRef.set(ref, link.label);
 };
 
 const deactivateStrandedNodes = (
@@ -915,7 +905,7 @@ const addControls = (
       continue;
     }
 
-    const control = controlOf(controlData, context, issues);
+    const control = controlOf(controlData, hydraulicModel, context, issues);
     if (control === undefined) continue;
 
     built.push(control);
@@ -927,25 +917,35 @@ const addControls = (
 
 const controlOf = (
   controlData: ControlData,
+  hydraulicModel: HydraulicModel,
   context: LinkContext,
   issues: IssueCollector,
-): LevelSettingControl | VariableSpeedPumpControl | undefined => {
+):
+  | LevelSettingControl
+  | VariableSpeedPumpControl
+  | FlowModulatingValveControl
+  | undefined => {
   switch (controlData.type) {
     case "tankLevel":
       return tankLevelControlOf(controlData, context);
     case "variableSpeedPump":
       return variableSpeedPumpControlOf(controlData, context, issues);
+    case "flowModulatedSetpoint":
+      return flowModulatingValveControlOf(
+        controlData,
+        hydraulicModel,
+        context,
+        issues,
+      );
     default:
       return undefined;
   }
 };
 
 // A float modulates as the tank fills; EPANET can only shut a link or open it,
-// and a two-state stand-in reads as support for something we do not model. A
-// setpoint following the flow has no form at all.
+// and a two-state stand-in reads as support for something we do not model.
 const unsupported: Record<string, IssueCode> = {
   tankFloat: "tankFloatControlUnsupported",
-  flowModulatedSetpoint: "flowModulatedSetpointUnsupported",
 };
 
 const rawControlsFor = (
@@ -960,6 +960,7 @@ const rawControlsFor = (
       code,
       severity: "warning",
       ref: controlData.link.ref,
+      label: context.linkLabelByRef.get(controlData.link.ref),
     });
     return [];
   }
@@ -969,13 +970,20 @@ const rawControlsFor = (
 
   switch (controlData.type) {
     case "timedSetting":
-      reportScheduledRemoteTarget(controlData, linkId, hydraulicModel, issues);
+      reportScheduledRemoteTarget(
+        controlData,
+        linkId,
+        hydraulicModel,
+        context,
+        issues,
+      );
       return scheduleRows(controlData, linkId, hydraulicModel, context);
     case "tankLevel":
       return controlData.link.kind === "pump"
         ? undefined
         : levelRows(controlData, linkId, hydraulicModel, context);
     case "variableSpeedPump":
+    case "flowModulatedSetpoint":
       return undefined;
     default:
       return [];
@@ -986,6 +994,7 @@ const reportScheduledRemoteTarget = (
   { link }: TimedSettingControlData,
   linkId: AssetId,
   hydraulicModel: HydraulicModel,
+  context: LinkContext,
   issues: IssueCollector,
 ): void => {
   const asset = hydraulicModel.assets.get(linkId);
@@ -996,6 +1005,7 @@ const reportScheduledRemoteTarget = (
     code: "remotePressureControlUnsupported",
     severity: "warning",
     ref: link.ref,
+    label: context.linkLabelByRef.get(link.ref),
   });
 };
 
@@ -1110,6 +1120,7 @@ const variableSpeedPumpControlOf = (
       code: "pumpSpeedControlUnsupported",
       severity: "warning",
       ref: control.link.ref,
+      label: context.linkLabelByRef.get(control.link.ref),
     });
     return undefined;
   }
@@ -1174,6 +1185,51 @@ const targetConverterFor = (
     case "flow":
       return toFlow;
   }
+};
+
+const flowModulatingValveControlOf = (
+  control: FlowModulatedSetpointControlData,
+  hydraulicModel: HydraulicModel,
+  context: LinkContext,
+  issues: IssueCollector,
+): FlowModulatingValveControl | undefined => {
+  const { linkIdByRef, toFlow, toPressure } = context;
+  const linkId = linkIdByRef.get(control.link.ref);
+  const valve =
+    linkId === undefined ? undefined : hydraulicModel.assets.get(linkId);
+  const sensorLinkId = linkIdByRef.get(control.source.ref);
+  const isPrv = valve?.type === "valve" && (valve as Valve).kind === "prv";
+  if (
+    linkId === undefined ||
+    !isPrv ||
+    sensorLinkId === undefined ||
+    control.points.length === 0
+  ) {
+    issues.add({
+      code: "flowModulatedSetpointUnsupported",
+      severity: "warning",
+      ref: control.link.ref,
+      label: context.linkLabelByRef.get(control.link.ref),
+    });
+    return undefined;
+  }
+
+  const prv = valve as Valve;
+  const points = control.points.map(({ flow, pressure }) => ({
+    flow: toFlow(flow),
+    pressure: toPressure(pressure),
+  }));
+  prv.setProperty("setting", points[0].pressure);
+
+  return {
+    id: createControlId(),
+    type: "flow-modulating-valve",
+    linkId,
+    points,
+    interpolate: control.interpolation !== "step",
+    sensorLinkId,
+    controlNodeId: prv.targetNodeId ?? prv.connections[1],
+  };
 };
 
 const tankLevelControlOf = (

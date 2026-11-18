@@ -2,7 +2,9 @@ import { vi } from "vitest";
 import type { Feature, Position } from "geojson";
 import type { SourceFile } from "@epanet-js/converters";
 import type { Proj4Projection } from "@epanet-js/projections";
+import type { GisInput } from "../importer";
 import { parseGisSource } from "./parse-gis-source";
+import { parseGisRecords } from "./parse-gis-records";
 
 vi.mock("shpjs", () => ({ default: vi.fn() }));
 
@@ -37,8 +39,7 @@ const IN_METRES: Position = [500000, 6000000];
 
 const aTextFile = (content: string, name = "source.geojson"): SourceFile => ({
   name,
-  arrayBuffer: () =>
-    Promise.resolve(new TextEncoder().encode(content).buffer as ArrayBuffer),
+  arrayBuffer: () => Promise.resolve(new TextEncoder().encode(content).buffer),
 });
 
 const aJsonFile = (content: unknown, name?: string): SourceFile =>
@@ -177,12 +178,10 @@ const aGeoData = ({
       ] as DxfPair[])),
   ...definition
     .match(/[\s\S]{1,250}/g)!
-    .map(
-      (chunk, index, chunks): DxfPair => [
-        index === chunks.length - 1 ? 301 : 303,
-        chunk,
-      ],
-    ),
+    .map((chunk, index, chunks): DxfPair => [
+      index === chunks.length - 1 ? 301 : 303,
+      chunk,
+    ]),
 ];
 
 const anEpsgAliasXml = (code: number, name = "Drawing CS") =>
@@ -234,7 +233,7 @@ const aBinaryDxf = (name = "drawing.dxf"): SourceFile => ({
         0x00,
         0x01,
         0x02,
-      ]).buffer as ArrayBuffer,
+      ]).buffer,
     ),
 });
 
@@ -253,7 +252,7 @@ const inCodePage1250 = (
       ...bytes.slice(0, start),
       ...replacement,
       ...bytes.slice(start + placeholder.length),
-    ]).buffer as ArrayBuffer;
+    ]).buffer;
   },
 });
 
@@ -268,15 +267,47 @@ const expectClose = (positions: Position[], expected: Position[]) => {
   });
 };
 
-const codesOf = async (input: Parameters<typeof parseGisSource>[0]) => {
-  const { issues } = await parseGisSource(input);
-  return issues.build().map(({ code }) => code);
+const parseAsFeatures = async (input: GisInput) => {
+  const parsed = await parseGisRecords(input);
+  return {
+    features: parsed.records.toFeatures(),
+    sourceProjection: parsed.sourceProjection,
+    issues: parsed.issues,
+    get contents() {
+      const { groups, ...contents } = parsed.contents;
+      return {
+        ...contents,
+        groups: groups.map(({ records, ...group }) => ({
+          ...group,
+          features: records.toFeatures(),
+        })),
+      };
+    },
+  };
 };
 
-describe("parseGisSource", () => {
+describe.each([
+  {
+    name: "parseGisSource",
+    parse: parseGisSource,
+    readsWithShpjs: true,
+    caches: true,
+  },
+  {
+    name: "parseGisRecords",
+    parse: parseAsFeatures,
+    readsWithShpjs: false,
+    caches: false,
+  },
+])("$name", ({ parse, readsWithShpjs, caches }) => {
+  const codesOf = async (input: GisInput) => {
+    const { issues } = await parse(input);
+    return issues.build().map(({ code }) => code);
+  };
+
   describe("GeoJSON", () => {
     it("assumes WGS84 when the file states no CRS, and says so", async () => {
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [aCollection([aPoint(IN_DEGREES)])],
       });
 
@@ -287,7 +318,7 @@ describe("parseGisSource", () => {
     });
 
     it("names no source projection when it assumed WGS84", async () => {
-      const { sourceProjection } = await parseGisSource({
+      const { sourceProjection } = await parse({
         files: [aCollection([aPoint(IN_DEGREES)])],
       });
 
@@ -326,7 +357,7 @@ describe("parseGisSource", () => {
     });
 
     it("says nothing when the file states WGS84 itself", async () => {
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [aCollection([aPoint(IN_DEGREES)], "EPSG:4326")],
       });
 
@@ -340,15 +371,34 @@ describe("parseGisSource", () => {
         JSON.stringify(aPoint([0.002, 0.002])),
       ].join("\n");
 
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [aTextFile(content, "source.geojsonl")],
       });
 
       expect(features).toHaveLength(2);
     });
 
+    it("reads a collection that names its type after its features", async () => {
+      const content = `{"features": [${JSON.stringify(aPoint(IN_DEGREES))}], "type": "FeatureCollection"}`;
+
+      const { features } = await parse({ files: [aTextFile(content)] });
+
+      expect(features).toEqual([aPoint(IN_DEGREES)]);
+    });
+
+    it("reads a file that starts with a byte order mark", async () => {
+      const content = `﻿${JSON.stringify({
+        type: "FeatureCollection",
+        features: [aPoint(IN_DEGREES)],
+      })}`;
+
+      const { features } = await parse({ files: [aTextFile(content)] });
+
+      expect(features).toEqual([aPoint(IN_DEGREES)]);
+    });
+
     it("keeps the records when nobody could say where they are", async () => {
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [aCollection([aPoint(IN_METRES)])],
       });
 
@@ -363,7 +413,7 @@ describe("parseGisSource", () => {
     });
 
     it("reprojects from the CRS the file states", async () => {
-      const { features, sourceProjection, issues } = await parseGisSource({
+      const { features, sourceProjection, issues } = await parse({
         files: [aCollection([aPoint(IN_METRES)], "EPSG:3857")],
         projections,
       });
@@ -378,6 +428,17 @@ describe("parseGisSource", () => {
       expect(issues.build()).toEqual([]);
     });
 
+    it("drops the height of a record an EPSG code reprojects", async () => {
+      const { features } = await parse({
+        files: [aCollection([aPoint([...IN_METRES, 12])], "EPSG:3857")],
+        projections,
+      });
+
+      const { coordinates } = features[0].geometry as { coordinates: Position };
+
+      expect(coordinates).toHaveLength(2);
+    });
+
     it("refuses a CRS it has no definition for", async () => {
       const codes = await codesOf({
         files: [aCollection([aPoint(IN_METRES)], "EPSG:27700")],
@@ -388,7 +449,7 @@ describe("parseGisSource", () => {
     });
 
     it("keeps the records, as written, when it cannot resolve the CRS", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [aCollection([aPoint(IN_METRES)], "EPSG:27700")],
         projections,
       });
@@ -408,7 +469,7 @@ describe("parseGisSource", () => {
     });
 
     it("keeps the records, as written, when the stated CRS does not fit them", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [aCollection([aPoint(IN_METRES)], "EPSG:4326")],
       });
 
@@ -419,7 +480,7 @@ describe("parseGisSource", () => {
     });
 
     it("reads a supplied CRS when the stated one does not fit the records", async () => {
-      const { features, sourceProjection, issues } = await parseGisSource({
+      const { features, sourceProjection, issues } = await parse({
         files: [aCollection([aPoint(IN_METRES)], "EPSG:4326")],
         crs: { type: "epsg", code: 3857 },
         projections,
@@ -434,7 +495,7 @@ describe("parseGisSource", () => {
     });
 
     it("reads a supplied CRS in place of a stated one that fits", async () => {
-      const { sourceProjection, issues } = await parseGisSource({
+      const { sourceProjection, issues } = await parse({
         files: [aCollection([aPoint(IN_DEGREES)], "EPSG:4326")],
         crs: { type: "epsg", code: 3857 },
         projections,
@@ -445,7 +506,7 @@ describe("parseGisSource", () => {
     });
 
     it("keeps the records as written when a supplied CRS does not fit, rather than falling back", async () => {
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [aCollection([aPoint(IN_DEGREES)], "EPSG:4326")],
         crs: { type: "epsg", code: 27700 },
         projections,
@@ -471,7 +532,7 @@ describe("parseGisSource", () => {
     });
 
     it("skips entries of a collection that are not features", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [
           aJsonFile({
             type: "FeatureCollection",
@@ -487,7 +548,7 @@ describe("parseGisSource", () => {
     });
 
     it("names the projection it reprojected from", async () => {
-      const { sourceProjection } = await parseGisSource({
+      const { sourceProjection } = await parse({
         files: [aCollection([aPoint(IN_METRES)], "EPSG:3857")],
         projections,
       });
@@ -496,7 +557,7 @@ describe("parseGisSource", () => {
     });
 
     it("names a supplied projection it reprojected from", async () => {
-      const { sourceProjection } = await parseGisSource({
+      const { sourceProjection } = await parse({
         files: [aCollection([aPoint(IN_METRES)], "EPSG:4326")],
         crs: { type: "epsg", code: 3857 },
         projections,
@@ -507,7 +568,7 @@ describe("parseGisSource", () => {
 
     it("keeps every feature around the entries that are not features", async () => {
       const notAFeature = { type: "Point", coordinates: [0, 0] };
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [
           aJsonFile({
             type: "FeatureCollection",
@@ -525,7 +586,7 @@ describe("parseGisSource", () => {
     });
 
     it("reads a supplied CRS where the file states none", async () => {
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [aCollection([aPoint(IN_METRES)])],
         crs: { type: "epsg", code: 3857 },
         projections,
@@ -555,7 +616,7 @@ describe("parseGisSource", () => {
     });
 
     it("reports a file whose records have no geometry as having nothing to import", async () => {
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [aCollection([aFeatureWithoutGeometry()], "EPSG:3857")],
         projections,
       });
@@ -579,7 +640,7 @@ describe("parseGisSource", () => {
     });
   });
 
-  describe("shapefile", () => {
+  describe.runIf(readsWithShpjs)("shapefile", () => {
     beforeEach(() => {
       shp.mockReset();
       shp.mockResolvedValue({
@@ -593,7 +654,7 @@ describe("parseGisSource", () => {
     });
 
     it("reads a complete bundle", async () => {
-      const { features, issues } = await parseGisSource(
+      const { features, issues } = await parse(
         shapefileOf(["a.shp", "a.dbf", "a.prj"]),
       );
 
@@ -624,9 +685,7 @@ describe("parseGisSource", () => {
         features: [empty, line],
       });
 
-      const { features, issues } = await parseGisSource(
-        shapefileOf(["a.shp", "a.dbf"]),
-      );
+      const { features, issues } = await parse(shapefileOf(["a.shp", "a.dbf"]));
 
       expect(features).toEqual([line]);
       expect(issues.build()).toContainEqual(
@@ -649,7 +708,7 @@ describe("parseGisSource", () => {
         ),
       ];
 
-      const { sourceProjection } = await parseGisSource({ files });
+      const { sourceProjection } = await parse({ files });
 
       expect(sourceProjection?.name).toEqual("Pseudo-Mercator");
     });
@@ -661,7 +720,7 @@ describe("parseGisSource", () => {
         aTextFile('GEOGCS["WGS 84"]', "a.prj"),
       ];
 
-      const { sourceProjection } = await parseGisSource({ files });
+      const { sourceProjection } = await parse({ files });
 
       expect(sourceProjection).toBeUndefined();
     });
@@ -672,7 +731,7 @@ describe("parseGisSource", () => {
         aTextFile("not a projection", "a.prj"),
       ];
 
-      const { sourceProjection, issues } = await parseGisSource({
+      const { sourceProjection, issues } = await parse({
         files,
         projections,
       });
@@ -690,7 +749,7 @@ describe("parseGisSource", () => {
         ),
       ];
 
-      const { sourceProjection } = await parseGisSource({
+      const { sourceProjection } = await parse({
         files,
         projections,
       });
@@ -707,7 +766,7 @@ describe("parseGisSource", () => {
         ),
       ];
 
-      const { sourceProjection } = await parseGisSource({
+      const { sourceProjection } = await parse({
         files,
         projections,
       });
@@ -720,7 +779,7 @@ describe("parseGisSource", () => {
         'PROJCS["Site grid",GEOGCS["GCS",SPHEROID["WGS84",6378137,298.257223563,AUTHORITY["EPSG","7030"]]]]';
       const files = [aBinaryFile("a.shp"), aTextFile(wkt, "a.prj")];
 
-      const { sourceProjection } = await parseGisSource({
+      const { sourceProjection } = await parse({
         files,
         projections,
       });
@@ -737,7 +796,7 @@ describe("parseGisSource", () => {
       const wkt = 'PROJCS["ETRS_1989_UTM_Zone_30N",GEOGCS["GCS_ETRS_1989"]]';
       const files = [aBinaryFile("a.shp"), aTextFile(`${wkt}\n`, "a.prj")];
 
-      const { sourceProjection } = await parseGisSource({
+      const { sourceProjection } = await parse({
         files,
         projections,
       });
@@ -751,50 +810,49 @@ describe("parseGisSource", () => {
     });
 
     describe("when the .prj does not place the records", () => {
-      const IN_THE_WRONG_PLACE: Position = [9000000, 9000000];
+      const OFF_THE_MAP: Position = [1e9, 1e9];
+      const MERCATOR_PRJ =
+        'PROJCS["WGS_1984_Web_Mercator_Auxiliary_Sphere",GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Mercator_Auxiliary_Sphere"],PARAMETER["False_Easting",0.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",0.0],PARAMETER["Standard_Parallel_1",0.0],PARAMETER["Auxiliary_Sphere_Type",0.0],UNIT["Meter",1.0]]';
+      const files = () => [
+        aBinaryFile("a.shp"),
+        aBinaryFile("a.dbf"),
+        aTextFile(MERCATOR_PRJ, "a.prj"),
+      ];
 
       beforeEach(() => {
-        shp
-          .mockResolvedValueOnce({
-            type: "FeatureCollection",
-            features: [aPoint(IN_THE_WRONG_PLACE)],
-          })
-          .mockResolvedValueOnce({
-            type: "FeatureCollection",
-            features: [aPoint(IN_METRES)],
-          });
+        shp.mockResolvedValue({
+          type: "FeatureCollection",
+          features: [aPoint(OFF_THE_MAP)],
+        });
       });
 
       it("keeps the records as written, and says the .prj does not fit", async () => {
-        const { features, issues } = await parseGisSource(
-          shapefileOf(["a.shp", "a.dbf", "a.prj"]),
-        );
+        const { features, issues } = await parse({ files: files() });
 
         expect(features[0].geometry).toEqual({
           type: "Point",
-          coordinates: IN_METRES,
+          coordinates: OFF_THE_MAP,
         });
         expect(issues.build()).toEqual([
           { code: "coordinateSystemMismatch", severity: "error" },
         ]);
       });
 
-      it("reads the records as written by leaving the .prj out", async () => {
-        await parseGisSource(shapefileOf(["a.shp", "a.dbf", "a.prj"]));
+      it("reads the bundle once, leaving the .prj out", async () => {
+        await parse({ files: files() });
 
-        const [input] = shp.mock.calls[1];
-
-        expect(input).not.toHaveProperty("prj");
+        expect(shp).toHaveBeenCalledTimes(1);
+        expect(shp.mock.calls[0][0]).not.toHaveProperty("prj");
       });
     });
 
-    it("reports a .prj shpjs could not apply as one it has no definition for", async () => {
+    it("reports a .prj that cannot be applied as one it has no definition for", async () => {
       shp.mockResolvedValue({
         type: "FeatureCollection",
         features: [aPoint(IN_METRES)],
       });
 
-      const { features, issues } = await parseGisSource(
+      const { features, issues } = await parse(
         shapefileOf(["a.shp", "a.dbf", "a.prj"]),
       );
 
@@ -810,7 +868,7 @@ describe("parseGisSource", () => {
         features: [aPoint(IN_METRES)],
       });
 
-      const { features, sourceProjection, issues } = await parseGisSource({
+      const { features, sourceProjection, issues } = await parse({
         ...shapefileOf(["a.shp", "a.dbf", "a.prj"]),
         crs: { type: "epsg", code: 3857 },
         projections,
@@ -828,7 +886,7 @@ describe("parseGisSource", () => {
 
     describe("with no .dbf", () => {
       it("reads the bundle anyway", async () => {
-        const { features, issues } = await parseGisSource(
+        const { features, issues } = await parse(
           shapefileOf(["a.shp", "a.prj"]),
         );
 
@@ -837,18 +895,17 @@ describe("parseGisSource", () => {
       });
 
       it("asks shpjs for no attributes", async () => {
-        await parseGisSource(shapefileOf(["a.shp", "a.prj"]));
+        await parse(shapefileOf(["a.shp", "a.prj"]));
 
         const [input] = shp.mock.calls[0];
 
         expect(input).not.toHaveProperty("dbf");
-        expect(input).toHaveProperty("prj");
       });
     });
 
     describe("with no .prj", () => {
       it("assumes WGS84 when the coordinates bear it out, and says so", async () => {
-        const { features, issues } = await parseGisSource(
+        const { features, issues } = await parse(
           shapefileOf(["a.shp", "a.dbf"]),
         );
 
@@ -864,7 +921,7 @@ describe("parseGisSource", () => {
           features: [aPoint(IN_METRES)],
         });
 
-        const { features, issues } = await parseGisSource(
+        const { features, issues } = await parse(
           shapefileOf(["a.shp", "a.dbf"]),
         );
 
@@ -880,7 +937,7 @@ describe("parseGisSource", () => {
           features: [aPoint(IN_METRES)],
         });
 
-        const { features, sourceProjection, issues } = await parseGisSource({
+        const { features, sourceProjection, issues } = await parse({
           ...shapefileOf(["a.shp", "a.dbf"]),
           crs: { type: "epsg", code: 3857 },
           projections,
@@ -902,7 +959,7 @@ describe("parseGisSource", () => {
     });
 
     it("reads a GeoJSON that a stray sidecar arrived alongside", async () => {
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [
           aCollection([aPoint(IN_DEGREES)], "EPSG:4326"),
           aBinaryFile("a.dbf"),
@@ -914,7 +971,7 @@ describe("parseGisSource", () => {
     });
 
     it("reads a GeoJSON that arrives after a stray sidecar", async () => {
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [
           aBinaryFile("a.dbf"),
           aCollection([aPoint(IN_DEGREES)], "EPSG:4326"),
@@ -965,7 +1022,7 @@ describe("parseGisSource", () => {
       }) as unknown as Feature;
 
     it("reads a MultiPoint as one point per position, each with the record's attributes", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [
           aCollection([
             aPoint(IN_DEGREES),
@@ -1002,7 +1059,7 @@ describe("parseGisSource", () => {
         ],
       ];
 
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [aCollection([multiOf("MultiLineString", parts)])],
       });
 
@@ -1023,7 +1080,7 @@ describe("parseGisSource", () => {
         [0.002, 0.002],
       ];
 
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [aCollection([multiOf("MultiLineString", [[], part])])],
       });
 
@@ -1047,7 +1104,7 @@ describe("parseGisSource", () => {
       ]);
       const nothing = multiOf("MultiLineString", []);
 
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [aCollection([line, nothing])],
       });
 
@@ -1085,7 +1142,7 @@ describe("parseGisSource", () => {
         },
       } as unknown as Feature;
 
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [aCollection([point, polygon, aPoint(IN_DEGREES)])],
       });
 
@@ -1124,7 +1181,7 @@ describe("parseGisSource", () => {
         ],
       ];
 
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [
           aCollection([
             {
@@ -1141,7 +1198,7 @@ describe("parseGisSource", () => {
     });
 
     it("places the parts of a record it had to reproject", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [
           aCollection(
             [
@@ -1174,7 +1231,7 @@ describe("parseGisSource", () => {
       }) as unknown as Feature;
 
     it("is sourceEmpty, not a CRS question, when no record has coordinates", async () => {
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [aCollection([anEmptyPoint(), anEmptyPoint()], "EPSG:3857")],
         projections,
       });
@@ -1188,7 +1245,7 @@ describe("parseGisSource", () => {
     });
 
     it("places the other records in the CRS the file states", async () => {
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [aCollection([aPoint(IN_METRES), anEmptyPoint()], "EPSG:3857")],
         projections,
       });
@@ -1219,33 +1276,137 @@ describe("parseGisSource", () => {
       ]);
     });
 
-    it("leaves them out of a shapefile's placement", async () => {
-      const shapes = [aPoint(IN_METRES), anEmptyPoint()];
-      shp.mockResolvedValueOnce({
-        type: "FeatureCollection",
-        features: shapes,
+    describe("that the CRS takes off the globe", () => {
+      const UTM_31N: Proj4Projection = {
+        type: "proj4",
+        id: "EPSG:32631",
+        name: "WGS 84 / UTM zone 31N",
+        code: "+proj=utm +zone=31 +datum=WGS84 +units=m +no_defs",
+      };
+      const inUtm = new Map([[UTM_31N.id, UTM_31N]]);
+      const IN_ZONE: Position = [500000, 5700000];
+      const OFF_THE_GLOBE: Position = [1e8, 0];
+
+      it("leaves them out of a GeoJSON, as written", async () => {
+        const { features, issues } = await parse({
+          files: [
+            aCollection(
+              [aPoint(IN_ZONE), aPoint(OFF_THE_GLOBE), aPoint(IN_ZONE)],
+              "EPSG:32631",
+            ),
+          ],
+          projections: inUtm,
+        });
+
+        expect(features).toHaveLength(2);
+        expect(issues.build()).toEqual([
+          {
+            code: "featureCoordinatesInvalid",
+            severity: "warning",
+            ref: "1",
+            raw: aPoint(OFF_THE_GLOBE),
+          },
+        ]);
       });
 
-      const { features, issues } = await parseGisSource({
-        files: [aBinaryFile("a.shp")],
-        crs: { type: "epsg", code: 3857 },
-        projections,
+      it("leaves them out of a CSV, as the row was written", async () => {
+        const { features, issues } = await parse({
+          files: [
+            aTextFile(
+              [
+                "Id,X,Y",
+                "J-1,500000,5700000",
+                "J-2,1e8,0",
+                "J-3,500100,5700000",
+              ].join("\n"),
+              "source.csv",
+            ),
+          ],
+          coordinateAttributes: { x: "X", y: "Y" },
+          crs: { type: "epsg", code: 32631 },
+          projections: inUtm,
+        });
+
+        expect(features).toHaveLength(2);
+        expect(issues.build()).toEqual([
+          {
+            code: "featureCoordinatesInvalid",
+            severity: "warning",
+            ref: "1",
+            raw: { Id: "J-2", X: "1e8", Y: "0" },
+          },
+        ]);
       });
 
-      expect(features).toHaveLength(1);
-      expect(issues.build().map(({ code }) => code)).toEqual([
-        "featureCoordinatesInvalid",
-      ]);
+      it("leaves them out of a drawing, as written", async () => {
+        const { features, issues } = await parse({
+          files: [
+            aDxf({
+              entities: [
+                ...aLine({ layer: "pipes", from: OFF_THE_GLOBE, to: IN_ZONE }),
+                ...aLine({
+                  layer: "pipes",
+                  from: IN_ZONE,
+                  to: [500100, 5700000],
+                }),
+                ...aLine({
+                  layer: "pipes",
+                  from: [500100, 5700000],
+                  to: [500200, 5700000],
+                }),
+              ],
+            }),
+          ],
+          crs: { type: "epsg", code: 32631 },
+          projections: inUtm,
+        });
+
+        expect(features).toHaveLength(2);
+        expect(issues.build()).toEqual([
+          expect.objectContaining({
+            code: "featureCoordinatesInvalid",
+            ref: "0",
+            raw: expect.objectContaining({
+              geometry: {
+                type: "LineString",
+                coordinates: [OFF_THE_GLOBE, IN_ZONE],
+              },
+            }) as unknown,
+          }),
+        ]);
+      });
     });
+
+    it.runIf(readsWithShpjs)(
+      "leaves them out of a shapefile's placement",
+      async () => {
+        const shapes = [aPoint(IN_METRES), anEmptyPoint()];
+        shp.mockResolvedValueOnce({
+          type: "FeatureCollection",
+          features: shapes,
+        });
+
+        const { features, issues } = await parse({
+          files: [aBinaryFile("a.shp")],
+          crs: { type: "epsg", code: 3857 },
+          projections,
+        });
+
+        expect(features).toHaveLength(1);
+        expect(issues.build().map(({ code }) => code)).toEqual([
+          "featureCoordinatesInvalid",
+        ]);
+      },
+    );
   });
 
   describe("decoding the same input twice", () => {
-    it("reads the bytes once", async () => {
+    it.runIf(caches)("reads the bytes once", async () => {
       const file = aCollection([aPoint(IN_DEGREES)]);
       const readBytes = vi.spyOn(file, "arrayBuffer");
 
-      await parseGisSource({ files: [file] });
-      await parseGisSource({ files: [file] });
+      await parse({ files: [file] });
+      await parse({ files: [file] });
 
       expect(readBytes).toHaveBeenCalledTimes(1);
     });
@@ -1254,8 +1415,8 @@ describe("parseGisSource", () => {
       const file = aCollection([aPoint(IN_DEGREES)]);
       const readBytes = vi.spyOn(file, "arrayBuffer");
 
-      await parseGisSource({ files: [file] });
-      await parseGisSource({
+      await parse({ files: [file] });
+      await parse({
         files: [file, aCollection([aPoint(IN_DEGREES)])],
       });
 
@@ -1266,8 +1427,8 @@ describe("parseGisSource", () => {
       const file = aCollection([aPoint(IN_METRES)]);
       const readBytes = vi.spyOn(file, "arrayBuffer");
 
-      await parseGisSource({ files: [file], projections });
-      await parseGisSource({
+      await parse({ files: [file], projections });
+      await parse({
         files: [file],
         crs: { type: "epsg", code: 3857 },
         projections,
@@ -1279,8 +1440,8 @@ describe("parseGisSource", () => {
     it("does not answer a placed read from an unplaced one", async () => {
       const file = aCollection([aPoint(IN_METRES)]);
 
-      const unplaced = await parseGisSource({ files: [file], projections });
-      const placed = await parseGisSource({
+      const unplaced = await parse({ files: [file], projections });
+      const placed = await parse({
         files: [file],
         crs: { type: "epsg", code: 3857 },
         projections,
@@ -1297,31 +1458,37 @@ describe("parseGisSource", () => {
       expect(longitude).toBeCloseTo(4.4915, 3);
     });
 
-    it("still answers a repeated read with the same CRS from the cache", async () => {
-      const file = aCollection([aPoint(IN_METRES)]);
-      const readBytes = vi.spyOn(file, "arrayBuffer");
-      const crs = { type: "epsg", code: 3857 } as const;
+    it.runIf(caches)(
+      "still answers a repeated read with the same CRS from the cache",
+      async () => {
+        const file = aCollection([aPoint(IN_METRES)]);
+        const readBytes = vi.spyOn(file, "arrayBuffer");
+        const crs = { type: "epsg", code: 3857 } as const;
 
-      await parseGisSource({ files: [file], crs, projections });
-      await parseGisSource({ files: [file], crs, projections });
+        await parse({ files: [file], crs, projections });
+        await parse({ files: [file], crs, projections });
 
-      expect(readBytes).toHaveBeenCalledTimes(1);
-    });
+        expect(readBytes).toHaveBeenCalledTimes(1);
+      },
+    );
 
-    it("treats a CRS of unknown type as none supplied", async () => {
-      const file = aCollection([aPoint(IN_DEGREES)]);
-      const readBytes = vi.spyOn(file, "arrayBuffer");
+    it.runIf(caches)(
+      "treats a CRS of unknown type as none supplied",
+      async () => {
+        const file = aCollection([aPoint(IN_DEGREES)]);
+        const readBytes = vi.spyOn(file, "arrayBuffer");
 
-      await parseGisSource({ files: [file] });
-      await parseGisSource({ files: [file], crs: { type: "unknown" } });
+        await parse({ files: [file] });
+        await parse({ files: [file], crs: { type: "unknown" } });
 
-      expect(readBytes).toHaveBeenCalledTimes(1);
-    });
+        expect(readBytes).toHaveBeenCalledTimes(1);
+      },
+    );
   });
 
   describe("DXF", () => {
     it("reads a block reference as a point carrying its layer, block and attributes", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [
           aDxf({
             blocks: aBlock(
@@ -1349,7 +1516,7 @@ describe("parseGisSource", () => {
     });
 
     it("opens up an anonymous block, placing what it holds", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [
           aDxf({
             blocks: aBlock(
@@ -1384,7 +1551,7 @@ describe("parseGisSource", () => {
     });
 
     it("gives what a block holds on layer 0 the layer of the reference", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [
           aDxf({
             blocks: aBlock(
@@ -1406,7 +1573,7 @@ describe("parseGisSource", () => {
     });
 
     it("leaves out what is drawn on paper space", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [
           aDxf({
             entities: [
@@ -1422,7 +1589,7 @@ describe("parseGisSource", () => {
     });
 
     it("reads a closed polyline as a polygon and an open one as a line", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [
           aDxf({
             entities: [
@@ -1462,7 +1629,7 @@ describe("parseGisSource", () => {
     });
 
     it("draws a curved polyline segment as straight segments", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [
           aDxf({
             entities: [
@@ -1485,7 +1652,7 @@ describe("parseGisSource", () => {
     });
 
     it("converts a drawing in millimetres to metres", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [
           aDxf({
             header: [
@@ -1520,7 +1687,7 @@ describe("parseGisSource", () => {
         entities: [...aLine({ layer: "PLACEHOLDER" })],
       });
 
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [inCodePage1250(drawing, "PLACEHOLDER", [0xc8, 0x65, 0x76])],
       });
 
@@ -1538,7 +1705,7 @@ describe("parseGisSource", () => {
     it("reads a drawing whose extension says nothing", async () => {
       const drawing = aDxf({ entities: [...aLine({ layer: "pipes" })] });
 
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [{ ...drawing, name: "drawing.txt" }],
       });
 
@@ -1546,7 +1713,7 @@ describe("parseGisSource", () => {
     });
 
     it("places a drawing in the projection the caller supplies", async () => {
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [
           aDxf({
             entities: [
@@ -1568,7 +1735,7 @@ describe("parseGisSource", () => {
     });
 
     it("places a drawing in the projection it states itself", async () => {
-      const { features, issues, sourceProjection } = await parseGisSource({
+      const { features, issues, sourceProjection } = await parse({
         files: [
           aDxf({
             entities: aLine({
@@ -1595,7 +1762,7 @@ describe("parseGisSource", () => {
     });
 
     it("keeps a drawing its own mesh does not cover as written, so another projection can be picked", async () => {
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [
           aDxf({
             entities: aLine({
@@ -1625,7 +1792,7 @@ describe("parseGisSource", () => {
     });
 
     it("reads a projection the drawing states as well known text", async () => {
-      const { issues, sourceProjection } = await parseGisSource({
+      const { issues, sourceProjection } = await parse({
         files: [
           aDxf({
             entities: aLine({
@@ -1668,7 +1835,7 @@ describe("parseGisSource", () => {
     });
 
     it("lets a supplied projection replace the one the drawing states", async () => {
-      const { issues, sourceProjection } = await parseGisSource({
+      const { issues, sourceProjection } = await parse({
         files: [
           aDxf({
             entities: aLine({
@@ -1734,7 +1901,7 @@ describe("parseGisSource", () => {
       aTextFile(content, name);
 
     it("reads a row as a point carrying every column", async () => {
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [
           aCsv(
             [
@@ -1775,7 +1942,7 @@ describe("parseGisSource", () => {
     });
 
     it("keeps the records unplaced until the caller names the coordinates", async () => {
-      const { features, issues, contents } = await parseGisSource({
+      const { features, issues, contents } = await parse({
         files: [aCsv("Id,First,Second\nJ-1,0.001,0.002")],
       });
 
@@ -1793,7 +1960,7 @@ describe("parseGisSource", () => {
     });
 
     it("reads the attributes the caller named instead of looking for them", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [aCsv("Id,First,Second\nJ-1,0.001,0.002")],
         coordinateAttributes: { x: "First", y: "Second" },
       });
@@ -1811,7 +1978,7 @@ describe("parseGisSource", () => {
     });
 
     it("leaves out the records it cannot read, reporting each one", async () => {
-      const { features, contents, issues } = await parseGisSource({
+      const { features, contents, issues } = await parse({
         files: [
           aCsv(
             [
@@ -1862,7 +2029,7 @@ describe("parseGisSource", () => {
     });
 
     it("names a column the header leaves blank after its position", async () => {
-      const { features, contents } = await parseGisSource({
+      const { features, contents } = await parse({
         files: [aCsv("Id,,Lat,\nJ-1,0.001,0.002,150")],
         coordinateAttributes: { x: "#2", y: "Lat" },
       });
@@ -1877,7 +2044,7 @@ describe("parseGisSource", () => {
     });
 
     it("keeps every blank header apart rather than collapsing them", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [aCsv("Id,,,Lat\nJ-1,0.001,0.002,0.003")],
         coordinateAttributes: { x: "#2", y: "Lat" },
       });
@@ -1891,7 +2058,7 @@ describe("parseGisSource", () => {
     });
 
     it("names the values a header leaves unnamed after their position", async () => {
-      const { features, contents } = await parseGisSource({
+      const { features, contents } = await parse({
         files: [
           aCsv(
             [
@@ -1927,7 +2094,7 @@ describe("parseGisSource", () => {
     });
 
     it("reads coordinates from a column the header left unnamed", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [aCsv("Id\nJ-1,0.001,0.002")],
         coordinateAttributes: { x: "#2", y: "#3" },
       });
@@ -1944,7 +2111,7 @@ describe("parseGisSource", () => {
     });
 
     it("reads a file whose header row ends in a separator", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [aCsv("Id,Lon,Lat,\nJ-1,0.001,0.002,")],
         coordinateAttributes: { x: "Lon", y: "Lat" },
       });
@@ -1953,7 +2120,7 @@ describe("parseGisSource", () => {
     });
 
     it("reads a semicolon separated file written with decimal commas", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [aCsv("Id;Lon;Lat\nJ-1;0,001;0,002")],
         coordinateAttributes: { x: "Lon", y: "Lat" },
       });
@@ -1962,7 +2129,7 @@ describe("parseGisSource", () => {
     });
 
     it("reads a tab separated file", async () => {
-      const { features } = await parseGisSource({
+      const { features } = await parse({
         files: [aCsv("Id\tLon\tLat\nJ-1\t0.001\t0.002", "source.tsv")],
         coordinateAttributes: { x: "Lon", y: "Lat" },
       });
@@ -1980,7 +2147,7 @@ describe("parseGisSource", () => {
     });
 
     it("places projected coordinates with the CRS the caller supplies", async () => {
-      const { features, issues } = await parseGisSource({
+      const { features, issues } = await parse({
         files: [aCsv("Id,Easting,Northing\nJ-1,500000,6000000")],
         coordinateAttributes: { x: "Easting", y: "Northing" },
         crs: { type: "epsg", code: 3857 },
@@ -2008,8 +2175,8 @@ describe("parseGisSource", () => {
       const file = aCsv("Id,First,Second\nJ-1,0.001,0.002");
       const readBytes = vi.spyOn(file, "arrayBuffer");
 
-      await parseGisSource({ files: [file] });
-      await parseGisSource({
+      await parse({ files: [file] });
+      await parse({
         files: [file],
         coordinateAttributes: { x: "First", y: "Second" },
       });

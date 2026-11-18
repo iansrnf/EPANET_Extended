@@ -24,6 +24,22 @@ Build preparation copies the installed SQLite WASM binary and generates any publ
 
 See [LICENSE](LICENSE) for the upstream license terms.
 
+## Upstream core maintenance
+
+The November 18, 2026 core update was reviewed against `C:/Project/OTHER/EPANET2` at commit `804d7aa0d`. It brings in hydraulic controls and simulation fixes, tracing, customer-point and GIS imports, model validation, map recovery, and project integrity reporting. The GSCWD map providers, pipe flow animation, loggers and graphs, dashboard, pump definitions, native GIS builder, and browser-storage fallback remain in place.
+
+Run a read-only comparison against a newer source checkout with:
+
+```sh
+node scripts/audit-upstream-core.mjs C:/Project/OTHER/EPANET2
+```
+
+The report in `logs/upstream-core-audit.json` records source commits, source working changes, differing files, and destination-only files. Differences require review: many represent GSCWD features or upstream features outside this core update. The script maps the source's `apps/app/src/` into this repository's `src/`; workspace libraries retain their paths.
+
+Customer-point changeset import and Synergi flow-modulating valve parsing retain their upstream flags, `FLAG_CP_IMPORT_CHANGESET` and `FLAG_SYNERGI_FLOW_MODULATING_VALVES`. Upstream map-theme persistence and automatic selection-set path migration are deferred: their migration numbers 29 and 30 are already used here for loggers and pump definitions. Existing migration files must remain unchanged; any future adoption needs new migration numbers and compatibility tests. Project files produced by the newer upstream schema have not been verified as compatible with this custom schema. Billing, sensor imports, and AI assistant changes are outside this update.
+
+The updated regression coverage replaces obsolete assertions that FMV pressures must increase monotonically and that INP generation automatically reverses remote flow targets. Explicit pump-direction and backfeed validation now covers those cases. The customer-point import opener tests moved into their own suite when the open and apply commands were separated. Two obsolete asset-panel wiring tests for the inline pump-power field and old pump-type selector were removed; dedicated pump-definition editor, persistence, and simulation suites cover their replacement.
+
 ## GIS model builder
 
 **Import from GIS** opens the native model builder inside this app. Its five steps cover model settings, data sources, layer assignment, attribute mapping, and building/reviewing the model. Files are parsed locally. Terrain elevations use the app's configured elevation sources when enabled.

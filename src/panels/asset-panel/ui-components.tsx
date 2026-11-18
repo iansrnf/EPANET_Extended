@@ -542,10 +542,7 @@ export const CreatableTextRow = <
 };
 
 export type TankDefinitionMode =
-  | "diameterBased"
-  | "areaBased"
-  | "volumeBased"
-  | "curveBased";
+  "diameterBased" | "areaBased" | "volumeBased" | "curveBased";
 
 type SelectRowValue =
   | PipeStatus
@@ -581,6 +578,7 @@ type LibrarySelectRowProps<P extends string> = {
 };
 
 type SelectRowPropsBase<P extends string, T extends SelectRowValue> = {
+  validate?: (value: T) => boolean;
   name: P;
   label?: string;
   options: SelectorListOption<T>[];
@@ -617,8 +615,7 @@ type SelectRowPropsNullable<
 };
 
 type SelectorRowProps<P extends string, T extends SelectRowValue> =
-  | SelectRowPropsNullable<P, T>
-  | SelectRowPropsNonNullable<P, T>;
+  SelectRowPropsNullable<P, T> | SelectRowPropsNonNullable<P, T>;
 
 export function SelectRow<P extends string, T extends SelectRowValue>({
   name,
@@ -637,11 +634,15 @@ export function SelectRow<P extends string, T extends SelectRowValue>({
   onChange,
   isOptional = true,
   onHighlightChange,
+  validate,
 }: SelectorRowProps<P, T>) {
   const translate = useTranslate();
   const actualLabel = label || translate(name);
 
-  const hasError = !isOptional && selected === null;
+  const hasError =
+    selected === null
+      ? !isOptional
+      : validate !== undefined && !validate(selected);
 
   const baseDisplayValue = comparison?.hasChanged
     ? comparison.baseValue != null

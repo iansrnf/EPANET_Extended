@@ -1,6 +1,7 @@
 import { getAppId } from "src/infra/app-instance";
 import { createTempFile, isOPFSAvailable } from "@epanet-js/simulation/browser";
 import { createInMemoryFile } from "./in-memory-file";
+import { toArrayBufferView } from "src/infra/array-buffer-view";
 
 const openFileInOpfs = async (
   fileName: string,
@@ -45,7 +46,9 @@ const downloadFile = async (
 ): Promise<void> => {
   const handle = await openFileInOpfs(fileName);
   const writable = await handle.createWritable();
-  await writable.write(contents);
+  await writable.write(
+    typeof contents === "string" ? contents : toArrayBufferView(contents),
+  );
   await writable.close();
   await triggerDownload(fileName, handle);
 };

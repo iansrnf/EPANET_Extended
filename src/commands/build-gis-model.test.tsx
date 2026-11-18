@@ -292,6 +292,7 @@ const preparedFixture = (name = "Built network"): PreparedGisModel => {
       factories,
       idGenerator,
       bounds: Just(bounds),
+      selectionSetGroups: [],
       selectionSets: [],
       issues: [],
       projectSettings: {

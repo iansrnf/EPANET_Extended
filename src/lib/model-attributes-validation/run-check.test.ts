@@ -808,24 +808,6 @@ describe("validateModelAttributes", () => {
       ]);
     });
 
-    it("flags pressures that repeat or decrease", async () => {
-      const repeated = aPrvWithControl([
-        { flow: 0, pressure: 20 },
-        { flow: 10, pressure: 20 },
-      ]);
-      const decreasing = aPrvWithControl([
-        { flow: 0, pressure: 30 },
-        { flow: 10, pressure: 20 },
-      ]);
-
-      expect(ruleIdsOf(await validateModelAttributes(repeated))).toEqual([
-        "valve.flowModulatingControl.pressuresIncreasing",
-      ]);
-      expect(ruleIdsOf(await validateModelAttributes(decreasing))).toEqual([
-        "valve.flowModulatingControl.pressuresIncreasing",
-      ]);
-    });
-
     describe("control references", () => {
       const validPoints = [
         { flow: 0, pressure: 20 },
@@ -897,6 +879,40 @@ describe("validateModelAttributes", () => {
           "error",
         );
       });
+    });
+  });
+
+  describe("prv target node", () => {
+    const aPrvWithTarget = ({ targetActive }: { targetActive: boolean }) =>
+      HydraulicModelBuilder.with()
+        .aJunction(2, { elevation: 50 })
+        .aJunction(3, { elevation: 50 })
+        .aJunction(5, { elevation: 50, isActive: targetActive })
+        .aValve(1, {
+          kind: "prv",
+          startNodeId: 2,
+          endNodeId: 3,
+          diameter: 100,
+          setting: 20,
+          targetNodeId: 5,
+        })
+        .build();
+
+    it("flags an inactive target node as an error", async () => {
+      const model = aPrvWithTarget({ targetActive: false });
+
+      const issues = await validateModelAttributes(model);
+
+      expect(entityIdsOf(issues, "valve.targetNode.active")).toEqual([1]);
+      expect(severityOf("valve.targetNode.active")).toBe("error");
+    });
+
+    it("accepts an active target node", async () => {
+      const model = aPrvWithTarget({ targetActive: true });
+
+      expect(ruleIdsOf(await validateModelAttributes(model))).not.toContain(
+        "valve.targetNode.active",
+      );
     });
   });
 
@@ -1027,6 +1043,119 @@ describe("validateModelAttributes", () => {
       expect(await vspIssues(model)).toEqual([
         "pump.variableSpeedTankLevels.active",
       ]);
+    });
+  });
+
+  describe("variable speed pump backfeed", () => {
+    const IDS = {
+      J1: 1,
+      J2: 2,
+      J3: 3,
+      PU1: 4,
+      PU2: 5,
+      P1: 6,
+      P2: 7,
+      V1: 8,
+      T1: 9,
+      R1: 10,
+    } as const;
+    const RULE_ID = "pump.variableSpeedDischarge.notBackfeeding";
+
+    const aPumpFrom = (suctionId: number) =>
+      HydraulicModelBuilder.with()
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunction(IDS.J2, { elevation: 10 })
+        .aJunction(IDS.J3, { elevation: 10 })
+        .aPump(IDS.PU1, { startNodeId: suctionId, endNodeId: IDS.J2 })
+        .aPipe(IDS.P1, { startNodeId: IDS.J2, endNodeId: IDS.J3 });
+
+    const withVsp = (builder: HydraulicModelBuilder) =>
+      builder.aVariableSpeedPumpControl({
+        linkId: IDS.PU1,
+        quantity: "pressure",
+        targetId: IDS.J2,
+        target: 30,
+        minSpeed: 0.3,
+        maxSpeed: 1,
+        laggedPumpIds: [],
+        schedule: [],
+      });
+
+    const flaggedPumps = async (builder: HydraulicModelBuilder) =>
+      entityIdsOf(await validateModelAttributes(builder.build()), RULE_ID);
+
+    it("flags a pump whose downstream node reaches its upstream node", async () => {
+      const builder = withVsp(aPumpFrom(IDS.J1)).aPipe(IDS.P2, {
+        startNodeId: IDS.J3,
+        endNodeId: IDS.J1,
+      });
+
+      expect(await flaggedPumps(builder)).toEqual([IDS.PU1]);
+      expect(severityOf(RULE_ID)).toBe("warning");
+    });
+
+    it("flags a loop that returns through a control valve", async () => {
+      const builder = withVsp(aPumpFrom(IDS.J1)).aValve(IDS.V1, {
+        startNodeId: IDS.J3,
+        endNodeId: IDS.J1,
+        kind: "prv",
+      });
+
+      expect(await flaggedPumps(builder)).toEqual([IDS.PU1]);
+    });
+
+    it("does not flag a pump with no way back", async () => {
+      expect(await flaggedPumps(withVsp(aPumpFrom(IDS.J1)))).toBeUndefined();
+    });
+  });
+
+  describe("variable speed pump flow target direction", () => {
+    const IDS = { J1: 1, J2: 2, J3: 3, J4: 4, PU1: 5, P1: 6 } as const;
+    const RULE_ID = "pump.variableSpeedFlowTarget.sameDirection";
+
+    const aPump = () =>
+      HydraulicModelBuilder.with()
+        .aJunction(IDS.J1, { elevation: 10 })
+        .aJunction(IDS.J2, { elevation: 10 })
+        .aJunction(IDS.J3, { elevation: 10 })
+        .aJunction(IDS.J4, { elevation: 10 })
+        .aPump(IDS.PU1, { startNodeId: IDS.J2, endNodeId: IDS.J3 });
+
+    const targetingFlowOf = (
+      builder: HydraulicModelBuilder,
+      targetId: number,
+    ) =>
+      builder.aVariableSpeedPumpControl({
+        linkId: IDS.PU1,
+        quantity: "flow",
+        targetId,
+        target: 30,
+        minSpeed: 0.3,
+        maxSpeed: 1,
+        laggedPumpIds: [],
+        schedule: [],
+      });
+
+    const flaggedPumps = async (builder: HydraulicModelBuilder) =>
+      entityIdsOf(await validateModelAttributes(builder.build()), RULE_ID);
+
+    it("flags a downstream target drawn against the pump", async () => {
+      const builder = targetingFlowOf(
+        aPump().aPipe(IDS.P1, { startNodeId: IDS.J4, endNodeId: IDS.J3 }),
+        IDS.P1,
+      );
+
+      expect(await flaggedPumps(builder)).toEqual([IDS.PU1]);
+      expect(severityOf(RULE_ID)).toBe("warning");
+    });
+
+    it("flags an upstream target drawn against the pump", async () => {
+      const builder = targetingFlowOf(
+        aPump().aPipe(IDS.P1, { startNodeId: IDS.J2, endNodeId: IDS.J1 }),
+        IDS.P1,
+      );
+
+      expect(await flaggedPumps(builder)).toEqual([IDS.PU1]);
     });
   });
 

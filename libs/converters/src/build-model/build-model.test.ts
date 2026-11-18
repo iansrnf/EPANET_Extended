@@ -1,5 +1,6 @@
 import type {
   CustomAttributeData,
+  FlowModulatedSetpointControlData,
   TankLevelControlData,
   ZoneData,
   JunctionData,
@@ -13,6 +14,7 @@ import type {
 } from "../network-data";
 import { WGS84, type Proj4Projection } from "@epanet-js/projections";
 import type {
+  FlowModulatingValveControl,
   LevelSettingControl,
   VariableSpeedPumpControl,
 } from "@epanet-js/hydraulic-model";
@@ -894,6 +896,7 @@ describe("valve remote target", () => {
       code: "remotePressureControlUnsupported",
       severity: "warning",
       ref: "10",
+      label: "V1",
     });
   });
 
@@ -914,6 +917,7 @@ describe("valve remote target", () => {
       code: "remotePressureControlUnsupported",
       severity: "warning",
       ref: "10",
+      label: "V1",
     });
   });
 
@@ -951,6 +955,7 @@ describe("valve remote target", () => {
       code: "remotePressureControlUnsupported",
       severity: "warning",
       ref: "10",
+      label: "V1",
     });
   });
 });
@@ -1585,6 +1590,162 @@ describe("build controls from network data", () => {
       );
     });
   });
+
+  describe("flow modulating valves", () => {
+    const aModulatedPrv = (
+      valve: Partial<ValveData> = {},
+      control: Partial<FlowModulatedSetpointControlData> = {},
+    ): Partial<NetworkData> => ({
+      junctions: [
+        aJunction({ ref: "1", label: "J1", coordinates: [0, 0] }),
+        aJunction({ ref: "2", label: "J2", coordinates: [1, 0] }),
+        aJunction({ ref: "3", label: "J3", coordinates: [2, 0] }),
+      ],
+      pipes: [
+        aPipe({ ref: "11", label: "P1", startNodeRef: "2", endNodeRef: "3" }),
+      ],
+      valves: [
+        aValve({
+          ref: "10",
+          label: "V1",
+          kind: "prv",
+          startNodeRef: "1",
+          endNodeRef: "2",
+          minorLoss: 3,
+          ...valve,
+        }),
+      ],
+      controls: [aFlowModulatedSetpointControl(control)],
+    });
+
+    const builtControl = (hydraulicModel: {
+      controls: unknown[];
+    }): FlowModulatingValveControl => {
+      const [control] = hydraulicModel.controls as FlowModulatingValveControl[];
+      return control;
+    };
+
+    it("builds the valve's control at its outlet", () => {
+      const { hydraulicModel, issues } = buildModel(aNetwork(aModulatedPrv()), {
+        projections: aCatalogue(),
+      });
+
+      const valve = getByLabel(hydraulicModel.assets, "V1") as Valve;
+      const outlet = getByLabel(hydraulicModel.assets, "J2") as Junction;
+      const { id, ...rest } = builtControl(hydraulicModel);
+
+      expect(typeof id).toEqual("string");
+      expect(rest).toEqual({
+        type: "flow-modulating-valve",
+        linkId: valve.id,
+        points: [
+          { flow: 0, pressure: 48.6 },
+          { flow: 0.78, pressure: 31.6 },
+        ],
+        interpolate: true,
+        sensorLinkId: valve.id,
+        controlNodeId: outlet.id,
+      });
+      expect(issues).toEqual([]);
+      expect([...hydraulicModel.controlsLookup.getControls(valve.id)]).toEqual(
+        hydraulicModel.controls,
+      );
+    });
+
+    it("sets the valve to the pressure the curve starts at", () => {
+      const { hydraulicModel } = buildModel(aNetwork(aModulatedPrv()), {
+        projections: aCatalogue(),
+      });
+
+      const valve = getByLabel(hydraulicModel.assets, "V1") as Valve;
+      expect(valve.setting).toEqual(48.6);
+      expect(valve.minorLoss).toEqual(3);
+    });
+
+    it("senses the flow of the link the source names", () => {
+      const { hydraulicModel } = buildModel(
+        aNetwork(aModulatedPrv({}, { source: { kind: "pipe", ref: "11" } })),
+        { projections: aCatalogue() },
+      );
+
+      const pipe = getByLabel(hydraulicModel.assets, "P1") as Pipe;
+      expect(builtControl(hydraulicModel).sensorLinkId).toEqual(pipe.id);
+    });
+
+    it("holds the pressure at the remote node the valve targets", () => {
+      const { hydraulicModel } = buildModel(
+        aNetwork(aModulatedPrv({ targetNodeRef: "3" })),
+        { projections: aCatalogue() },
+      );
+
+      const remote = getByLabel(hydraulicModel.assets, "J3") as Junction;
+      expect(builtControl(hydraulicModel).controlNodeId).toEqual(remote.id);
+    });
+
+    it("holds each pressure to the next flow when the source says so", () => {
+      const { hydraulicModel } = buildModel(
+        aNetwork(aModulatedPrv({}, { interpolation: "step" })),
+        { projections: aCatalogue() },
+      );
+
+      expect(builtControl(hydraulicModel).interpolate).toEqual(false);
+    });
+
+    it("converts the curve when the project cannot adopt the source flow unit", () => {
+      const { hydraulicModel } = buildModel(
+        aNetwork({ ...aModulatedPrv(), units: { flow: "l/h" } }),
+        { projections: aCatalogue() },
+      );
+
+      const valve = getByLabel(hydraulicModel.assets, "V1") as Valve;
+      const { points } = builtControl(hydraulicModel);
+      expect(points[0]).toEqual({ flow: 0, pressure: 48.6 });
+      expect(points[1].flow).toBeCloseTo(0.78 / 3600, 6);
+      expect(points[1].pressure).toEqual(31.6);
+      expect(valve.setting).toEqual(48.6);
+    });
+
+    it("reports a control on a valve that is not a PRV", () => {
+      const { hydraulicModel, issues } = buildModel(
+        aNetwork(aModulatedPrv({ kind: "psv" })),
+        { projections: aCatalogue() },
+      );
+
+      expect(hydraulicModel.controls).toEqual([]);
+      expect(issues).toEqual([
+        {
+          code: "flowModulatedSetpointUnsupported",
+          severity: "warning",
+          ref: "10",
+          label: "V1",
+        },
+      ]);
+    });
+
+    it("reports a control sensing a link that never arrived", () => {
+      const { hydraulicModel, issues } = buildModel(
+        aNetwork(aModulatedPrv({}, { source: { kind: "pipe", ref: "404" } })),
+        { projections: aCatalogue() },
+      );
+
+      expect(hydraulicModel.controls).toEqual([]);
+      expect(issues).toContainEqual(
+        expect.objectContaining({ code: "flowModulatedSetpointUnsupported" }),
+      );
+    });
+
+    it("reports a control with no points", () => {
+      const { hydraulicModel, issues } = buildModel(
+        aNetwork(aModulatedPrv({}, { points: [] })),
+        { projections: aCatalogue() },
+      );
+
+      expect(hydraulicModel.controls).toEqual([]);
+      expect(issues).toContainEqual(
+        expect.objectContaining({ code: "flowModulatedSetpointUnsupported" }),
+      );
+    });
+  });
 });
 
 describe("build custom attributes from network data", () => {
@@ -1630,6 +1791,36 @@ describe("build custom attributes from network data", () => {
 
     const junction = getByLabel(hydraulicModel.assets, "J1") as Junction;
     expect(junction.getProperty("custom-1")).toEqual(125);
+  });
+
+  it("converts each value to the type of its attribute", () => {
+    const { hydraulicModel } = buildModel(
+      aNetwork({
+        customAttributes: [
+          anAttribute({ ref: "7", name: "DIAMETER", type: "number" }),
+          anAttribute({ ref: "8", name: "CODE", type: "text" }),
+        ],
+        junctions: [
+          aJunction({
+            ref: "1",
+            label: "J1",
+            customAttributes: { "7": "125", "8": 40 },
+          }),
+          aJunction({
+            ref: "2",
+            label: "J2",
+            customAttributes: { "7": "INS" },
+          }),
+        ],
+      }),
+      { projections: aCatalogue() },
+    );
+
+    const first = getByLabel(hydraulicModel.assets, "J1") as Junction;
+    const second = getByLabel(hydraulicModel.assets, "J2") as Junction;
+    expect(first.getProperty("custom-1")).toEqual(125);
+    expect(first.getProperty("custom-2")).toEqual("40");
+    expect(second.hasProperty("custom-1")).toEqual(false);
   });
 
   it("gives each kind its own attribute even when the name repeats", () => {
@@ -2072,6 +2263,20 @@ const aVariableSpeedPumpControl = (
   ...data,
 });
 
+const aFlowModulatedSetpointControl = (
+  data: Partial<FlowModulatedSetpointControlData> = {},
+): FlowModulatedSetpointControlData => ({
+  type: "flowModulatedSetpoint",
+  link: { kind: "valve", ref: "10" },
+  source: { kind: "valve", ref: "10" },
+  points: [
+    { flow: 0, pressure: 48.6 },
+    { flow: 0.78, pressure: 31.6 },
+  ],
+  interpolation: "linear",
+  ...data,
+});
+
 const anAttribute = (
   data: Partial<CustomAttributeData> = {},
 ): CustomAttributeData => ({
@@ -2156,7 +2361,12 @@ describe("build selection sets from network data", () => {
 
     expect(selectionSets).toEqual([]);
     expect(issues).toEqual([
-      { code: "selectionSetMembersUnreadable", severity: "warning", ref: "5" },
+      {
+        code: "selectionSetMembersUnreadable",
+        severity: "warning",
+        ref: "5",
+        label: "NORTH",
+      },
     ]);
   });
 
@@ -2170,6 +2380,157 @@ describe("build selection sets from network data", () => {
     );
 
     expect(selectionSets.map((set) => set.label)).toEqual(["Selection set 5"]);
+  });
+
+  const groupIssues = (issues: { code: string }[]) =>
+    issues.filter((issue) => issue.code === "selectionSetGroupUnreadable");
+
+  it("keeps the group each set names", () => {
+    const { selectionSetGroups, selectionSets, issues } = buildModel(
+      {
+        ...twoJunctionsAndAPipe(),
+        selectionSetGroups: [{ ref: "g", label: "AREAS" }],
+        selectionSets: [
+          {
+            ref: "5",
+            label: "NORTH",
+            groupRef: "g",
+            nodeRefs: ["1"],
+            linkRefs: [],
+          },
+          { ref: "6", label: "SOUTH", nodeRefs: ["2"], linkRefs: [] },
+        ],
+      },
+      { projections: aCatalogue() },
+    );
+
+    expect(selectionSetGroups).toEqual([{ ref: "g", label: "AREAS" }]);
+    expect(
+      selectionSets.map(({ label, groupRef }) => ({ label, groupRef })),
+    ).toEqual([
+      { label: "NORTH", groupRef: "g" },
+      { label: "SOUTH", groupRef: undefined },
+    ]);
+    expect(issues).toEqual([]);
+  });
+
+  it("keeps a group with no sets", () => {
+    const { selectionSetGroups } = buildModel(
+      {
+        ...twoJunctionsAndAPipe(),
+        selectionSetGroups: [{ ref: "g", label: "EMPTY" }],
+      },
+      { projections: aCatalogue() },
+    );
+
+    expect(selectionSetGroups).toEqual([{ ref: "g", label: "EMPTY" }]);
+  });
+
+  it("orders nested groups so that every parent comes before its children", () => {
+    const { selectionSetGroups, issues } = buildModel(
+      {
+        ...twoJunctionsAndAPipe(),
+        selectionSetGroups: [
+          { ref: "leaf", label: "LEAF", parentRef: "mid" },
+          { ref: "mid", label: "MID", parentRef: "top" },
+          { ref: "top", label: "TOP" },
+          { ref: "other", label: "OTHER" },
+        ],
+      },
+      { projections: aCatalogue() },
+    );
+
+    expect(selectionSetGroups).toEqual([
+      { ref: "top", label: "TOP" },
+      { ref: "mid", label: "MID", parentRef: "top" },
+      { ref: "leaf", label: "LEAF", parentRef: "mid" },
+      { ref: "other", label: "OTHER" },
+    ]);
+    expect(issues).toEqual([]);
+  });
+
+  it("puts a set naming an unknown group at the top level, and reports issue", () => {
+    const { selectionSets, issues } = buildModel(
+      {
+        ...twoJunctionsAndAPipe(),
+        selectionSets: [
+          {
+            ref: "5",
+            label: "NORTH",
+            groupRef: "ghost",
+            nodeRefs: ["1"],
+            linkRefs: [],
+          },
+        ],
+      },
+      { projections: aCatalogue() },
+    );
+
+    expect(selectionSets[0].groupRef).toBeUndefined();
+    expect(groupIssues(issues)).toEqual([
+      {
+        code: "selectionSetGroupUnreadable",
+        severity: "warning",
+        ref: "ghost",
+      },
+    ]);
+  });
+
+  it("puts a group naming an unknown parent at the top level, and reports issue", () => {
+    const { selectionSetGroups, issues } = buildModel(
+      {
+        ...twoJunctionsAndAPipe(),
+        selectionSetGroups: [{ ref: "g", label: "AREAS", parentRef: "ghost" }],
+      },
+      { projections: aCatalogue() },
+    );
+
+    expect(selectionSetGroups).toEqual([{ ref: "g", label: "AREAS" }]);
+    expect(groupIssues(issues)).toEqual([
+      { code: "selectionSetGroupUnreadable", severity: "warning", ref: "g" },
+    ]);
+  });
+
+  it("breaks a loop of parents at the first group in it, and reports issue", () => {
+    const { selectionSetGroups, issues } = buildModel(
+      {
+        ...twoJunctionsAndAPipe(),
+        selectionSetGroups: [
+          { ref: "a", label: "A", parentRef: "b" },
+          { ref: "b", label: "B", parentRef: "a" },
+          { ref: "self", label: "SELF", parentRef: "self" },
+        ],
+      },
+      { projections: aCatalogue() },
+    );
+
+    expect(selectionSetGroups).toEqual([
+      { ref: "a", label: "A" },
+      { ref: "b", label: "B", parentRef: "a" },
+      { ref: "self", label: "SELF" },
+    ]);
+    expect(groupIssues(issues)).toEqual([
+      { code: "selectionSetGroupUnreadable", severity: "warning", ref: "a" },
+      { code: "selectionSetGroupUnreadable", severity: "warning", ref: "self" },
+    ]);
+  });
+
+  it("keeps the first of two groups sharing a ref, and reports issue", () => {
+    const { selectionSetGroups, issues } = buildModel(
+      {
+        ...twoJunctionsAndAPipe(),
+        selectionSetGroups: [
+          { ref: "g", label: "FIRST" },
+          { ref: "g", label: "SECOND" },
+        ],
+      },
+      { projections: aCatalogue() },
+    );
+
+    expect(selectionSetGroups).toEqual([{ ref: "g", label: "FIRST" }]);
+    expect(groupIssues(issues)).toEqual([
+      { code: "selectionSetGroupUnreadable", severity: "warning", ref: "g" },
+    ]);
   });
 });
 
@@ -2185,6 +2546,7 @@ const aNetwork = (data: Partial<NetworkData> = {}): NetworkData => ({
   controls: [],
   customAttributes: [],
   zones: [],
+  selectionSetGroups: [],
   selectionSets: [],
   customerPoints: [],
   units: {},

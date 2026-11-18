@@ -206,8 +206,8 @@
       "valveScheduleUnreadable_other": "{{count}} Valves name setting schedules with no points, so they were imported as TCVs with no setting",
       "remotePressureControlUnsupported_one": "1 Link holds a pressure at another node, which EPANET cannot express, so the control was not imported",
       "remotePressureControlUnsupported_other": "{{count}} Links hold a pressure at another node, which EPANET cannot express, so those controls were not imported",
-      "flowModulatedSetpointUnsupported_one": "1 Valve sets its pressure from a flow curve, which EPANET cannot express, so the control was not imported",
-      "flowModulatedSetpointUnsupported_other": "{{count}} Valves set their pressure from a flow curve, which EPANET cannot express, so those controls were not imported",
+      "flowModulatedSetpointUnsupported_one": "1 Valve sets its pressure from a flow curve that could not be imported, so the control was left out",
+      "flowModulatedSetpointUnsupported_other": "{{count}} Valves set their pressure from flow curves that could not be imported, so those controls were left out",
       "tankFloatControlUnsupported_one": "1 Float valve on a tank inlet is not supported, so it keeps the position the file gave it and does not close as the tank fills",
       "tankFloatControlUnsupported_other": "{{count}} Float valves on tank inlets are not supported, so they keep the positions the file gave them and do not close as the tanks fill",
       "valveOperatingRuleUnsupported_one": "1 Valve is opened and closed by a tank level rule, which is not imported yet, so it keeps its starting status",
@@ -243,7 +243,11 @@
       "coordinateSystemMismatch": "The coordinate system does not match the coordinates in the file, so nothing was imported.",
       "coordinateAttributesUnknown": "We could not tell which attributes hold the coordinates, so nothing was imported.",
       "coordinateAttributesMissing": "No attribute in the file holds coordinates, so nothing was imported.",
-      "sourceHeaderMissing": "The first row does not name the columns, so nothing was imported."
+      "sourceHeaderMissing": "The first row does not name the columns, so nothing was imported.",
+      "valveParallelRegulatorUnsupported_one": "1 Regulating valve runs in parallel with a larger one between the same nodes, which EPANET cannot solve, so it was imported closed",
+      "valveParallelRegulatorUnsupported_other": "{{count}} Regulating valves run in parallel with a larger one between the same nodes, which EPANET cannot solve, so they were imported closed",
+      "selectionSetGroupUnreadable_one": "1 Selection set folder could not be placed in the folder tree, so its contents were imported at the top level",
+      "selectionSetGroupUnreadable_other": "{{count}} Selection set folders could not be placed in the folder tree, so their contents were imported at the top level"
     },
     "paywall": {
       "title": "Upgrade to convert models",
@@ -1683,6 +1687,10 @@
           "creationFailures": "Creation failures ({{1}})",
           "noValidJunction": "No valid junction ({{1}})",
           "connectionFailures": "Connection failures ({{1}})"
+        },
+        "attributesSelector": {
+          "placeholder": "No custom attributes",
+          "selectedCount": "{{1}} custom attributes"
         }
       },
       "demandOptions": {
@@ -1730,7 +1738,11 @@
         "applyChanges": "Apply changes"
       },
       "loading": "Loading...",
-      "somethingWentWrong": "Something went wrong"
+      "somethingWentWrong": "Something went wrong",
+      "importProgress": {
+        "building": "Building customer points...",
+        "applying": "Applying changes..."
+      }
     },
     "dataSource": {
       "title": "Add from file",
@@ -1895,7 +1907,10 @@
         "tankMixingFractionUnitRange": "Tank mixing fraction should be between 0 and 1",
         "pumpEnergyPriceNonNegative": "Pump energy price must be zero or greater",
         "nodeChemicalSourceStrengthNonNegative": "Source strength should be zero or greater",
-        "customerPointConnected": "Customer point disconnected"
+        "customerPointConnected": "Customer point disconnected",
+        "valveTargetNodeActive": "PRV target node must be active",
+        "pumpVariableSpeedDischargeNotBackfeeding": "Variable speed pump must not feed back into itself",
+        "pumpVariableSpeedFlowTargetSameDirection": "Variable speed pump flow target must follow the pump's direction"
       }
     }
   },

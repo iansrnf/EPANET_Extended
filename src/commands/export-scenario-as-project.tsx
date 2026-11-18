@@ -19,6 +19,7 @@ import { serializeProjectSettings } from "src/lib/db";
 import { captureError, captureWarning } from "src/infra/error-tracking";
 import { projectExtension } from "src/commands/save-project";
 import { useModelTagging } from "src/hooks/persistence/use-model-tagging";
+import { toArrayBufferView } from "src/infra/array-buffer-view";
 
 const exportScenarioToastId = "export-scenario-as-project";
 
@@ -77,7 +78,9 @@ export const useExportScenarioAsProject = ({
             tagger,
           );
           durationMs = Math.round(performance.now() - startedAt);
-          return new Blob([bytes], { type: "application/octet-stream" });
+          return new Blob([toArrayBufferView(bytes)], {
+            type: "application/octet-stream",
+          });
         };
 
         notify({

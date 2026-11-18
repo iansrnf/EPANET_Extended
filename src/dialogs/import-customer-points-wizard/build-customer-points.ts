@@ -1,5 +1,9 @@
 import type { Feature, Position } from "geojson";
-import type { CustomerPointData } from "@epanet-js/converters";
+import {
+  resolveCustomAttributeValues,
+  type CustomAttributePlan,
+  type CustomerPointData,
+} from "@epanet-js/converters";
 import {
   CustomerPointFactory,
   CustomerPoint,
@@ -18,13 +22,17 @@ export type BuildCustomerPointsOptions = {
   patternId: PatternId | null;
   defaultDemand: number | null;
   labelMaxLength?: number;
+  attributes?: CustomAttributePlan;
   issues: CustomerPointsIssuesAccumulator;
+  createLimit?: number;
+  onProgress?: (processed: number, total: number) => void;
   signal?: AbortSignal;
 };
 
 export type BuiltCustomerPoints = {
   customerPoints: CustomerPoint[];
   demands: Map<CustomerPointId, Demand[]>;
+  validCount: number;
 };
 
 // Minting an id and a label per point costs roughly eight allocations, so a
@@ -45,7 +53,10 @@ export const buildCustomerPoints = async (
     patternId,
     defaultDemand,
     labelMaxLength,
+    attributes = new Map(),
     issues,
+    createLimit = Infinity,
+    onProgress,
     signal,
   }: BuildCustomerPointsOptions,
 ): Promise<BuiltCustomerPoints> => {
@@ -53,6 +64,7 @@ export const buildCustomerPoints = async (
 
   const customerPoints: CustomerPoint[] = [];
   const demands = new Map<CustomerPointId, Demand[]>();
+  let uncreatedCount = 0;
   const sliceIfDue = createTimeSlicer();
 
   for (let start = 0; start < records.length; start += RECORDS_PER_BATCH) {
@@ -68,6 +80,11 @@ export const buildCustomerPoints = async (
         continue;
       }
 
+      if (customerPoints.length >= createLimit) {
+        uncreatedCount++;
+        continue;
+      }
+
       const baseDemand = record.demands?.[0]?.baseDemand ?? defaultDemand;
       const label =
         record.label === undefined
@@ -80,6 +97,12 @@ export const buildCustomerPoints = async (
 
       try {
         const customerPoint = factory.create(coordinates, label);
+        for (const [id, value] of resolveCustomAttributeValues(
+          record,
+          attributes,
+        )) {
+          customerPoint.setProperty(id, value);
+        }
         customerPoints.push(customerPoint);
         demands.set(
           customerPoint.id,
@@ -96,11 +119,16 @@ export const buildCustomerPoints = async (
       }
     }
 
+    onProgress?.(stop, records.length);
     await sliceIfDue();
     throwIfAborted(signal);
   }
 
-  return { customerPoints, demands };
+  return {
+    customerPoints,
+    demands,
+    validCount: customerPoints.length + uncreatedCount,
+  };
 };
 
 const isWgs84 = ([longitude, latitude]: Position): boolean =>

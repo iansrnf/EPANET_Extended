@@ -75,16 +75,20 @@ import { deactivateAssets } from "@epanet-js/hydraulic-model-operations";
 import {
   fieldValidator,
   numericChecks,
+  type ValveReferenceField,
+  type PumpReferenceField,
 } from "src/lib/model-attributes-validation";
 import {
   getLinkNodes,
+  getPumpControl,
+  getValveControl,
   pickTargetNodeOptions,
 } from "@epanet-js/hydraulic-model";
 import {
   type AssetId,
   type Control,
-  type FlowModulatingValveControl,
   type LinkAsset,
+  type PumpControl,
 } from "@epanet-js/hydraulic-model";
 import { isNodeAsset } from "@epanet-js/hydraulic-model";
 import { highlightsAtom } from "src/state/highlights";
@@ -127,7 +131,11 @@ import {
   type FlowModulatingValveTargets,
 } from "./flow-modulating-valve-controls-editor";
 import { PumpDefinitionSummary } from "./pump-definition-summary";
-import { getAttribute, isCustomProperty } from "@epanet-js/hydraulic-model";
+import {
+  getAttribute,
+  isCustomProperty,
+  type RawControls,
+} from "@epanet-js/hydraulic-model";
 import { CustomAttributesSection } from "./custom-attributes-section";
 import { NumericTable } from "src/components/form/numeric-table";
 import { useShowPatternsLibrary } from "src/commands/show-patterns-library";
@@ -2164,10 +2172,7 @@ const ValveEditor = ({
   );
   const showControls = isPrv && isFlowModulatingValvesOn;
   const flowModulatingControl = showControls
-    ? ([...hydraulicModel.controlsLookup.getControls(valve.id)].find(
-        (c): c is FlowModulatingValveControl =>
-          c.type === "flow-modulating-valve" && c.linkId === valve.id,
-      ) ?? null)
+    ? getValveControl(hydraulicModel.controlsLookup, valve.id)
     : null;
   const isSetByControl = flowModulatingControl !== null;
   const showTargetNode = isPrv;
@@ -2178,7 +2183,10 @@ const ValveEditor = ({
   >(findDownstreamNodes, [hydraulicModel, valve], isPrv);
   const downstreamNodes = tracedDownstreamNodes ?? EMPTY_NODES;
 
-  const flowModulatingTargets = useMemo((): FlowModulatingValveTargets => {
+  const flowModulatingTargetLists = useMemo((): Omit<
+    FlowModulatingValveTargets,
+    "isValid"
+  > => {
     const nodes: NodeAsset[] = [];
     const links: LinkAsset[] = [];
     if (showControls) {
@@ -2200,15 +2208,30 @@ const ValveEditor = ({
         if (!asset.isNode) links.push(asset as LinkAsset);
       }
     }
-    return { nodes, links, outletNodeId, units };
+    return {
+      nodes,
+      links,
+      outletNodeId,
+      units,
+    };
   }, [
-    showControls,
     hydraulicModel.assets,
+    showControls,
     downstreamNodes,
     flowModulatingControl,
     outletNodeId,
     units,
   ]);
+
+  const isValveFieldValid = useCallback(
+    (field: ValveReferenceField, value: unknown) =>
+      fieldValidator("valve", field, valve, hydraulicModel)?.(value) ?? true,
+    [valve, hydraulicModel],
+  );
+  const flowModulatingTargets = useMemo(
+    () => ({ ...flowModulatingTargetLists, isValid: isValveFieldValid }),
+    [flowModulatingTargetLists, isValveFieldValid],
+  );
 
   const targetNode =
     valve.targetNodeId !== undefined
@@ -2218,6 +2241,18 @@ const ValveEditor = ({
   const targetNodeComparison = getComparison<AssetId | null>(
     "targetNodeId",
     targetNodeId,
+  );
+
+  const selectedTargetNodeId = isSetByControl
+    ? flowModulatingControl.controlNodeId
+    : targetNodeId;
+  const validateTargetNode = fieldValidator(
+    "valve",
+    (isSetByControl
+      ? "flowModulatingControlNode"
+      : "targetNode") satisfies ValveReferenceField,
+    valve,
+    hydraulicModel,
   );
 
   const targetNodeOptions = useMemo((): TargetNodeOption[] => {
@@ -2362,12 +2397,9 @@ const ValveEditor = ({
         {showTargetNode && (
           <SelectRow
             name="targetNode"
-            selected={
-              isSetByControl
-                ? flowModulatingControl.controlNodeId
-                : targetNodeId
-            }
+            selected={selectedTargetNodeId}
             options={targetNodeOptions}
+            validate={validateTargetNode}
             nullable
             placeholder={endNode ? endNode.label : translate("select") + "..."}
             comparison={isSetByControl ? undefined : targetNodeComparison}
@@ -2426,6 +2458,10 @@ const ValveEditor = ({
             onControlChange={(control) =>
               onControlChange(valve.id, control, flowModulatingControl)
             }
+            hasRawControls={isReferencedByRawControls(
+              hydraulicModel.rawControls,
+              valve.id,
+            )}
             readOnly={readonly}
           />
         </SectionWrapper>
@@ -2559,7 +2595,7 @@ const PumpEditor = ({
   );
 
   const outletNodeId = pump.connections[1] ?? null;
-  const variableSpeedPumpTargets = useMemo(() => {
+  const variableSpeedPumpTargetLists = useMemo(() => {
     const nodes: NodeAsset[] = [];
     const pipes: Pipe[] = [];
     const pumps: Pump[] = [];
@@ -2568,13 +2604,26 @@ const PumpEditor = ({
       else if (asset.type === "pipe") pipes.push(asset as Pipe);
       else if (asset.type === "pump") pumps.push(asset as Pump);
     }
-    return { nodes, pipes, pumps, outletNodeId, units };
+    return {
+      nodes,
+      pipes,
+      pumps,
+      outletNodeId,
+      units,
+    };
   }, [hydraulicModel.assets, outletNodeId, units]);
 
-  const pumpControl =
-    [...hydraulicModel.controlsLookup.getControls(pump.id)].find(
-      (c) => c.linkId === pump.id,
-    ) ?? null;
+  const isPumpFieldValid = useCallback(
+    (field: PumpReferenceField, value: unknown) =>
+      fieldValidator("pump", field, pump, hydraulicModel)?.(value) ?? true,
+    [pump, hydraulicModel],
+  );
+  const variableSpeedPumpTargets = useMemo(
+    () => ({ ...variableSpeedPumpTargetLists, isValid: isPumpFieldValid }),
+    [variableSpeedPumpTargetLists, isPumpFieldValid],
+  );
+
+  const pumpControl = getPumpControl(hydraulicModel.controlsLookup, pump.id);
 
   const controllingPump = useMemo(() => {
     const lead = hydraulicModel.controls.find(
@@ -2587,16 +2636,12 @@ const PumpEditor = ({
     return leadPump ? { id: leadPump.id, label: leadPump.label } : null;
   }, [hydraulicModel.controls, hydraulicModel.assets, pump.id]);
 
-  const { rawControls } = hydraulicModel;
-  const hasRawControls =
-    rawControls.simple.some((c) =>
-      c.assetReferences.some((ref) => ref.assetId === pump.id),
-    ) ||
-    rawControls.rules.some((r) =>
-      r.assetReferences.some((ref) => ref.assetId === pump.id),
-    );
+  const hasRawControls = isReferencedByRawControls(
+    hydraulicModel.rawControls,
+    pump.id,
+  );
 
-  const handleControlChangeForPump = (control: Control | null) => {
+  const handleControlChangeForPump = (control: PumpControl | null) => {
     onControlChange(pump.id, control, pumpControl);
   };
 
@@ -3539,6 +3584,17 @@ const ValveCurveField = ({
     </BlockComparisonField>
   );
 };
+
+const isReferencedByRawControls = (
+  rawControls: RawControls,
+  assetId: AssetId,
+): boolean =>
+  rawControls.simple.some((control) =>
+    control.assetReferences.some((ref) => ref.assetId === assetId),
+  ) ||
+  rawControls.rules.some((rule) =>
+    rule.assetReferences.some((ref) => ref.assetId === assetId),
+  );
 
 function getCustomerPointsPattern(
   customerPoints: CustomerPoint[],

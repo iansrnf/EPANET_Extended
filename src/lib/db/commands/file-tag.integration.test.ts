@@ -8,6 +8,7 @@ import { importProject } from "./import-project";
 import { openProject } from "./open-project";
 import { fetchProject } from "./fetch-project";
 import { useInProcessDb } from "../__test-helpers__/in-process-db";
+import { toArrayBufferView } from "src/infra/array-buffer-view";
 
 const readHeader = (bytes: Uint8Array) => {
   const view = new DataView(bytes.buffer, bytes.byteOffset);
@@ -78,7 +79,9 @@ describe("file tag integration", () => {
 
   const open = (bytes: Uint8Array) =>
     openProject(
-      new File([bytes], "tagged.ejsdb", { type: "application/octet-stream" }),
+      new File([toArrayBufferView(bytes)], "tagged.ejsdb", {
+        type: "application/octet-stream",
+      }),
     );
 
   it("leaves files alone without a tagger", async () => {

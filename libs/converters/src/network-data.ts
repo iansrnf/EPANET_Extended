@@ -128,9 +128,16 @@ export type ZoneData = {
   customAttributes?: CustomAttributeValues;
 };
 
+export type SelectionSetGroupData = {
+  ref: string;
+  label: string;
+  parentRef?: string;
+};
+
 export type SelectionSetData = {
   ref: string;
   label?: string;
+  groupRef?: string;
   nodeRefs: string[];
   linkRefs: string[];
 };
@@ -200,11 +207,19 @@ export type VariableSpeedPumpControlData = {
   tankLevels?: VariableSpeedPumpTankLevelsData;
 };
 
+export type FlowModulatedSetpointInterpolation = "linear" | "step";
+
+export type FlowModulatedSetpointPointData = {
+  flow: number;
+  pressure: number;
+};
+
 export type FlowModulatedSetpointControlData = {
   type: "flowModulatedSetpoint";
   link: ControlLinkRef;
   source: ControlLinkRef;
-  curveRef: string;
+  points: FlowModulatedSetpointPointData[];
+  interpolation: FlowModulatedSetpointInterpolation;
 };
 
 export type ControlData =
@@ -226,6 +241,7 @@ export type NetworkData = {
   controls: ControlData[];
   customAttributes: CustomAttributeData[];
   zones: ZoneData[];
+  selectionSetGroups: SelectionSetGroupData[];
   selectionSets: SelectionSetData[];
   customerPoints: CustomerPointData[];
   patternTimeStep?: number;
@@ -252,6 +268,7 @@ export const emptyNetworkData = (): NetworkData => ({
   controls: [],
   customAttributes: [],
   zones: [],
+  selectionSetGroups: [],
   selectionSets: [],
   customerPoints: [],
   units: {},

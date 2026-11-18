@@ -37,7 +37,7 @@ import { useOpenRecentFile } from "src/commands/open-recent-file";
 import { projectExtension } from "src/commands/save-project";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useTranslate } from "src/hooks/use-translate";
-import { useImportCustomerPoints } from "src/commands/import-customer-points";
+import { useOpenCustomerPointsImport } from "src/commands/open-customer-points-import";
 import { useOpenZonesImport } from "src/commands/open-zones-import";
 import { useImportZonesDisabled } from "src/hooks/use-import-zones-disabled";
 import { useImportCustomerPointsDisabled } from "src/hooks/use-import-customer-points-disabled";
@@ -228,7 +228,7 @@ const NewProjectSubmenu = () => {
 };
 
 const ImportSubmenu = () => {
-  const importCustomerPoints = useImportCustomerPoints();
+  const importCustomerPoints = useOpenCustomerPointsImport();
   const openZonesImport = useOpenZonesImport();
   const importZonesDisabled = useImportZonesDisabled();
   const importCustomerPointsDisabled = useImportCustomerPointsDisabled();

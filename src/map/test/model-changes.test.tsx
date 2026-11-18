@@ -25,6 +25,28 @@ const SECOND = [10, 20];
 const MAX_CHANGES_BEFORE_MAP_SYNC = 500;
 
 describe("model changes reach the map", () => {
+  it("rebuilds the network after the WebGL context is restored", async () => {
+    const IDS = { JUNCTION: 1 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.JUNCTION, { coordinates: FIRST })
+      .build();
+    const store = setInitialState({ hydraulicModel });
+    let currentMap: MapTestEngine | null = null;
+    const originalMap = await renderMap(store, [], (map) => {
+      currentMap = map;
+    });
+    await expectRendered(originalMap, FIRST);
+
+    act(() => originalMap.restoreContext());
+
+    await waitFor(() => {
+      expect(currentMap).not.toBeNull();
+      expect(currentMap).not.toBe(originalMap);
+      expect(originalMap.isAlive()).toBe(false);
+    });
+    await expectRendered(currentMap!, FIRST);
+  });
+
   it("renders an added junction", async () => {
     const { store, map } = await renderWarmMap();
 

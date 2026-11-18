@@ -62,10 +62,11 @@ const usCustomary = (preset: keyof Presets, perCfs: number): Units => ({
 });
 
 const LPS = metric("LPS", 1, "mwc");
+const LPM_KPA = metric("LPM", 60, "kPa");
 
 const UNIT_SYSTEMS = [
   LPS,
-  metric("LPM", 60, "kPa"),
+  LPM_KPA,
   metric("MLD", 0.0864, "bar"),
   metric("CMH", 3.6, "fwc"),
   metric("CMD", 86.4, "mwc"),
@@ -143,6 +144,65 @@ describe("flow-modulating valves", () => {
     expectOnCurve(LPS, flows, pressures, true);
     expectAllNear(pressures, LINEAR_PRESSURES, PRESSURE_TOL);
   });
+
+  it("opens fully against the inlet pressure of a denser fluid", async () => {
+    const { reader } = await run(
+      LPM_KPA,
+      fmvNetwork(LPM_KPA, { controlNodeId: IDS.J2, sourceHead: 25 }),
+      (settings) => settings.specificGravity(1.3),
+    );
+
+    const inletPressures = await junctionPressures(reader, IDS.J0);
+    const outletPressures = await junctionPressures(reader, IDS.J1);
+
+    expect(
+      Math.abs(outletPressures[PEAK_STEP] - inletPressures[PEAK_STEP]),
+    ).toBeLessThan(LPM_KPA.pressure(PRESSURE_TOL));
+  });
+
+  describe("warnings", () => {
+    it("warns when a fully open valve cannot reach the target", async () => {
+      const { result } = await run(
+        LPS,
+        fmvNetwork(LPS, { controlNodeId: IDS.J2, sourceHead: 25 }),
+      );
+
+      expect(result.status).toBe("warning");
+      expect(warningsIn(result.report)).toEqual([
+        expect.stringContaining("is fully open"),
+      ]);
+    });
+
+    it("warns when the valve bottoms out above the target", async () => {
+      const { result } = await run(
+        LPS,
+        fmvNetwork(LPS, { controlNodeId: IDS.J2, controlNodeElevation: -40 }),
+      );
+
+      expect(result.status).toBe("warning");
+      expect(warningsIn(result.report)).toEqual([
+        expect.stringContaining("is at its minimum setting"),
+      ]);
+    });
+
+    it("warns when the setting does not settle within a step", async () => {
+      const { result } = await run(
+        LPS,
+        fmvNetwork(LPS, { points: FALLING_CURVE }),
+        (settings) =>
+          settings
+            .demandModel("PDA")
+            .minimumPressure(0)
+            .requiredPressure(30)
+            .pressureExponent(0.5),
+      );
+
+      expect(result.status).toBe("warning");
+      expect(warningsIn(result.report)).toEqual([
+        expect.stringContaining("did not settle"),
+      ]);
+    });
+  });
 });
 
 const IDS = {
@@ -167,6 +227,14 @@ const CURVE = [
   { flow: 7, pressure: 30 },
   { flow: 9, pressure: 34 },
 ];
+
+const FALLING_CURVE = [
+  { flow: 2, pressure: 40 },
+  { flow: 4, pressure: 30 },
+  { flow: 6, pressure: 12 },
+  { flow: 8, pressure: 5 },
+];
+const PEAK_STEP = 5;
 
 const DEMAND_FLOWS = [2.4, 4.0, 6.0, 8.0, 10.0, 12.0, 8.0, 4.8];
 const LINEAR_PRESSURES = [20, 22, 27, 32, 34, 34, 32, 23.6];
@@ -205,8 +273,8 @@ const curvePressure = (
   return last.pressure;
 };
 
-const curveIn = (units: Units) =>
-  CURVE.map(({ flow, pressure }) => ({
+const curveIn = (units: Units, points = CURVE) =>
+  points.map(({ flow, pressure }) => ({
     flow: units.flow(flow),
     pressure: units.pressure(pressure),
   }));
@@ -218,17 +286,23 @@ const fmvNetwork = (
     interpolate = true,
     sensorLinkId = IDS.V1,
     controlNodeId = IDS.J1,
+    points = CURVE,
+    sourceHead = 60,
+    controlNodeElevation = 2,
   }: {
     interpolate?: boolean;
     sensorLinkId?: number;
     controlNodeId?: number;
+    points?: { flow: number; pressure: number }[];
+    sourceHead?: number;
+    controlNodeElevation?: number;
   } = {},
 ) =>
   HydraulicModelBuilder.with()
-    .aReservoir(IDS.R1, { head: units.length(60) })
+    .aReservoir(IDS.R1, { head: units.length(sourceHead) })
     .aJunction(IDS.J0, { elevation: 0 })
     .aJunction(IDS.J1, { elevation: 0 })
-    .aJunction(IDS.J2, { elevation: units.length(2) })
+    .aJunction(IDS.J2, { elevation: units.length(controlNodeElevation) })
     .aJunctionDemand(IDS.J2, [
       { baseDemand: units.flow(BASE_DEMAND), patternId: IDS.DEMAND_PATTERN },
     ])
@@ -257,7 +331,7 @@ const fmvNetwork = (
     })
     .aFlowModulatingValveControl({
       linkId: IDS.V1,
-      points: curveIn(units),
+      points: curveIn(units, points),
       interpolate,
       sensorLinkId,
       controlNodeId,
@@ -268,9 +342,21 @@ const simulate = async (
   units: Units,
   hydraulicModel: HydraulicModel,
 ): Promise<EPSResultsReader> => {
-  const simulationSettings = SimulationSettingsBuilder.with()
-    .timing({ duration: DURATION })
-    .build();
+  const { result, reader } = await run(units, hydraulicModel);
+  expect(result.status).toBe("success");
+  return reader;
+};
+
+const run = async (
+  units: Units,
+  hydraulicModel: HydraulicModel,
+  configure: (
+    settings: SimulationSettingsBuilder,
+  ) => SimulationSettingsBuilder = (settings) => settings,
+) => {
+  const simulationSettings = configure(
+    SimulationSettingsBuilder.with().timing({ duration: DURATION }),
+  ).build();
 
   const inp = buildInp(hydraulicModel, {
     units: withPressureUnit(presets[units.preset], units.pressureUnit).units,
@@ -278,12 +364,14 @@ const simulate = async (
   });
 
   const result = await runSimulation(inp, APP_ID, () => {});
-  expect(result.status).toBe("success");
 
   const reader = new EPSResultsReader(new InMemoryStorage(APP_ID));
   await reader.initialize();
-  return reader;
+  return { result, reader };
 };
+
+const warningsIn = (report: string) =>
+  report.split("\n").filter((line) => line.includes("Flow-modulating valve"));
 
 const junctionPressures = async (reader: EPSResultsReader, id: number) =>
   Array.from((await reader.getTimeSeries(id, "junction", "pressure"))!.values);

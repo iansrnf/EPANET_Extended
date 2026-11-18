@@ -9,6 +9,14 @@ loadEnvConfig(__dirname);
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react(), tsconfigPaths()],
+  resolve: {
+    alias: [
+      {
+        find: /^wgsl_reflect$/,
+        replacement: "wgsl_reflect/wgsl_reflect.module.js",
+      },
+    ],
+  },
   test: {
     environment: "jsdom",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
@@ -26,7 +34,7 @@ export default defineConfig({
     // SQL imports), so it must be transformed by Vite rather than externalized.
     server: {
       deps: {
-        inline: [/@epanet-js\//],
+        inline: [/@epanet-js\//, /@deck\.gl\//, /@luma\.gl\//, /wgsl_reflect/],
       },
     },
     globals: true,

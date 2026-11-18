@@ -1090,64 +1090,6 @@ describe("AssetPanel", () => {
       expectPropertyDisplayed("initial speed", "0.8");
     });
 
-    it("shows properties for power defintion", () => {
-      const IDS = { PU1: 1, j1: 2, j2: 3 };
-      const hydraulicModel = HydraulicModelBuilder.with()
-        .aJunction(IDS.j1, { label: "J1" })
-        .aJunction(IDS.j2, { label: "J2" })
-        .aPump(IDS.PU1, {
-          label: "MY_PUMP",
-          connections: [IDS.j1, IDS.j2],
-          initialStatus: "on",
-          definitionType: "power",
-          power: 100,
-        })
-        .build();
-      const store = setInitialState({
-        hydraulicModel,
-        selectedAssetId: IDS.PU1,
-      });
-
-      renderComponent(store);
-
-      expect(screen.getByDisplayValue("MY_PUMP")).toBeInTheDocument();
-      expect(screen.getByText("Pump")).toBeInTheDocument();
-      expectPropertyDisplayed("power (kW)", "100");
-    });
-
-    it("can change pump definition", async () => {
-      const IDS = { PU1: 1, j1: 2, j2: 3 };
-      const hydraulicModel = HydraulicModelBuilder.with()
-        .aJunction(IDS.j1, { label: "J1" })
-        .aJunction(IDS.j2, { label: "J2" })
-        .aPump(IDS.PU1, {
-          label: "MY_PUMP",
-          connections: [IDS.j1, IDS.j2],
-          initialStatus: "on",
-          definitionType: "designPointCurve",
-          curve: [{ x: 20, y: 40 }],
-          power: 100,
-        })
-        .build();
-      const store = setInitialState({
-        hydraulicModel,
-        selectedAssetId: IDS.PU1,
-      });
-      const user = userEvent.setup();
-
-      renderComponent(store);
-
-      const selector = screen.getByRole("combobox", {
-        name: /pump type/i,
-      });
-
-      await user.click(selector);
-
-      await user.click(screen.getByText(/constant power/i));
-
-      expectPropertyDisplayed("power (kW)", "100");
-    });
-
     it("can show simulation results", async () => {
       const IDS = { PU1: 1 };
       const hydraulicModel = HydraulicModelBuilder.with()

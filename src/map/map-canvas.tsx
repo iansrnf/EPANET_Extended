@@ -40,6 +40,7 @@ import { useAtomValue } from "jotai";
 import { useHotkeys } from "src/keyboard/hotkeys";
 import { useAtomCallback } from "jotai/utils";
 import { isDebugAppStateOn, isDebugOn } from "src/infra/debug-mode";
+import { captureWarning } from "src/infra/error-tracking";
 import { useMapStateUpdates } from "./state-updates";
 import { clickableLayers } from "./layers/layer";
 import { BasemapSelector } from "./basemap-selector";
@@ -100,6 +101,8 @@ const MapStateUpdates = ({ map }: { map: MapEngine | null }) => {
   return null;
 };
 
+const MAX_CONTEXT_RESTARTS = 3;
+
 export const MapCanvas = memo(function MapCanvas({
   setMap,
 }: {
@@ -142,6 +145,7 @@ export const MapCanvas = memo(function MapCanvas({
   const cursor = useAtomValue(cursorStyleAtom);
   const isEditionBlocked = useIsEditionBlocked();
   const [initError, setInitError] = useState<boolean>(false);
+  const [contextRestarts, setContextRestarts] = useState<number>(0);
   const [mapInstance, setMapInstance] = useState<MapEngine | null>(null);
 
   // Refs
@@ -170,12 +174,20 @@ export const MapCanvas = memo(function MapCanvas({
   useEffect(() => {
     if (mapRef.current) return;
     if (!mapDivRef.current || !mapHandlers) return;
+    if (contextRestarts > MAX_CONTEXT_RESTARTS) {
+      setInitError(true);
+      return;
+    }
 
     try {
       mapRef.current = new MapEngine({
         element: mapDivRef.current,
         handlers: mapHandlers as MutableRefObject<MapHandlers>,
         onControlClick,
+        onContextRestored: () => {
+          captureWarning("Map rebuilt after WebGL context was restored");
+          setContextRestarts((restarts) => restarts + 1);
+        },
         initialViewport: readViewport(),
       });
       setMapInstance(mapRef.current);
@@ -196,7 +208,14 @@ export const MapCanvas = memo(function MapCanvas({
       }
       mapRef.current = null;
     };
-  }, [mapRef, mapDivRef, setMap, onControlClick, readViewport]);
+  }, [
+    mapRef,
+    mapDivRef,
+    setMap,
+    onControlClick,
+    readViewport,
+    contextRestarts,
+  ]);
 
   if (isDebugOn) (window as any).mapEngine = mapRef.current;
 

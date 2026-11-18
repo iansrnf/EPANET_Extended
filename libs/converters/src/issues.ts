@@ -22,6 +22,7 @@ export const issueCodes = [
   "valveKindUnknown",
   "valveScheduleUnreadable",
   "valveOperatingRuleUnsupported",
+  "valveParallelRegulatorUnsupported",
   "pumpDefinitionUnsupported",
   "pumpControlUnsupported",
   "pumpSpeedControlUnsupported",
@@ -31,6 +32,7 @@ export const issueCodes = [
   "customAttributeValueUnreadable",
   "zoneGeometryUnreadable",
   "selectionSetMembersUnreadable",
+  "selectionSetGroupUnreadable",
   "unitSystemMissing",
   "unitSystemUnsupported",
   "coordinateSystemMissing",
@@ -56,6 +58,7 @@ export type Issue = {
   code: IssueCode;
   severity: IssueSeverity;
   ref?: string;
+  label?: string;
   context?: Record<string, string | number>;
   /** The source record this is about, verbatim and opaque. */
   raw?: unknown;
@@ -65,12 +68,12 @@ export class IssueCollector {
   private issues: Issue[] = [];
   private seen = new Set<string>();
 
-  add(issue: Issue): void {
+  add({ label, ...issue }: Issue): void {
     const key = `${issue.code}|${issue.ref ?? ""}`;
     if (this.seen.has(key)) return;
 
     this.seen.add(key);
-    this.issues.push(issue);
+    this.issues.push(label === undefined ? issue : { ...issue, label });
   }
 
   build(): Issue[] {

@@ -192,11 +192,7 @@ type MultiSelectUpdated = {
   name: "multiSelect.updated";
   count: number;
   operation:
-    | "bulk_add"
-    | "bulk_remove"
-    | "new"
-    | "single_add"
-    | "single_remove";
+    "bulk_add" | "bulk_remove" | "new" | "single_add" | "single_remove";
 };
 
 type SelectionNarrowedToAssetType = {
@@ -1926,7 +1922,7 @@ export type UserEvent =
       name: "selectionSetGroup.created";
       depth: number;
       totalGroups: number;
-      source: "panel";
+      source: "panel" | "script-output";
     }
   | { name: "selectionSetGroup.renamed"; source: "panel" }
   | { name: "selectionSetGroup.moved"; depth: number; source: "panel" }

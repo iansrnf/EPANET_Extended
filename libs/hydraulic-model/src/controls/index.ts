@@ -8,6 +8,8 @@ export type {
   VariableSpeedPumpTankLevels,
   FlowModulatingValveControl,
   FlowModulatingValvePoint,
+  PumpControl,
+  ValveControl,
   Control,
   Controls,
 } from "./types";
@@ -15,6 +17,8 @@ export type {
 export {
   createControlId,
   createEmptyControls,
+  isPumpControl,
+  isValveControl,
   getLinkTimedSetting,
   getLinkLevelSetting,
   getLinkVariableSpeedPump,
@@ -29,7 +33,12 @@ export {
   setAssetControl,
 } from "./types";
 
-export { ControlsLookup, buildControlsLookup } from "./lookup";
+export {
+  ControlsLookup,
+  buildControlsLookup,
+  getPumpControl,
+  getValveControl,
+} from "./lookup";
 export {
   detachControlReferences,
   remapControlLinkReference,

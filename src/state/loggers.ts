@@ -9,6 +9,7 @@ export const loggersAtom = atom(
 );
 
 export const selectedLoggerIdAtom = atom<LoggerId | null>(null);
+export const hoveredLoggerIdAtom = atom<LoggerId | null>(null);
 
 export const selectedLoggerAtom = atom((get) => {
   const selectedId = get(selectedLoggerIdAtom);

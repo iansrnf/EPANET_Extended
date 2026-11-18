@@ -26,6 +26,8 @@ See [LICENSE](LICENSE) for the upstream license terms.
 
 ## Upstream core maintenance
 
+See the [November 18, 2026 core update report](UPSTREAM_CORE_UPDATE_2026-11-18.md) for the full change explanation, preserved GSCWD features, compatibility decisions, and validation results.
+
 The November 18, 2026 core update was reviewed against `C:/Project/OTHER/EPANET2` at commit `804d7aa0d`. It brings in hydraulic controls and simulation fixes, tracing, customer-point and GIS imports, model validation, map recovery, and project integrity reporting. The GSCWD map providers, pipe flow animation, loggers and graphs, dashboard, pump definitions, native GIS builder, and browser-storage fallback remain in place.
 
 Run a read-only comparison against a newer source checkout with:

@@ -38,7 +38,7 @@ export const defaultSplits: Splits = {
   bottomOpen: false,
   vertical: 300,
   verticalOpen: true,
-  rightOpen: true,
+  rightOpen: false,
   right: 320,
   leftOpen: false,
   left: 300,

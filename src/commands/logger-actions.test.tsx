@@ -14,13 +14,20 @@ import { writeQueue } from "src/lib/persistence/write-queue";
 import { defaultSimulationSettings } from "src/simulation/simulation-settings";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { projectDataVersionAtom } from "src/state/project-revision";
-import { loggersAtom } from "src/state/loggers";
+import { loggersAtom, selectedLoggerIdAtom } from "src/state/loggers";
 import { dialogAtom } from "src/state/dialog";
 import { loggerPreviewAtom } from "src/state/logger-map";
 import { cursorStyleAtom } from "src/state/map";
 import { modeAtom, Mode } from "src/state/mode";
+import { isNarrowViewportAtom, splitsAtom } from "src/state/layout";
+import { activePanelIn, panelsAtom, panelsIn } from "src/state/panels";
+import { selectionAtom } from "src/state/selection";
+import { USelection } from "src/selection";
+import { createAssetPanel } from "src/panels/asset-panel/create-panel";
+import { createMapStylingPanel } from "src/panels/map-styling-editor/create-panel";
 import type { Store } from "src/state";
 import { useLoggerActions } from "./logger-actions";
+import { useDismissAssetPanel } from "./dismiss-asset-panel";
 
 const renderActions = (store: Store) =>
   renderHook(() => useLoggerActions(), {
@@ -30,6 +37,88 @@ const renderActions = (store: Store) =>
 describe("logger actions", () => {
   useInProcessDb();
   beforeEach(() => stubUserTracking());
+
+  it.each([false, true])(
+    "selects a logger into the floating inspector and collapses docked inspectors (narrow: %s)",
+    (isNarrowViewport) => {
+      const IDS = { J1: 1, L1: "1" } as const;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aJunction(IDS.J1)
+        .build();
+      const store = setInitialState({ hydraulicModel });
+      store.set(panelsAtom, [createAssetPanel(), createMapStylingPanel()]);
+      store.set(isNarrowViewportAtom, isNarrowViewport);
+      store.set(selectionAtom, USelection.singleAsset(IDS.J1));
+      store.set(projectSettingsAtom, {
+        ...store.get(projectSettingsAtom),
+        loggers: [
+          {
+            id: IDS.L1,
+            label: "Logger 1",
+            coordinates: [1, 1],
+            connection: null,
+          },
+        ],
+      });
+      store.set(splitsAtom, {
+        ...store.get(splitsAtom),
+        rightOpen: true,
+        verticalOpen: true,
+      });
+      const { result } = renderActions(store);
+
+      act(() => result.current.selectLogger(IDS.L1));
+
+      expect(USelection.isNone(store.get(selectionAtom))).toBe(true);
+      expect(store.get(selectedLoggerIdAtom)).toEqual(IDS.L1);
+      expect(store.get(activePanelIn("floating"))?.id).toEqual("asset");
+      expect(store.get(splitsAtom).rightOpen).toBe(false);
+      expect(store.get(splitsAtom).verticalOpen).toBe(false);
+    },
+  );
+
+  it("dismisses a logger and clears its pending connection without changing the project", () => {
+    const IDS = { J1: 1, L1: "1" } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1)
+      .build();
+    const store = setInitialState({ hydraulicModel });
+    store.set(panelsAtom, [createAssetPanel()]);
+    store.set(projectSettingsAtom, {
+      ...store.get(projectSettingsAtom),
+      loggers: [
+        {
+          id: IDS.L1,
+          label: "Logger 1",
+          coordinates: [1, 1],
+          connection: null,
+        },
+      ],
+    });
+    store.set(selectionAtom, USelection.singleAsset(IDS.J1));
+    store.set(selectedLoggerIdAtom, IDS.L1);
+    store.set(loggerPreviewAtom, {
+      type: "connect",
+      loggerId: IDS.L1,
+      connection: { assetId: IDS.J1, snapPoint: [0, 0] },
+    });
+    store.set(modeAtom, { mode: Mode.CONNECT_LOGGER });
+    store.set(cursorStyleAtom, "crosshair");
+    const settingsBefore = store.get(projectSettingsAtom);
+    const { result } = renderHook(() => useDismissAssetPanel(), {
+      wrapper: ({ children }) => <Provider store={store}>{children}</Provider>,
+    });
+
+    act(() => result.current());
+
+    expect(USelection.isNone(store.get(selectionAtom))).toBe(true);
+    expect(store.get(selectedLoggerIdAtom)).toBeNull();
+    expect(store.get(loggerPreviewAtom)).toBeNull();
+    expect(store.get(modeAtom).mode).toEqual(Mode.NONE);
+    expect(store.get(cursorStyleAtom)).toEqual("default");
+    expect(store.get(panelsIn("floating"))).toEqual([]);
+    expect(store.get(projectSettingsAtom)).toBe(settingsBefore);
+  });
 
   it("preserves consecutive creations and persists connection edits", async () => {
     const IDS = { J1: 1, J2: 2, P1: 3 } as const;

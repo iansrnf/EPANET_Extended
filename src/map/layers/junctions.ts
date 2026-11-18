@@ -54,14 +54,6 @@ export const junctionFillColorExpression = (
   defaultNodeColor: string,
 ): mapboxgl.Expression => [
   "case",
-  [
-    "all",
-    ["==", ["get", "selected"], true],
-    ["==", ["get", "isActive"], false],
-  ],
-  colors.fuchsia100,
-  ["==", ["get", "selected"], true],
-  colors.fuchsia500,
   ["==", ["get", "isActive"], false],
   colors.gray300,
   ["coalesce", ["get", "color"], defaultNodeColor],
@@ -71,14 +63,6 @@ export const junctionStrokeColorExpression = (
   defaultNodeColor: string,
 ): mapboxgl.Expression => [
   "case",
-  [
-    "all",
-    ["==", ["get", "selected"], true],
-    ["==", ["get", "isActive"], false],
-  ],
-  colors.fuchsia300,
-  ["==", ["get", "selected"], true],
-  strokeColorFor(colors.fuchsia500),
   ["==", ["get", "isActive"], false],
   colors.gray400,
   ["coalesce", ["get", "strokeColor"], strokeColorFor(defaultNodeColor)],

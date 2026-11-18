@@ -35,6 +35,7 @@ import { modeAtom, Mode } from "src/state/mode";
 import { BBox } from "src/types";
 import { SectionWrapper, TextRow } from "./asset-panel/ui-components";
 import { LoggerStreamSection } from "./logger-stream-section";
+import { FloatingPanelCloseButton } from "./asset-panel/floating-panel-close-button";
 
 export function LoggerPanel() {
   const logger = useAtomValue(selectedLoggerAtom);
@@ -215,6 +216,7 @@ function LoggerEditor() {
               className="h-11 items-center"
               minWidth={0}
             />
+            <FloatingPanelCloseButton label={logger.label} />
           </div>
         </div>
         {labelError && (

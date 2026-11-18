@@ -11,6 +11,7 @@ import { colors } from "src/lib/constants";
 import { Position } from "src/types";
 import { AssetsMap } from "src/hydraulic-model";
 import { EphemeralMoveCustomerPoint } from "src/state/drawing";
+import { assetFeedbackStrokes } from "../feedback-style";
 
 interface ConnectionLineData {
   sourcePosition: [number, number];
@@ -48,20 +49,8 @@ const haloFillColor = hexToArray(colors.cyan300, 0.8) as [
   number,
 ];
 
-const selectionFillColor = hexToArray(colors.fuchsia300);
-const selectionHaloFillColor = hexToArray(colors.fuchsia600, 0.8) as [
-  number,
-  number,
-  number,
-  number,
-];
-const selectionDisabledFillColor = hexToArray(colors.fuchsia200);
-const selectionDisabledHaloFillColor = hexToArray(colors.fuchsia300) as [
-  number,
-  number,
-  number,
-  number,
-];
+const selectionStrokeColor = hexToArray("#ffffff");
+const selectionContrastColor = hexToArray(colors.indigo900, 0.4);
 
 export type CustomerPointsLayer = ScatterplotLayer | LineLayer | PathLayer;
 export type CustomerPointsOverlay = CustomerPointsLayer[];
@@ -69,20 +58,13 @@ export type CustomerPointsOverlay = CustomerPointsLayer[];
 const SELECTED_LINE_WIDTH = 2.5;
 const EMPTY_SELECTION: ReadonlySet<number> = new Set();
 
-const customerPointFillColor =
-  (selectedIds: ReadonlySet<number>) => (d: CustomerPointData) => {
-    if (selectedIds.has(d.id)) {
-      return d.isActive ? selectionFillColor : selectionDisabledFillColor;
-    }
-    return d.isActive ? fillColor : disabledFillColor;
-  };
+const customerPointFillColor = (d: CustomerPointData) =>
+  d.isActive ? fillColor : disabledFillColor;
 
 const customerPointLineColor =
   (selectedIds: ReadonlySet<number>) => (d: CustomerPointData) => {
     if (selectedIds.has(d.id)) {
-      return d.isActive
-        ? selectionHaloFillColor
-        : selectionDisabledHaloFillColor;
+      return selectionStrokeColor;
     }
     return d.isActive ? strokeColor : disabledStrokeColor;
   };
@@ -124,8 +106,7 @@ export const buildCustomerPointsOverlay = (
 
     if (customerPoint.connection) {
       const pipe = assets.get(customerPoint.connection.pipeId) as
-        | Pipe
-        | undefined;
+        Pipe | undefined;
       isActive = pipe?.isActive ?? false;
     }
 
@@ -178,7 +159,7 @@ export const buildCustomerPointsOverlay = (
     radiusMinPixels: 0,
     radiusMaxPixels: 4,
 
-    getFillColor: customerPointFillColor(selectedIds),
+    getFillColor: customerPointFillColor,
     stroked: true,
     getLineColor: customerPointLineColor(selectedIds),
     getLineWidth: customerPointLineWidth(selectedIds),
@@ -186,7 +167,6 @@ export const buildCustomerPointsOverlay = (
     lineWidthMinPixels: 1,
     lineWidthMaxPixels: 3,
     updateTriggers: {
-      getFillColor: selectionToken,
       getLineColor: selectionToken,
       getLineWidth: selectionToken,
     },
@@ -207,16 +187,47 @@ export const applyCustomerPointsStyles = (
   overlay.map((layer) => {
     if (layer.id !== "customer-points-layer") return layer;
     return layer.clone({
-      getFillColor: customerPointFillColor(selectedIds),
       getLineColor: customerPointLineColor(selectedIds),
       getLineWidth: customerPointLineWidth(selectedIds),
       updateTriggers: {
-        getFillColor: stylesToken,
         getLineColor: stylesToken,
         getLineWidth: stylesToken,
       },
     }) as CustomerPointsLayer;
   });
+
+export const buildCustomerPointHoverOverlay = (
+  customerPoint: CustomerPoint | undefined,
+  zoom: number,
+  selectedCustomerPoint?: CustomerPoint,
+): CustomerPointsOverlay => {
+  const data = selectedCustomerPoint ? [selectedCustomerPoint] : [];
+  if (customerPoint && customerPoint.id !== selectedCustomerPoint?.id) {
+    data.push(customerPoint);
+  }
+  if (data.length === 0) return [];
+
+  return assetFeedbackStrokes.map(
+    ({ suffix, color, width, opacity }) =>
+      new ScatterplotLayer<CustomerPoint, { beforeId: string }>({
+        id: `customer-point-hover-${suffix}`,
+        beforeId: "ephemeral-junction-highlight",
+        data,
+        getPosition: (point) => point.coordinates as [number, number],
+        radiusUnits: "meters",
+        getRadius: 3,
+        radiusMinPixels: 4,
+        radiusMaxPixels: 8,
+        filled: false,
+        stroked: true,
+        getLineColor: hexToArray(color, opacity),
+        getLineWidth: width,
+        lineWidthUnits: "pixels",
+        visible: shouldShowOvelay(zoom),
+        pickable: false,
+      }),
+  );
+};
 
 export const buildCustomerPointsHighlightOverlay = (
   highlightedPoints: CustomerPoint[],
@@ -291,9 +302,11 @@ export const buildCustomerPointsSelectionOverlay = (
     radiusMinPixels: 0,
     radiusMaxPixels: 6,
 
-    getFillColor: isActive
-      ? selectionHaloFillColor
-      : selectionDisabledHaloFillColor,
+    filled: false,
+    stroked: true,
+    getLineColor: selectionContrastColor,
+    getLineWidth: 3.5,
+    lineWidthUnits: "pixels",
     antialiasing: true,
     visible: isVisible,
   });
@@ -309,15 +322,13 @@ export const buildCustomerPointsSelectionOverlay = (
     radiusMinPixels: 0,
     radiusMaxPixels: 4,
 
-    getFillColor: isActive ? selectionFillColor : selectionDisabledFillColor,
+    getFillColor: isActive ? fillColor : disabledFillColor,
     stroked: true,
-    getLineColor: isActive
-      ? selectionHaloFillColor
-      : selectionDisabledHaloFillColor,
-    getLineWidth: 1,
+    getLineColor: selectionStrokeColor,
+    getLineWidth: SELECTED_LINE_WIDTH,
     lineWidthUnits: "pixels",
     lineWidthMinPixels: 1,
-    lineWidthMaxPixels: 2,
+    lineWidthMaxPixels: 3,
     antialiasing: true,
     visible: isVisible,
   });
@@ -402,9 +413,15 @@ export const buildConnectCustomerPointsPreviewOverlay = (
 export const buildMovingCustomerPointOverlay = (
   ephemeralState: EphemeralMoveCustomerPoint,
   zoom: number,
+  assets?: AssetsMap,
 ): CustomerPointsOverlay => {
   const isVisible = shouldShowOvelay(zoom);
   const layers: CustomerPointsOverlay = [];
+  const connection = ephemeralState.customerPoint.connection;
+  const isActive = connection
+    ? (assets?.get(connection.pipeId)?.isActive ?? false)
+    : false;
+  const movingPoints = [{ coordinates: ephemeralState.movedCoordinates }];
 
   const snapPosition = ephemeralState.customerPoint.snapPosition;
   if (snapPosition) {
@@ -434,37 +451,44 @@ export const buildMovingCustomerPointOverlay = (
     );
   }
 
-  layers.push(
-    new ScatterplotLayer({
-      id: "moving-customer-point-halo-layer",
-      beforeId: "ephemeral-junction-highlight",
-      data: [{ coordinates: ephemeralState.movedCoordinates }],
-      getPosition: (d: { coordinates: Position }) =>
-        d.coordinates as [number, number],
-      radiusUnits: "meters",
-      getRadius: 3,
-      radiusMinPixels: 0,
-      radiusMaxPixels: 6,
-      getFillColor: selectionHaloFillColor,
-      antialiasing: true,
-      visible: isVisible,
-    }),
-  );
+  for (const { suffix, color, width, opacity } of assetFeedbackStrokes) {
+    layers.push(
+      new ScatterplotLayer({
+        id: `moving-customer-point-${suffix}-layer`,
+        beforeId: "ephemeral-junction-highlight",
+        data: movingPoints,
+        getPosition: (d: { coordinates: Position }) =>
+          d.coordinates as [number, number],
+        radiusUnits: "meters",
+        getRadius: 3,
+        radiusMinPixels: 4,
+        radiusMaxPixels: 8,
+        filled: false,
+        stroked: true,
+        getLineColor: hexToArray(color, opacity),
+        getLineWidth: width,
+        lineWidthUnits: "pixels",
+        antialiasing: true,
+        visible: isVisible,
+        pickable: false,
+      }),
+    );
+  }
 
   layers.push(
     new ScatterplotLayer({
       id: "moving-customer-point-layer",
       beforeId: "ephemeral-junction-highlight",
-      data: [{ coordinates: ephemeralState.movedCoordinates }],
+      data: movingPoints,
       getPosition: (d: { coordinates: Position }) =>
         d.coordinates as [number, number],
       radiusUnits: "meters",
       getRadius: 1.5,
       radiusMinPixels: 0,
       radiusMaxPixels: 4,
-      getFillColor: selectionFillColor,
+      getFillColor: isActive ? fillColor : disabledFillColor,
       stroked: true,
-      getLineColor: selectionHaloFillColor,
+      getLineColor: isActive ? strokeColor : disabledStrokeColor,
       getLineWidth: 1,
       lineWidthUnits: "pixels",
       lineWidthMinPixels: 1,

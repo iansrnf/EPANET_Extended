@@ -6,6 +6,7 @@ export type DataSource =
   | "ephemeral"
   | "map-overlay"
   | "highlights"
+  | "asset-hover"
   | "grid"
   | "zones";
 

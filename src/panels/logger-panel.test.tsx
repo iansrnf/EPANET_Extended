@@ -122,9 +122,10 @@ describe("LoggerPanel label validation", () => {
     expect(renameLogger).not.toHaveBeenCalled();
   });
 
-  it("blocks edits and connection actions when the model is read only", () => {
+  it("blocks edits and connection actions when the model is read only", async () => {
     vi.mocked(useIsEditionBlocked).mockReturnValue(true);
     const store = renderPanel();
+    const user = userEvent.setup();
 
     expect(
       screen.queryByRole("textbox", { name: "Value for: Logger" }),
@@ -138,7 +139,7 @@ describe("LoggerPanel label validation", () => {
         name: "Connect Logger to a Pipe or node",
       }),
     ).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
+    await expectDeleteDisabled(user);
 
     act(() => {
       const settings = store.get(projectSettingsAtom);
@@ -169,14 +170,15 @@ describe("LoggerPanel label validation", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps connection cancellation available when editing becomes blocked", () => {
+  it("keeps connection cancellation available when editing becomes blocked", async () => {
     vi.mocked(useIsEditionBlocked).mockReturnValue(true);
     renderPanel(Mode.CONNECT_LOGGER);
+    const user = userEvent.setup();
 
     expect(
       screen.getByRole("button", { name: "Cancel Logger connection" }),
     ).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
+    await expectDeleteDisabled(user);
     expect(
       screen.queryByRole("button", {
         name: "Connect Logger to a Pipe or node",
@@ -184,3 +186,19 @@ describe("LoggerPanel label validation", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+const expectDeleteDisabled = async (
+  user: ReturnType<typeof userEvent.setup>,
+) => {
+  const deleteButton = screen.queryByRole("button", { name: "Delete" });
+  if (deleteButton) {
+    expect(deleteButton).toBeDisabled();
+    return;
+  }
+
+  await user.click(screen.getByRole("button", { name: "More actions" }));
+  expect(screen.getByRole("menuitem", { name: "Delete" })).toHaveAttribute(
+    "data-disabled",
+  );
+  await user.keyboard("{Escape}");
+};

@@ -1,5 +1,12 @@
 import type { HandlerContext } from "src/types";
 import { cursorStyleAtom } from "src/state/map";
+import { hoveredAssetIdAtom } from "src/state/asset-hover";
+import { hoveredLoggerIdAtom } from "src/state/loggers";
+import {
+  clearMapHoverAtom,
+  hoveredCustomerPointIdAtom,
+  hoveredZoneIdAtom,
+} from "src/state/map-hover";
 import { Mode } from "src/state/mode";
 import { useSetAtom, useAtomValue } from "jotai";
 import { useRef } from "react";
@@ -7,8 +14,6 @@ import { modeAtom } from "src/state/mode";
 import { getMapCoord } from "../utils";
 import { useSelection, USelection } from "src/selection";
 import { useKeyboardState } from "src/keyboard/use-keyboard-state";
-import { searchNearbyRenderedFeatures } from "src/map/search";
-import { clickableLayers } from "src/map/layers/layer";
 import { zonesVisibleAtom } from "src/state/map-symbology";
 import { getZonesGeoView } from "src/lib/spatial-query/data";
 
@@ -94,6 +99,11 @@ export function useNoneHandlers({
     moveActivated,
   } = useMoveState();
   const setCursor = useSetAtom(cursorStyleAtom);
+  const setHoveredAssetId = useSetAtom(hoveredAssetIdAtom);
+  const setHoveredLoggerId = useSetAtom(hoveredLoggerIdAtom);
+  const setHoveredCustomerPointId = useSetAtom(hoveredCustomerPointIdAtom);
+  const setHoveredZoneId = useSetAtom(hoveredZoneIdAtom);
+  const clearHover = useSetAtom(clearMapHoverAtom);
   const { fetchElevation, prefetchTileThrottled } = useElevations(
     units.elevation,
   );
@@ -112,40 +122,36 @@ export function useNoneHandlers({
     e: mapboxgl.MapMouseEvent | mapboxgl.MapTouchEvent,
   ) => {
     if (!map) return;
+    if (
+      e.type !== "mousemove" ||
+      ("buttons" in e.originalEvent && e.originalEvent.buttons !== 0)
+    ) {
+      clearHover();
+      return;
+    }
     const { point } = e;
-
-    const features = searchNearbyRenderedFeatures(map, {
-      point,
-      distance: 7,
-      layers: clickableLayers,
+    const pickedObjects = map.pickOverlayObjects({
+      x: point.x,
+      y: point.y,
+      radius: 7,
     });
-
-    const visibleFeatures = features.filter((f) => !f.state || !f.state.hidden);
-
-    let hasClickableElement = visibleFeatures.length > 0;
-
-    if (!hasClickableElement) {
-      const pickedObjects = map.pickOverlayObjects({
-        x: point.x,
-        y: point.y,
-        radius: 7,
-      });
-
-      for (const pickInfo of pickedObjects) {
-        if (
-          (pickInfo.layer?.id === "customer-points-layer" ||
-            pickInfo.layer?.id === LOGGER_LAYER_ID) &&
-          pickInfo.object
-        ) {
-          hasClickableElement = true;
-          break;
-        }
-      }
-    }
-
-    if (!hasClickableElement) {
-      hasClickableElement = getZoneIdAt(e.lngLat) !== null;
-    }
+    const loggerPick = pickedObjects.find(
+      (pick) => pick.layer?.id === LOGGER_LAYER_ID && pick.object,
+    );
+    const hoveredLoggerId = loggerPick
+      ? (loggerPick.object as { id: string }).id
+      : null;
+    const asset = loggerPick ? null : getClickedAsset(e);
+    const customerPoint =
+      !loggerPick && !asset ? getClickedCustomerPoint(e, pickedObjects) : null;
+    const zoneId =
+      !loggerPick && !asset && !customerPoint ? getZoneIdAt(e.lngLat) : null;
+    setHoveredLoggerId(hoveredLoggerId || null);
+    setHoveredAssetId(asset?.id ?? null);
+    setHoveredCustomerPointId(customerPoint?.id ?? null);
+    setHoveredZoneId(zoneId);
+    const hasClickableElement =
+      !!asset || !!loggerPick || !!customerPoint || zoneId !== null;
 
     setCursor(hasClickableElement ? "pointer" : "");
   };
@@ -166,13 +172,12 @@ export function useNoneHandlers({
 
   const getClickedCustomerPoint = (
     e: mapboxgl.MapMouseEvent | mapboxgl.MapTouchEvent,
-  ): CustomerPoint | null => {
-    const pickedObjects = map.pickOverlayObjects({
+    pickedObjects = map.pickOverlayObjects({
       x: e.point.x,
       y: e.point.y,
       radius: 7,
-    });
-
+    }),
+  ): CustomerPoint | null => {
     // Find the closest picked customer point, if any
     let closest: CustomerPoint | null = null;
     let closestDistSq = Infinity;

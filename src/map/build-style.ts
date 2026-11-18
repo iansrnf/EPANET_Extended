@@ -83,6 +83,7 @@ export function defineEmptySources(style: Style) {
   style.sources["ephemeral"] = emptyGeoJSONSource;
   style.sources["map-overlay"] = emptyGeoJSONSource;
   style.sources["highlights"] = emptyGeoJSONSource;
+  style.sources["asset-hover"] = emptyGeoJSONSource;
   style.sources["grid"] = emptyGeoJSONSource;
   style.sources["zones"] = emptyGeoJSONSource;
   style.sources["delta-icons"] = emptyGeoJSONSource;
@@ -105,9 +106,9 @@ import {
 import {
   zoneFillLayer,
   zoneOutlineLayer,
-  zoneSelectedOutlineLayer,
   zoneLabelsLayer,
 } from "src/map/layers/zones";
+import { makeZoneFeedbackLayers } from "./layers/zone-feedback";
 import {
   ephemeralDraftLineLayer,
   ephemeralDraftPathLineLayer,
@@ -126,7 +127,11 @@ import {
   highlightsPathHaloLayer,
 } from "src/map/layers/highlights";
 import { gridMinorLayer, gridMajorLayer } from "src/map/layers/grid";
-import { selectedIconsHaloLayer } from "src/map/layers/selection";
+import {
+  linkFeedbackLayers,
+  junctionFeedbackLayers,
+  iconFeedbackLayers,
+} from "src/map/layers/asset-feedback";
 import type * as mapboxgl from "mapbox-gl";
 import type { NodeDefaults, LinkDefaults } from "src/map/symbology";
 
@@ -231,7 +236,7 @@ export function makeLayers({
     gridMajorLayer(),
     zoneFillLayer({ source: "zones" }),
     zoneOutlineLayer({ source: "zones" }),
-    zoneSelectedOutlineLayer({ source: "zones" }),
+    ...makeZoneFeedbackLayers(),
     zoneLabelsLayer({ source: "zones" }),
     mapOverlayFillLayer({ source: "map-overlay" }),
     mapOverlayOutlineLayer({ source: "map-overlay" }),
@@ -240,6 +245,17 @@ export function makeLayers({
     ephemeralDraftPathLineLayer({ source: "ephemeral" }),
     highlightsPathHaloLayer({ source: "highlights" }),
     highlightsMarkerHaloLayer({ source: "highlights" }),
+    ...linkFeedbackLayers({
+      source: "main-features",
+      idPrefix: "main-selected-links",
+      selectedOnly: true,
+    }),
+    ...linkFeedbackLayers({
+      source: "delta-features",
+      idPrefix: "delta-selected-links",
+      selectedOnly: true,
+    }),
+    ...linkFeedbackLayers({ source: "asset-hover", idPrefix: "hover-links" }),
     pipesLayer({
       source: "main-features",
       layerId: "main-features-pipes",
@@ -285,6 +301,16 @@ export function makeLayers({
       layerId: "delta-features-pipe-arrows",
       linkDefaults,
     }),
+    ...junctionFeedbackLayers({
+      source: "main-features",
+      idPrefix: "main-selected-junctions",
+      selectedOnly: true,
+    }),
+    ...junctionFeedbackLayers({
+      source: "delta-features",
+      idPrefix: "delta-selected-junctions",
+      selectedOnly: true,
+    }),
     junctionsLayer({
       source: "main-features",
       layerId: "main-features-junctions",
@@ -297,12 +323,10 @@ export function makeLayers({
       symbology,
       nodeDefaults,
     }),
-    // Main icon facet (halo below the icons it haloes; tank/reservoir use the
-    // selection-merged sprite).
-    selectedIconsHaloLayer({
+    ...iconFeedbackLayers({
       source: "icons",
-      layerId: "selected-icons-halo",
-      filterSelected: true,
+      idPrefix: "main-selected-icons",
+      selectedOnly: true,
     }),
     ...valveIcons({
       source: "icons",
@@ -320,10 +344,10 @@ export function makeLayers({
     ...reservoirLayers({ sources: ["icons"] }),
     ...tankLayers({ sources: ["icons"] }),
     // Delta icon facet: mirrors the main `icons` layers on `delta-icons`.
-    selectedIconsHaloLayer({
+    ...iconFeedbackLayers({
       source: "delta-icons",
-      layerId: "delta-selected-icons-halo",
-      filterSelected: true,
+      idPrefix: "delta-selected-icons",
+      selectedOnly: true,
     }),
     ...valveIcons({
       source: "delta-icons",
@@ -344,6 +368,11 @@ export function makeLayers({
     ephemeralIconHighlightLayers({ source: "ephemeral" }),
     highlightsMarkerIconLayer({ source: "highlights" }),
     highlightsMarkerLayer({ source: "highlights" }),
+    ...junctionFeedbackLayers({
+      source: "asset-hover",
+      idPrefix: "hover-junctions",
+    }),
+    ...iconFeedbackLayers({ source: "asset-hover", idPrefix: "hover-icons" }),
     ...linkLabelsLayer({
       sources: ["main-features", "delta-features"],
     }),

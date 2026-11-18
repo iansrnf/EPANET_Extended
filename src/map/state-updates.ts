@@ -34,6 +34,8 @@ import {
   buildHighlightsSource,
 } from "./data-source";
 import type { Highlight } from "src/state/highlights";
+import { buildAssetHoverSource } from "./data-source/asset-hover";
+import { junctionFeedbackRadius } from "./layers/asset-feedback";
 import mapboxgl from "mapbox-gl";
 import { Grid } from "./grid";
 import {
@@ -69,6 +71,7 @@ import { useRoughnessInferrer } from "src/hooks/use-roughness-inferrer";
 import {
   CustomerPointsOverlay,
   buildCustomerPointsOverlay,
+  buildCustomerPointHoverOverlay,
   buildCustomerPointsHighlightOverlay,
   applyCustomerPointsStyles,
   buildConnectCustomerPointsPreviewOverlay,
@@ -86,7 +89,12 @@ import {
   pipeArrowColorExpression,
 } from "./layers/pipes";
 import { FlowAnimation } from "./overlays/flow-animation";
-import { buildLoggersOverlay, type LoggersOverlay } from "./overlays/loggers";
+import {
+  buildLoggerFeedbackOverlay,
+  buildLoggersOverlay,
+  updateLoggersOverlayZoom,
+  type LoggersOverlay,
+} from "./overlays/loggers";
 
 // An update cycle over this is flagged (debug builds only) — the
 // withDebugInstrumentation warning fires only when isDebugOn.
@@ -131,10 +139,14 @@ const detectChanges = (
   hasNewResults: boolean;
   hasNewMapOverlay: boolean;
   hasNewHighlights: boolean;
+  hasNewAssetHover: boolean;
+  hasNewCustomerPointHover: boolean;
+  hasNewZoneHover: boolean;
   hasNewNodeSize: boolean;
   hasNewDeviceLocation: boolean;
   hasNewDeviceLocationViewportRequest: boolean;
   hasNewLoggers: boolean;
+  hasNewLoggerFeedback: boolean;
 } => {
   return {
     hasNewImport: state.editionsTracker.id !== prev.editionsTracker.id,
@@ -185,14 +197,20 @@ const detectChanges = (
     hasNewZoneColorAssignments:
       state.zoneColorAssignments !== prev.zoneColorAssignments,
     hasNewHighlights: state.highlights !== prev.highlights,
+    hasNewAssetHover: state.hoveredAssetId !== prev.hoveredAssetId,
+    hasNewCustomerPointHover:
+      state.hoveredCustomerPointId !== prev.hoveredCustomerPointId,
+    hasNewZoneHover: state.hoveredZoneId !== prev.hoveredZoneId,
     hasNewNodeSize: state.nodeSize !== prev.nodeSize,
     hasNewDeviceLocation: state.deviceLocation !== prev.deviceLocation,
     hasNewLoggers:
       state.loggers !== prev.loggers ||
-      state.selectedLoggerId !== prev.selectedLoggerId ||
       state.loggerPreview !== prev.loggerPreview ||
       state.loggerReadings !== prev.loggerReadings ||
       state.loggerLocale !== prev.loggerLocale,
+    hasNewLoggerFeedback:
+      state.selectedLoggerId !== prev.selectedLoggerId ||
+      state.hoveredLoggerId !== prev.hoveredLoggerId,
     hasNewDeviceLocationViewportRequest:
       state.deviceLocationViewportRequest !==
       prev.deviceLocationViewportRequest,
@@ -232,6 +250,13 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
   );
   const setEditionsTracker = useSetAtom(mapEditionsTrackerAtom);
   const mapState = useAtomValue(mapStateDerivedAtom);
+  const customerPointsSelectionToken = USelection.getCustomerPointIds(
+    mapState.selection,
+  );
+  const selectedCustomerPointIds = useMemo(
+    () => new Set(customerPointsSelectionToken),
+    [customerPointsSelectionToken],
+  );
   const setMapLoading = useSetAtom(mapLoadingAtom);
   const appendSourceRebuildDuration = useSetAtom(
     appendSourceRebuildDurationAtom,
@@ -272,8 +297,10 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
     null,
   );
   const customerPointsOverlayRef = useRef<CustomerPointsOverlay>([]);
+  const customerPointHoverOverlayRef = useRef<CustomerPointsOverlay>([]);
   const ephemeralDeckLayersRef = useRef<CustomerPointsOverlay>([]);
   const loggersOverlayRef = useRef<LoggersOverlay>([]);
+  const loggerFeedbackOverlayRef = useRef<LoggersOverlay>([]);
   const gridRef = useRef<Grid | null>(null);
   const scaleControlRef = useRef<BoundScaleControl | null>(null);
   const flowAnimationRef = useRef<FlowAnimation | null>(null);
@@ -342,13 +369,17 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         hasNewResults,
         hasNewMapOverlay,
         hasNewHighlights,
+        hasNewAssetHover,
+        hasNewCustomerPointHover,
+        hasNewZoneHover,
         hasNewNodeSize,
         hasNewDeviceLocation,
         hasNewDeviceLocationViewportRequest,
         hasNewLoggers,
+        hasNewLoggerFeedback,
       } = changes;
 
-      const selectedIds = new Set(USelection.getAssetIds(mapState.selection));
+      const selectedIds = mapState.selectedAssetIds;
       const rawData: RawData = {
         assets,
         symbology: mapState.symbology,
@@ -433,11 +464,23 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
 
       const consolidatedSelectedIds = consolidatedSelectionRef.current;
       const selectionDiff = new Set<AssetId>();
-      for (const id of selectedIds) {
-        if (!consolidatedSelectedIds.has(id)) selectionDiff.add(id); // additions
-      }
-      for (const id of consolidatedSelectedIds) {
-        if (!selectedIds.has(id)) selectionDiff.add(id); // removals
+      if (
+        hasNewAssetsSelection ||
+        hasNewEditions ||
+        hasEphemeralTargetsChanged ||
+        hasNewImport ||
+        hasNewStyles ||
+        hasExceededDeltaBudget ||
+        hasNewSymbologyRules ||
+        hasNewSimulation ||
+        hasNewResults
+      ) {
+        for (const id of selectedIds) {
+          if (!consolidatedSelectedIds.has(id)) selectionDiff.add(id);
+        }
+        for (const id of consolidatedSelectedIds) {
+          if (!selectedIds.has(id)) selectionDiff.add(id);
+        }
       }
       const hasBigSelection =
         selectionDiff.size > SELECTION_CONSOLIDATION_THRESHOLD;
@@ -523,11 +566,6 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
       const customerPointExclusionChanged =
         movingCustomerPointId !== prevMovingCustomerPointId;
 
-      const customerPointsSelectionToken = USelection.getCustomerPointIds(
-        mapState.selection,
-      );
-      const selectedCustomerPointIds = new Set(customerPointsSelectionToken);
-
       if (
         hasNewImport ||
         hasNewEditions ||
@@ -574,6 +612,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         ephemeralDeckLayersRef.current = buildCustomerPointsEphemeralOverlay(
           mapState.ephemeralState,
           mapState.currentZoom,
+          assets,
         );
       }
 
@@ -583,6 +622,33 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           customerPointsOverlayRef.current,
           selectedCustomerPointIds,
           customerPointsSelectionToken,
+        );
+      }
+
+      if (
+        hasNewCustomerPointHover ||
+        hasNewCustomerPointsSelection ||
+        hasNewCustomerPoints ||
+        customerPointExclusionChanged ||
+        hasNewEditions ||
+        hasNewImport ||
+        hasNewStyles ||
+        hasNewZoom
+      ) {
+        const selectedCustomerPointId =
+          movingCustomerPointId === null
+            ? USelection.singleCustomerPointId(mapState.selection)
+            : null;
+        customerPointHoverOverlayRef.current = buildCustomerPointHoverOverlay(
+          mapState.hoveredCustomerPointId === null
+            ? undefined
+            : hydraulicModel.customerPoints.get(
+                mapState.hoveredCustomerPointId,
+              ),
+          mapState.currentZoom,
+          selectedCustomerPointId === null
+            ? undefined
+            : hydraulicModel.customerPoints.get(selectedCustomerPointId),
         );
       }
 
@@ -601,10 +667,49 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         loggersOverlayRef.current = buildLoggersOverlay(
           mapState.loggers,
           assets,
-          mapState.selectedLoggerId,
           mapState.loggerPreview,
           mapState.loggerReadings,
           mapState.loggerLocale,
+        );
+      }
+
+      if (
+        hasNewLoggerFeedback ||
+        hasNewLoggers ||
+        hasNewStyles ||
+        hasNewImport
+      ) {
+        loggerFeedbackOverlayRef.current = buildLoggerFeedbackOverlay(
+          mapState.loggers,
+          mapState.selectedLoggerId,
+          mapState.hoveredLoggerId,
+          mapState.loggerPreview,
+        );
+      }
+
+      if (
+        hasNewZoom ||
+        hasNewLoggers ||
+        hasNewEditions ||
+        hasNewStyles ||
+        hasNewImport
+      ) {
+        loggersOverlayRef.current = updateLoggersOverlayZoom(
+          loggersOverlayRef.current,
+          mapState.currentZoom,
+        );
+      }
+
+      if (
+        hasNewZoom ||
+        hasNewLoggerFeedback ||
+        hasNewLoggers ||
+        hasNewStyles ||
+        hasNewImport
+      ) {
+        loggerFeedbackOverlayRef.current = updateLoggersOverlayZoom(
+          loggerFeedbackOverlayRef.current,
+          mapState.currentZoom,
         );
       }
 
@@ -621,11 +726,31 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         updateSelectedZones(map, USelection.getZoneIds(mapState.selection));
       }
 
+      if (hasNewZoneHover || hasNewStyles) {
+        const filter: mapboxgl.Expression = [
+          "in",
+          ["get", "id"],
+          [
+            "literal",
+            mapState.hoveredZoneId === null ? [] : [mapState.hoveredZoneId],
+          ],
+        ];
+        map.setLayerFilter("zones-hover-contrast", filter);
+        map.setLayerFilter("zones-hover-outline", filter);
+      }
+
       const hasAssetHighlights = mapState.highlights.some(
         (h) => h.type === "asset",
       );
       if (hasNewHighlights || (hasAssetHighlights && hasNewEditions)) {
         updateHighlightsSource(map, mapState.highlights, assets);
+      }
+
+      if (hasNewAssetHover || hasNewStyles || hasNewImport || hasNewEditions) {
+        map.setSource(
+          "asset-hover",
+          buildAssetHoverSource(mapState.hoveredAssetId, assets),
+        );
       }
 
       if (
@@ -646,7 +771,9 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         hasNewCustomerPoints ||
         hasNewEditions ||
         hasNewImport ||
-        hasNewLoggers
+        hasNewLoggers ||
+        hasNewLoggerFeedback ||
+        hasNewCustomerPointHover
       ) {
         // update customer points overlay visibility
         const shouldHideCustomerPointsOverlay =
@@ -663,7 +790,11 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
             ? []
             : customerPointsOverlayRef.current),
           ...ephemeralDeckLayersRef.current,
+          ...(shouldHideCustomerPointsOverlay || !isCustomerPointsVisible
+            ? []
+            : customerPointHoverOverlayRef.current),
           ...loggersOverlayRef.current,
+          ...loggerFeedbackOverlayRef.current,
         ];
         map.setOverlay(combinedOverlay);
       }
@@ -929,10 +1060,24 @@ const applyJunctionSize = (map: MapEngine, config: NodeSizeConfig) => {
     map.setLayerPaintRule(layerId, "circle-radius", radius);
   }
 
+  const feedbackLayers = [
+    "main-selected-junctions-contrast",
+    "main-selected-junctions-ring",
+    "delta-selected-junctions-contrast",
+    "delta-selected-junctions-ring",
+    "hover-junctions-contrast",
+    "hover-junctions-ring",
+  ];
+  const feedbackRadius = junctionFeedbackRadius(config);
+  for (const layerId of feedbackLayers) {
+    if (!map.map.getLayer(layerId)) continue;
+    map.setLayerPaintRule(layerId, "circle-radius", feedbackRadius);
+  }
   const visibilityLayers = [
     "main-features-junctions",
     "delta-features-junctions",
     "selected-junctions",
+    ...feedbackLayers,
   ];
   const minzoom = junctionLayerMinZoom(config);
   for (const layerId of visibilityLayers) {
@@ -1098,17 +1243,22 @@ const updateZoneColors = (
 };
 
 const updateSelectedZones = (map: MapEngine, zoneIds: readonly number[]) => {
-  map.setLayerFilter("zones-selected-outline", [
+  const filter: mapboxgl.Expression = [
     "in",
     ["get", "id"],
     ["literal", [...zoneIds]],
-  ]);
+  ];
+  map.setLayerFilter("zones-selected-contrast", filter);
+  map.setLayerFilter("zones-selected-outline", filter);
 };
 
 const ZONE_LAYERS = [
   "zones-fill",
   "zones-outline",
   "zones-selected-outline",
+  "zones-selected-contrast",
+  "zones-hover-contrast",
+  "zones-hover-outline",
   "zones-labels",
 ] as const;
 
@@ -1121,7 +1271,14 @@ const toggleZoneLayers = (
     return;
   }
 
-  map.showLayers(["zones-fill", "zones-outline", "zones-selected-outline"]);
+  map.showLayers([
+    "zones-fill",
+    "zones-outline",
+    "zones-selected-contrast",
+    "zones-selected-outline",
+    "zones-hover-contrast",
+    "zones-hover-outline",
+  ]);
 
   if (zone.labelRule) {
     map.showLayers(["zones-labels"]);
@@ -1148,6 +1305,7 @@ const updateHighlightsSource = withDebugInstrumentation(
 const buildCustomerPointsEphemeralOverlay = (
   ephemeralState: EphemeralEditingState,
   zoom: number,
+  assets: AssetsMap,
 ): CustomerPointsOverlay => {
   if (ephemeralState.type === "customerPointsHighlight") {
     return buildCustomerPointsHighlightOverlay(
@@ -1162,7 +1320,7 @@ const buildCustomerPointsEphemeralOverlay = (
       "highlight",
     );
   } else if (ephemeralState.type === "moveCustomerPoint") {
-    return buildMovingCustomerPointOverlay(ephemeralState, zoom);
+    return buildMovingCustomerPointOverlay(ephemeralState, zoom, assets);
   }
   return [];
 };

@@ -105,6 +105,7 @@ export const useSelection = (selection: Sel) => {
         : "single_remove",
     });
     setSelection(next);
+    activateAssetPanel();
   };
 
   const isCustomerPointSelected = (customerPointId: number) =>
@@ -142,6 +143,7 @@ export const useSelection = (selection: Sel) => {
       operation: Array.isArray(assetId) ? "bulk_remove" : "single_remove",
     });
     setSelection(newSelection);
+    activateAssetPanel();
   };
 
   const clearSelection = () => {

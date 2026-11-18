@@ -1,4 +1,5 @@
-import { atom } from "jotai";
+import { atom, type SetStateAction } from "jotai";
+import { clearMapHoverAtom } from "./map-hover";
 
 /**
  * Map drawing mode
@@ -60,9 +61,17 @@ export type ModeWithOptions = {
   modeOptions?: ModeOptions;
 };
 
-export const modeAtom = atom<ModeWithOptions>({
+const currentModeAtom = atom<ModeWithOptions>({
   mode: Mode.NONE,
 });
+
+export const modeAtom = atom(
+  (get) => get(currentModeAtom),
+  (_get, set, update: SetStateAction<ModeWithOptions>) => {
+    set(currentModeAtom, update);
+    set(clearMapHoverAtom);
+  },
+);
 
 export const lastSelectionModeAtom = atom<Mode>(Mode.SELECT_POLYGONAL);
 export const lastTraceSelectModeAtom = atom<Mode>(Mode.BOUNDARY_TRACE_SELECT);

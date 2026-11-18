@@ -1,6 +1,10 @@
 import { atom } from "jotai";
 import { flowAnimationColorsAtom } from "src/state/flow-animation";
-import { loggersAtom, selectedLoggerIdAtom } from "src/state/loggers";
+import {
+  hoveredLoggerIdAtom,
+  loggersAtom,
+  selectedLoggerIdAtom,
+} from "src/state/loggers";
 import { loggerPreviewAtom, type LoggerPreview } from "src/state/logger-map";
 import type { Logger } from "@epanet-js/project-settings";
 import type { LoggerReading } from "src/lib/logger-stream";
@@ -34,6 +38,11 @@ import {
   customerPointsDerivedAtom,
 } from "src/state/derived-branch-state";
 import { selectionAtom } from "src/state/selection";
+import { hoveredAssetIdAtom } from "src/state/asset-hover";
+import {
+  hoveredCustomerPointIdAtom,
+  hoveredZoneIdAtom,
+} from "src/state/map-hover";
 import {
   type EphemeralEditingState,
   ephemeralStateAtom,
@@ -121,6 +130,9 @@ export type MapState = {
   editionsTracker: MapEditionsTracker;
   stylesConfig: StylesConfig;
   selection: Sel;
+  hoveredAssetId: AssetId | null;
+  hoveredCustomerPointId: number | null;
+  hoveredZoneId: number | null;
   ephemeralState: EphemeralEditingState;
   symbology: SymbologySpec;
   simulation: SimulationState;
@@ -134,6 +146,7 @@ export type MapState = {
   customerPoints: CustomerPoints;
   loggers: Logger[];
   selectedLoggerId: string | null;
+  hoveredLoggerId: string | null;
   loggerPreview: LoggerPreview;
   loggerReadings: ReadonlyMap<string, LoggerReading>;
   loggerLocale: Locale;
@@ -155,6 +168,9 @@ export const nullMapState: MapState = {
     layerConfigs: new Map(),
   },
   selection: USelection.none(),
+  hoveredAssetId: null,
+  hoveredCustomerPointId: null,
+  hoveredZoneId: null,
   ephemeralState: { type: "none" },
   symbology: nullSymbologySpec,
   simulation: initialSimulationState,
@@ -168,6 +184,7 @@ export const nullMapState: MapState = {
   customerPoints: new Map(),
   loggers: [],
   selectedLoggerId: null,
+  hoveredLoggerId: null,
   loggerPreview: null,
   loggerReadings: new Map<string, LoggerReading>(),
   loggerLocale: getLocale(),
@@ -201,6 +218,10 @@ export const stylesConfigAtom = atom<StylesConfig>((get) => {
   };
 });
 
+const selectedAssetIdsSetAtom = atom(
+  (get) => new Set(USelection.getAssetIds(get(selectionAtom))),
+);
+
 export const mapStateDerivedAtom = atom<MapState>((get) => {
   const editionsTracker = get(mapEditionsTrackerAtom);
   const stylesConfig = get(stylesConfigAtom);
@@ -212,7 +233,7 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
   const resultsReader = get(simulationResultsDerivedAtom);
   const customerPoints = get(customerPointsDerivedAtom);
   const currentZoom = get(currentZoomAtom);
-  const selectedAssetIds = new Set(USelection.getAssetIds(selection));
+  const selectedAssetIds = get(selectedAssetIdsSetAtom);
 
   const movedAssetIds = get(movedAssetIdsAtom);
   const isOffline = get(offlineAtom);
@@ -228,6 +249,9 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
     editionsTracker,
     stylesConfig,
     selection,
+    hoveredAssetId: get(hoveredAssetIdAtom),
+    hoveredCustomerPointId: get(hoveredCustomerPointIdAtom),
+    hoveredZoneId: get(hoveredZoneIdAtom),
     ephemeralState,
     symbology,
     simulation,
@@ -241,6 +265,7 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
     customerPoints,
     loggers: get(loggersAtom),
     selectedLoggerId: get(selectedLoggerIdAtom),
+    hoveredLoggerId: get(hoveredLoggerIdAtom),
     loggerPreview: get(loggerPreviewAtom),
     loggerReadings: get(loggerReadingsAtom),
     loggerLocale: get(localeAtom),

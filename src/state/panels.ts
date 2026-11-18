@@ -1,6 +1,9 @@
 import { atom, type Atom } from "jotai";
 import { selectAtom } from "jotai/utils";
 import { isNarrowViewportAtom, splitsAtom } from "src/state/layout";
+import { selectionAtom } from "src/state/selection";
+import { selectedLoggerAtom } from "src/state/loggers";
+import { USelection } from "src/selection";
 import type { Panel } from "src/panels/panel";
 import type { PanelContentState, PanelLayout } from "src/panels/panel-template";
 import {
@@ -20,6 +23,7 @@ export const DOCKS: readonly Dock[] = [
   "center",
   "bottom",
   "vertical",
+  "floating",
 ];
 
 export type PlacedPanel = {
@@ -96,11 +100,20 @@ export function currentDock(
 export const placedPanelsAtom = atom<PlacedPanel[]>((get) => {
   const layout = get(panelLayoutAtom);
   const resolved = get(resolvedLayoutAtom);
+  const selection = get(selectionAtom);
+  const isAssetFloating =
+    !!get(selectedLoggerAtom) ||
+    USelection.isSingleAsset(selection) ||
+    USelection.isSingleCustomerPoint(selection) ||
+    USelection.isSingleZone(selection);
   return get(panelsAtom).map((panel) => ({
     id: panel.id,
     closable: panel.closable,
     panel,
-    dock: currentDock(panel, layout[panel.id]?.movedToDock, resolved),
+    dock:
+      panel.type === "asset" && isAssetFloating
+        ? "floating"
+        : currentDock(panel, layout[panel.id]?.movedToDock, resolved),
     renamedTo: layout[panel.id]?.renamedTo,
   }));
 });
@@ -114,6 +127,7 @@ export const panelsByDockAtom = atom<Record<Dock, PlacedPanel[]>>((get) => {
     center: [],
     bottom: [],
     vertical: [],
+    floating: [],
   };
   for (const entry of get(placedPanelsAtom)) {
     if (entry.dock) byDock[entry.dock].push(entry);

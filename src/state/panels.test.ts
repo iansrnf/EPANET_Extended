@@ -3,6 +3,12 @@ import type { AssetType } from "@epanet-js/hydraulic-model";
 import { isNarrowViewportAtom, splitsAtom } from "src/state/layout";
 import type { Panel } from "src/panels/panel";
 import { createAssetTablePanel } from "src/panels/data-tables/create-panel";
+import { createAssetPanel } from "src/panels/asset-panel/create-panel";
+import { createMapStylingPanel } from "src/panels/map-styling-editor/create-panel";
+import { USelection } from "src/selection";
+import { selectionAtom } from "src/state/selection";
+import { selectedLoggerIdAtom } from "src/state/loggers";
+import { projectSettingsAtom } from "src/state/project-settings";
 import {
   activatePanelAtom,
   activePanelIn,
@@ -23,6 +29,148 @@ const aPanel = (
   const { assetType = "junction", closable } = overrides;
   return createAssetTablePanel(assetType, { id, closable });
 };
+
+const IDS = {
+  J1: 1,
+  J2: 2,
+  CP1: 3,
+  Z1: 4,
+  CP2: 5,
+  Z2: 6,
+  LOGGER: "logger-1",
+} as const;
+
+describe("asset panel placement", () => {
+  it("floats a single asset without moving the other panels", () => {
+    const store = createStore();
+    store.set(panelsAtom, [createAssetPanel(), createMapStylingPanel()]);
+    store.set(selectionAtom, USelection.singleAsset(IDS.J1));
+
+    expect(store.get(panelsIn("floating")).map((entry) => entry.id)).toEqual([
+      "asset",
+    ]);
+    expect(store.get(panelsIn("right")).map((entry) => entry.id)).toEqual([
+      "map-styling",
+    ]);
+  });
+
+  it("keeps a single asset floating in narrow viewports", () => {
+    const store = createStore();
+    store.set(panelsAtom, [createAssetPanel()]);
+    store.set(isNarrowViewportAtom, true);
+    store.set(selectionAtom, USelection.singleAsset(IDS.J1));
+
+    expect(store.get(activePanelIn("floating"))?.id).toEqual("asset");
+    expect(store.get(panelsIn("vertical"))).toEqual([]);
+  });
+
+  it.each([
+    {
+      label: "a customer point",
+      selection: USelection.singleCustomerPoint(IDS.CP1),
+      narrow: false,
+    },
+    {
+      label: "a zone",
+      selection: USelection.singleZone(IDS.Z1),
+      narrow: false,
+    },
+    {
+      label: "a customer point",
+      selection: USelection.singleCustomerPoint(IDS.CP1),
+      narrow: true,
+    },
+    { label: "a zone", selection: USelection.singleZone(IDS.Z1), narrow: true },
+  ])(
+    "floats $label without a docked duplicate (narrow: $narrow)",
+    ({ selection, narrow }) => {
+      const store = createStore();
+      store.set(panelsAtom, [createAssetPanel()]);
+      store.set(isNarrowViewportAtom, narrow);
+      store.set(selectionAtom, selection);
+
+      expect(store.get(activePanelIn("floating"))?.id).toEqual("asset");
+      expect(store.get(panelsIn("right"))).toEqual([]);
+      expect(store.get(panelsIn("vertical"))).toEqual([]);
+    },
+  );
+
+  it.each([
+    ["multiple assets", USelection.fromAssetIds([IDS.J1, IDS.J2])],
+    ["multiple customer points", USelection.fromIds([], [IDS.CP1, IDS.CP2])],
+    ["multiple zones", USelection.fromIds([], [], [IDS.Z1, IDS.Z2])],
+    ["mixed selection", USelection.fromIds([IDS.J1], [IDS.CP1])],
+    [
+      "mixed customer point and zone",
+      USelection.fromIds([], [IDS.CP1], [IDS.Z1]),
+    ],
+    ["no selection", USelection.none()],
+  ])("keeps %s in its regular dock", (_label, selection) => {
+    const store = createStore();
+    store.set(panelsAtom, [createAssetPanel()]);
+    store.set(selectionAtom, selection);
+
+    expect(store.get(activePanelIn("right"))?.id).toEqual("asset");
+    expect(store.get(panelsIn("floating"))).toEqual([]);
+  });
+
+  it("returns a mixed selection to the vertical dock", () => {
+    const store = createStore();
+    store.set(panelsAtom, [createAssetPanel()]);
+    store.set(isNarrowViewportAtom, true);
+    store.set(selectionAtom, USelection.singleAsset(IDS.J1));
+    store.set(selectionAtom, USelection.fromIds([IDS.J1], [IDS.CP1]));
+
+    expect(store.get(activePanelIn("vertical"))?.id).toEqual("asset");
+    expect(store.get(panelsIn("floating"))).toEqual([]);
+  });
+
+  it.each([false, true])(
+    "floats a logger without a docked duplicate (narrow: %s)",
+    (isNarrowViewport) => {
+      const store = createStore();
+      store.set(panelsAtom, [createAssetPanel()]);
+      store.set(isNarrowViewportAtom, isNarrowViewport);
+      store.set(projectSettingsAtom, {
+        ...store.get(projectSettingsAtom),
+        loggers: [
+          {
+            id: IDS.LOGGER,
+            label: "Logger",
+            coordinates: [0, 0],
+            connection: null,
+          },
+        ],
+      });
+      store.set(selectedLoggerIdAtom, IDS.LOGGER);
+
+      expect(store.get(activePanelIn("floating"))?.id).toEqual("asset");
+      expect(store.get(panelsIn("right"))).toEqual([]);
+      expect(store.get(panelsIn("vertical"))).toEqual([]);
+    },
+  );
+
+  it("keeps the inspector floating when a logger takes priority over an asset", () => {
+    const store = createStore();
+    store.set(panelsAtom, [createAssetPanel()]);
+    store.set(selectionAtom, USelection.singleAsset(IDS.J1));
+    store.set(projectSettingsAtom, {
+      ...store.get(projectSettingsAtom),
+      loggers: [
+        {
+          id: IDS.LOGGER,
+          label: "Logger",
+          coordinates: [0, 0],
+          connection: null,
+        },
+      ],
+    });
+    store.set(selectedLoggerIdAtom, IDS.LOGGER);
+
+    expect(store.get(activePanelIn("floating"))?.id).toEqual("asset");
+    expect(store.get(panelsIn("right"))).toEqual([]);
+  });
+});
 
 describe("placedPanelsAtom", () => {
   it("keeps panels in open order", () => {

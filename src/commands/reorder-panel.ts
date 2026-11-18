@@ -17,7 +17,7 @@ export const useReorderPanel = () => {
         const entry = get(placedPanelsAtom).find(
           (placed) => placed.id === activeId,
         );
-        if (!entry || !entry.dock) return;
+        if (!entry || !entry.dock || entry.dock === "floating") return;
 
         const { dock } = entry;
         const ids = get(panelsByDockAtom)[dock].map((placed) => placed.id);

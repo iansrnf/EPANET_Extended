@@ -1,5 +1,6 @@
-export type Dock = "left" | "right" | "center" | "bottom" | "vertical";
-export type HorizontalDock = Exclude<Dock, "vertical" | "center">;
+export type Dock =
+  "left" | "right" | "center" | "bottom" | "vertical" | "floating";
+export type HorizontalDock = "left" | "right" | "bottom";
 export type ResolvedLayout = "horizontal" | "vertical";
 
 export const resolveLayout = (

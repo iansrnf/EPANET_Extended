@@ -14,6 +14,7 @@ import clsx from "clsx";
 import throttle from "lodash/throttle";
 import mapboxgl /*, { LngLatBoundsLike } */ from "mapbox-gl";
 import { selectionAtom } from "src/state/selection";
+import { clearMapHoverAtom } from "src/state/map-hover";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { ephemeralStateAtom, EphemeralEditingState } from "src/state/drawing";
 import {
@@ -121,9 +122,11 @@ export const MapCanvas = memo(function MapCanvas({
   const setLocationNavigationRevision = useSetAtom(
     deviceLocationNavigationRevisionAtom,
   );
+  const clearHover = useSetAtom(clearMapHoverAtom);
   const markMapInteraction = useCallback(() => {
+    clearHover();
     setLocationNavigationRevision((revision) => revision + 1);
-  }, [setLocationNavigationRevision]);
+  }, [setLocationNavigationRevision, clearHover]);
 
   if (isDebugAppStateOn) exposeAppStateInWindow(selection, ephemeralState);
 
@@ -239,10 +242,12 @@ export const MapCanvas = memo(function MapCanvas({
       HANDLERS[mode.mode].click(e);
     },
     onMapMouseDown: (e: mapboxgl.MapMouseEvent) => {
+      clearHover();
       debug(e, mode.mode, selection, dragTargetRef, "onMapMouseDown");
       if (e.originalEvent.button === leftClick) HANDLERS[mode.mode].down(e);
     },
     onMapTouchStart: (e: mapboxgl.MapTouchEvent) => {
+      clearHover();
       debug(e, mode.mode, selection, dragTargetRef, "onMapTouchStart");
       const handler = HANDLERS[mode.mode];
       if (handler.touchstart) {
@@ -441,6 +446,7 @@ export const MapCanvas = memo(function MapCanvas({
           className={clsx("w-full h-full mapboxgl-map", cursorStyle)}
           ref={mapDivRef}
           data-testid="map"
+          onMouseLeave={clearHover}
           onPointerDownCapture={markMapInteraction}
           onWheelCapture={markMapInteraction}
           onKeyDownCapture={markMapInteraction}

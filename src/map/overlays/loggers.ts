@@ -9,6 +9,8 @@ import { lineString, point } from "@turf/helpers";
 import type { Logger } from "@epanet-js/project-settings";
 import type { AssetsMap, Pipe } from "src/hydraulic-model";
 import type { LoggerPreview } from "src/state/logger-map";
+import { hexToArray } from "src/lib/color";
+import { assetFeedbackStrokes } from "../feedback-style";
 import {
   formatLoggerPressure,
   type LoggerReading,
@@ -40,7 +42,6 @@ export type LoggersOverlay = Array<
 export const buildLoggersOverlay = (
   loggers: Logger[],
   assets: AssetsMap,
-  selectedLoggerId: string | null,
   preview: LoggerPreview,
   readings: ReadonlyMap<string, LoggerReading> = noReadings,
   locale?: string,
@@ -105,19 +106,6 @@ export const buildLoggersOverlay = (
       getWidth: 2,
       widthUnits: "pixels",
     }),
-    new ScatterplotLayer<LoggerMarker>({
-      ...overlayPosition,
-      id: "logger-selection-layer",
-      data: markers.filter((logger) => logger.id === selectedLoggerId),
-      getPosition: (logger) => logger.coordinates,
-      radiusUnits: "pixels",
-      getRadius: 15,
-      getFillColor: [217, 70, 239, 85],
-      stroked: true,
-      getLineColor: [192, 38, 211],
-      lineWidthUnits: "pixels",
-      getLineWidth: 2,
-    }),
     new IconLayer<LoggerMarker>({
       ...overlayPosition,
       id: LOGGER_LAYER_ID,
@@ -152,4 +140,69 @@ export const buildLoggersOverlay = (
       pickable: false,
     }),
   ];
+};
+
+export const buildLoggerFeedbackOverlay = (
+  loggers: Logger[],
+  selectedLoggerId: string | null,
+  hoveredLoggerId: string | null,
+  preview: LoggerPreview,
+): LoggersOverlay => {
+  const markers: LoggerMarker[] = [];
+
+  for (const id of [selectedLoggerId, hoveredLoggerId]) {
+    if (id === null || markers.some((marker) => marker.id === id)) continue;
+    const logger = loggers.find((logger) => logger.id === id);
+    if (!logger) continue;
+    const coordinates =
+      preview?.type === "move" && preview.loggerId === id
+        ? preview.coordinates
+        : logger.coordinates;
+    markers.push({ id, label: logger.label, coordinates });
+  }
+
+  return assetFeedbackStrokes.map(
+    ({ suffix, color, width, opacity }) =>
+      new ScatterplotLayer<LoggerMarker>({
+        ...overlayPosition,
+        id: `logger-feedback-${suffix}`,
+        data: markers,
+        getPosition: (logger) => logger.coordinates,
+        radiusUnits: "pixels",
+        getRadius: 16,
+        filled: false,
+        stroked: true,
+        getLineColor: hexToArray(color, opacity),
+        lineWidthUnits: "pixels",
+        getLineWidth: width,
+        pickable: false,
+      }),
+  );
+};
+
+export const updateLoggersOverlayZoom = (
+  overlay: LoggersOverlay,
+  zoom: number,
+): LoggersOverlay => {
+  const sizeScale = Math.max(
+    0.25,
+    Math.min(1, 0.25 + ((zoom - 10) / 10) * 0.75),
+  );
+
+  return overlay.map((layer): LoggersOverlay[number] => {
+    if (layer instanceof IconLayer)
+      return layer.clone({ sizeScale }) as IconLayer;
+    if (layer instanceof ScatterplotLayer) {
+      return layer.clone({
+        radiusScale: sizeScale,
+        lineWidthScale: sizeScale,
+      }) as ScatterplotLayer;
+    }
+    if (layer instanceof TextLayer) {
+      return layer.clone({
+        getPixelOffset: [0, -(13 * sizeScale + 7)],
+      }) as TextLayer;
+    }
+    return layer;
+  });
 };

@@ -58,7 +58,6 @@ import { useAuth } from "src/hooks/use-auth";
 import { useEffectivePlan } from "src/hooks/use-effective-plan";
 import { dialogFromUrl } from "src/state/dialog";
 import { OfflineGuard } from "./offline-guard";
-import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { useNarrowViewport } from "src/hooks/use-narrow-viewport";
 import { NotificationFromUrl } from "./notification-from-url";
 import { setUserContext } from "src/infra/error-tracking";
@@ -79,6 +78,7 @@ import { ContentViews } from "src/views/content-views";
 import { ModelBuildViewUrl } from "src/views/model-build-view-url";
 import { DialogFromUrl } from "./dialog-from-url";
 import { useLoggerStreamLifecycle } from "src/hooks/use-logger-stream-lifecycle";
+import { FloatingAssetPanel } from "src/panels/asset-panel/floating-asset-panel";
 
 type ResolvedLayout = "HORIZONTAL" | "VERTICAL" | "FLOATING";
 
@@ -154,7 +154,6 @@ export function EpanetApp() {
   }, [isSignedIn, effectivePlan, userTracking]);
 
   const isNarrowViewport = useNarrowViewport();
-  const isMdOrLarger = useBreakpoint("md");
 
   const layout: ResolvedLayout = isNarrowViewport ? "VERTICAL" : "HORIZONTAL";
 
@@ -175,7 +174,7 @@ export function EpanetApp() {
       dialogAtom as WritableAtom<DialogState, [DialogState], void>,
       (dialogFromUrl() ?? { type: "welcome" }) as DialogState,
     ],
-    [splitsAtom, { ...defaultSplits, rightOpen: isMdOrLarger }],
+    [splitsAtom, defaultSplits],
   ] as const);
 
   if (!isReady) {
@@ -316,6 +315,7 @@ function DraggableMap({
     >
       <div className="flex-auto relative overflow-hidden">
         <MapCanvas setMap={setMap} />
+        <FloatingAssetPanel />
       </div>
       <Legends />
       <div className="absolute flex flex-col gap-1 items-end top-2 right-2">

@@ -1,4 +1,5 @@
 export type LayerId =
+  | `${"main" | "delta"}-selected-${"links" | "junctions" | "icons"}-${"contrast" | "ring"}`
   | "delta-features-pipes"
   | "main-features-pipes"
   | "delta-features-junctions"
@@ -18,6 +19,9 @@ export type LayerId =
   | "zones-fill"
   | "zones-outline"
   | "zones-selected-outline"
+  | "zones-selected-contrast"
+  | "zones-hover-contrast"
+  | "zones-hover-outline"
   | "zones-labels"
   // Delta icon facet: `icons` is the main icon facet; these mirror it for the delta
   // live-set. `delta-selected-icons-halo` is the delta selection halo.

@@ -37,6 +37,7 @@ import {
   useZoneRanges,
 } from "./zone-ranges";
 import { ZoneCustomAttributesSection } from "./zone-custom-attributes-section";
+import { FloatingPanelCloseButton } from "./asset-panel/floating-panel-close-button";
 
 export function ZonePanel() {
   const translate = useTranslate();
@@ -166,15 +167,18 @@ export function ZonePanel() {
               }}
             />
           </div>
-          <ActionsBar
-            actions={[
-              zoomToAction,
-              selectContentsAction,
-              saveSelectionSetAction,
-              deleteAction,
-            ]}
-            className="h-8"
-          />
+          <div className="flex shrink-0 items-center">
+            <ActionsBar
+              actions={[
+                zoomToAction,
+                selectContentsAction,
+                saveSelectionSetAction,
+                deleteAction,
+              ]}
+              className="h-8"
+            />
+            <FloatingPanelCloseButton label={zone.label} />
+          </div>
         </div>
         {labelError && (
           <span className="text-size-small text-warning block mt-1 pl-1">

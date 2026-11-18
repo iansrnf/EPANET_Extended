@@ -20,6 +20,7 @@ import { TextRow, QuantityRow } from "./asset-panel/ui-components";
 import { DemandCategoriesEditor } from "./asset-panel/demands-editor";
 import { CustomerPointCustomAttributesSection } from "./customer-point-custom-attributes-section";
 import { EditableTextField } from "src/components/form/editable-text-field";
+import { FloatingPanelCloseButton } from "./asset-panel/floating-panel-close-button";
 import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
 import { useLabelMaxLength } from "src/hooks/use-label-max-length";
 import { useTranslate } from "src/hooks/use-translate";
@@ -241,7 +242,10 @@ export function CustomerPointPanel() {
               }}
             />
           </div>
-          <ActionsBar actions={[zoomToAction, ...actions]} className="h-8" />
+          <div className="flex shrink-0 items-center">
+            <ActionsBar actions={[zoomToAction, ...actions]} className="h-8" />
+            <FloatingPanelCloseButton label={customerPoint.label} />
+          </div>
         </div>
         {labelError && (
           <span className="text-size-small text-warning block mt-1 pl-1">

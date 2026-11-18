@@ -131,6 +131,7 @@ const validateLayers = (layers: unknown[]): { message: string }[] => {
       "ephemeral",
       "map-overlay",
       "highlights",
+      "asset-hover",
       "grid",
       "zones",
     ].map((id) => [

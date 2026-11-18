@@ -21,11 +21,19 @@ export type {
   DefaultsResolvers,
 } from "@epanet-js/map";
 
-// The only dedicated selection layers are the pump/valve halos (selection is otherwise
-// merged into the base layers via the `selected` prop) — hidden while an asset is moving.
 const SELECTION_LAYERS: LayerId[] = [
-  "selected-icons-halo",
-  "delta-selected-icons-halo",
+  "main-selected-links-contrast",
+  "main-selected-links-ring",
+  "delta-selected-links-contrast",
+  "delta-selected-links-ring",
+  "main-selected-junctions-contrast",
+  "main-selected-junctions-ring",
+  "delta-selected-junctions-contrast",
+  "delta-selected-junctions-ring",
+  "main-selected-icons-contrast",
+  "main-selected-icons-ring",
+  "delta-selected-icons-contrast",
+  "delta-selected-icons-ring",
 ];
 
 export const updateDeltaSource = withDebugInstrumentation(

@@ -1,4 +1,11 @@
-import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { Provider } from "jotai";
 import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { moveNode } from "@epanet-js/hydraulic-model-operations";
@@ -6,7 +13,13 @@ import type { Logger } from "@epanet-js/project-settings";
 import { triggerShortcut } from "src/__helpers__/keyboard";
 import { setInitialState } from "src/__helpers__/state";
 import { projectSettingsAtom } from "src/state/project-settings";
-import { loggersAtom, selectedLoggerIdAtom } from "src/state/loggers";
+import {
+  hoveredLoggerIdAtom,
+  loggersAtom,
+  selectedLoggerIdAtom,
+} from "src/state/loggers";
+import { hoveredAssetIdAtom } from "src/state/asset-hover";
+import { selectionAtom } from "src/state/selection";
 import { loggerPreviewAtom } from "src/state/logger-map";
 import { Mode, modeAtom } from "src/state/mode";
 import { stagingModelDerivedAtom } from "src/state/derived-branch-state";
@@ -25,6 +38,8 @@ import {
   fireMapDown,
   fireMapMove,
   fireMapUp,
+  getSourceFeatures,
+  stubSnapping,
 } from "./__helpers__/map-engine-mock";
 import type { MapTestEngine } from "./__helpers__/map-engine-mock";
 
@@ -35,6 +50,7 @@ vi.mock("src/hooks/use-is-edition-blocked", () => ({
 
 const IDS = {
   LOGGER: "logger-1",
+  OTHER_LOGGER: "logger-2",
   JUNCTION: 10,
   TANK: 11,
   RESERVOIR: 12,
@@ -55,6 +71,246 @@ afterEach(() => {
 });
 
 describe("loggers on the map", () => {
+  it("scales a selected logger with zoom and keeps the scale through reading and selection updates", async () => {
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.JUNCTION, { coordinates: [2, 3] })
+      .build();
+    const { store, map } = await mountLogger(hydraulicModel);
+    const reading: LoggerReading = {
+      deviceId: "L1",
+      type: "pressure",
+      timestamp: "2026-11-10T10:28:22",
+      pressure: 12,
+      status: "online",
+    };
+    act(() => {
+      store.set(projectSettingsAtom, {
+        ...store.get(projectSettingsAtom),
+        loggers: [
+          {
+            ...logger,
+            connection: { assetId: IDS.JUNCTION, snapPoint: [2, 3] },
+          },
+        ],
+      });
+      store.set(loggerReadingsAtom, new Map([[IDS.LOGGER, reading]]));
+    });
+    map.pickOverlayObjects.mockReturnValue([
+      { layer: { id: LOGGER_LAYER_ID }, object: logger },
+    ]);
+    await fireMapClick(map, { lng: 1, lat: 1 });
+    await zoomMap(map, 20);
+    await waitFor(() => {
+      expect(overlayProps(map, LOGGER_LAYER_ID).sizeScale).toBe(1);
+      expect(feedbackData(map)).toHaveLength(1);
+      expect(overlayData(map, "logger-connections-layer")).toHaveLength(1);
+    });
+    const normalScale = Number(overlayProps(map, LOGGER_LAYER_ID).sizeScale);
+    const normalOffset = overlayProps(map, LOGGER_PRESSURE_LAYER_ID)
+      .getPixelOffset as number[];
+    const markers = markerData(map);
+    const connections = overlayData(map, "logger-connections-layer");
+    const feedback = feedbackData(map);
+
+    await zoomMap(map, 10);
+
+    await waitFor(() =>
+      expect(overlayProps(map, LOGGER_LAYER_ID).sizeScale).toBeLessThan(
+        normalScale,
+      ),
+    );
+    const wideScale = Number(overlayProps(map, LOGGER_LAYER_ID).sizeScale);
+    const wideOffset = overlayProps(map, LOGGER_PRESSURE_LAYER_ID)
+      .getPixelOffset as number[];
+    expect(overlayProps(map, "logger-feedback-ring")).toMatchObject({
+      radiusScale: wideScale,
+      lineWidthScale: wideScale,
+    });
+    expect(markerData(map)).toBe(markers);
+    expect(overlayData(map, "logger-connections-layer")).toBe(connections);
+    expect(feedbackData(map)).toBe(feedback);
+    expect(wideOffset[1]).toBeGreaterThan(normalOffset[1]);
+    expect(overlayProps(map, LOGGER_PRESSURE_LAYER_ID).getSize).toBe(13);
+    expect(store.get(selectedLoggerIdAtom)).toBe(IDS.LOGGER);
+
+    await zoomMap(map, 5);
+    await waitFor(() =>
+      expect(overlayProps(map, LOGGER_LAYER_ID).sizeScale).toBe(wideScale),
+    );
+    await zoomMap(map, 25);
+    await waitFor(() => {
+      expect(overlayProps(map, LOGGER_LAYER_ID).sizeScale).toBe(normalScale);
+      expect(overlayProps(map, "logger-feedback-ring")).toMatchObject({
+        radiusScale: normalScale,
+        lineWidthScale: normalScale,
+      });
+    });
+    await zoomMap(map, 10);
+    act(() => {
+      store.set(
+        loggerReadingsAtom,
+        new Map([[IDS.LOGGER, { ...reading, pressure: 20 }]]),
+      );
+    });
+    await waitFor(() => {
+      expect(overlayData(map, LOGGER_PRESSURE_LAYER_ID)).toEqual([
+        expect.objectContaining({ text: "20 psi" }),
+      ]);
+      expect(overlayProps(map, LOGGER_LAYER_ID).sizeScale).toBe(wideScale);
+      expect(overlayProps(map, LOGGER_PRESSURE_LAYER_ID).getSize).toBe(13);
+      expect(
+        overlayProps(map, LOGGER_PRESSURE_LAYER_ID).getPixelOffset,
+      ).toEqual(wideOffset);
+    });
+    map.pickOverlayObjects.mockReturnValue([]);
+    await fireMapClick(map, { lng: 40, lat: 40 });
+    await waitFor(() => expect(feedbackData(map)).toEqual([]));
+    map.pickOverlayObjects.mockReturnValue([
+      { layer: { id: LOGGER_LAYER_ID }, object: logger },
+    ]);
+    await fireMapClick(map, { lng: 1, lat: 1 });
+    await waitFor(() => {
+      expect(feedbackData(map)).toHaveLength(1);
+      expect(overlayProps(map, LOGGER_LAYER_ID).sizeScale).toBe(wideScale);
+      expect(overlayProps(map, "logger-feedback-ring")).toMatchObject({
+        radiusScale: wideScale,
+        lineWidthScale: wideScale,
+      });
+    });
+    expect(store.get(selectedLoggerIdAtom)).toBe(IDS.LOGGER);
+  });
+
+  it.each([false, true])(
+    "hovers a logger above a node without changing the model when readonly is %s",
+    async (readonly) => {
+      isEditionBlocked = readonly;
+      const hydraulicModel = HydraulicModelBuilder.with()
+        .aJunction(IDS.JUNCTION, { coordinates: logger.coordinates })
+        .build();
+      const { store, map } = await mountLogger(hydraulicModel);
+      await waitFor(() =>
+        expect(getSourceFeatures(map, "main-features")).toHaveLength(1),
+      );
+      const snapshot = getSourceFeatures(map, "main-features");
+      const editions = getSourceFeatures(map, "delta-features");
+      const model = store.get(stagingModelDerivedAtom);
+      const settings = store.get(projectSettingsAtom);
+      const selection = store.get(selectionAtom);
+      stubSnapping(map, [IDS.JUNCTION]);
+      await movePointer(map, { lng: 1, lat: 1 });
+      await waitFor(() =>
+        expect(store.get(hoveredAssetIdAtom)).toBe(IDS.JUNCTION),
+      );
+      map.pickOverlayObjects.mockReturnValue([
+        { layer: { id: LOGGER_LAYER_ID }, object: logger },
+      ]);
+
+      await movePointer(map, { lng: 1, lat: 1 });
+
+      await waitFor(() => {
+        expect(store.get(hoveredLoggerIdAtom)).toBe(IDS.LOGGER);
+        expect(store.get(hoveredAssetIdAtom)).toBeNull();
+        expect(getSourceFeatures(map, "asset-hover")).toEqual([]);
+        expect(feedbackData(map)).toEqual([
+          expect.objectContaining({
+            id: IDS.LOGGER,
+            coordinates: logger.coordinates,
+          }),
+        ]);
+      });
+      expect(store.get(selectedLoggerIdAtom)).toBeNull();
+      expect(store.get(selectionAtom)).toBe(selection);
+      expect(store.get(stagingModelDerivedAtom)).toBe(model);
+      expect(store.get(projectSettingsAtom)).toBe(settings);
+      expect(getSourceFeatures(map, "main-features")).toBe(snapshot);
+      expect(getSourceFeatures(map, "delta-features")).toBe(editions);
+    },
+  );
+
+  it("keeps selected feedback while hovering another logger without duplicating either ring", async () => {
+    const { store, map } = await mountLogger();
+    const otherLogger: Logger = {
+      ...logger,
+      id: IDS.OTHER_LOGGER,
+      coordinates: [4, 1],
+    };
+    act(() => {
+      store.set(projectSettingsAtom, {
+        ...store.get(projectSettingsAtom),
+        loggers: [logger, otherLogger],
+      });
+    });
+    map.pickOverlayObjects.mockReturnValue([
+      { layer: { id: LOGGER_LAYER_ID }, object: logger },
+    ]);
+    await fireMapClick(map, { lng: 1, lat: 1 });
+    await movePointer(map, { lng: 1, lat: 1 });
+    await waitFor(() => {
+      expect(store.get(hoveredLoggerIdAtom)).toBe(IDS.LOGGER);
+      expect(feedbackData(map)).toHaveLength(1);
+    });
+    map.pickOverlayObjects.mockReturnValue([
+      { layer: { id: LOGGER_LAYER_ID }, object: otherLogger },
+    ]);
+
+    await movePointer(map, { lng: 4, lat: 1 });
+
+    await waitFor(() => {
+      expect(store.get(hoveredLoggerIdAtom)).toBe(IDS.OTHER_LOGGER);
+      expect(feedbackData(map)).toHaveLength(2);
+      expect(feedbackData(map)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: IDS.LOGGER }),
+          expect.objectContaining({ id: IDS.OTHER_LOGGER }),
+        ]),
+      );
+    });
+    expect(store.get(selectedLoggerIdAtom)).toBe(IDS.LOGGER);
+    map.pickOverlayObjects.mockReturnValue([]);
+
+    await movePointer(map, { lng: 10, lat: 10 });
+
+    await waitFor(() =>
+      expect(feedbackData(map)).toEqual([
+        expect.objectContaining({ id: IDS.LOGGER }),
+      ]),
+    );
+  });
+
+  it.each(["blank map", "map boundary", "mode change", "pointer down"])(
+    "clears hover at %s while retaining the selected logger",
+    async (action) => {
+      const { store, map } = await mountLogger();
+      map.pickOverlayObjects.mockReturnValue([
+        { layer: { id: LOGGER_LAYER_ID }, object: logger },
+      ]);
+      await fireMapClick(map, { lng: 1, lat: 1 });
+      await movePointer(map, { lng: 1, lat: 1 });
+      await waitFor(() =>
+        expect(store.get(hoveredLoggerIdAtom)).toBe(IDS.LOGGER),
+      );
+
+      if (action === "blank map") {
+        map.pickOverlayObjects.mockReturnValue([]);
+        await movePointer(map, { lng: 10, lat: 10 });
+      } else if (action === "map boundary") {
+        fireEvent.mouseLeave(screen.getByTestId("map"));
+      } else if (action === "mode change") {
+        act(() => store.set(modeAtom, { mode: Mode.DRAW_JUNCTION }));
+      } else {
+        await fireMapDown(map, { lng: 1, lat: 1 });
+      }
+
+      await waitFor(() => {
+        expect(store.get(hoveredLoggerIdAtom)).toBeNull();
+        expect(feedbackData(map)).toEqual([
+          expect.objectContaining({ id: IDS.LOGGER }),
+        ]);
+      });
+      expect(store.get(selectedLoggerIdAtom)).toBe(IDS.LOGGER);
+    },
+  );
+
   it("retains the last pressure label across selection changes until a new reading arrives", async () => {
     const { store, map } = await mountLogger();
     const reading: LoggerReading = {
@@ -176,9 +432,19 @@ describe("loggers on the map", () => {
       loggerId: IDS.LOGGER,
       coordinates: [2, 3],
     });
+    await waitFor(() =>
+      expect(feedbackData(map)).toEqual([
+        expect.objectContaining({ id: IDS.LOGGER, coordinates: [2, 3] }),
+      ]),
+    );
     await fireMapUp(map, { lng: 2, lat: 3 });
     expect(store.get(loggersAtom)[0].coordinates).toEqual([2, 3]);
     expect(store.get(loggerPreviewAtom)).toBeNull();
+    await waitFor(() =>
+      expect(feedbackData(map)).toEqual([
+        expect.objectContaining({ id: IDS.LOGGER, coordinates: [2, 3] }),
+      ]),
+    );
   });
 
   it("connects at the clicked location along a pipe without splitting it", async () => {
@@ -371,8 +637,37 @@ const markerData = (map: MapTestEngine): unknown[] => {
   return overlayData(map, LOGGER_LAYER_ID);
 };
 
+const feedbackData = (map: MapTestEngine): unknown[] =>
+  overlayData(map, "logger-feedback-ring");
+
+const zoomMap = async (map: MapTestEngine, zoom: number) => {
+  await act(async () => {
+    map.map.getZoom.mockReturnValue(zoom);
+    map.handlers.current.onZoom({ target: map.map } as unknown as Parameters<
+      typeof map.handlers.current.onZoom
+    >[0]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+};
+
+const movePointer = async (
+  map: MapTestEngine,
+  point: { lng: number; lat: number },
+) => {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  await fireMapMove(map, point);
+};
+
 const overlayData = (map: MapTestEngine, layerId: string): unknown[] => {
   const layers = map.setOverlay.mock.lastCall?.[0] as
     Array<{ id: string; props: { data: unknown[] } }> | undefined;
   return layers?.find((layer) => layer.id === layerId)?.props.data ?? [];
+};
+
+const overlayProps = (map: MapTestEngine, layerId: string) => {
+  const layers = map.setOverlay.mock.lastCall?.[0] as
+    Array<{ id: string; props: Record<string, unknown> }> | undefined;
+  return layers?.find((layer) => layer.id === layerId)?.props ?? {};
 };

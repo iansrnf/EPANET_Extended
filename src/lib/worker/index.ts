@@ -1,5 +1,5 @@
-import type { Lib } from "./worker";
-import { lib as syncLib } from "./worker";
+import type { Lib } from "./api";
+import { lib as syncLib } from "./api";
 import * as Comlink from "comlink";
 import { EitherHandler } from "./shared";
 

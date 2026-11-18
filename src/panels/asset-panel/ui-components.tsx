@@ -3,6 +3,7 @@ import {
   useState,
   useMemo,
   useCallback,
+  useContext,
   type ComponentProps,
   type KeyboardEventHandler,
 } from "react";
@@ -36,6 +37,8 @@ import {
   type LabelType,
 } from "@epanet-js/hydraulic-model";
 import { PanelActions } from "./actions";
+import { PanelDockContext } from "../panel-dock-context";
+import { FloatingPanelCloseButton } from "./floating-panel-close-button";
 import {
   InlineField,
   SectionList,
@@ -140,6 +143,7 @@ const Header = ({
 }) => {
   const [error, setError] = useState<string | null>(null);
   const labelMaxLength = useLabelMaxLength();
+  const isFloating = useContext(PanelDockContext) === "floating";
 
   const handleChange = useCallback(
     (newLabel: string): boolean => {
@@ -168,7 +172,11 @@ const Header = ({
           onDirty={clearError}
           hasError={!!error}
           readOnly={readOnly}
-          className="shrink-0 max-w-[calc(100%-6.5rem)]"
+          className={
+            isFloating
+              ? "min-w-0 flex-1 truncate"
+              : "shrink-0 max-w-[calc(100%-6.5rem)]"
+          }
           sanitize={(raw) =>
             LabelManager.sanitizeLabel(raw, labelType, labelMaxLength)
           }
@@ -180,7 +188,14 @@ const Header = ({
             width: "content",
           }}
         />
-        <PanelActions />
+        {isFloating ? (
+          <div className="flex shrink-0 items-center">
+            <PanelActions />
+            <FloatingPanelCloseButton label={label} />
+          </div>
+        ) : (
+          <PanelActions />
+        )}
       </div>
       {error && (
         <span className="text-size-small text-warning block mt-1 pl-1">

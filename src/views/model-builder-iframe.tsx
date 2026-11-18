@@ -13,22 +13,9 @@ import {
 import { usePermissions } from "src/hooks/use-permissions";
 import { useStartUpgrade } from "src/hooks/use-paywall";
 import { modelBuilderUrl } from "src/global-config";
+import { buildModelBuilderUrl } from "src/lib/model-builder-url";
 
 type ModelBuildAccess = "full" | "limited";
-
-const buildIframeSrc = (
-  enabledFlags: string[],
-  locale: string,
-  access: ModelBuildAccess,
-): string => {
-  const url = new URL(modelBuilderUrl);
-  for (const flag of enabledFlags) {
-    url.searchParams.set(flag, "true");
-  }
-  url.searchParams.set("locale", locale);
-  url.searchParams.set("access", access);
-  return url.toString();
-};
 
 interface IframeMessage {
   type: string;
@@ -107,7 +94,7 @@ const handleModelBuildEjsdbComplete = async (
     name: "modelBuilder.completed",
   });
 
-  const projectFile = new File([ejsdbBytes], filename, {
+  const projectFile = new File([new Uint8Array(ejsdbBytes)], filename, {
     type: "application/octet-stream",
   });
 
@@ -161,7 +148,14 @@ export const ModelBuilderFrame = ({
   const initialLocale = useRef(locale).current;
   const initialAccess = useRef(access).current;
   const iframeSrc = useMemo(
-    () => buildIframeSrc(enabledFlags, initialLocale, initialAccess),
+    () =>
+      buildModelBuilderUrl({
+        url: modelBuilderUrl,
+        enabledFlags,
+        locale: initialLocale,
+        access: initialAccess,
+        embedded: true,
+      }),
     [enabledFlags, initialLocale, initialAccess],
   );
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -190,6 +184,13 @@ export const ModelBuilderFrame = ({
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      if (
+        event.origin !== new URL(modelBuilderUrl).origin ||
+        event.source !== iframeRef.current?.contentWindow
+      ) {
+        return;
+      }
+
       const message = event.data as IframeMessage;
 
       if (!message?.type || !message?.data?.source) {

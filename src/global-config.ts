@@ -28,7 +28,9 @@ export const pingUrl = process.env.NEXT_PUBLIC_PING_URL || "/ping.txt";
 export const modelBuilderUrl =
   process.env.NEXT_PUBLIC_MODEL_BUILDER_V2_URL ||
   process.env.NEXT_PUBLIC_MODEL_BUILDER_URL ||
-  "https://utils.epanetjs.com/model-builder?embedded=true";
+  "https://monorepo-model-build.vercel.app/";
+export const isModelBuilderEmbedded =
+  new URL(modelBuilderUrl).searchParams.get("embedded") === "true";
 export const billingUrl =
   process.env.NEXT_PUBLIC_BILLING_URL || "https://billing.epanetjs.com";
 export const customerPointsImportVideoUrl =

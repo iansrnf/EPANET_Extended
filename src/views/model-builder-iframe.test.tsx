@@ -24,6 +24,9 @@ vi.mock("src/commands/open-project", () => ({
 vi.mock("src/commands/save-project", () => ({
   projectExtension: ".ejsdb",
 }));
+vi.mock("src/commands/show-network-review", () => ({
+  useShowNetworkReview: () => vi.fn(),
+}));
 vi.mock("src/commands/check-unsaved-changes", () => ({
   // run the guarded callback immediately
   useUnsavedChangesCheck: () => (cb: () => void) => cb(),
@@ -33,20 +36,36 @@ vi.mock("src/infra/user-tracking", () => ({
 }));
 
 // The iframe envelope is { type, data: { source, ... } }.
-const postMessageToWindow = (envelope: {
-  type: string;
-  data: Record<string, unknown>;
-}) => {
-  const event = new Event("message");
-  (event as unknown as { data: unknown }).data = envelope;
-  window.dispatchEvent(event);
+const postMessageToWindow = (
+  envelope: {
+    type: string;
+    data: Record<string, unknown>;
+  },
+  sender: Pick<MessageEventInit, "origin" | "source"> = {},
+) => {
+  const iframe = screen.getByTitle<HTMLIFrameElement>("Import from GIS");
+  window.dispatchEvent(
+    new MessageEvent("message", {
+      data: envelope,
+      origin: new URL(v2Url).origin,
+      source: iframe.contentWindow,
+      ...sender,
+    }),
+  );
 };
 
-const postFromModelBuilder = (type: string, data: Record<string, unknown>) =>
-  postMessageToWindow({
-    type,
-    data: { ...data, source: "epanet-model-builder" },
-  });
+const postFromModelBuilder = (
+  type: string,
+  data: Record<string, unknown>,
+  sender?: Pick<MessageEventInit, "origin" | "source">,
+) =>
+  postMessageToWindow(
+    {
+      type,
+      data: { ...data, source: "epanet-model-builder" },
+    },
+    sender,
+  );
 
 describe("ModelBuilderFrame", () => {
   beforeEach(() => {
@@ -122,6 +141,36 @@ describe("ModelBuilderFrame", () => {
         source: "someone-else",
       },
     });
+
+    expect(openProjectFile).not.toHaveBeenCalled();
+  });
+
+  it("ignores project messages from another origin", () => {
+    render(<ModelBuilderFrame onContextChange={vi.fn()} />);
+
+    postFromModelBuilder(
+      "modelBuildEjsdbComplete",
+      {
+        ejsdbBytes: new Uint8Array([1]),
+        timestamp: "2026-06-03T00:00:00.000Z",
+      },
+      { origin: "https://untrusted.example" },
+    );
+
+    expect(openProjectFile).not.toHaveBeenCalled();
+  });
+
+  it("ignores project messages from an unrelated window", () => {
+    render(<ModelBuilderFrame onContextChange={vi.fn()} />);
+
+    postFromModelBuilder(
+      "modelBuildEjsdbComplete",
+      {
+        ejsdbBytes: new Uint8Array([1]),
+        timestamp: "2026-06-03T00:00:00.000Z",
+      },
+      { source: window },
+    );
 
     expect(openProjectFile).not.toHaveBeenCalled();
   });

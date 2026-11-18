@@ -24,6 +24,18 @@ Build preparation copies the installed SQLite WASM binary and generates any publ
 
 See [LICENSE](LICENSE) for the upstream license terms.
 
+## GIS model builder
+
+**Import from GIS** opens the native model builder inside this app. Its five steps cover model settings, data sources, layer assignment, attribute mapping, and building/reviewing the model. Files are parsed locally. Terrain elevations use the app's configured elevation sources when enabled.
+
+The builder supports pipes, junctions, reservoirs, tanks, pumps, valves, customer points, and zones. Saved build recipes retain settings and source filenames; add the source files again when reopening a recipe. Building leaves the current project open until **Open model**, which applies the usual unsaved-changes check. The resulting project can be saved as `.ejsdb` or exported to INP through the normal app commands.
+
+The native implementation follows the [upstream model-builder guide](https://help.epanetjs.com/workflows/build-a-model/). It is independently implemented; topology and mapped values should be reviewed before simulation. To explicitly use an external embedded builder instead, set `NEXT_PUBLIC_MODEL_BUILDER_V2_URL` or `NEXT_PUBLIC_MODEL_BUILDER_URL` with `?embedded=true`. That deployment must permit framing by your app's origin and support the `.ejsdb` message protocol. Production deployments require a rebuild after changing these settings.
+
+Supported inputs include GeoJSON/GeoJSONL, Shapefile sidecars, DXF, coordinate CSV/TSV, and ZIP bundles with one nested archive level. Mapping offers a 100-record imported-value preview, including defaults and invalid-value fallbacks. The source preview uses a Mapbox basemap when available and an interactive geometry view otherwise; preview sampling does not limit imported records.
+
+The implementation was checked against the official [Rosebery GIS example](https://help.epanetjs.com/workflows/worked-example-roseberry/): 338 junctions, 348 pipes, one tank, one reservoir, and 665 optional customer points. Public documentation and observed behavior guide compatibility; the unpublished upstream implementation and visual layout are not guaranteed to match exactly.
+
 ## Pump definitions
 
 Select a Pump on the map, then choose **Configure pump definition** in its asset sidebar. The editor is available from a selected pump and includes Head, Efficiency, and Motor tabs with live graphs, zoom, pan, and curve coefficients.

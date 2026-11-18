@@ -72,21 +72,12 @@ describe("resolvePermissions", () => {
     expect(p.canUpgrade).toBe(true);
   });
 
-  it.each(["pro", "teams", "education"] satisfies Plan[])(
+  it.each(["free", "personal", "pro", "teams", "education"] satisfies Plan[])(
     "%s plan can use the v2 model builder",
     (plan) => {
       expect(
         resolvePermissions(plan, false, false, false).canUseAdvancedModelBuild,
       ).toBe(true);
-    },
-  );
-
-  it.each(["free", "personal"] satisfies Plan[])(
-    "%s plan cannot use the v2 model builder",
-    (plan) => {
-      expect(
-        resolvePermissions(plan, false, false, false).canUseAdvancedModelBuild,
-      ).toBe(false);
     },
   );
 

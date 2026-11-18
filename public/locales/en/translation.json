@@ -863,6 +863,15 @@
   "exportINP": "Export INP",
   "deprecatedImportFromGIS": "Import from GIS data",
   "importFromGIS": "Import from GIS",
+  "gisModelBuilder": {
+    "description": "Use the GIS builder in a new tab, then open the downloaded project here.",
+    "buildStep": "Open the builder and add your GIS layers to build the network.",
+    "downloadStep": "When the build is complete, choose Download model (.ejsdb).",
+    "openStep": "Return here and open the downloaded model.",
+    "openBuilder": "Open GIS builder (new tab)",
+    "openDownloadedModel": "Open downloaded model",
+    "backToModel": "Back to model"
+  },
   "recent": "Recent",
   "recentNetworks": "Recent projects",
   "dropInp": "Drop an .INP file here to open the model.",

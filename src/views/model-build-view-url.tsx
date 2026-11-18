@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import { useAtomValue } from "jotai";
 import { useSearchParams } from "next/navigation";
 import { recoverableSessionsAtom } from "src/state/session-recovery";
-import { useAuth } from "src/hooks/use-auth";
 import { useOpenModelBuilder } from "src/commands/open-model-builder";
 
 const viewParam = "view";
@@ -15,7 +14,6 @@ const removeViewParam = () => {
 };
 
 export const ModelBuildViewUrl = () => {
-  const { isLoaded, isSignedIn } = useAuth();
   const openModelBuilder = useOpenModelBuilder();
   const hasRecoverableSession =
     useAtomValue(recoverableSessionsAtom).length > 0;
@@ -29,17 +27,11 @@ export const ModelBuildViewUrl = () => {
       removeViewParam();
     }
 
-    if (!hasPendingRequest.current || !isLoaded || !isSignedIn) return;
+    if (!hasPendingRequest.current) return;
     hasPendingRequest.current = false;
     if (hasRecoverableSession) return;
     openModelBuilder({ source: "url" });
-  }, [
-    isRequestedByUrl,
-    isLoaded,
-    isSignedIn,
-    hasRecoverableSession,
-    openModelBuilder,
-  ]);
+  }, [isRequestedByUrl, hasRecoverableSession, openModelBuilder]);
 
   return null;
 };

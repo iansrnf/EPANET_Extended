@@ -4,7 +4,6 @@ import { useOpenModelBuilder } from "src/commands/open-model-builder";
 import { useOpenProject } from "src/commands/open-project";
 import { useOpenRecentFile } from "src/commands/open-recent-file";
 import { useTranslate } from "src/hooks/use-translate";
-import { useAuth } from "src/hooks/use-auth";
 import { useRecentFiles } from "src/hooks/use-recent-files";
 import { useUserTracking } from "src/infra/user-tracking";
 import { languageConfig } from "@epanet-js/i18n/locale";
@@ -27,7 +26,6 @@ import {
   FolderOpenIcon,
   GlobeIcon,
   HelpIcon,
-  EarlyAccessIcon,
 } from "src/icons";
 import { BaseDialog, useDialogState } from "../components/dialog";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -46,8 +44,6 @@ export const WelcomeDialog = () => {
   const userTracking = useUserTracking();
   const isDrawingAvailable = useIsDrawingAvailable();
   const isModelBuilderAvailable = useIsModelBuilderAvailable();
-  const { isSignedIn, isLoaded } = useAuth();
-  const showEarlyAccess = isLoaded && !isSignedIn;
   const currentLocale = useLocale();
   const currentLanguage = languageConfig.find(
     (lang) => lang.code === currentLocale.locale,
@@ -109,7 +105,6 @@ export const WelcomeDialog = () => {
                 >
                   <GlobeIcon />
                   {translate("importFromGIS")}
-                  {showEarlyAccess && <EarlyAccessIcon size="sm" />}
                 </Button>
               )}
               <a

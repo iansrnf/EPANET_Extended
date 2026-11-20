@@ -108,11 +108,21 @@ ssh -N -L 3001:127.0.0.1:3006 ictd2025@172.20.110.84
 
 Keep the tunnel open and visit `http://localhost:3001/`. Browsers treat localhost as a secure context. This address also has separate browser storage, so save/export before switching.
 
+## Simulation timeline
+
+Simulation controls float over the bottom of the map on a fully transparent background. Empty areas let clicks and drags pass through to the map, while buttons and the active timeline remain interactive. The lightning icon runs a simulation; the gear opens its settings, and the document icon opens its report. The timeline is visible before running, using the configured duration or a 24-hour preview for steady-state models. Its time scale stays fixed while the arrow moves across the run. Dragging follows the pointer and updates the calendar; releasing selects the nearest available interval. After an extended-period simulation, use Play/Pause, click or drag the timeline, or use the previous/next icons beside the date. The fast-forward icon cycles through 1x, 2x, and 4x playback; the current speed appears beside it. Hover or focus an action for its label.
+
+Click the date/time card to set **From**, which defaults to the current local date and time, and choose hourly, minute, or second intervals. **To** adds the configured EPS duration to From: November 19 at 17:50 plus 24 hours ends November 20 at 17:50. Drag the selector or timeline to update the selected date/time, including before running. Each completed run retains its own From timestamp, and clock-based simulation controls use that start time. Editing From configures the next run; selecting a result day explores the completed run. Timeline scrubbing and calendar selection pause playback. Existing simulation keyboard shortcuts remain available.
+
+During playback, the selector moves smoothly between result steps at the selected speed. Manual seeking responds immediately, and reduced-motion preferences disable the transitions.
+
 ## Google Maps basemaps
 
-The map control starts collapsed and shows the current provider and mode. Click its header or chevron to expand or collapse the controls.
+The lower-left map controls are compact icon buttons. Hover or focus an icon for its tooltip, then click it to open a menu beside the button. Press Escape or click outside to close a menu.
 
-Use the **Map provider** control at the lower-left of the map to select **Google Maps** or **Mapbox**, then choose one of that provider's **Map mode** cards. Google Maps offers Roadmap and Satellite; Mapbox offers Roadmap, Satellite, Monochrome, and Outdoors. Switching providers keeps the current mode when it is available, otherwise it selects Roadmap. These basemaps are also available in the Map panel. To enable Google Maps, fill in the empty setting in your local `.env`:
+The cursor coordinate readout beside the map credits shows longitude and latitude in decimal degrees to six places. It follows the pointer as it moves over the map, updates during pan and zoom, and keeps the last coordinates when the pointer leaves. Tap a location on touchscreens to update it. Narrow map panels move the readout above the timeline to keep the credits visible.
+
+Use the globe icon for **Map provider** to choose a mode from the **Google Maps** or **Mapbox** lists. A checkmark shows the current selection. Google Maps offers Roadmap and Satellite; Mapbox offers Roadmap, Satellite, Monochrome, and Outdoors. These basemaps are also available in the Map panel. The **Water flow** icon above it opens Play/Pause and Flow colors; playback requires simulation results. To enable Google Maps, fill in the empty setting in your local `.env`:
 
 ```dotenv
 NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=

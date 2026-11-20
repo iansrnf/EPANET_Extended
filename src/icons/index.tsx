@@ -13,6 +13,7 @@ import {
   BookText,
   Bookmark,
   ChartColumn,
+  CalendarDays,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -32,6 +33,7 @@ import {
   EllipsisVertical,
   Eye,
   EyeOff,
+  FastForward,
   File,
   FileBox,
   FileCode,
@@ -110,6 +112,7 @@ import {
   Undo2,
   Upload,
   User,
+  Waves,
   Waypoints,
   X,
   CirclePause,
@@ -260,6 +263,9 @@ export const PanelLeftIcon = icon(PanelLeft);
 export const PanelRightIcon = icon(PanelRight);
 export const PauseIcon = icon(Pause);
 export const PlayIcon = icon(Play);
+export const WaterFlowIcon = icon(Waves);
+export const CalendarIcon = icon(CalendarDays);
+export const PlaybackSpeedIcon = icon(FastForward);
 export const StopIcon = icon(Square);
 export const MultipleValuesIcon = icon(SquareStack);
 export const JunctionIcon = icon(Circle);

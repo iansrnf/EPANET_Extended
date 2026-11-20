@@ -40,7 +40,7 @@ function HintWrapper({
     <div
       className={clsx(
         "absolute max-w-[600px] text-size-base flex gap-x-2",
-        "bottom-8 left-1/2 -translate-x-1/2 rounded-sm",
+        "bottom-[calc(var(--simulation-controls-height,0px)+2rem)] left-1/2 -translate-x-1/2 rounded-sm",
         "p-2 items-start",
         tipLike,
       )}

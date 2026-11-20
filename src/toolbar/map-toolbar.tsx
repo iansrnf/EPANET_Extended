@@ -10,14 +10,14 @@ export const MapToolbar = ({ readonly = false }: { readonly?: boolean }) => {
   if (dialogState) return null;
 
   return (
-    <div className="absolute top-2 inset-x-0 z-20 flex justify-center pointer-events-none">
+    <div className="map-drawing-toolbar absolute top-2 inset-x-0 z-20 flex justify-center pointer-events-none">
       <div
         className={clsx(
           "pointer-events-auto flex flex-col bg-base",
           "rounded-sm border shadow-md",
         )}
       >
-        <div className="flex items-center justify-center px-2 py-1">
+        <div className="flex items-center justify-center px-1 py-0.5">
           <Modes disabled={readonly} />
         </div>
         <MapToolbarPipeDrawing />

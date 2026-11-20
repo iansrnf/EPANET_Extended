@@ -1,12 +1,9 @@
 import { useTranslate } from "src/hooks/use-translate";
 import MenuAction from "src/components/menu-action";
 import {
-  FileTextIcon,
   UndoIcon,
   RedoIcon,
-  SettingsIcon,
   SaveIcon,
-  RunSimulationIcon,
   PanelBottomIcon,
   PanelBottomActiveIcon,
   PanelLeftIcon,
@@ -23,30 +20,15 @@ import { commandBarOpenAtom } from "src/state/command-bar";
 import {
   canRedoDerivedAtom,
   canUndoDerivedAtom,
-  simulationDerivedAtom,
-  simulationSettingsDerivedAtom,
 } from "src/state/derived-branch-state";
 import { saveShortcut } from "src/commands/save-inp";
 import { useSaveProject } from "src/commands/save-project";
-import {
-  runSimulationShortcut,
-  useRunSimulation,
-} from "src/commands/run-simulation";
-import { useShowReport } from "src/commands/show-report";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useHistoryControl } from "src/commands/history-control";
-import {
-  showSimulationSettingsShortcut,
-  useShowSimulationSettings,
-} from "src/commands/show-simulation-settings";
 import { useBreakpoint } from "src/hooks/use-breakpoint";
 import { useAllocateCustomerPoints } from "src/commands/allocate-customer-points";
 import { FileDropdown } from "./file-dropdown";
 import { OperationalDataDropdown } from "./operational-data-dropdown";
-import {
-  TimestepSelector,
-  useHasPlayableTimesteps,
-} from "src/components/timestep-selector";
 import { Mode, modeAtom } from "src/state/mode";
 import { useShowDataTables } from "src/commands/show-data-tables";
 import { useShowHglProfile } from "src/commands/show-hgl-profile";
@@ -76,9 +58,6 @@ export const Toolbar = ({
   const translate = useTranslate();
   const saveProject = useSaveProject();
   const userTracking = useUserTracking();
-  const runSimulation = useRunSimulation();
-  const showSimulationSettings = useShowSimulationSettings();
-  const showReport = useShowReport();
   const allocateCustomerPoints = useAllocateCustomerPoints();
   const showDataTables = useShowDataTables();
   const showHglProfile = useShowHglProfile();
@@ -87,13 +66,10 @@ export const Toolbar = ({
 
   const { undo, redo } = useHistoryControl();
 
-  const simulation = useAtomValue(simulationDerivedAtom);
-  const simulationSettings = useAtomValue(simulationSettingsDerivedAtom);
   const canUndo = useAtomValue(canUndoDerivedAtom);
   const canRedo = useAtomValue(canRedoDerivedAtom);
   const isMdOrLarger = useBreakpoint("md");
   const isSmOrLarger = useBreakpoint("sm");
-  const hasPlayableTimesteps = useHasPlayableTimesteps();
 
   const fileActionsGroup = isSmOrLarger && (
     <>
@@ -155,46 +131,6 @@ export const Toolbar = ({
     </>
   );
 
-  const simulationGroup = (
-    <>
-      <MenuAction
-        label={translate("simulate")}
-        role="button"
-        onClick={() => {
-          userTracking.capture({
-            name: "simulation.executed",
-            source: "toolbar",
-            qualityType: simulationSettings.qualitySimulationType,
-          });
-          void runSimulation();
-        }}
-        expanded={true}
-        readOnlyHotkey={runSimulationShortcut}
-      >
-        <RunSimulationIcon className="stroke-yellow-600" />
-      </MenuAction>
-      <MenuAction
-        label={translate("simulationSettings.title")}
-        role="button"
-        onClick={() => showSimulationSettings({ source: "toolbar" })}
-        readOnlyHotkey={showSimulationSettingsShortcut}
-      >
-        <SettingsIcon />
-      </MenuAction>
-      <MenuAction
-        label={translate("viewReport")}
-        role="button"
-        onClick={() => {
-          showReport({ source: "toolbar" });
-        }}
-        readOnlyHotkey={"alt+r"}
-        disabled={simulation.status === "idle"}
-      >
-        <FileTextIcon />
-      </MenuAction>
-    </>
-  );
-
   const operationalGroup = (
     <>
       <OperationalDataDropdown />
@@ -230,14 +166,6 @@ export const Toolbar = ({
         <Divider />
         {undoRedoGroup}
         {operationalGroup}
-        <Divider />
-        {simulationGroup}
-        {hasPlayableTimesteps && (
-          <>
-            <Divider />
-            <TimestepSelector variant="inline" />
-          </>
-        )}
       </div>
       <div className="flex flex-row items-center justify-end">
         <CommandBarButton />

@@ -25,8 +25,8 @@ vi.mock("@deck.gl/mapbox", () => ({ MapboxOverlay: class {} }));
 
 vi.mock("src/map/overlays/customer-points", () => ({
   buildCustomerPointsOverlay: () => [],
+  buildCustomerPointHoverOverlay: () => [],
   buildCustomerPointsHighlightOverlay: () => [],
-  buildCustomerPointsSelectionOverlay: () => [],
   buildConnectCustomerPointsPreviewOverlay: () => [],
   buildMovingCustomerPointOverlay: () => [],
   applyCustomerPointsStyles: () => [],
@@ -61,6 +61,7 @@ vi.mock("src/lib/google-map-tiles", () => ({
 vi.mock("src/hooks/use-translate", () => {
   const labels: Record<string, string> = {
     "deviceLocation.goTo": "Go to my location",
+    "basemapModes.satellite": "Satellite",
     mapProvider: "Map provider",
   };
   const translate = (key: string) => labels[key] ?? key;
@@ -168,11 +169,9 @@ describe("device location on the map", () => {
     const viewport = { center: [125.2, 6.2] as [number, number], zoom: 17 };
     act(() => store.set(mapViewportAtom, viewport));
 
-    fireEvent.change(
-      screen.getByLabelText("Map provider", { selector: "select" }),
-      {
-        target: { value: "google" },
-      },
+    fireEvent.click(screen.getByRole("button", { name: "Map provider" }));
+    fireEvent.click(
+      await screen.findByRole("radio", { name: "Google Maps: Satellite" }),
     );
     await waitFor(() => {
       expect(map.setStyle).toHaveBeenCalledTimes(2);
@@ -186,12 +185,7 @@ describe("device location on the map", () => {
       expect(locationFeatures(map)).toHaveLength(1);
     });
 
-    fireEvent.change(
-      screen.getByLabelText("Map provider", { selector: "select" }),
-      {
-        target: { value: "mapbox" },
-      },
-    );
+    fireEvent.click(screen.getByRole("radio", { name: "Mapbox: Satellite" }));
     await waitFor(() => {
       expect(map.setStyle).toHaveBeenCalledTimes(3);
       expect(locationFeatures(map)).toHaveLength(1);

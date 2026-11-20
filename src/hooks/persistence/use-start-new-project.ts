@@ -50,6 +50,10 @@ import {
   stagingModelDerivedAtom,
 } from "src/state/derived-branch-state";
 import { initialSimulationState } from "src/state/simulation";
+import {
+  simulationPreviewStepAtom,
+  simulationStartDateTimeAtom,
+} from "src/state/simulation-timeline";
 import { worktreeAtom } from "src/state/scenarios";
 import { splitsAtom, defaultSplits } from "src/state/layout";
 import { cursorStyleAtom, mapEditionsTrackerAtom } from "src/state/map";
@@ -118,6 +122,8 @@ export type ProjectLoadInput = {
 };
 
 export const resetAppState = (set: Setter, panels: Panel[]) => {
+  set(simulationStartDateTimeAtom, Math.floor(Date.now() / 1000) * 1000);
+  set(simulationPreviewStepAtom, 0);
   set(resetLoggerStreamsAtom);
   set(splitsAtom, defaultSplits);
   set(selectionAtom, USelection.none());

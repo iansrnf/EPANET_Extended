@@ -7,6 +7,7 @@ import {
   autoPlaybackSpeedAtom,
 } from "src/state/simulation-playback";
 import { useUserTracking } from "src/infra/user-tracking";
+import { simulationStepTransitionDurationAtom } from "src/state/simulation";
 
 export const togglePlaybackShortcut = "shift+space";
 
@@ -16,6 +17,8 @@ export type StopPlaybackSource =
   | "shortcut"
   | "buttons"
   | "dropdown"
+  | "timeline"
+  | "calendar"
   | "quick-graph"
   | "auto";
 
@@ -34,6 +37,7 @@ export const useTogglePlayback = () => {
 
   const stopPlayback = useAtomCallback<void, [StopPlaybackSource]>(
     (get, set, source) => {
+      if (source !== "auto") set(simulationStepTransitionDurationAtom, 0);
       if (get(simulationPlaybackAtom).playingAtSpeedMs === 0) return;
       set(simulationPlaybackAtom, (prev) => ({ ...prev, playingAtSpeedMs: 0 }));
       userTracking.capture({

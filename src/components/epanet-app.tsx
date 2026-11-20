@@ -42,7 +42,7 @@ import {
 import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 import debounce from "lodash/debounce";
 import { Legends } from "./legends";
-import { TimestepSpeedWarning } from "./timestep-selector";
+import { SimulationPlaybackSpeedWarning } from "./simulation-playback-speed-warning";
 import { MapLoading } from "src/map/map-loader";
 import { Toolbar } from "src/toolbar/";
 import { MapToolbar } from "src/toolbar/map-toolbar";
@@ -53,6 +53,7 @@ import { TabCloseGuard } from "./tab-close-guard";
 import { CommandShortcuts } from "./commands-shortcuts";
 import { CommandBar } from "./command-bar/command-bar";
 import { SimulationPlaybackController } from "./simulation-playback-controller";
+import { SimulationTimeline } from "./simulation-timeline";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useAuth } from "src/hooks/use-auth";
 import { useEffectivePlan } from "src/hooks/use-effective-plan";
@@ -283,19 +284,21 @@ function DraggableMap({
   readonly?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [simulationControlsHeight, setSimulationControlsHeight] = useState(128);
   const { setNodeRef, transform } = useDraggable({
     id: "map",
   });
   const isDrawingAvailable = useIsDrawingAvailable();
 
-  useMapResize(containerRef.current, layout);
+  useMapResize(containerRef.current, viewportRef.current, layout);
 
   return (
     <div
       className={clsx(
         layout === "FLOATING"
-          ? "overflow-hidden absolute w-64 h-64 flex z-50 rounded-sm border border-gray-500 shadow-lg"
-          : "relative flex-auto flex flex-col",
+          ? "overflow-hidden absolute w-64 h-64 flex flex-col z-50 rounded-sm border border-gray-500 shadow-lg"
+          : "relative min-h-0 flex-auto flex flex-col",
         "drawing-toolbar-controls",
       )}
       ref={(elem) => {
@@ -303,23 +306,30 @@ function DraggableMap({
         containerRef.current = elem;
       }}
       style={
-        layout === "FLOATING"
-          ? {
-              resize: "both",
-              transform: CSS.Transform.toString(transform),
-              top: persistentTransform.y,
-              left: persistentTransform.x,
-            }
-          : {}
+        {
+          "--simulation-controls-height": `${simulationControlsHeight}px`,
+          ...(layout === "FLOATING"
+            ? {
+                resize: "both",
+                transform: CSS.Transform.toString(transform),
+                top: persistentTransform.y,
+                left: persistentTransform.x,
+              }
+            : {}),
+        } as React.CSSProperties
       }
     >
-      <div className="flex-auto relative overflow-hidden">
+      <div
+        ref={viewportRef}
+        className="min-h-0 flex-auto relative overflow-hidden"
+      >
         <MapCanvas setMap={setMap} />
         <FloatingAssetPanel />
       </div>
+      <SimulationTimeline onHeightChange={setSimulationControlsHeight} />
       <Legends />
       <div className="absolute flex flex-col gap-1 items-end top-2 right-2">
-        <TimestepSpeedWarning />
+        <SimulationPlaybackSpeedWarning />
         <MapLoading />
       </div>
       {isDrawingAvailable && <MapToolbar readonly={readonly} />}
@@ -327,7 +337,11 @@ function DraggableMap({
   );
 }
 
-function useMapResize(element: HTMLElement | null, layout: ResolvedLayout) {
+function useMapResize(
+  element: HTMLElement | null,
+  viewport: HTMLElement | null,
+  layout: ResolvedLayout,
+) {
   const mapEngine = useContext(MapContext);
 
   useLayoutEffect(() => {
@@ -353,10 +367,11 @@ function useMapResize(element: HTMLElement | null, layout: ResolvedLayout) {
       }, 50);
 
       const resizeObserver = new ResizeObserver(callback);
-      resizeObserver.observe(element, { box: "border-box" });
-      return () => resizeObserver.unobserve(element);
-    } else {
-      // Nothing
+      resizeObserver.observe(viewport ?? element, { box: "border-box" });
+      return () => {
+        resizeObserver.disconnect();
+        callback.cancel();
+      };
     }
-  }, [element, mapEngine, layout]);
+  }, [element, viewport, mapEngine, layout]);
 }

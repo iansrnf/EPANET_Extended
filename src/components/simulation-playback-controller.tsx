@@ -72,7 +72,7 @@ const simulationPlaybackEffectAtom = atomEffect((get, set) => {
       if (getStep() >= getCount() - 1) break;
       await sleep(getSpeed());
       if (signal.aborted) break;
-      set(setTimestepAtom, getStep() + 1);
+      set(setTimestepAtom, getStep() + 1, getSpeed());
     }
 
     if (!signal.aborted && getStep() >= getCount() - 1) {

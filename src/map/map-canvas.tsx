@@ -47,6 +47,7 @@ import { clickableLayers } from "./layers/layer";
 import { BasemapSelector } from "./basemap-selector";
 import { GoogleMapsAttribution } from "./google-maps-attribution";
 import { DeviceLocationControl } from "./device-location-control";
+import { MapCursorCoordinates } from "./cursor-coordinates";
 import { FlowAnimationControl } from "./flow-animation-control";
 import { deviceLocationNavigationRevisionAtom } from "src/state/device-location";
 import { useFitToExtent } from "./use-fit-to-extent";
@@ -134,14 +135,6 @@ export const MapCanvas = memo(function MapCanvas({
 
   // State
   const [contextInfo, setContextInfo] = useState<ContextInfo | null>(null);
-
-  const lastCursor = useRef<{
-    cursorLatitude: number;
-    cursorLongitude: number;
-  }>({
-    cursorLatitude: 0,
-    cursorLongitude: 0,
-  });
 
   // Atom state
   const mode = useAtomValue(modeAtom);
@@ -284,12 +277,6 @@ export const MapCanvas = memo(function MapCanvas({
       debug(e, mode.mode, selection, dragTargetRef, "onMapMouseMove");
 
       HANDLERS[mode.mode].move(e);
-      const map = mapRef.current?.map;
-      if (!map) return;
-      lastCursor.current = {
-        cursorLongitude: e.lngLat.lng,
-        cursorLatitude: e.lngLat.lat,
-      };
     },
     onDoubleClick: (e: mapboxgl.MapMouseEvent) => {
       debug(e, mode.mode, selection, dragTargetRef, "doubleClick");
@@ -457,6 +444,7 @@ export const MapCanvas = memo(function MapCanvas({
       <BasemapSelector />
       <GoogleMapsAttribution map={mapInstance} />
       <DeviceLocationControl mapReady={mapInstance !== null} />
+      <MapCursorCoordinates map={mapInstance} />
       <FlowAnimationControl />
     </CM.Root>
   );

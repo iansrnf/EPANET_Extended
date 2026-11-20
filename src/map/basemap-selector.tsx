@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { useSelectBasemap } from "src/commands/select-basemap";
 import { useTranslate } from "src/hooks/use-translate";
 import { useUserTracking } from "src/infra/user-tracking";
-import { CheckIcon, ChevronDownIcon, GlobeIcon } from "src/icons";
+import { CheckIcon, GlobeIcon, RoadmapIcon } from "src/icons";
 import {
   basemaps,
   isBasemapConfigured,
@@ -14,13 +14,12 @@ import {
   basemapProviders,
   getBasemapMode,
   getBasemapProvider,
-  getProviderBasemap,
 } from "src/map/basemap-providers";
-import { BasemapModePreview } from "src/map/basemap-mode-preview";
 import { layerConfigAtom } from "src/state/map";
 import { showGridAtom } from "src/state/map-projection";
 import { offlineAtom } from "src/state/offline";
 import { isPlayingAtom } from "src/state/simulation-playback";
+import { MapControlMenu } from "./map-control-menu";
 
 export const BasemapSelector = () => {
   const selectId = useId();
@@ -62,155 +61,84 @@ export const BasemapSelector = () => {
   if (isGridOn || isOffline || isPlaying) return null;
 
   return (
-    <details
-      aria-label={translate("basemap")}
-      className="group/basemap absolute bottom-8 left-3 z-20 max-h-[calc(100%-3rem)] w-64 max-w-[calc(100%-4rem)] overflow-x-hidden overflow-y-auto rounded-2xl border bg-popover text-default shadow-xl"
-      onKeyDown={(event) => event.stopPropagation()}
-    >
-      <summary className="sticky top-0 z-20 flex min-h-14 cursor-pointer list-none items-center gap-3 bg-popover px-3 py-2.5 transition-colors hover:bg-base-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent-tint text-accent">
-          <GlobeIcon size="lg" aria-hidden="true" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-size-small text-subtle">
-            {translate("mapProvider")}
-          </span>
-          <span
-            className="block truncate text-size-base font-semibold"
-            title={selectionLabel}
-          >
-            {selectionLabel}
-          </span>
-        </span>
-        <ChevronDownIcon
-          size="md"
-          aria-hidden="true"
-          className="shrink-0 text-subtle transition-transform group-open/basemap:rotate-180 motion-reduce:transition-none"
-        />
-      </summary>
-      <div className="border-t bg-popover p-3">
-        <label
-          htmlFor={selectId}
-          className="mb-1.5 block text-size-small font-medium text-subtle"
-        >
-          {translate("mapProvider")}
-        </label>
-        <div className="relative">
-          <GlobeIcon
-            size="lg"
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-accent"
-          />
-          <select
-            id={selectId}
-            value={providerId ?? ""}
-            aria-describedby={
-              !isGoogleConfigured ? `${selectId}-setup` : undefined
-            }
-            className="block min-h-11 w-full cursor-pointer appearance-none rounded-xl border bg-base py-2 pl-10 pr-9 text-size-base font-semibold text-default transition-colors hover:bg-base-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            onChange={(event) => {
-              const provider = basemapProviders.find(
-                (provider) => provider.id === event.currentTarget.value,
-              );
-              if (!provider || provider.id === providerId) return;
-              changeBasemap(getProviderBasemap(provider.id, currentBasemap));
-            }}
-          >
-            {!selectedProvider && (
-              <option value="" disabled>
-                {currentBasemap?.name ||
-                  translate("basemapControls.chooseProvider")}
-              </option>
-            )}
-            {basemapProviders.map((provider) => {
-              const isConfigured = isBasemapConfigured(
-                provider.modes[0].basemap,
-              );
-              return (
-                <option
-                  key={provider.id}
-                  value={provider.id}
-                  disabled={!isConfigured}
-                >
-                  {isConfigured
-                    ? provider.name
-                    : `${provider.name}: ${translate("googleMaps.keyRequired")}`}
-                </option>
-              );
-            })}
-          </select>
-          <ChevronDownIcon
-            size="md"
-            aria-hidden="true"
-            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-subtle"
-          />
-        </div>
-      </div>
-      {selectedProvider ? (
-        <fieldset className="min-w-0 border-t p-3">
-          <legend className="sr-only">
-            {translate("basemapControls.mapMode")}
-          </legend>
-          <div
-            aria-hidden="true"
-            className="mb-2 flex items-center justify-between text-size-small font-medium text-subtle"
-          >
-            <span>{translate("basemapControls.mapMode")}</span>
-            <span className="rounded-full bg-base-hover px-2 py-0.5 tabular-nums">
-              {selectedProvider.modes.length}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {selectedProvider.modes.map((mode) => {
-              const isSelected = mode.id === selectedMode;
-              return (
-                <label key={mode.id} className="group relative cursor-pointer">
-                  <input
-                    type="radio"
-                    name={`${selectId}-mode`}
-                    value={mode.id}
-                    checked={isSelected}
-                    className="peer sr-only"
-                    onChange={() => changeBasemap(mode.basemap)}
-                  />
-                  <span
-                    className={clsx(
-                      "block overflow-hidden rounded-xl border transition-colors peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-accent",
-                      isSelected
-                        ? "border-accent bg-accent-tint"
-                        : "bg-base group-hover:border-strong group-hover:bg-base-hover",
-                    )}
-                  >
-                    <BasemapModePreview mode={mode.id} />
-                    <span className="flex min-h-9 items-center justify-between gap-1 px-2 text-size-small font-medium">
-                      <span>{translate(mode.labelKey)}</span>
-                      {isSelected && (
-                        <CheckIcon
-                          size="sm"
+    <div className="absolute bottom-[calc(var(--simulation-controls-height,0px)+1.25rem)] left-2 z-20">
+      <MapControlMenu
+        label={translate("mapProvider")}
+        tooltip={`${translate("mapProvider")}: ${selectionLabel}`}
+        icon={<GlobeIcon size="lg" aria-hidden="true" />}
+      >
+        <div className="space-y-[10.2px]">
+          {basemapProviders.map((provider) => (
+            <fieldset key={provider.id} className="min-w-0">
+              <legend className="mb-[3.4px] px-[6.8px] font-medium text-subtle">
+                {provider.name}
+              </legend>
+              <div className="space-y-[1.7px]">
+                {provider.modes.map((mode) => {
+                  const isSelected =
+                    provider.id === providerId && mode.id === selectedMode;
+                  const isConfigured = isBasemapConfigured(mode.basemap);
+                  return (
+                    <label key={mode.id} className="group relative block">
+                      <input
+                        type="radio"
+                        name={`${selectId}-mode`}
+                        value={`${provider.id}-${mode.id}`}
+                        checked={isSelected}
+                        disabled={!isConfigured}
+                        aria-label={`${provider.name}: ${translate(mode.labelKey)}`}
+                        aria-describedby={
+                          !isConfigured ? `${selectId}-setup` : undefined
+                        }
+                        className="peer sr-only"
+                        onChange={() => changeBasemap(mode.basemap)}
+                      />
+                      <span
+                        className={clsx(
+                          "flex min-h-[37.4px] items-center gap-[6.8px] rounded-[6.8px] px-[6.8px] transition-colors peer-focus-visible:outline-2 peer-focus-visible:outline-accent pointer-coarse:min-h-11",
+                          isConfigured
+                            ? "cursor-pointer group-hover:bg-base-hover"
+                            : "cursor-not-allowed text-disabled",
+                          isSelected && "bg-accent-tint text-accent",
+                        )}
+                      >
+                        <RoadmapIcon
+                          size="md"
                           aria-hidden="true"
-                          className="shrink-0 text-accent"
+                          className="shrink-0"
                         />
-                      )}
-                    </span>
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        </fieldset>
-      ) : (
-        <p className="border-t px-3 py-3 text-size-small text-subtle">
-          {translate("basemapControls.chooseProvider")}
-        </p>
-      )}
-      {!isGoogleConfigured && (
-        <p
-          id={`${selectId}-setup`}
-          className="border-t px-3 py-2 text-size-small text-subtle"
-        >
-          {translate("googleMaps.configureKey")}
-        </p>
-      )}
-    </details>
+                        <span className="min-w-0 flex-1">
+                          {translate(mode.labelKey)}
+                        </span>
+                        {isSelected && (
+                          <CheckIcon
+                            size="sm"
+                            aria-hidden="true"
+                            className="shrink-0"
+                          />
+                        )}
+                        {!isConfigured && (
+                          <span className="text-size-small">
+                            {translate("googleMaps.keyRequired")}
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+          ))}
+        </div>
+        {!isGoogleConfigured && (
+          <p
+            id={`${selectId}-setup`}
+            className="mt-[10.2px] border-t pt-[6.8px] text-subtle [overflow-wrap:anywhere]"
+          >
+            {translate("googleMaps.configureKey")}
+          </p>
+        )}
+      </MapControlMenu>
+    </div>
   );
 };

@@ -1013,6 +1013,13 @@
   "optional": "optional",
   "basemap": "Basemap",
   "mapProvider": "Map provider",
+  "mapCursorCoordinates": {
+    "label": "Cursor coordinates",
+    "longitude": "Longitude",
+    "latitude": "Latitude",
+    "longitudeShort": "Lon",
+    "latitudeShort": "Lat"
+  },
   "basemapControls": {
     "mapMode": "Map mode",
     "chooseProvider": "Choose a map provider"
@@ -2419,6 +2426,22 @@
       "deleteConfirmation_other": "Delete folder \"{{1}}\" and the {{count}} selection sets inside it?",
       "add": "Add to folder"
     }
+  },
+  "simulationTimeline": {
+    "title": "Simulation timeline",
+    "seek": "Simulation time",
+    "ready": "Run a simulation to explore results.",
+    "steadyState": "Steady-state results",
+    "calendar": "Simulation calendar",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
+    "startDate": "Simulation start date",
+    "from": "From",
+    "to": "To",
+    "interval": "Interval",
+    "useNow": "Use current date and time",
+    "calendarDescription": "From sets the start date and time for the next run. Select a result day to view the completed simulation.",
+    "closeCalendar": "Close calendar"
   },
   "flowAnimation": {
     "title": "Water flow",

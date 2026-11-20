@@ -2,6 +2,7 @@ import { atom } from "jotai";
 import type { EPSResultsReader } from "src/simulation";
 
 export const simulationStepAtom = atom<number | null>(null);
+export const simulationStepTransitionDurationAtom = atom(0);
 
 export type SimulationIdle = { status: "idle" };
 
@@ -15,6 +16,8 @@ type ExecutionResult = {
   report: string;
   modelVersion: string;
   settingsVersion: string;
+  startTimestamp?: number;
+  reportingStartTime?: number;
   epsResultsReader?: EPSResultsReader;
   runLocation?: SimulationRunLocation;
 };
@@ -31,9 +34,7 @@ export type SimulationRunning =
     } & PreviousExecutionResult);
 
 export type SimulationState =
-  | SimulationIdle
-  | SimulationFinished
-  | SimulationRunning;
+  SimulationIdle | SimulationFinished | SimulationRunning;
 
 export const initialSimulationState: SimulationIdle = {
   status: "idle",

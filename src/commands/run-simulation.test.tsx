@@ -1,4 +1,4 @@
-import { screen, render, waitFor } from "@testing-library/react";
+import { act, screen, render, waitFor } from "@testing-library/react";
 import { CommandContainer } from "./__helpers__/command-container";
 import { SimulationFinished } from "src/state/simulation";
 import { simulationDerivedAtom } from "src/state/derived-branch-state";
@@ -16,6 +16,8 @@ import { Mock } from "vitest";
 import { runSimulation as workerRunSimulation } from "src/simulation/epanet/worker";
 import { patchEpanetLoader } from "src/__helpers__/epanet-loader";
 import * as simulationStorage from "src/infra/storage";
+import { simulationStartDateTimeAtom } from "src/state/simulation-timeline";
+import { SimulationSettingsBuilder } from "src/__helpers__/simulation-settings-builder";
 
 vi.mock("src/lib/worker", () => ({
   lib: {
@@ -117,6 +119,71 @@ describe("Run simulation", () => {
     );
     expect(pressure?.values[0]).toBeGreaterThan(0);
     expect(simulation.runLocation).toBeUndefined();
+  });
+
+  it("captures From before asynchronous checks and retains it with the results", async () => {
+    let finishChecks:
+      ((results: Awaited<ReturnType<BlockingChecks>>) => void) | undefined;
+    blockingChecksOverride = () =>
+      new Promise((resolve) => {
+        finishChecks = resolve;
+      });
+    const originalStart = new Date(2026, 10, 19, 14, 23, 45).getTime();
+    const changedStart = new Date(2026, 10, 20, 9, 10, 11).getTime();
+    const store = setInitialState({ hydraulicModel: aSimulableModel() });
+    store.set(simulationStartDateTimeAtom, originalStart);
+    renderComponent({ store });
+
+    await triggerRun();
+    await waitFor(() => expect(finishChecks).toBeDefined());
+    act(() => {
+      store.set(simulationStartDateTimeAtom, changedStart);
+      finishChecks?.([]);
+    });
+
+    await waitFor(() =>
+      expect(store.get(simulationDerivedAtom).status).toBe("success"),
+    );
+    const simulation = store.get(simulationDerivedAtom) as SimulationFinished;
+    expect(simulation.startTimestamp).toBe(originalStart);
+    expect(simulation.reportingStartTime).toBe(0);
+    const inp = (lib.runSimulation as unknown as Mock).mock
+      .calls[0][0] as string;
+    expect(inp).toMatch(/Start Clocktime\s+14:23:45/);
+    expect(store.get(simulationStartDateTimeAtom)).toBe(changedStart);
+    expect(store.get(simulationDerivedAtom)).toBe(simulation);
+  });
+
+  it("retains the actual report start offset returned by the engine", async () => {
+    (lib.runSimulation as unknown as Mock).mockImplementation(
+      (...args: Parameters<typeof workerRunSimulation>) => {
+        args[0] = args[0].replace("[TIMES]", "[TIMES]\nReport Start\t0:30");
+        return workerRunSimulation(...args);
+      },
+    );
+    const store = setInitialState({
+      hydraulicModel: aSimulableModel(),
+      simulationSettings: SimulationSettingsBuilder.with()
+        .timing({
+          duration: 3600,
+          hydraulicTimestep: 1800,
+          reportTimestep: 1800,
+        })
+        .build(),
+    });
+    const startTimestamp = new Date(2026, 10, 19, 8, 5, 6).getTime();
+    store.set(simulationStartDateTimeAtom, startTimestamp);
+    renderComponent({ store });
+
+    await triggerRun();
+
+    await waitFor(() =>
+      expect(store.get(simulationDerivedAtom).status).toBe("success"),
+    );
+    const simulation = store.get(simulationDerivedAtom) as SimulationFinished;
+    expect(simulation.startTimestamp).toBe(startTimestamp);
+    expect(simulation.reportingStartTime).toBe(1800);
+    expect(simulation.epsResultsReader?.timestepCount).toBe(2);
   });
 
   it("persists the state when the simulation fails", async () => {

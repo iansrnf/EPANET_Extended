@@ -12,6 +12,9 @@ import {
 import { branchStateAtom } from "src/state/branch-state";
 import { projectSettingsAtom } from "src/state/project-settings";
 import { commitSimulationResultAtom } from "src/state/simulation-step";
+import { simulationStartDateTimeAtom } from "src/state/simulation-timeline";
+import { setSimulationClockTime } from "src/lib/simulation-clock-time";
+import { getSimulationMetadata } from "src/simulation/epanet/simulation-metadata";
 import { clearQuickGraphPropertyAtom } from "src/state/quick-graph";
 import { clearSymbologyForPropertyAtom } from "src/state/map-symbology";
 import {
@@ -67,21 +70,25 @@ export const useRunSimulation = () => {
         const simulationSettings = get(simulationSettingsDerivedAtom);
         const worktree = get(worktreeAtom);
         const projectSettings = get(projectSettingsAtom);
+        const startTimestamp = get(simulationStartDateTimeAtom);
 
         const run = async () => {
           const currentSimulation = get(simulationDerivedAtom);
           setSimulationState({ ...currentSimulation, status: "running" });
-          const inp = buildInp(hydraulicModel, {
-            customerDemands: true,
-            usedPatterns: true,
-            usedCurves: true,
-            includeQuality:
-              simulationSettings.qualitySimulationType === "age" ||
-              simulationSettings.qualitySimulationType === "chemical",
-            simulationSettings,
-            units: projectSettings.units,
-            headlossFormula: projectSettings.headlossFormula,
-          });
+          const inp = setSimulationClockTime(
+            buildInp(hydraulicModel, {
+              customerDemands: true,
+              usedPatterns: true,
+              usedCurves: true,
+              includeQuality:
+                simulationSettings.qualitySimulationType === "age" ||
+                simulationSettings.qualitySimulationType === "chemical",
+              simulationSettings,
+              units: projectSettings.units,
+              headlossFormula: projectSettings.headlossFormula,
+            }),
+            startTimestamp,
+          );
           const start = performance.now();
 
           let isCompleted = false;
@@ -162,6 +169,10 @@ export const useRunSimulation = () => {
             report,
             modelVersion: hydraulicModel.version,
             settingsVersion: simulationSettings.version,
+            startTimestamp,
+            reportingStartTime: epsReader
+              ? getSimulationMetadata(metadata).reportingStartTime
+              : undefined,
             epsResultsReader: epsReader,
             runLocation:
               epsReader && hasBrowserStorage

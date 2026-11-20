@@ -10,7 +10,8 @@ import { googleMapsSessionVersionAtom, layerConfigAtom } from "src/state/map";
 import { offlineAtom } from "src/state/offline";
 import { GoogleMapsAttribution } from "./google-maps-attribution";
 
-vi.mock("@epanet-js/map", () => ({
+vi.mock("@epanet-js/map", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@epanet-js/map")>()),
   DEFAULT_CENTER: [-4.3800042, 55.914314],
   DEFAULT_ZOOM: 15.5,
   colorFor: vi.fn(),

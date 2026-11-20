@@ -360,12 +360,25 @@ type SimulationValidationCancelled = {
 type SimulationTimestepChanged = {
   name: "simulation.timestep.changed";
   timestepIndex: number;
-  source: "shortcut" | "buttons" | "dropdown" | "quick-graph";
+  source:
+    | "shortcut"
+    | "buttons"
+    | "dropdown"
+    | "timeline"
+    | "calendar"
+    | "quick-graph";
 };
 
 type SimulationPlaybackStopped = {
   name: "simulation.playback.stopped";
-  source: "shortcut" | "buttons" | "dropdown" | "quick-graph" | "auto";
+  source:
+    | "shortcut"
+    | "buttons"
+    | "dropdown"
+    | "timeline"
+    | "calendar"
+    | "quick-graph"
+    | "auto";
 };
 
 type SimulationPlaybackStarted = {

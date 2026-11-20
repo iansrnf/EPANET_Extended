@@ -1,0 +1,496 @@
+RECOVERY PROMPT — EPANET EPS, TIMELINE, AND MAP UI
+Snapshot: November 20, 2026
+Workspace: C:\Project\GSCWD\Epanet_extended
+
+You are continuing an existing Codex collaboration on the GSCWD EPANET application. This is a recovery/handoff prompt preserving work already completed in an earlier conversation.
+
+Read this entire prompt, inspect the current source and working tree, and preserve the final decisions below. Do not rebuild the feature from scratch, undo existing changes, or start implementing additional work just because this prompt mentions an observation. Wait for the user's next specific request after acknowledging the recovered context. The user explicitly said this phase was done and requested this recovery prompt.
+
+1. WORKSPACE, AUTHORIZATION, AND WORKING PRACTICES
+
+- Windows, PowerShell, pnpm, Next.js/React/TypeScript/Jotai. Workspace root is C:\Project\GSCWD\Epanet_extended. The app runs from the repository root.
+- Read the root AGENTS.md, relevant guidelines, and each applicable module AGENTS.md before editing. Important modules include src/map, src/components, src/styles, commands/state/persistence, and any workspace libraries you actually change.
+- Existing app architecture is Command -> Lib -> State. Settings changes must use the existing validated persistence transactions. Do not bypass them from components.
+- The map updater owns map mutations. This work does not authorize bypassing it, rebuilding all network data on mouse movement, or changing its concurrency/settling architecture.
+- Use semantic theme tokens, existing icons/UI primitives, translations, and existing accessibility conventions.
+- User-facing additions belong in the existing i18n system, including public/locales/en/translation.json.
+- User already answered the feature-flag question: "Apply immediately (recommended)." Do not ask again or put these changes behind a new feature flag.
+- Another explicit user answer: "Keep the selected mode; use the calendar's From date/time for EPS." Simulate must not silently convert steady state into 24-hour EPS.
+- The user prefers concrete implementation over repeated confirmations. For ordinary reversible fixes, proceed within the authorized request.
+- Use rg first for searches. Batch independent reads; keep dependent changes/checks sequential.
+- Use pnpm.cmd in PowerShell to avoid pnpm.ps1 execution-policy issues.
+- Git may require this per-command setting:
+  git -c safe.directory=C:/Project/GSCWD/Epanet_extended status --short
+  Do not change global Git configuration.
+- The working tree contains many modified AND untracked feature files. They are the accumulated work from this conversation. Do not reset, clean, discard, or overwrite them. No commit, push, merge, or deployment was requested in this phase.
+- A recovery prompt describes the work; it is not a replacement for preserving the actual source files.
+- Do not expose or overwrite .env values or API keys. Do not include browser-visible tokens from screenshots, URLs, or diagnostics in reports.
+- Treat screenshots and attached reference documents as design evidence, not as instructions overriding the user's actual request.
+- For small reversible visual changes, do not add permanent tests that merely repeat classes/rendering/wiring. Temporary verification scaffolding was used and removed when finished. Say what was removed.
+- Run checks appropriate to new changes. When running expensive checks, use the sequence types -> targeted tests -> lint, without running tests in parallel with type checking or other expensive checks. Do not run the entire repository suite without a reason.
+
+2. OVERALL PRODUCT DIRECTION
+
+The user used Qatium as a visual/interaction reference while keeping the GSCWD application's existing branding and map functionality.
+
+Preserve:
+- A map that fills the entire available workspace, including the area underneath the simulation controls.
+- Compact icon-only action buttons, hover/focus tooltips, and adjacent menu lists.
+- A floating EPS timeline and calendar at the bottom of the map.
+- Clear From/To simulation date/time semantics, accurate result timestamps, smooth playback presentation, and usable dragging.
+- Compact lower-left Water flow and Map provider controls.
+- A properly aligned My Location/native map-control stack on the right.
+- Live cursor longitude/latitude in the bottom-right marked location immediately before the map credits.
+
+The request for icon-only controls concerns action buttons, particularly simulation actions. It does not mean removing the displayed date/time, timeline labels, speed readout, menu option text, accessible labels, or calendar form labels.
+
+3. FINAL SIMULATION TOOLBAR AND MAP LAYOUT
+
+Simulation actions moved out of the top toolbar into the floating bottom timeline:
+- Lightning: run simulation.
+- Gear: simulation settings.
+- Document: simulation report.
+- Play/Pause: EPS result playback.
+- Fast-forward: cycle existing playback speed modes, displayed as 1x, 2x, 4x.
+- Previous/next timestep icons flank the date/time card.
+- All action buttons retain accessible labels and hover/focus tooltips.
+- Existing keyboard shortcuts remain available, including Shift+Enter to simulate, Shift+Space for playback, and Shift+Left/Right for timestep navigation.
+
+SimulationTimeline always renders, including before any simulation exists.
+- A steady-state model can show a 24-hour preview without becoming an EPS model.
+- Actual playback requires multi-step results.
+- Buttons/seek/configuration are appropriately disabled while a simulation is running.
+- Reports retain their normal availability rules.
+
+The simulation section is fully transparent and overlays the full-size map:
+- Do not restore an opaque white footer/panel or reserve map layout height for the timeline.
+- Empty areas pass pointer events through to the map.
+- Actual buttons, track interaction regions, and the selector remain interactive.
+- Preserve text/icon legibility treatment and reduced-motion support.
+
+DraggableMap in src/components/epanet-app.tsx measures the actual timeline section height and exposes --simulation-controls-height. Other map overlays use that variable to avoid the controls.
+- Do not replace this with a hard-coded timeline-height assumption.
+- Preserve responsive wrapping and the existing floating-map layout.
+
+4. TIMELINE INTERACTION — FINAL VERSION, NOT ABANDONED EXPERIMENTS
+
+IMPORTANT: Early in the conversation the user requested a centered arrow/00:00 layout. Later a Qatium recording clarified the interaction, and the final implementation is:
+- A fixed full-width time ruler with fixed tick positions.
+- A selector arrow and progress fill that move from left to right across that ruler.
+- Do not restore the earlier fixed-center selector with a translated/panning tick layer.
+
+Current behavior to preserve:
+- Clicking the track seeks to the nearest valid sample/preview step.
+- Dragging the selector follows the pointer continuously with local visual progress.
+- Selected calendar/result time updates to the nearest available interval as dragging crosses samples.
+- Release snaps the selector to the nearest valid sample.
+- Grabbing the selector preserves the initial pointer-to-visible-arrow offset; it must not jump to a different position at drag start.
+- Pointer capture tracks one active pointer and handles release, cancel, lost capture, range changes, and unmount cleanly.
+- Dragging does not start map panning or leave stale pointer capture.
+- Timeline seeking pauses playback.
+- Keyboard seeking supports Arrow keys, Home/End, and PageUp/PageDown.
+- Arrow/time alignment must be calculated against the same inset ruler bounds, with endpoints clamped correctly.
+- Tick labels use actual local clock time derived from the selected start timestamp, rather than assuming midnight.
+- Elapsed/total duration can still display separately, e.g. 00:00 / 24:00.
+- Tick density adapts to available width and duration; a 24-hour run normally uses two-hour ticks when room permits.
+- Long simulations and fractional intervals must not create unbounded tick work or duplicate indices.
+
+Visual details:
+- The timeline line and tick marks are grayish blue, not plain gray.
+- Current semantic track color:
+  color-mix(in oklab, var(--color-subtle) 70%, var(--color-accent) 30%)
+- Tick marks cross the timeline line: ticks top 26px, height 12px; line top 32px, height 4px.
+- The arrow was lowered slightly and increased by 5%.
+- Current visible arrow: 14px base size, scale-105, origin-top, top 40px, house/arrow-shaped clip path.
+- The marker's idle cursor is a hand/pointer, changing to grabbing while dragged. Do not restore an east-west resize cursor.
+- Preserve its separate invisible 44px interaction area and endpoint clamping.
+
+5. SMOOTH PLAYBACK
+
+Smoothness is presentation metadata over discrete hydraulic result steps:
+- Selector left and progress width transition linearly between result steps.
+- Do not invent interpolated hydraulic samples or update the entire map/model state every animation frame.
+- simulationStepTransitionDurationAtom carries the duration associated with an automatic playback step.
+- setTimestepAtom accepts the step and optional animation duration together.
+- Manual seeking defaults transition duration to zero and responds immediately.
+- Explicit pauses/stops clear pending transitions even if playback has already stopped.
+- Automatic stop at the final step preserves the final transition long enough to finish visually.
+- Reduced-motion preferences disable CSS transitions.
+- Playback waits for its interval before advancing each step.
+- Playing from the end resets to the first sample before continuing.
+- Playback stops appropriately for new/idle simulations and ordinary dialogs; preserve the existing logger-pressure-chart exception.
+- Existing performance-aware auto/x2/x4 timing and playback warnings remain in place.
+- The playback-speed warning is a separate compact map overlay, not text inserted into the action row.
+
+6. FROM, TO, TIMING PRESETS, AND RUN MODES
+
+The calendar configures a From date AND time:
+- Defaults lazily to the current local date/time at whole-second precision.
+- Do not hard-code the date shown in old screenshots.
+- Preserve hours, minutes, and seconds; do not round From to midnight or the beginning of an hour.
+- datetime-local accepts seconds with step=1 and uses strict local date/time parsing.
+- A Use Now action is available.
+- Interval presets are hourly, minutes, and seconds (3600, 60, and 1 seconds).
+- Hourly is the default/fallback interpretation.
+
+The user's central example:
+From: November 19, 2026, 5:50 PM
+Configured EPS duration: 24 hours
+To: November 20, 2026, 5:50 PM
+
+To is From plus the configured elapsed duration, with proper date rollover.
+- Distinguish elapsed intervals from sample count: a 24-hour hourly run can have 25 timestamps including both endpoints.
+- Timeline date helpers add elapsed milliseconds, preserving correct elapsed-time behavior across daylight-saving changes.
+- Calendar day navigation uses actual local-day boundaries, retains the selected local time of day where possible, and clamps to available samples.
+
+Keep these separate:
+A. Pending From/configuration for the NEXT run.
+B. Selected preview/result date/time shown by the compact card.
+C. Captured origin and actual reporting interval of a COMPLETED run.
+
+Before results:
+- Choosing a calendar day changes From, preserving its time of day.
+- Preview seeking changes the selected preview index/time.
+- Preview duration is the configured duration, or 86400 seconds when duration is zero.
+- Preview reporting interval uses the configured report timestep, falling back to one hour and clamped to preview duration.
+
+With results:
+- The card/day selection explores the actual completed run.
+- Days without available samples are disabled.
+- Editing From configures the next run and must not relabel, clear, or dispose existing results.
+- The configured To output refers to pending From plus configured duration; it may differ from the endpoint of older results still being displayed.
+- Displayed result time is captured run start + actual report-start offset + sample index * reader.reportingTimeStep.
+- Use the reader's actual count/interval for completed results, not newly edited settings.
+
+Mode decision:
+- Keep the mode selected in Simulation settings.
+- Steady state has duration zero. Showing its 24-hour preview does not enable EPS.
+- Simulate must not auto-switch it to EPS.
+- The settings dialog's explicit EPS selection uses its own timing draft and save path.
+- Selecting an interval preset in the calendar is an explicit timing-settings change and persists a positive duration through the existing transaction.
+- Preset changes preserve the inferred NUMBER of intervals, not the same total elapsed duration: 24 hourly steps become 24 minute steps when changed to minutes.
+- Invalid/custom counts fall back to the existing 24-step default.
+- Duration, hydraulic timestep, reporting timestep, and pattern timestep update together for a preset; retain other timing fields and integer limits.
+- Timing changes are blocked when hasScenariosAtom is true, including on the main branch when scenarios exist. The command and disabled UI both honor this.
+- From remains editable transient application state; scenario timing restrictions are not a reason to rewrite old run timestamps.
+
+7. RUN-TIME STATE, CLOCK CONTROLS, AND RESULT SAFETY
+
+Relevant ownership:
+- src/state/simulation-timeline.ts:
+  simulationStartDateTimeAtom
+  simulationPreviewStepAtom
+- src/commands/change-simulation-timeline.ts:
+  validated From changes, interval changes, and preview seeking.
+- src/state/simulation.ts:
+  simulationStepAtom
+  simulationStepTransitionDurationAtom
+  optional completed-run startTimestamp/reportingStartTime metadata.
+- src/state/simulation-step.ts:
+  commitSimulationResultAtom
+  setTimestepAtom.
+
+Calendar From/preview are transient state, not newly persisted project-file fields.
+- Shared resetAppState in use-start-new-project.ts resets them to now/zero for new/open/import-replacement workflows.
+- Do not claim From survives a reload as a persisted project field.
+- Other reset helpers such as reprojection/customer-point import retain their current behavior.
+- Do not make a persistence/file-format change merely to recover this UI work.
+
+Run execution:
+- useRunSimulation snapshots the model, settings, worktree/project settings, and From BEFORE asynchronous validation.
+- A delayed validation or Run Anyway callback must continue using that snapshot.
+- Changing From while checks are pending must not alter the already initiated run's start metadata.
+- setSimulationClockTime changes only the generated runtime INP.
+- It inserts/replaces Start Clocktime HH:mm:ss inside [TIMES], preserving other timing settings, report start, and line endings.
+- It uses From's local hours/minutes/seconds for EPANET CLOCKTIME controls.
+- Do not rewrite saved controls, change the original model, or pretend EPANET itself has calendar-date semantics.
+- Preserve section scanning/slicing rather than splitting a potentially very large INP unnecessarily.
+
+Results:
+- Initialize the new reader before publishing it.
+- Capture startTimestamp and actual reportingStartTime from valid initialized metadata.
+- Failure/OOM paths may have empty metadata; do not parse metadata without a valid initialized reader.
+- Legacy readers without start metadata get a stable reader-keyed fallback through a WeakMap.
+- Commit new reader/result state, transition duration zero, and selected step zero in ONE Jotai write batch.
+- Preserve this atomicity: otherwise asynchronous result lookup can combine a new step with an outgoing reader whose storage is being removed.
+- Keep previous results available while a next result fetch is pending.
+- Preserve OPFS storage when available and the isolated in-memory fallback when it is unavailable.
+- Dispose a previous reader only after replacement and only when other branches no longer depend on its source.
+- Preserve existing validation/review checks, Run Anyway behavior, reports, warnings, and quality-simulation handling.
+
+8. CALENDAR CARD AND OPACITY
+
+The compact simulation date/time must remain inside a Qatium-like background card, with previous/next buttons beside it.
+- Clicking the card opens the actual calendar/date-time controls.
+- Do not restore the old long timestep dropdown in the top toolbar.
+- Keep a visible date/time label, a down-chevron, and accessible names.
+- The calendar popover contains month navigation, day grid, From, To, interval selection, and Use Now.
+- The compact trigger and its neighboring previous/next faces have 40% BACKGROUND opacity:
+  bg-popover-inverse/40
+- Keep text/icons fully opaque; do not use opacity-40 on the whole card.
+- The user's 40% request targeted the circled compact calendar card and adjacent arrows.
+- The expanded calendar editor remains an ordinary readable popover; it was not made globally 40% transparent.
+
+9. WATER FLOW AND MAP PROVIDER MENUS
+
+Lower-left controls are compact icon-only triggers:
+- Water flow uses Lucide Waves exported as WaterFlowIcon, replacing the old H-like icon.
+- Map provider uses the globe icon.
+- Opening a trigger shows a menu beside it.
+- Hover/focus tooltips remain available.
+- Initial design asked for approximately a 15% smaller menu; do not repeatedly shrink it by another 15%.
+- Current shared menu width is 217.6px; compact desktop rows are 37.4px minimum, with 44px coarse-pointer rows.
+- Map provider retains grouped provider/mode lists, selected checkmarks, configuration-disabled choices, and selection labels in tooltips.
+- Preserve Google Maps and Mapbox support, provider mode definitions, session renewal, and required attribution. Do not remove an existing provider or replace its setup logic.
+
+Water flow menu:
+- Actual flow animation playing state still controls the Play/Pause action inside the menu.
+- Flow colors editor remains available.
+- Playback requires simulation results and respects reduced motion.
+- Closing the menu must not stop water flow animation.
+
+IMPORTANT fixed bug:
+- The trigger's BLUE HIGHLIGHT means the MENU IS OPEN.
+- It must clear when the menu closes, even while water animation continues.
+- MapControlMenu no longer accepts active={playing}; its highlight condition is only open.
+- Do not restore open || active.
+
+IMPORTANT latest dismissal decision:
+- Clicking/panning/focusing the map must NOT close these toggle menus.
+- Shared MapControlMenu handles both Water flow and Map provider.
+- Popover.Content onInteractOutside prevents the Radix CUSTOM dismissal event when event.target is an Element whose closest(".mapboxgl-map") exists.
+- This covers map canvas and native map controls, including pointer and focus events.
+- Do not prevent the original map pointer event or stop it from reaching the map.
+- Clicking the same trigger again closes the menu.
+- Escape closes the menu.
+- Other UI outside the map can still dismiss normally.
+- Tooltip visibility is controlled separately and suppressed while its menu is open.
+- Do not casually add onPointerDown stopPropagation to portaled Popover.Content; it can interfere with Radix outside-click bookkeeping.
+- Nested color-editor dismissal retains its own behavior.
+
+Documentation caveat: README still contains an older sentence saying to click outside to close a map menu. That sentence is stale for map interaction. This was identified during recovery, not changed during the prompt-only task. The source and latest user decision above are authoritative.
+
+10. BUTTON SIZING AND FINAL LEFT ALIGNMENT
+
+Compact desktop map/simulation controls:
+- Target: 28px.
+- Visible face: 24px.
+- Icon: 14px.
+
+Coarse-pointer controls:
+- Target: 44px.
+- Visible face: 32px.
+- Icon: 18px.
+
+Preserve these shared CSS variables and touch targets rather than globally scaling the application.
+
+LATEST change before this recovery prompt:
+The user circled the vertical Water flow/Map provider/Simulate column and the horizontal simulation actions, asking to realign them.
+
+Implemented:
+- SimulationTimeline uses px-2 py-2 at every breakpoint; removed sm:px-3.
+- Timeline remains bottom-6 (24px).
+- Water flow, Map provider, and Simulate now have the same 8px left inset.
+- Horizontal simulation action group uses gap-1.
+- Let H be --simulation-controls-height and T be --map-control-target-size:
+  Map provider bottom = H + 1.25rem (20px at default root size).
+  Water flow bottom = H + 1.5rem + T (24px + T).
+- Together with the timeline's padding/bottom offset, this produces 4px target gaps vertically, matching horizontal gap-1.
+- Desktop visible-face gaps are 8px because each face is inset within its target.
+- Keep responsive/touch sizing and measured height behavior.
+- Do not restore the older desktop 12px timeline left padding or old provider H + 32px offset.
+
+This final alignment was lint-checked and mathematically reviewed, but live preview access was unavailable at the time. Do not claim a final post-alignment browser screenshot exists. If future work involves these controls and live access becomes available, verify the user's actual layout.
+
+11. MY LOCATION AND NATIVE MAP CONTROLS
+
+The user's My Location issue was appearance/position, not a request to rewrite geolocation logic.
+
+Preserve:
+- My Location in the right-side native control column.
+- Full native-sized visible face for this button: 28px desktop / 44px coarse.
+- Primary button wrapped in mapboxgl-ctrl-group, without an extra mapboxgl-ctrl margin wrapper.
+- Consistent borders, radius, shadow, center, and 8px right inset.
+- Existing spinner, located state, error message, retry/dismiss behavior, accessible status, and existing location command.
+- Desktop locator bottom = H + 4*T + 5rem.
+- Mobile locator bottom = H + 2rem.
+- Stronger native bottom-right control margin rule: 0 8px 8px 0.
+- Existing initial/manual location-navigation behavior. A successful initial location lookup can preserve the user's navigation; manual location action recenters according to the existing command.
+- Do not reinterpret blue located state as a broken menu state.
+
+12. MAP CREDITS AND LIVE LONGITUDE/LATITUDE
+
+A "bring this down" request referred specifically to the text:
+Mapbox / OpenStreetMap / Improve this map.
+It did NOT refer to moving the timeline.
+
+Preserve map attribution:
+- Native right-side controls are raised above the timeline.
+- Attribution gets a cancelling transform so credits remain at the map bottom.
+- Native bottom-right parent offset uses H + 1.5rem and attribution cancels that same offset.
+- Mapbox logo remains bottom-left.
+- Google attribution keeps its separate block and required provider content.
+- GoogleMapsAttribution includes data-map-attribution="google" for layout measurement.
+- Do not hide or remove required credits to create space.
+
+Live cursor readout:
+- The user repeatedly corrected its placement. Final location is the marked BOTTOM-RIGHT slot immediately LEFT of actual Mapbox/OpenStreetMap credit text.
+- It is NOT next to the lower-left Water flow/Map provider buttons.
+- It is NOT in a full-width bar above the simulation row.
+- Compact stacked lines:
+  Lon: ...
+  Lat: ...
+- Six decimal places, localized number formatting, signed values, tabular numbers.
+- Approximately 105px x 24px for the UK demo; no need to force every possible coordinate into a fixed width.
+- 12px line height, flex-col items-start, intrinsic width = MAX(child widths) + horizontal padding.
+- Its BACKGROUND is 40% opacity: bg-popover/40.
+- Text stays fully opaque.
+
+Critical placement fix:
+- Measuring only .mapboxgl-ctrl-attrib or its inner DIV can report a stretched full-width box and incorrectly select a left-side fallback.
+- Measure actual credit TEXT with a DOM Range selecting the contents of .mapboxgl-ctrl-attrib-inner.
+- Use that text's left edge to place coordinates approximately 8px before the credits.
+- Use the outer attribution bottom for vertical alignment.
+- Keep ResizeObserver/MutationObserver handling for map size, credits, Google credit insertion, and timeline height.
+- Narrow-space fallback stays RIGHT-aligned, above the timeline/Google credits as necessary.
+- Do not restore a fallback with both left/right stretching or a left-side coordinate block.
+- Guard tiny floating maps against placement above the visible map.
+
+Interaction/performance:
+- Coordinates follow pointer movement and update under a stationary cursor when the map pans/zooms.
+- Clicking/tapping a map position updates them.
+- Keep last coordinates after pointer leave.
+- Show placeholders before a valid position exists.
+- Validate coordinates; reject non-finite values/invalid latitude, wrap world-copy longitude, normalize negative zero, round to six decimals.
+- Isolated local component state and one requestAnimationFrame update at a time; no global model/map rerender per mouse event.
+- Clean subscriptions/observers/queued animation frame on map replacement, grid-mode change, and unmount.
+- Readout is pointer-events-none and aria-live="off" so it neither blocks map interaction nor announces every mouse movement.
+- Hide geographic readout in the non-geographic grid view.
+
+13. SOURCE MAP — INSPECT THESE BEFORE CHANGING THE FEATURES
+
+Main components:
+- src/components/epanet-app.tsx
+- src/components/simulation-timeline.tsx
+- src/components/simulation-calendar.tsx
+- src/components/simulation-playback-controller.tsx
+- src/components/simulation-playback-speed-warning.tsx
+- src/components/hints.tsx
+- src/components/timestep-selector.tsx is DELETED as part of replacing the old UI. Do not casually restore it.
+
+Commands/state/helpers:
+- src/commands/run-simulation.tsx
+- src/commands/change-simulation-timeline.ts
+- src/commands/change-timestep.ts
+- src/commands/toggle-playback.ts
+- src/state/simulation.ts
+- src/state/simulation-step.ts
+- src/state/simulation-timeline.ts
+- src/state/simulation-playback.ts
+- src/lib/simulation-timeline.ts
+- src/lib/simulation-clock-time.ts
+- src/lib/simulation-timing-presets.ts
+- src/hooks/persistence/use-start-new-project.ts
+
+Map/UI:
+- src/map/map-canvas.tsx
+- src/map/map-control-menu.tsx
+- src/map/flow-animation-control.tsx
+- src/map/flow-animation-colors-editor.tsx
+- src/map/basemap-selector.tsx
+- src/map/device-location-control.tsx
+- src/map/cursor-coordinates.tsx
+- src/map/google-maps-attribution.tsx
+- src/lib/cursor-coordinates.ts
+- src/styles/globals.css
+- src/icons/index.tsx
+- src/toolbar/toolbar.tsx
+- src/toolbar/map-toolbar.tsx
+- src/infra/user-tracking.tsx
+- public/locales/en/translation.json
+- README.md
+
+Existing/new test files relevant to these contracts:
+- src/commands/change-simulation-timeline.test.tsx
+- src/commands/run-simulation.test.tsx
+- src/state/simulation-step.test.tsx
+- src/state/simulation-timeline.test.tsx
+- src/lib/simulation-timeline.test.ts
+- src/lib/simulation-clock-time.test.ts
+- src/lib/cursor-coordinates.test.ts
+- src/map/test/device-location.test.tsx
+- src/map/google-maps-attribution.test.tsx
+
+Inspect Git status for the complete current list; do not assume every helper in this list was newly introduced or that only these files are modified.
+
+14. VALIDATION HISTORY AND CURRENT LIMITS
+
+During implementation:
+- Multiple pnpm.cmd check-types runs passed.
+- Relevant source files passed targeted ESLint checks.
+- Cursor-coordinate helper: 26 tests passed.
+- Existing device-location integration tests: 6 passed.
+- Google attribution tests: 9 passed.
+- Those 41 targeted tests passed during the coordinate work; this is historical validation, not a claim that they were rerun after every subsequent CSS change.
+- Google attribution tests needed a partial @epanet-js/map mock preserving actual exports; do not revert it to an incomplete hard-coded export list.
+- Three temporary real-Radix interaction checks passed for persistent map menus:
+  map clicks/focus reach the canvas and keep menu open;
+  Escape/trigger close correctly;
+  other panel interaction still dismisses.
+  That temporary src/map/map-control-menu.test.tsx was removed after verification according to repository scaffolding guidance.
+- Earlier temporary Playwright QA scripts under logs were also removed after use.
+- No claim was made that the entire repository test suite or final production build ran.
+
+Browser checks performed earlier included cursor movement, camera movement, mouse-leave retention, touch/narrow layouts, Google-credit clearance, and tiny floating-map fallback.
+- A separate localhost:3011 preview initially looked correct while the user's actual localhost:3000 page still had wrong placement.
+- The actual user Chrome page on localhost:3000 was then inspected and refreshed. Correct bottom-right coordinate placement and live updates were visually observed there.
+- Do not validate a different dev instance and assume it proves the user's active page updated.
+- The temporary 3011 server was stopped.
+- Avoid starting competing Next dev instances sharing the same .next output when possible.
+- Use the user's actual current URL, discovered rather than guessed. It was localhost:3000 during this work.
+- Production source changes require rebuild + restart; restarting a production server alone does not compile source changes.
+- At the end of the thread, native Computer Use/browser access became unavailable ("native pipe is unavailable" / "browser access host is unavailable").
+- The final opacity/highlight/alignment work therefore has different validation levels. Most recent left-alignment edit passed targeted lint; its final visual result remains unverified live.
+- Keep that distinction honest. Do not claim a screenshot or browser test you did not actually run.
+
+Useful targeted commands, if new work warrants them:
+pnpm.cmd check-types
+pnpm.cmd exec vitest run --config logs/vitest-simulation.config.ts src/lib/simulation-timeline.test.ts src/lib/simulation-clock-time.test.ts src/state/simulation-step.test.tsx src/state/simulation-timeline.test.tsx src/commands/change-simulation-timeline.test.tsx --maxWorkers=1 --minWorkers=1
+pnpm.cmd exec vitest run --config logs/vitest-simulation.config.ts src/lib/cursor-coordinates.test.ts src/map/test/device-location.test.tsx src/map/google-maps-attribution.test.tsx --maxWorkers=1 --minWorkers=1
+pnpm.cmd exec eslint --cache <only the files changed for the new request>
+
+logs/vitest-simulation.config.ts is an existing local test configuration handling the installed wgsl_reflect/luma/deck module-resolution issue. Inspect it before relying on it; do not replace project test infrastructure just to run these checks.
+
+Historical QA images in logs may include earlier layouts:
+- simulation-timeline-ready.png
+- simulation-timeline-desktop.png
+- simulation-timeline-mobile.png
+- simulation-timeline-centered.png and centered-mobile.png are historical intermediate designs, NOT final selector behavior.
+- location-button-desktop.png, mobile.png, touch.png
+- cursor-coordinates-desktop.png, mobile.png
+- cursor-coordinates-placement.png and placement-detail.png
+Do not treat a historical screenshot as evidence of the final post-alignment build.
+
+15. ORIGINAL DESIGN REFERENCES AND FINAL HANDOFF
+
+User-provided local references included:
+C:\Users\JNOSOTROS\Downloads\recovery\New Look\Step2\Screenshot 2026-11-19 084256.png
+C:\Users\JNOSOTROS\Downloads\recovery\New Look\Step2\Screenshot 2026-11-19 090515.png
+C:\Users\JNOSOTROS\Downloads\recovery\New Look\Step2\Screenshot 2026-11-19 083045.png
+C:\Users\JNOSOTROS\Videos\Screen Recordings\Screen Recording 2026-11-19 161853.mp4
+
+Additional annotated screenshots were inline in the conversation and may not exist as local files. Their final decisions are recorded above. If a future request depends on an unavailable image/video detail, ask only for what is actually missing instead of inventing it.
+
+The most important things never to regress:
+- Preserve current work; do not restart or discard the dirty/untracked working tree.
+- Keep selected steady/EPS mode; do not auto-enable EPS on Simulate.
+- Keep exact From time and completed-run timestamp ownership.
+- Keep fixed ruler + moving selector, correct dragging, hand cursor, smooth presentation, and valid result indices.
+- Keep full-map transparency and pointer pass-through.
+- Keep compact icons, accessibility, 40% calendar/coordinate backgrounds, and correct credits.
+- Keep coordinates at the marked bottom-right position, never by the left map buttons.
+- Keep menu blue state tied only to openness and menus open during map interaction.
+- Keep the final shared left alignment and spacing.
+- Preserve geolocation, providers, flow-color editing, simulation validation, reports, storage fallback, and safe result-reader lifecycle.
+
+Recover context first. After that, implement only the user's next requested change and verify the affected behavior without undoing the agreements above.

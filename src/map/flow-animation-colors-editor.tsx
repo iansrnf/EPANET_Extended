@@ -3,7 +3,7 @@ import { useAtomValue } from "jotai";
 import * as Popover from "@radix-ui/react-popover";
 import { HexColorInput, HexColorPicker } from "react-colorful";
 import clsx from "clsx";
-import { CheckIcon, ChevronDownIcon, CloseIcon } from "src/icons";
+import { CheckIcon, ChevronRightIcon, CloseIcon } from "src/icons";
 import { useTranslate } from "src/hooks/use-translate";
 import { flowAnimationColorsAtom } from "src/state/flow-animation";
 import { useSetFlowAnimationColors } from "src/commands/set-flow-animation-colors";
@@ -39,42 +39,44 @@ export const FlowAnimationColorsEditor = () => {
         <button
           type="button"
           aria-label={translate("flowAnimation.colors.edit")}
-          title={translate("flowAnimation.colors.edit")}
-          className="flex h-11 min-w-11 items-center justify-center gap-2 rounded-r-xl px-3 text-default transition-colors hover:bg-base-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="flex min-h-[37.4px] w-full items-center gap-2 rounded-lg px-2 text-left text-default transition-colors hover:bg-base-hover focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:min-h-11"
         >
           <span
             aria-hidden="true"
-            className="h-5 w-7 rounded-md border"
+            className="h-[17px] w-[20.4px] shrink-0 rounded-sm border"
             style={{ background: gradientFor(colors) }}
           />
-          <ChevronDownIcon
+          <span className="flex-1">
+            {translate("flowAnimation.colors.title")}
+          </span>
+          <ChevronRightIcon
             size="sm"
             aria-hidden="true"
             className={clsx(
               "text-subtle transition-transform",
-              open && "rotate-180",
+              open && "text-accent",
             )}
           />
         </button>
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
-          side="top"
-          align="start"
-          sideOffset={10}
+          side="right"
+          align="end"
+          sideOffset={8.5}
           collisionPadding={12}
           aria-labelledby={titleId}
           aria-describedby={descriptionId}
-          className="z-50 w-[336px] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-2xl border bg-popover text-default shadow-2xl outline-none"
+          className="z-50 w-[285.6px] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-[13.6px] border bg-popover text-default shadow-2xl outline-none"
           style={{
             maxHeight:
-              "min(640px, var(--radix-popover-content-available-height, calc(100dvh - 24px)))",
+              "min(544px, var(--radix-popover-content-available-height, calc(100dvh - 24px)))",
           }}
           onKeyDown={(event) => event.stopPropagation()}
           onKeyPress={(event) => event.stopPropagation()}
           onKeyUp={(event) => event.stopPropagation()}
         >
-          <div className="sticky top-0 z-10 flex items-start justify-between gap-2 border-b bg-popover p-4 pb-3">
+          <div className="sticky top-0 z-10 flex items-start justify-between gap-2 border-b bg-popover p-[13.6px] pb-[10.2px]">
             <div className="min-w-0">
               <h3 id={titleId} className="text-size-heading-3 font-semibold">
                 {translate("flowAnimation.colors.title")}
@@ -96,7 +98,7 @@ export const FlowAnimationColorsEditor = () => {
               </button>
             </Popover.Close>
           </div>
-          <div className="space-y-3 p-4">
+          <div className="space-y-[10.2px] p-[13.6px]">
             <div>
               <div
                 aria-hidden="true"
@@ -211,7 +213,7 @@ export const FlowAnimationColorsEditor = () => {
             <HexColorPicker
               color={selectedColor}
               onChange={updateSelectedColor}
-              style={{ width: "100%", height: 120 }}
+              style={{ width: "100%", height: 102 }}
             />
 
             <div>

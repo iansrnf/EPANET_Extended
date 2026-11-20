@@ -10,10 +10,7 @@ export const previousTimestepShortcut = "shift+left";
 export const nextTimestepShortcut = "shift+right";
 
 export type ChangeTimestepSource =
-  | "shortcut"
-  | "buttons"
-  | "dropdown"
-  | "quick-graph";
+  "shortcut" | "buttons" | "dropdown" | "timeline" | "calendar" | "quick-graph";
 
 export const useChangeTimestep = () => {
   const userTracking = useUserTracking();

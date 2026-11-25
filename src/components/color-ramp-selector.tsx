@@ -137,20 +137,31 @@ const QUALITATIVE_MAX_SIZE = 11 as keyof CBColors["colors"];
 export const ColorRampSelector = ({
   geometryType,
   readonly = false,
+  contentClassName,
 }: {
   geometryType: "node" | "link" | "zone";
   readonly?: boolean;
+  contentClassName?: string;
 }) =>
   geometryType === "zone" ? (
-    <ZoneColorRampSelector readonly={readonly} />
+    <ZoneColorRampSelector
+      readonly={readonly}
+      contentClassName={contentClassName}
+    />
   ) : (
-    <AssetColorRampSelector geometryType={geometryType} readonly={readonly} />
+    <AssetColorRampSelector
+      geometryType={geometryType}
+      readonly={readonly}
+      contentClassName={contentClassName}
+    />
   );
 
 const ZoneColorRampSelector = ({
   readonly = false,
+  contentClassName,
 }: {
   readonly?: boolean;
+  contentClassName?: string;
 }) => {
   const translate = useTranslate();
   const { rampName, rampColors, setRampName } = useZoneColorRule();
@@ -178,12 +189,12 @@ const ZoneColorRampSelector = ({
   const triggerStyles = clsx(
     "flex items-center gap-x-2 justify-between w-full min-w-[90px]",
     "border rounded-xs",
-    "text-sm text-gray-700",
+    "text-size-base text-default",
     "focus:ring-inset focus:ring-1 focus:ring-accent focus:bg-purple-300/10",
     "p-2 min-h-9 w-full",
   );
 
-  const contentStyles = `bg-white w-(--radix-select-trigger-width) border text-sm rounded-xs shadow-md z-50`;
+  const contentStyles = `bg-popover text-default w-(--radix-select-trigger-width) border text-size-base rounded-xs shadow-md z-50`;
 
   return (
     <Select.Root>
@@ -198,19 +209,24 @@ const ZoneColorRampSelector = ({
           <ChevronDownIcon />
         </span>
       </Select.Trigger>
-      <Select.Content position="popper" className={contentStyles}>
-        <Select.Viewport className="p-1">
-          <div className="py-2 flex flex-col gap-y-3 overflow-y-auto max-h-[320px]">
-            <RampChoices
-              label={translate("qualitativeRamp")}
-              colors={CARTO_COLOR_QUALITATIVE}
-              onSelect={setRampName}
-              size={QUALITATIVE_MAX_SIZE}
-              reverse={false}
-            />
-          </div>
-        </Select.Viewport>
-      </Select.Content>
+      <Select.Portal>
+        <Select.Content
+          position="popper"
+          className={clsx(contentStyles, contentClassName)}
+        >
+          <Select.Viewport className="p-1">
+            <div className="py-2 flex flex-col gap-y-3 overflow-y-auto max-h-[320px]">
+              <RampChoices
+                label={translate("qualitativeRamp")}
+                colors={CARTO_COLOR_QUALITATIVE}
+                onSelect={setRampName}
+                size={QUALITATIVE_MAX_SIZE}
+                reverse={false}
+              />
+            </div>
+          </Select.Viewport>
+        </Select.Content>
+      </Select.Portal>
     </Select.Root>
   );
 };
@@ -218,9 +234,11 @@ const ZoneColorRampSelector = ({
 const AssetColorRampSelector = ({
   geometryType,
   readonly = false,
+  contentClassName,
 }: {
   geometryType: "node" | "link";
   readonly?: boolean;
+  contentClassName?: string;
 }) => {
   const translate = useTranslate();
   const {
@@ -275,38 +293,46 @@ const AssetColorRampSelector = ({
           <ChevronDownIcon />
         </span>
       </Select.Trigger>
-      <Select.Content position="popper" className={contentStyles}>
-        <Select.Viewport className="p-1">
-          <div className="flex flex-col gap-y-2">
-            <div className="py-2 flex flex-col gap-y-3 overflow-y-auto max-h-[320px]">
-              <RampChoices
-                label={translate("continuousRamp")}
-                colors={[...COLORBREWER_SEQUENTIAL, ...CARTO_COLOR_SEQUENTIAL]}
-                onSelect={(newRamp) => setRampName(newRamp, isReversed)}
-                size={size}
-                reverse={isReversed}
-              />
-              <RampChoices
-                label={translate("divergingRamp")}
-                colors={[...COLORBREWER_DIVERGING, ...CARTO_COLOR_DIVERGING]}
-                onSelect={(newRamp) => setRampName(newRamp, isReversed)}
-                size={size}
-                reverse={isReversed}
-              />
+      <Select.Portal>
+        <Select.Content
+          position="popper"
+          className={clsx(contentStyles, contentClassName)}
+        >
+          <Select.Viewport className="p-1">
+            <div className="flex flex-col gap-y-2">
+              <div className="py-2 flex flex-col gap-y-3 overflow-y-auto max-h-[320px]">
+                <RampChoices
+                  label={translate("continuousRamp")}
+                  colors={[
+                    ...COLORBREWER_SEQUENTIAL,
+                    ...CARTO_COLOR_SEQUENTIAL,
+                  ]}
+                  onSelect={(newRamp) => setRampName(newRamp, isReversed)}
+                  size={size}
+                  reverse={isReversed}
+                />
+                <RampChoices
+                  label={translate("divergingRamp")}
+                  colors={[...COLORBREWER_DIVERGING, ...CARTO_COLOR_DIVERGING]}
+                  onSelect={(newRamp) => setRampName(newRamp, isReversed)}
+                  size={size}
+                  reverse={isReversed}
+                />
+              </div>
+              <div className="w-full p-2">
+                <Button
+                  variant="quiet"
+                  size="full-width"
+                  onClick={reverseRampColors}
+                >
+                  <RefreshIcon />
+                  {translate("reverseColors")}
+                </Button>
+              </div>
             </div>
-            <div className="w-full p-2">
-              <Button
-                variant="quiet"
-                size="full-width"
-                onClick={reverseRampColors}
-              >
-                <RefreshIcon />
-                {translate("reverseColors")}
-              </Button>
-            </div>
-          </div>
-        </Select.Viewport>
-      </Select.Content>
+          </Select.Viewport>
+        </Select.Content>
+      </Select.Portal>
     </Select.Root>
   );
 };

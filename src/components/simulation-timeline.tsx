@@ -1,5 +1,7 @@
 import {
   useCallback,
+  forwardRef,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -8,6 +10,7 @@ import {
 } from "react";
 import { useAtomValue } from "jotai";
 import { Tooltip } from "@epanet-js/ui-kit";
+import * as Popover from "@radix-ui/react-popover";
 import clsx from "clsx";
 import { useRunSimulation } from "src/commands/run-simulation";
 import { useShowSimulationSettings } from "src/commands/show-simulation-settings";
@@ -21,6 +24,7 @@ import { useUserTracking } from "src/infra/user-tracking";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
+  CloseIcon,
   FileTextIcon,
   PauseIcon,
   PlaybackSpeedIcon,
@@ -58,6 +62,13 @@ import {
   type PlaybackSpeed,
 } from "src/state/simulation-playback";
 import { SimulationCalendar } from "./simulation-calendar";
+import { Button } from "./elements";
+import { ScenarioSwitcher } from "./footer";
+import { ModelSettingsSummary } from "./model-settings-summary";
+import {
+  SimulationStatusBadge,
+  SimulationStatusText,
+} from "./simulation-status";
 
 export const SimulationTimeline = ({
   onHeightChange,
@@ -85,7 +96,8 @@ export const SimulationTimeline = ({
     useChangeSimulationTimeline();
   const fromTimestamp = useAtomValue(simulationStartDateTimeAtom);
   const previewStep = useAtomValue(simulationPreviewStepAtom);
-  const timingReadonly = useAtomValue(hasScenariosAtom);
+  const hasScenarios = useAtomValue(hasScenariosAtom);
+  const timingReadonly = hasScenarios;
   const userTracking = useUserTracking();
   const [trackElement, setTrackElement] = useState<HTMLElement | null>(null);
   const [trackWidth, setTrackWidth] = useState(0);
@@ -215,11 +227,8 @@ export const SimulationTimeline = ({
     <section
       ref={setTrackElement}
       aria-label={translate("simulationTimeline.title")}
-      className="pointer-events-none absolute inset-x-0 bottom-6 z-20 px-2 py-2 text-default [&_svg]:[filter:drop-shadow(0_1px_2px_var(--color-popover))]"
-      style={{
-        textShadow:
-          "0 1px 3px var(--color-popover), 0 0 6px var(--color-popover)",
-      }}
+      data-has-scenarios={hasScenarios || undefined}
+      className="simulation-timeline map-overlay-theme pointer-events-none absolute inset-x-0 bottom-6 z-20 px-2 py-2 text-default"
       onKeyDown={(event) => event.stopPropagation()}
       onKeyPress={(event) => event.stopPropagation()}
       onKeyUp={(event) => event.stopPropagation()}
@@ -228,13 +237,14 @@ export const SimulationTimeline = ({
       <div
         className="grid items-center gap-x-2 gap-y-1"
         style={{
-          gridTemplateColumns:
+          gridTemplateColumns: `var(--simulation-timeline-columns, ${
             trackWidth >= 768
               ? "minmax(0, 1fr) auto minmax(0, 1fr)"
-              : "minmax(0, 1fr)",
+              : "minmax(0, 1fr)"
+          })`,
         }}
       >
-        <div className="flex min-w-0 flex-wrap items-center gap-1">
+        <div className="simulation-timeline-actions map-overlay-surface flex min-w-0 flex-wrap items-center justify-self-start gap-1 rounded-lg px-1 py-0.5">
           <SimulationIconButton
             label={translate("simulate")}
             primary
@@ -259,13 +269,12 @@ export const SimulationTimeline = ({
               <RunSimulationIcon size="lg" aria-hidden="true" />
             )}
           </SimulationIconButton>
-          <SimulationIconButton
-            label={translate("simulationSettings.title")}
-            disabled={running}
-            onClick={() => showSettings({ source: "toolbar" })}
-          >
-            <SettingsIcon size="lg" aria-hidden="true" />
-          </SimulationIconButton>
+          <SimulationStatusBadge />
+          <SimulationSettingsMenu
+            running={running}
+            hasScenarios={hasScenarios}
+            onShowSettings={() => showSettings({ source: "toolbar" })}
+          />
           <SimulationIconButton
             label={translate("viewReport")}
             disabled={running || !("report" in simulation)}
@@ -302,8 +311,9 @@ export const SimulationTimeline = ({
           <output className="w-5 text-size-small tabular-nums text-subtle">
             {speedLabel}
           </output>
+          {hasScenarios && <ScenarioSwitcher compact />}
         </div>
-        <div className="mx-auto flex min-w-0 max-w-full items-center justify-center gap-1">
+        <div className="map-overlay-surface mx-auto flex min-w-0 max-w-full items-center justify-center gap-1 rounded-lg px-1 py-0.5">
           <SimulationIconButton
             label={translate("previousTimestep")}
             disabled={!canSeek || currentIndex === 0}
@@ -312,9 +322,7 @@ export const SimulationTimeline = ({
               else seek(currentIndex - 1);
             }}
           >
-            <span className="flex h-[var(--map-control-face-size)] w-[var(--map-control-face-size)] items-center justify-center rounded-sm bg-popover-inverse/40 text-default-inverse shadow-md">
-              <ChevronLeftIcon aria-hidden="true" style={{ filter: "none" }} />
-            </span>
+            <ChevronLeftIcon aria-hidden="true" />
           </SimulationIconButton>
           <SimulationCalendar
             startDate={startDate}
@@ -344,13 +352,11 @@ export const SimulationTimeline = ({
               else seek(currentIndex + 1);
             }}
           >
-            <span className="flex h-[var(--map-control-face-size)] w-[var(--map-control-face-size)] items-center justify-center rounded-sm bg-popover-inverse/40 text-default-inverse shadow-md">
-              <ChevronRightIcon aria-hidden="true" style={{ filter: "none" }} />
-            </span>
+            <ChevronRightIcon aria-hidden="true" />
           </SimulationIconButton>
         </div>
         {trackWidth >= 768 && (
-          <output className="text-right text-size-small tabular-nums text-subtle">
+          <output className="map-overlay-surface justify-self-end rounded-md px-2 py-1 text-right text-size-small tabular-nums text-subtle">
             {formatTimelineTime(elapsedSeconds)} / {endTime}
           </output>
         )}
@@ -365,7 +371,7 @@ export const SimulationTimeline = ({
         aria-disabled={!canSeek}
         aria-orientation="horizontal"
         tabIndex={canSeek ? 0 : -1}
-        className="pointer-events-none relative mt-2 h-16 w-full touch-none select-none overflow-hidden rounded-sm text-size-small tabular-nums outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent"
+        className="map-overlay-surface map-overlay-ruler pointer-events-none relative mt-2 h-16 w-full touch-none select-none overflow-hidden rounded-lg text-size-small tabular-nums outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent"
         onPointerDown={(event) => {
           if (!canSeek || event.button !== 0 || dragRef.current) return;
           const bounds = rulerRef.current?.getBoundingClientRect();
@@ -477,7 +483,7 @@ export const SimulationTimeline = ({
               }}
             >
               <span
-                className="absolute top-0 whitespace-nowrap text-subtle"
+                className="absolute top-1 whitespace-nowrap font-medium text-default"
                 style={{
                   transform:
                     tick.index === 0
@@ -500,16 +506,21 @@ export const SimulationTimeline = ({
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-x-0 top-8 h-1 rounded-full"
-            style={{ backgroundColor: timelineTrackColor }}
+            style={{
+              backgroundColor: timelineTrackColor,
+              boxShadow: "0 0 0 1px var(--timeline-outline-color)",
+            }}
           />
           <div
             aria-hidden="true"
             className={clsx(
-              "pointer-events-none absolute left-0 top-8 h-1 rounded-full bg-accent ease-linear motion-reduce:transition-none",
+              "pointer-events-none absolute left-0 top-8 h-1 rounded-full ease-linear motion-reduce:transition-none",
               transitionDuration > 0 ? "transition-[width]" : "transition-none",
             )}
             style={{
               width: progressPosition,
+              backgroundColor: "var(--timeline-active-color)",
+              boxShadow: "0 0 0 2px var(--timeline-outline-color)",
               transitionDuration: `${transitionDuration}ms`,
             }}
           />
@@ -532,25 +543,33 @@ export const SimulationTimeline = ({
             aria-hidden="true"
             data-timeline-selector
             className={clsx(
-              "absolute top-10 h-3.5 w-3.5 origin-top -translate-x-1/2 scale-105 bg-accent ease-linear motion-reduce:transition-none",
+              "absolute top-10 h-3.5 w-3.5 origin-top -translate-x-1/2 scale-105 ease-linear motion-reduce:transition-none",
               selectorCursor,
               transitionDuration > 0 ? "transition-[left]" : "transition-none",
             )}
             style={{
               left: progressPosition,
-              clipPath: "polygon(50% 0, 100% 45%, 100% 100%, 0 100%, 0 45%)",
+              filter:
+                "drop-shadow(0 0 1px var(--timeline-outline-color)) drop-shadow(0 1px 1px var(--timeline-outline-color))",
               pointerEvents: canSeek ? "auto" : "none",
               transitionDuration: `${transitionDuration}ms`,
             }}
-          />
+          >
+            <span
+              className="pointer-events-none block h-full w-full"
+              style={{
+                backgroundColor: "var(--timeline-active-color)",
+                clipPath: "polygon(50% 0, 100% 45%, 100% 100%, 0 100%, 0 45%)",
+              }}
+            />
+          </span>
         </div>
       </div>
     </section>
   );
 };
 
-const timelineTrackColor =
-  "color-mix(in oklab, var(--color-subtle) 70%, var(--color-accent) 30%)";
+const timelineTrackColor = "var(--timeline-track-color)";
 
 const legacyRunStartTimestamps = new WeakMap<EPSResultsReader, number>();
 
@@ -572,41 +591,149 @@ const formatDateClock = (date: Date) =>
       date.getMilliseconds() / 1000,
   );
 
-const SimulationIconButton = ({
-  label,
-  primary = false,
-  active = false,
-  children,
-  className,
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
-  label: string;
-  primary?: boolean;
-  active?: boolean;
-  children: ReactNode;
-}) => (
-  <Tooltip content={label} side="top">
-    <button
-      type="button"
-      aria-label={label}
-      className={clsx(
-        "group pointer-events-auto flex h-[var(--map-control-target-size)] w-[var(--map-control-target-size)] shrink-0 items-center justify-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40",
-        className,
-      )}
-      {...props}
+const SimulationSettingsMenu = ({
+  running,
+  hasScenarios,
+  onShowSettings,
+}: {
+  running: boolean;
+  hasScenarios: boolean;
+  onShowSettings: () => void;
+}) => {
+  const translate = useTranslate();
+  const [open, setOpen] = useState(false);
+  const [trigger, setTrigger] = useState<HTMLButtonElement | null>(null);
+  const openingDialog = useRef(false);
+  const titleId = useId();
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <SimulationIconButton
+          ref={setTrigger}
+          label={translate("modelSettings.title")}
+          active={open}
+        >
+          <SettingsIcon size="lg" aria-hidden="true" />
+        </SimulationIconButton>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="right"
+          align="end"
+          sideOffset={8}
+          collisionPadding={12}
+          collisionBoundary={
+            trigger?.closest(".drawing-toolbar-controls") ?? undefined
+          }
+          aria-labelledby={titleId}
+          className="map-overlay-theme map-overlay-surface map-overlay-popover z-30 flex w-72 flex-col overflow-hidden rounded-lg border p-3 shadow-xl outline-none"
+          style={{
+            maxWidth:
+              "min(calc(100vw - 1.5rem), var(--radix-popover-content-available-width))",
+            maxHeight: "var(--radix-popover-content-available-height)",
+          }}
+          onCloseAutoFocus={(event) => {
+            if (openingDialog.current) {
+              event.preventDefault();
+              openingDialog.current = false;
+            }
+          }}
+          onKeyDown={(event) => event.stopPropagation()}
+          onKeyPress={(event) => event.stopPropagation()}
+          onKeyUp={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
+          <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
+            <h2
+              id={titleId}
+              className="text-size-small font-semibold text-accent"
+            >
+              {translate("modelSettings.title")}
+            </h2>
+            <Popover.Close asChild>
+              <button
+                type="button"
+                aria-label={translate("modelSettings.close")}
+                className="-mr-1 flex h-8 w-8 items-center justify-center rounded-sm hover:bg-base-hover focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:h-11 pointer-coarse:w-11"
+              >
+                <CloseIcon size="sm" aria-hidden="true" />
+              </button>
+            </Popover.Close>
+          </div>
+          <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+            <ModelSettingsSummary />
+            <div className="border-t pt-3">
+              <SimulationStatusText />
+            </div>
+            {!hasScenarios && (
+              <div className="border-t pt-3 empty:hidden">
+                <ScenarioSwitcher />
+              </div>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              className="w-full shrink-0 justify-center pointer-coarse:min-h-11"
+              disabled={running}
+              onClick={() => {
+                openingDialog.current = true;
+                setOpen(false);
+                onShowSettings();
+              }}
+            >
+              {translate("modelSettings.openSimulationSettings")}
+            </Button>
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+};
+
+const SimulationIconButton = forwardRef<
+  HTMLButtonElement,
+  ButtonHTMLAttributes<HTMLButtonElement> & {
+    label: string;
+    primary?: boolean;
+    active?: boolean;
+    children: ReactNode;
+  }
+>(
+  (
+    { label, primary = false, active = false, children, className, ...props },
+    ref,
+  ) => (
+    <Tooltip
+      content={label}
+      side="top"
+      sideOffset={8}
+      zIndex={50}
+      className="map-overlay-theme map-overlay-surface map-overlay-tooltip"
     >
-      <span
+      <button
+        ref={ref}
+        type="button"
+        aria-label={label}
         className={clsx(
-          "flex h-[var(--map-control-face-size)] w-[var(--map-control-face-size)] items-center justify-center rounded-sm transition-colors [&_svg]:h-[var(--map-control-icon-size)] [&_svg]:w-[var(--map-control-icon-size)]",
-          primary
-            ? "bg-accent text-white shadow-sm group-hover:brightness-110"
-            : active
-              ? "bg-accent-tint text-accent"
-              : "text-default group-hover:bg-base-hover",
+          "group pointer-events-auto flex h-[var(--map-control-target-size)] w-[var(--map-control-target-size)] shrink-0 items-center justify-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40",
+          className,
         )}
+        {...props}
       >
-        {children}
-      </span>
-    </button>
-  </Tooltip>
+        <span
+          className={clsx(
+            "flex h-[var(--map-control-face-size)] w-[var(--map-control-face-size)] items-center justify-center rounded-sm transition-colors [&_svg]:h-[var(--map-control-icon-size)] [&_svg]:w-[var(--map-control-icon-size)]",
+            primary
+              ? "bg-accent text-default-inverse shadow-sm group-hover:brightness-110"
+              : active
+                ? "bg-accent-tint text-accent"
+                : "text-default group-hover:bg-base-hover",
+          )}
+        >
+          {children}
+        </span>
+      </button>
+    </Tooltip>
+  ),
 );

@@ -1,1 +1,1 @@
-export { Toolbar } from "./toolbar";
+export { ProjectToolbar, ViewControls } from "./toolbar";

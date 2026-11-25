@@ -10,7 +10,11 @@ import { useValueDisplay } from "src/hooks/use-value-display";
 import { useRef } from "react";
 import { useUserTracking } from "src/infra/user-tracking";
 
-export const MapToolbarPipeDrawing = () => {
+export const MapToolbarPipeDrawing = ({
+  compact = false,
+}: {
+  compact?: boolean;
+}) => {
   const { mode: currentMode } = useAtomValue(modeAtom);
   const translate = useTranslate();
   const translateUnit = useTranslateUnit();
@@ -76,12 +80,20 @@ export const MapToolbarPipeDrawing = () => {
     : displayValue(currentRoughness, "roughness");
 
   return (
-    <div className="border-t px-2 py-2 flex flex-col gap-x-4 gap-y-1 lg:flex-row lg:justify-between">
+    <div
+      className={`border-t px-2 py-2 flex flex-col gap-x-4 gap-y-1 ${compact ? "" : "lg:flex-row lg:justify-between"}`}
+    >
       <div className="flex gap-x-2 items-center">
-        <label className="grow text-size-base text-subtle whitespace-nowrap">
+        <label
+          className={
+            compact
+              ? "min-w-0 grow text-size-base text-subtle"
+              : "grow text-size-base text-subtle whitespace-nowrap"
+          }
+        >
           {diameterLabel}
         </label>
-        <div className="w-14 [&_input]:h-8">
+        <div className="w-14 shrink-0 [&_input]:h-8">
           <NumericField
             key={lastDiameterChange.current + diameterDisplay}
             label={diameterLabel}
@@ -98,10 +110,16 @@ export const MapToolbarPipeDrawing = () => {
         </div>
       </div>
       <div className="flex gap-x-2 items-center">
-        <label className="grow text-size-base text-subtle whitespace-nowrap">
+        <label
+          className={
+            compact
+              ? "min-w-0 grow text-size-base text-subtle"
+              : "grow text-size-base text-subtle whitespace-nowrap"
+          }
+        >
           {roughnessLabel}
         </label>
-        <div className="w-14 [&_input]:h-8">
+        <div className="w-14 shrink-0 [&_input]:h-8">
           <NumericField
             key={lastRoughnessChange.current + roughnessDisplay}
             label={roughnessLabel}

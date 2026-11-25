@@ -65,7 +65,7 @@ export const ToolHeader = ({
       onKeyDown={autoFocus ? handleKeyDown : undefined}
     >
       <Button
-        className="h-6 w-6 justify-center -my-0.5"
+        className="h-6 w-6 justify-center -my-0.5 pointer-coarse:h-11 pointer-coarse:w-11"
         size="xxs"
         variant={"quiet"}
         aria-label={translate("back")}
@@ -156,7 +156,7 @@ export const useLoadingStatus = () => {
 export const LoadingState = ({ overlay = false }: { overlay?: boolean }) => {
   if (overlay) {
     return (
-      <div className="absolute bottom-px inset-0 flex flex-col items-center justify-center bg-base/80/80 backdrop-blur-xs z-10">
+      <div className="absolute bottom-px inset-0 flex flex-col items-center justify-center bg-base/80 backdrop-blur-xs z-10">
         <RingSpinner size="lg" />
       </div>
     );

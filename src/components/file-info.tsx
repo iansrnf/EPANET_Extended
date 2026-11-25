@@ -6,8 +6,9 @@ import { truncate } from "src/lib/utils";
 import { UnsavedChangesIcon, FileBoxIcon } from "src/icons";
 import { useTranslate } from "src/hooks/use-translate";
 import { projectExtension } from "src/commands/save-project";
+import clsx from "clsx";
 
-export function FileInfo() {
+export function FileInfo({ floating = false }: { floating?: boolean }) {
   const translate = useTranslate();
   const projectName = useAtomValue(projectSettingsAtom).name;
   const isDemo = useAtomValue(isDemoNetworkAtom);
@@ -24,17 +25,27 @@ export function FileInfo() {
   if (!name) return <div></div>;
 
   return (
-    <div className="pl-3 flex-initial hidden sm:flex items-center gap-x-1">
-      <TypeIcon />
+    <div
+      className={clsx(
+        "min-w-0 items-center gap-x-1 [&_svg]:shrink-0",
+        floating ? "flex" : "pl-3 flex-initial hidden sm:flex",
+      )}
+    >
+      <TypeIcon aria-hidden="true" />
       <div
-        className="text-size-small font-mono whitespace-nowrap truncate"
-        title={name}
+        className="min-w-0 text-size-small font-mono whitespace-nowrap truncate"
+        title={floating ? undefined : name}
       >
-        {truncate(name, 50)}{" "}
+        {floating ? name : truncate(name, 50)}{" "}
       </div>
-      {showUnsavedIndicator ? <UnsavedChangesIcon /> : ""}
+      {showUnsavedIndicator && (
+        <>
+          <UnsavedChangesIcon aria-hidden="true" />
+          <span className="sr-only">{translate("unsavedChanges")}</span>
+        </>
+      )}
       {isDemo && (
-        <span className="px-2 py-0.5 text-[10px] font-semibold uppercase bg-warning-subtle text-warning rounded-full">
+        <span className="shrink-0 px-2 py-0.5 text-[10px] font-semibold uppercase bg-warning-subtle text-warning rounded-full">
           {translate("demoShort")}
         </span>
       )}

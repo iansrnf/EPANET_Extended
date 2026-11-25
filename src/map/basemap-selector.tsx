@@ -46,7 +46,7 @@ export const BasemapSelector = () => {
     selectedProvider && selectedModeDefinition
       ? `${selectedProvider.name} · ${translate(selectedModeDefinition.labelKey)}`
       : currentBasemap?.name || translate("basemapControls.chooseProvider");
-  const isGoogleConfigured = isBasemapConfigured(basemaps.googleRoadmap);
+  const isGoogleConfigured = isBasemapConfigured(basemaps.googleBlack);
 
   const changeBasemap = (basemap: LayerConfigTemplate) => {
     if (!selectBasemap(basemap)) return;
@@ -61,7 +61,7 @@ export const BasemapSelector = () => {
   if (isGridOn || isOffline || isPlaying) return null;
 
   return (
-    <div className="absolute bottom-[calc(var(--simulation-controls-height,0px)+1.25rem)] left-2 z-20">
+    <div className="map-control-basemap absolute bottom-[calc(var(--simulation-controls-height,0px)+1.25rem)] left-2 z-20">
       <MapControlMenu
         label={translate("mapProvider")}
         tooltip={`${translate("mapProvider")}: ${selectionLabel}`}

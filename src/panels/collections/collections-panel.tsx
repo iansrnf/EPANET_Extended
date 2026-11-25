@@ -959,7 +959,7 @@ export const CollectionsPanel = () => {
   );
 
   return (
-    <div className="flex flex-col h-full" onBlur={handleBlur}>
+    <div className="flex min-h-0 flex-col h-full" onBlur={handleBlur}>
       <NavigableList
         ref={listRef}
         navItems={navItems}

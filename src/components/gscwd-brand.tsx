@@ -5,11 +5,20 @@ import styles from "./gscwd-brand.module.css";
 export const GscwdBrand = ({
   variant = "header",
   className,
+  compact = false,
 }: {
-  variant?: "header" | "welcome";
+  variant?: "header" | "welcome" | "map";
   className?: string;
+  compact?: boolean;
 }) => (
-  <span className={clsx(styles.brand, styles[variant], className)}>
+  <span
+    className={clsx(
+      styles.brand,
+      styles[variant],
+      compact && styles.compact,
+      className,
+    )}
+  >
     <img
       src={gscwdLogo.src}
       alt=""

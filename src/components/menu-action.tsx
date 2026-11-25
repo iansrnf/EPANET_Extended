@@ -3,6 +3,7 @@ import { Tooltip } from "@epanet-js/ui-kit";
 import { Keycap, Button } from "./elements";
 import { localizeKeybinding } from "src/infra/i18n";
 import { useRef, useState } from "react";
+import clsx from "clsx";
 
 export function DisabledMenuAction({
   label,
@@ -44,6 +45,7 @@ export default function MenuAction({
   label,
   hotkey,
   readOnlyHotkey,
+  floating = false,
 }: {
   selected?: boolean;
   onClick: (e?: Pick<React.MouseEvent, "shiftKey">) => void;
@@ -54,6 +56,7 @@ export default function MenuAction({
   label: string;
   hotkey?: string;
   readOnlyHotkey?: string;
+  floating?: boolean;
 }) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   useHotkeys(
@@ -76,18 +79,30 @@ export default function MenuAction({
   };
 
   return (
-    <div className="relative">
+    <div className={clsx("relative", floating && "map-overlay-theme")}>
       <div
-        className={`h-10 ${expanded ? "" : "w-8"} ${
-          disabled ? "opacity-60 cursor-not-allowed" : ""
-        } group bn flex items-stretch py-1 focus:outline-hidden`}
+        className={
+          floating
+            ? "flex h-[var(--map-control-target-size)] w-[var(--map-control-target-size)] shrink-0 items-center justify-center"
+            : `h-10 ${expanded ? "" : "w-8"} ${
+                disabled ? "opacity-60 cursor-not-allowed" : ""
+              } group bn flex items-stretch py-1 focus:outline-hidden`
+        }
       >
         <Tooltip
           open={open}
           onOpenChange={setOpen}
+          side={floating ? "right" : undefined}
+          sideOffset={floating ? 6 : undefined}
+          zIndex={floating ? 50 : undefined}
+          className={
+            floating
+              ? "map-overlay-theme map-overlay-surface map-overlay-tooltip pointer-events-none"
+              : undefined
+          }
           content={
             <div className="flex gap-x-2 items-center">
-              {!expanded ? label : null}
+              {!expanded || floating ? label : null}
               {hotkey ? (
                 <Keycap size="xs">{localizeKeybinding(hotkey)}</Keycap>
               ) : null}
@@ -97,20 +112,48 @@ export default function MenuAction({
             </div>
           }
         >
-          <Button
-            ref={buttonRef}
-            onClick={handleClick}
-            onBlur={() => setOpen(false)}
-            variant={"quiet/mode"}
-            role={role}
-            disabled={disabled}
-            aria-label={label}
-            aria-checked={selected}
-            aria-expanded={selected ? "true" : "false"}
-          >
-            {children}
-            {!!expanded && label}
-          </Button>
+          {floating ? (
+            <button
+              ref={buttonRef}
+              type="button"
+              onClick={handleClick}
+              onBlur={() => setOpen(false)}
+              role={role}
+              disabled={disabled}
+              aria-label={label}
+              aria-checked={role === "radio" ? selected : undefined}
+              aria-pressed={role !== "radio" && selected ? true : undefined}
+              className="group flex h-[var(--map-control-target-size)] w-[var(--map-control-target-size)] shrink-0 items-center justify-center rounded-sm focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span
+                className={clsx(
+                  "flex h-[var(--map-control-face-size)] w-[var(--map-control-face-size)] items-center justify-center rounded-sm border shadow-lg transition-colors [&_svg]:h-[var(--map-control-icon-size)] [&_svg]:w-[var(--map-control-icon-size)]",
+                  selected
+                    ? "border-accent bg-accent text-default-inverse"
+                    : disabled
+                      ? "map-overlay-surface text-disabled"
+                      : "map-overlay-surface text-default group-hover:bg-base-hover group-focus-visible:bg-base-hover",
+                )}
+              >
+                {children}
+              </span>
+            </button>
+          ) : (
+            <Button
+              ref={buttonRef}
+              onClick={handleClick}
+              onBlur={() => setOpen(false)}
+              variant={"quiet/mode"}
+              role={role}
+              disabled={disabled}
+              aria-label={label}
+              aria-checked={selected}
+              aria-expanded={selected ? "true" : "false"}
+            >
+              {children}
+              {!!expanded && label}
+            </Button>
+          )}
         </Tooltip>
       </div>
     </div>

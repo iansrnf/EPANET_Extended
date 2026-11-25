@@ -144,10 +144,18 @@ async function createSession(
         ...(options.mapType === "satellite" && options.labelVisibility
           ? { layerTypes: ["layerRoadmap"] }
           : {}),
-        ...(options.mapType === "roadmap" && !options.labelVisibility
+        ...(options.mapType === "roadmap"
           ? {
               styles: [
-                { elementType: "labels", stylers: [{ visibility: "off" }] },
+                ...darkRoadmapStyles,
+                ...(!options.labelVisibility
+                  ? [
+                      {
+                        elementType: "labels",
+                        stylers: [{ visibility: "off" }],
+                      },
+                    ]
+                  : []),
               ],
             }
           : {}),
@@ -207,3 +215,44 @@ function wrapLongitude(value: number): number {
   const wrapped = ((((value + 180) % 360) + 360) % 360) - 180;
   return wrapped === -180 ? (value > 0 ? 179.999999 : -179.999999) : wrapped;
 }
+
+const darkRoadmapStyles = [
+  { elementType: "geometry", stylers: [{ color: "#10151d" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#b6c4d6" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#10151d" }] },
+  {
+    featureType: "poi",
+    elementType: "geometry",
+    stylers: [{ color: "#17212b" }],
+  },
+  {
+    featureType: "poi.park",
+    elementType: "geometry",
+    stylers: [{ color: "#14241f" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry",
+    stylers: [{ color: "#2d4054" }],
+  },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#101720" }],
+  },
+  {
+    featureType: "road.highway",
+    elementType: "geometry",
+    stylers: [{ color: "#3c5873" }],
+  },
+  {
+    featureType: "transit",
+    elementType: "geometry",
+    stylers: [{ color: "#233448" }],
+  },
+  {
+    featureType: "water",
+    elementType: "geometry",
+    stylers: [{ color: "#071a2c" }],
+  },
+];

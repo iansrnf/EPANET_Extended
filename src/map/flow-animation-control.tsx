@@ -32,7 +32,7 @@ export const FlowAnimationControl = () => {
   );
 
   return (
-    <div className="absolute bottom-[calc(var(--simulation-controls-height,0px)+1.5rem+var(--map-control-target-size))] left-2 z-20">
+    <div className="map-control-flow absolute bottom-[calc(var(--simulation-controls-height,0px)+1.5rem+var(--map-control-target-size))] left-2 z-20">
       <MapControlMenu
         label={translate("flowAnimation.title")}
         icon={<WaterFlowIcon size="lg" aria-hidden="true" />}

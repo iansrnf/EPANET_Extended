@@ -19,9 +19,8 @@ import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
 import { PropsWithChildren } from "react";
 
 export const tipLike = `
-    bg-base
+    map-overlay-theme map-overlay-surface map-overlay-popover
     shadow-[0_2px_10px_2px_rgba(0,0,0,0.1)]
-    ring-1 ring-gray-200 dark:ring-gray-700
     content-layout z-10`;
 
 function HintWrapper({

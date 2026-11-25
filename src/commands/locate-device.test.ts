@@ -10,7 +10,8 @@ import {
 import { mapViewportAtom } from "src/state/map";
 import { locateDevice } from "./locate-device";
 
-vi.mock("@epanet-js/map", () => ({
+vi.mock("@epanet-js/map", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@epanet-js/map")>()),
   DEFAULT_CENTER: [-4.3800042, 55.914314],
   DEFAULT_ZOOM: 15.5,
 }));

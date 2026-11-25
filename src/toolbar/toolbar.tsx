@@ -16,6 +16,7 @@ import {
 } from "src/icons";
 import { useAtomValue, useSetAtom } from "jotai";
 import { splitsAtom } from "src/state/layout";
+import { panelsIn } from "src/state/panels";
 import { commandBarOpenAtom } from "src/state/command-bar";
 import {
   canRedoDerivedAtom,
@@ -48,7 +49,7 @@ import {
 } from "src/commands/toggle-bottom-panel";
 import { CustomAllocateCustomerPointsIcon } from "src/icons/custom-icons/allocate-customer-points-icon";
 
-export const Toolbar = ({
+export const ProjectToolbar = ({
   readonly = false,
   customerAllocationDisabled = false,
 }: {
@@ -74,6 +75,7 @@ export const Toolbar = ({
   const fileActionsGroup = isSmOrLarger && (
     <>
       <MenuAction
+        floating
         label={translate("save")}
         role="button"
         onClick={() => {
@@ -84,6 +86,7 @@ export const Toolbar = ({
         <SaveIcon />
       </MenuAction>
       <MenuAction
+        floating
         label={translate("allocateCustomerPoints.menuEntry")}
         role="button"
         onClick={() => allocateCustomerPoints()}
@@ -97,6 +100,7 @@ export const Toolbar = ({
   const undoRedoGroup = isMdOrLarger && (
     <>
       <MenuAction
+        floating
         label={translate("undo")}
         role="button"
         onClick={() => {
@@ -113,6 +117,7 @@ export const Toolbar = ({
         <UndoIcon />
       </MenuAction>
       <MenuAction
+        floating
         label={translate("redo")}
         role="button"
         onClick={() => {
@@ -133,8 +138,9 @@ export const Toolbar = ({
 
   const operationalGroup = (
     <>
-      <OperationalDataDropdown />
+      <OperationalDataDropdown floating />
       <MenuAction
+        floating
         label={translate("dataTables.title")}
         role="button"
         onClick={showDataTables}
@@ -142,6 +148,7 @@ export const Toolbar = ({
         <TableIcon />
       </MenuAction>
       <MenuAction
+        floating
         label={translate("hglProfile.toolbar")}
         role="button"
         selected={currentMode === Mode.HGL_PROFILE}
@@ -157,26 +164,42 @@ export const Toolbar = ({
 
   return (
     <div
-      className="relative flex flex-row items-center justify-between overflow-x-auto sm:overflow-visible
-  border-t dark:border-gray-900 px-2 h-12"
+      className="map-project-toolbar map-overlay-theme absolute left-2 top-2 z-30 flex items-center"
+      onKeyDown={(event) => event.stopPropagation()}
+      onKeyPress={(event) => event.stopPropagation()}
+      onKeyUp={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
     >
-      <div className="flex flex-row items-center justify-start">
-        <FileDropdown />
-        {fileActionsGroup}
-        <Divider />
-        {undoRedoGroup}
-        {operationalGroup}
-      </div>
-      <div className="flex flex-row items-center justify-end">
-        <CommandBarButton />
-        {isSmOrLarger ? <LayoutActions /> : <VerticalLayoutActions />}
-      </div>
+      <FileDropdown floating />
+      {fileActionsGroup}
+      <Divider />
+      {undoRedoGroup}
+      {operationalGroup}
+    </div>
+  );
+};
+
+export const ViewControls = () => {
+  const isSmOrLarger = useBreakpoint("sm");
+
+  return (
+    <div
+      className="map-view-controls map-overlay-theme absolute right-2 top-2 z-30 flex items-center"
+      onKeyDown={(event) => event.stopPropagation()}
+      onKeyPress={(event) => event.stopPropagation()}
+      onKeyUp={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+    >
+      <CommandBarButton />
+      {isSmOrLarger ? <LayoutActions /> : <VerticalLayoutActions />}
     </div>
   );
 };
 
 const Divider = () => {
-  return <div className="border-r-2 h-8 mx-1"></div>;
+  return <div className="map-project-toolbar-divider" />;
 };
 
 const CommandBarButton = () => {
@@ -186,6 +209,7 @@ const CommandBarButton = () => {
 
   return (
     <MenuAction
+      floating
       label={translate("assetSearch.placeholder")}
       role="button"
       onClick={() => {
@@ -209,6 +233,7 @@ const VerticalLayoutActions = () => {
 
   return (
     <MenuAction
+      floating
       label={translate("toggleBottomPanel")}
       role="button"
       onClick={() => {
@@ -223,6 +248,7 @@ const VerticalLayoutActions = () => {
 const LayoutActions = () => {
   const translate = useTranslate();
   const splits = useAtomValue(splitsAtom);
+  const hasLeftPanels = useAtomValue(panelsIn("left")).length > 0;
   const toggleLeftPanel = useToggleLeftPanel();
   const toggleBottomPanel = useToggleBottomPanel();
   const toggleSidePanel = useToggleSidePanel();
@@ -245,18 +271,22 @@ const LayoutActions = () => {
 
   return (
     <>
-      <MenuAction
-        label={translate("toggleLeftPanel")}
-        role="button"
-        onClick={() => {
-          toggleLeftPanel({ source: "toolbar" });
-        }}
-        readOnlyHotkey={toggleLeftPanelShortcut}
-      >
-        {leftPanelIcon}
-      </MenuAction>
+      {hasLeftPanels && (
+        <MenuAction
+          floating
+          label={translate("toggleLeftPanel")}
+          role="button"
+          onClick={() => {
+            toggleLeftPanel({ source: "toolbar" });
+          }}
+          readOnlyHotkey={toggleLeftPanelShortcut}
+        >
+          {leftPanelIcon}
+        </MenuAction>
+      )}
 
       <MenuAction
+        floating
         label={translate("toggleBottomPanel")}
         role="button"
         onClick={() => {
@@ -268,6 +298,7 @@ const LayoutActions = () => {
       </MenuAction>
 
       <MenuAction
+        floating
         label={translate("toggleSidePanel")}
         role="button"
         onClick={() => {

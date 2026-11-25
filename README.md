@@ -11,6 +11,10 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
+Open `http://localhost:3100/`. The development command explicitly uses port `3100` to avoid Windows reservations that can include Next.js's default port `3000`. This port is configured in the `dev` script in `package.json` and takes precedence over the `PORT` environment variable.
+
+If Windows reports `listen EACCES`, check reserved ports with `netsh interface ipv4 show excludedportrange protocol=tcp` and choose an available port outside those ranges in the `dev` script.
+
 ## Checks and production
 
 ```sh

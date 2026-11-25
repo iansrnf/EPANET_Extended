@@ -22,10 +22,10 @@ export type LayerConfigTemplate = (
 };
 
 export const basemaps = {
-  monochrome: {
-    name: "Monochrome",
-    url: "mapbox://styles/mapbox/light-v10",
-    thumbnailClass: "bg-thumbnail-monochrome",
+  black: {
+    name: "Black",
+    url: "mapbox://styles/mapbox/dark-v11",
+    thumbnailClass: "bg-thumbnail-black",
     ...defaults,
     isBasemap: true,
   },
@@ -37,26 +37,11 @@ export const basemaps = {
     opacity: 0.65,
     isBasemap: true,
   },
-  outdoors: {
-    name: "Outdoors",
-    url: "mapbox://styles/mapbox/outdoors-v12",
-    thumbnailClass: "bg-thumbnail-outdoors",
-    ...defaults,
-    opacity: 0.65,
-    isBasemap: true,
-  },
-  streets: {
-    name: "Streets",
-    url: "mapbox://styles/mapbox/navigation-guidance-day-v4",
-    thumbnailClass: "bg-thumbnail-streets",
-    ...defaults,
-    isBasemap: true,
-  },
-  googleRoadmap: {
-    name: "Google Roadmap",
+  googleBlack: {
+    name: "Google Black",
     type: "GOOGLE",
     mapType: "roadmap",
-    thumbnailClass: "bg-thumbnail-streets",
+    thumbnailClass: "bg-thumbnail-google-black",
     opacity: 1,
     isBasemap: true,
   },
@@ -70,7 +55,7 @@ export const basemaps = {
   },
 } as const;
 
-export const defaultBasemap = basemaps.monochrome;
+export const defaultBasemap = basemaps.black;
 
 export const isBasemapConfigured = (layer: LayerConfigTemplate) =>
   layer.type !== "GOOGLE" || !!env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY.trim();
@@ -78,10 +63,10 @@ export const isBasemapConfigured = (layer: LayerConfigTemplate) =>
 export const satelliteBasemapFor = (layer?: ILayerConfig) => {
   if (layer?.type === "GOOGLE") {
     return layer.mapType === "satellite"
-      ? basemaps.googleRoadmap
+      ? basemaps.googleBlack
       : basemaps.googleSatellite;
   }
-  return layer?.name === basemaps.monochrome.name
-    ? basemaps.satellite
-    : basemaps.monochrome;
+  return layer?.type === "MAPBOX" && layer.url === basemaps.satellite.url
+    ? basemaps.black
+    : basemaps.satellite;
 };

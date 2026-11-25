@@ -43,6 +43,7 @@ import {
   RefreshIcon,
   ChevronDownIcon,
 } from "src/icons";
+import { useMapStylingPopoverClassName } from "./popover-placement";
 
 type ErrorType = "rampShouldBeAscending" | "notEnoughData";
 
@@ -52,6 +53,7 @@ export const RangeColorRuleEditor = ({
   geometryType?: "node" | "link";
 }) => {
   const translate = useTranslate();
+  const popoverClassName = useMapStylingPopoverClassName();
   const {
     linkSymbology,
     nodeSymbology,
@@ -336,7 +338,12 @@ export const RangeColorRuleEditor = ({
                   </DD.Trigger>
                 </div>
                 <DD.Portal>
-                  <DDContent align="start" side="top" sideOffset={4}>
+                  <DDContent
+                    align="start"
+                    side="top"
+                    sideOffset={4}
+                    className={popoverClassName}
+                  >
                     <StyledItem onSelect={handleRegenerateFromCurrentStep}>
                       {translate("regenerateFromCurrentStep")}
                     </StyledItem>
@@ -388,6 +395,7 @@ const IntervalsEditor = ({
   onDelete: (index: number) => void;
 }) => {
   const translate = useTranslate();
+  const popoverClassName = useMapStylingPopoverClassName();
   const canAddMore = numIntervals < maxIntervals;
   const canDelete = numIntervals > minIntervals;
 
@@ -403,6 +411,7 @@ const IntervalsEditor = ({
             key={i}
           >
             <ColorPopover
+              contentClassName={popoverClassName}
               color={color}
               onChange={(color) => {
                 onChangeColor(i, color);

@@ -64,6 +64,7 @@ import { USelection } from "src/selection";
 import { SymbologySpec } from "src/state/map-symbology";
 import type { ZoneSymbology, NodeSizeConfig } from "src/map/symbology";
 import { buildZoneColorExpression } from "src/map/layers/zones";
+import { mapPitchRequestAtom } from "src/state/map-view";
 
 import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
@@ -145,6 +146,7 @@ const detectChanges = (
   hasNewNodeSize: boolean;
   hasNewDeviceLocation: boolean;
   hasNewDeviceLocationViewportRequest: boolean;
+  hasNewPitchRequest: boolean;
   hasNewLoggers: boolean;
   hasNewLoggerFeedback: boolean;
 } => {
@@ -214,6 +216,7 @@ const detectChanges = (
     hasNewDeviceLocationViewportRequest:
       state.deviceLocationViewportRequest !==
       prev.deviceLocationViewportRequest,
+    hasNewPitchRequest: state.pitchRequest !== prev.pitchRequest,
   };
 };
 
@@ -245,6 +248,7 @@ const isHeavyUpdate = (
 
 export const useMapStateUpdates = (map: MapEngine | null) => {
   const store = useStore();
+  const setPitchRequest = useSetAtom(mapPitchRequestAtom);
   const setDeviceLocationViewportRequest = useSetAtom(
     deviceLocationViewportRequestAtom,
   );
@@ -375,6 +379,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         hasNewNodeSize,
         hasNewDeviceLocation,
         hasNewDeviceLocationViewportRequest,
+        hasNewPitchRequest,
         hasNewLoggers,
         hasNewLoggerFeedback,
       } = changes;
@@ -826,6 +831,21 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         }
         setDeviceLocationViewportRequest((current) =>
           current === locationRequest ? null : current,
+        );
+      }
+
+      const pitchRequest = mapState.pitchRequest;
+      if (
+        hasNewPitchRequest &&
+        pitchRequest &&
+        store.get(mapPitchRequestAtom) === pitchRequest
+      ) {
+        map.map.easeTo({
+          pitch: pitchRequest.pitch,
+          duration: pitchRequest.duration,
+        });
+        setPitchRequest((current) =>
+          current === pitchRequest ? null : current,
         );
       }
 

@@ -76,6 +76,57 @@
   line-height: 1.4;
 }
 
+.map {
+  gap: 8px;
+}
+
+.map .logo {
+  width: 40px;
+  height: 40px;
+}
+
+.map .fullName {
+  font-size: 12px;
+}
+
+.map .tagline {
+  font-size: 9px;
+}
+
+.map.compact .logo {
+  width: 32px;
+  height: 32px;
+}
+
+.map.compact .fullName {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.map.compact .shortName {
+  display: flex;
+  font-size: 12px;
+}
+
+.map.compact .tagline {
+  display: none;
+}
+
+@container map-identity (width < 480px) {
+  .map.compact .wordmark {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
 @media (width < 1024px) {
   .header .fullName {
     position: absolute;

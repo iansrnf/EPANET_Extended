@@ -1,6 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, renderHook, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { setInitialState } from "src/__helpers__/state";
 import { stubUserTracking } from "src/__helpers__/user-tracking";
 import {
@@ -9,13 +8,21 @@ import {
 } from "src/hooks/use-permissions";
 import { CommandContainer } from "src/commands/__helpers__/command-container";
 import type { CollectionDraft } from "src/lib/collections";
-import { createCollectionsPanel } from "src/panels/collections/create-panel";
-import { createNetworkReviewPanel } from "src/panels/network-review/create-panel";
+import { createAssetTablePanel } from "src/panels/data-tables/create-panel";
 import { Store } from "src/state";
-import { pendingCollectionDraftAtom } from "src/state/collections";
+import {
+  collectionsOpenAtom,
+  pendingCollectionDraftAtom,
+} from "src/state/collections";
 import { splitsAtom } from "src/state/layout";
-import { activatePanelAtom, activePanelIn, panelsAtom } from "src/state/panels";
+import {
+  activatePanelAtom,
+  activePanelIn,
+  panelsAtom,
+  panelLayoutAtom,
+} from "src/state/panels";
 import { useStartCollectionDraft } from "./collection-draft";
+import { useSetCollectionsOpen } from "./show-collections";
 
 const permissionsRef: { current: Permissions } = {
   current: resolvePermissions("pro", false, false, false),
@@ -43,10 +50,12 @@ vi.mock("src/hooks/use-paywall", async () => {
 });
 
 const aStore = () => {
-  const store = setInitialState({
-    hydraulicModel: HydraulicModelBuilder.with().aJunction(1).build(),
-  });
-  store.set(panelsAtom, [createNetworkReviewPanel(), createCollectionsPanel()]);
+  const store = setInitialState();
+  store.set(panelsAtom, [
+    createAssetTablePanel("junction", { id: "neighbour" }),
+  ]);
+  store.set(panelLayoutAtom, { neighbour: { movedToDock: "left" } });
+  store.set(activatePanelAtom, "neighbour");
   return store;
 };
 
@@ -75,59 +84,55 @@ beforeEach(() => {
 });
 
 describe("useStartCollectionDraft", () => {
-  it("opens the left panel on the collections tab", async () => {
-    const store = aStore();
-    store.set(splitsAtom, (splits) => ({ ...splits, leftOpen: false }));
-    store.set(activatePanelAtom, "network-review");
+  it.each([false, true])(
+    "opens collections without changing the dock when open is %s",
+    async (leftOpen) => {
+      const store = aStore();
+      store.set(splitsAtom, (splits) => ({ ...splits, leftOpen, left: 555 }));
+      const splits = store.get(splitsAtom);
+      const panels = store.get(panelsAtom);
+      const panelLayout = store.get(panelLayoutAtom);
 
-    await start(store, {
+      await start(store, {
+        kind: "selectionSets",
+        source: "context-menu",
+        label: "",
+      });
+
+      expect(store.get(collectionsOpenAtom)).toBe(true);
+      expect(store.get(splitsAtom)).toBe(splits);
+      expect(store.get(panelsAtom)).toBe(panels);
+      expect(store.get(panelLayoutAtom)).toBe(panelLayout);
+      expect(store.get(activePanelIn("left"))?.id).toBe("neighbour");
+    },
+  );
+
+  it.each<CollectionDraft>([
+    {
+      kind: "bookmarks",
+      source: "collections-add-row",
+      label: "Intake",
+    },
+    {
       kind: "selectionSets",
-      source: "context-menu",
-      label: "",
-    });
-
-    expect(store.get(splitsAtom).leftOpen).toBe(true);
-    expect(store.get(activePanelIn("left"))?.id).toEqual("collections");
-  });
-
-  it("keeps the panel width when the left panel is already open", async () => {
-    const store = aStore();
-    store.set(splitsAtom, (splits) => ({
-      ...splits,
-      leftOpen: true,
-      left: 555,
-    }));
-
-    await start(store, {
-      kind: "bookmarks",
-      source: "collections-heading",
-      label: "",
-    });
-
-    expect(store.get(splitsAtom).left).toEqual(555);
-  });
-
-  it("hands the panel the kind and source of the draft", async () => {
+      source: "collections-group",
+      label: "Night demand",
+      groupId: "district",
+      groupLabels: ["District", "Night"],
+    },
+  ])("preserves the $kind draft handoff", async (draft) => {
     const store = aStore();
 
-    await start(store, {
-      kind: "bookmarks",
-      source: "collections-add-row",
-      label: "",
-    });
+    await start(store, draft);
 
-    expect(store.get(pendingCollectionDraftAtom)).toEqual({
-      kind: "bookmarks",
-      source: "collections-add-row",
-      label: "",
-    });
+    expect(store.get(pendingCollectionDraftAtom)).toEqual(draft);
   });
 
-  it("shows the panel instead of a draft without a plan", async () => {
+  it("shows the popup instead of a draft without a plan", async () => {
     permissionsRef.current = resolvePermissions("free", false, false, false);
     const store = aStore();
     store.set(splitsAtom, (splits) => ({ ...splits, leftOpen: false }));
-    store.set(activatePanelAtom, "network-review");
+    const splits = store.get(splitsAtom);
 
     await start(store, {
       kind: "selectionSets",
@@ -135,17 +140,17 @@ describe("useStartCollectionDraft", () => {
       label: "",
     });
 
-    expect(store.get(splitsAtom).leftOpen).toBe(true);
-    expect(store.get(activePanelIn("left"))?.id).toEqual("collections");
+    expect(store.get(collectionsOpenAtom)).toBe(true);
+    expect(store.get(splitsAtom)).toBe(splits);
+    expect(store.get(activePanelIn("left"))?.id).toBe("neighbour");
     expect(startUpgrade).not.toHaveBeenCalled();
     expect(store.get(pendingCollectionDraftAtom)).toBeNull();
   });
 
-  it("offers an upgrade when the panel is already on screen", async () => {
+  it("offers an upgrade when the popup is already on screen", async () => {
     permissionsRef.current = resolvePermissions("free", false, false, false);
     const store = aStore();
-    store.set(splitsAtom, (splits) => ({ ...splits, leftOpen: true }));
-    store.set(activatePanelAtom, "collections");
+    store.set(collectionsOpenAtom, true);
 
     await start(store, {
       kind: "selectionSets",
@@ -156,4 +161,29 @@ describe("useStartCollectionDraft", () => {
     expect(startUpgrade).toHaveBeenCalledWith("selectionSets");
     expect(store.get(pendingCollectionDraftAtom)).toBeNull();
   });
+});
+
+describe("useSetCollectionsOpen", () => {
+  it.each([false, true])(
+    "clears pending drafts on close when open is %s",
+    (open) => {
+      const store = aStore();
+      store.set(collectionsOpenAtom, open);
+      store.set(pendingCollectionDraftAtom, {
+        kind: "selectionSets",
+        source: "toolbar",
+        label: "Draft",
+      });
+      const { result } = renderHook(() => useSetCollectionsOpen(), {
+        wrapper: ({ children }) => (
+          <CommandContainer store={store}>{children}</CommandContainer>
+        ),
+      });
+
+      act(() => result.current(false));
+
+      expect(store.get(collectionsOpenAtom)).toBe(false);
+      expect(store.get(pendingCollectionDraftAtom)).toBeNull();
+    },
+  );
 });

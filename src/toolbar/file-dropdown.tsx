@@ -54,29 +54,84 @@ import {
   StyledItem,
 } from "src/components/elements";
 
-export const FileDropdown = () => {
+const floatingMenuPresentation = {
+  className:
+    "map-overlay-theme map-overlay-surface map-overlay-popover placemark-scrollbar z-40 max-w-[calc(100vw-1rem)] overflow-y-auto [&_[data-highlighted]]:bg-base-hover [&_[data-disabled]]:cursor-not-allowed [&_[data-disabled]]:text-disabled [&_[data-disabled]]:opacity-60",
+  collisionPadding: 8,
+  style: {
+    maxHeight:
+      "min(calc(100dvh - 1rem), var(--radix-dropdown-menu-content-available-height))",
+  },
+};
+
+export const FileDropdown = ({ floating = false }: { floating?: boolean }) => {
   const openProject = useOpenProject();
   const saveProject = useSaveProject();
   const translate = useTranslate();
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [tooltipOpen, setTooltipOpen] = React.useState(false);
 
   return (
-    <div className="h-10 w-12 group bn flex items-stretch py-1 focus:outline-hidden">
-      <DD.Root>
-        <Tooltip content={translate("file")}>
+    <div
+      className={
+        floating
+          ? "map-overlay-theme flex h-[var(--map-control-target-size)] w-[var(--map-control-target-size)] shrink-0 items-center justify-center"
+          : "h-10 w-12 group bn flex items-stretch py-1 focus:outline-hidden"
+      }
+    >
+      <DD.Root
+        onOpenChange={(open) => {
+          setMenuOpen(open);
+          setTooltipOpen(false);
+        }}
+      >
+        <Tooltip
+          content={translate("file")}
+          side={floating ? "right" : undefined}
+          sideOffset={floating ? 6 : undefined}
+          zIndex={floating ? 50 : undefined}
+          className={
+            floating
+              ? "map-overlay-theme map-overlay-surface map-overlay-tooltip pointer-events-none"
+              : undefined
+          }
+          open={floating ? tooltipOpen && !menuOpen : undefined}
+          onOpenChange={floating ? setTooltipOpen : undefined}
+        >
           <DD.Trigger asChild>
-            <Button variant="quiet">
-              <FolderIcon />
-              <ChevronDownIcon size="sm" />
-            </Button>
+            {floating ? (
+              <button
+                type="button"
+                aria-label={translate("file")}
+                className="group flex h-[var(--map-control-target-size)] w-[var(--map-control-target-size)] items-center justify-center rounded-sm focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                <span
+                  className={`flex h-[var(--map-control-face-size)] w-[var(--map-control-face-size)] items-center justify-center rounded-sm border shadow-lg transition-colors [&_svg]:h-[var(--map-control-icon-size)] [&_svg]:w-[var(--map-control-icon-size)] ${
+                    menuOpen
+                      ? "border-accent bg-accent text-default-inverse"
+                      : "map-overlay-surface text-default group-hover:bg-base-hover group-focus-visible:bg-base-hover"
+                  }`}
+                >
+                  <FolderIcon aria-hidden="true" />
+                </span>
+              </button>
+            ) : (
+              <Button variant="quiet" aria-label={translate("file")}>
+                <FolderIcon />
+                <ChevronDownIcon size="sm" />
+              </Button>
+            )}
           </DD.Trigger>
         </Tooltip>
         <DD.Portal>
           <DDContent
+            {...(floating ? floatingMenuPresentation : {})}
             align="start"
-            side="bottom"
+            side={floating ? "right" : "bottom"}
+            sideOffset={floating ? 6 : undefined}
             onCloseAutoFocus={(e) => e.preventDefault()}
           >
-            <NewProjectSubmenu />
+            <NewProjectSubmenu floating={floating} />
 
             <DDSeparator />
 
@@ -89,7 +144,7 @@ export const FileDropdown = () => {
               {translate("openFile")}
             </StyledItem>
 
-            <ConvertModelSubmenu />
+            <ConvertModelSubmenu floating={floating} />
 
             <DDSeparator />
 
@@ -113,9 +168,9 @@ export const FileDropdown = () => {
 
             <DDSeparator />
 
-            <ImportSubmenu />
-            <ExportSubmenu />
-            <RecentFilesMenu />
+            <ImportSubmenu floating={floating} />
+            <ExportSubmenu floating={floating} />
+            <RecentFilesMenu floating={floating} />
           </DDContent>
         </DD.Portal>
       </DD.Root>
@@ -141,7 +196,7 @@ const ConverterItem = ({ vendor }: { vendor: ConverterVendor }) => {
   );
 };
 
-const ConvertModelSubmenu = () => {
+const ConvertModelSubmenu = ({ floating }: { floating: boolean }) => {
   const translate = useTranslate();
   const isSynergiOn = useFeatureFlag("FLAG_SYNERGI");
 
@@ -157,7 +212,11 @@ const ConvertModelSubmenu = () => {
         <ChevronRightIcon size="sm" className="ml-auto" />
       </DDSubTriggerItem>
       <DD.Portal>
-        <DDSubContent sideOffset={4} alignOffset={-4}>
+        <DDSubContent
+          {...(floating ? floatingMenuPresentation : {})}
+          sideOffset={4}
+          alignOffset={-4}
+        >
           <ConverterItem vendor="synergi" />
         </DDSubContent>
       </DD.Portal>
@@ -165,7 +224,7 @@ const ConvertModelSubmenu = () => {
   );
 };
 
-const NewProjectSubmenu = () => {
+const NewProjectSubmenu = ({ floating }: { floating: boolean }) => {
   const createNewProject = useNewProject();
   const openModelBuilder = useOpenModelBuilder();
   const openInpFromFs = useOpenInpFromFs();
@@ -182,7 +241,11 @@ const NewProjectSubmenu = () => {
         <ChevronRightIcon size="sm" className="ml-auto" />
       </DDSubTriggerItem>
       <DD.Portal>
-        <DDSubContent sideOffset={4} alignOffset={-4}>
+        <DDSubContent
+          {...(floating ? floatingMenuPresentation : {})}
+          sideOffset={4}
+          alignOffset={-4}
+        >
           {isDrawingAvailable && (
             <StyledItem
               onSelect={() => {
@@ -227,7 +290,7 @@ const NewProjectSubmenu = () => {
   );
 };
 
-const ImportSubmenu = () => {
+const ImportSubmenu = ({ floating }: { floating: boolean }) => {
   const importCustomerPoints = useOpenCustomerPointsImport();
   const openZonesImport = useOpenZonesImport();
   const importZonesDisabled = useImportZonesDisabled();
@@ -242,7 +305,11 @@ const ImportSubmenu = () => {
         <ChevronRightIcon size="sm" className="ml-auto" />
       </DDSubTriggerItem>
       <DD.Portal>
-        <DDSubContent sideOffset={4} alignOffset={-4}>
+        <DDSubContent
+          {...(floating ? floatingMenuPresentation : {})}
+          sideOffset={4}
+          alignOffset={-4}
+        >
           <StyledItem
             disabled={importCustomerPointsDisabled}
             className={importCustomerPointsDisabled ? "opacity-60" : undefined}
@@ -270,7 +337,7 @@ const ImportSubmenu = () => {
   );
 };
 
-const ExportSubmenu = () => {
+const ExportSubmenu = ({ floating }: { floating: boolean }) => {
   const saveInp = useSaveInp();
   const saveProject = useSaveProject();
   const exportScenarioAsProject = useExportScenarioAsProject();
@@ -290,7 +357,11 @@ const ExportSubmenu = () => {
         <ChevronRightIcon size="sm" className="ml-auto" />
       </DDSubTriggerItem>
       <DD.Portal>
-        <DDSubContent sideOffset={4} alignOffset={-4}>
+        <DDSubContent
+          {...(floating ? floatingMenuPresentation : {})}
+          sideOffset={4}
+          alignOffset={-4}
+        >
           <StyledItem
             onSelect={() => {
               setDialogState({
@@ -339,7 +410,7 @@ const ExportSubmenu = () => {
   );
 };
 
-const RecentFilesMenu = () => {
+const RecentFilesMenu = ({ floating }: { floating: boolean }) => {
   const openRecentFile = useOpenRecentFile();
   const translate = useTranslate();
   const { recentFiles, isSupported: isRecentFilesSupported } = useRecentFiles();
@@ -358,7 +429,11 @@ const RecentFilesMenu = () => {
           <ChevronRightIcon size="sm" className="ml-auto" />
         </DDSubTriggerItem>
         <DD.Portal>
-          <DDSubContent sideOffset={4} alignOffset={-4}>
+          <DDSubContent
+            {...(floating ? floatingMenuPresentation : {})}
+            sideOffset={4}
+            alignOffset={-4}
+          >
             {recentFiles.map((entry) => {
               const isProject = entry.name
                 .toLowerCase()

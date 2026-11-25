@@ -1,10 +1,8 @@
 import { useAtomCallback } from "jotai/utils";
 import type { LngLatBoundsLike } from "mapbox-gl";
 import { useCallback, useContext } from "react";
-import {
-  useRevealCollectionsPanel,
-  useStartCollectionDraft,
-} from "src/commands/collection-draft";
+import { useStartCollectionDraft } from "src/commands/collection-draft";
+import { useShowCollections } from "src/commands/show-collections";
 import { useFeatureLock } from "src/components/form/paywall";
 import { useBookmarksTransaction } from "src/hooks/persistence/use-bookmarks-transaction";
 import { useCreateSelectionSet } from "src/commands/selection-sets";
@@ -98,7 +96,7 @@ export const useSaveAllScriptSelectionSets = () => {
   const createSelectionSet = useCreateSelectionSet();
   const { canManageCollections } = usePermissions();
   const { openPaywall } = useFeatureLock("selectionSets");
-  const revealPanel = useRevealCollectionsPanel();
+  const showCollections = useShowCollections();
 
   return useAtomCallback(
     useCallback(
@@ -119,9 +117,9 @@ export const useSaveAllScriptSelectionSets = () => {
           });
           if (outcome === "failed") return;
         }
-        revealPanel();
+        showCollections();
       },
-      [canManageCollections, openPaywall, createSelectionSet, revealPanel],
+      [canManageCollections, openPaywall, createSelectionSet, showCollections],
     ),
   );
 };
@@ -131,7 +129,7 @@ export const useSaveAllScriptBookmarks = () => {
   const { transact } = useBookmarksTransaction();
   const { canManageCollections } = usePermissions();
   const { openPaywall } = useFeatureLock("selectionSets");
-  const revealPanel = useRevealCollectionsPanel();
+  const showCollections = useShowCollections();
 
   return useAtomCallback(
     useCallback(
@@ -154,9 +152,15 @@ export const useSaveAllScriptBookmarks = () => {
             source: "script-output",
           }),
         );
-        revealPanel();
+        showCollections();
       },
-      [canManageCollections, openPaywall, transact, userTracking, revealPanel],
+      [
+        canManageCollections,
+        openPaywall,
+        transact,
+        userTracking,
+        showCollections,
+      ],
     ),
   );
 };

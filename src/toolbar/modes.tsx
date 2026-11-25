@@ -73,8 +73,10 @@ export const DRAWING_MODE_OPTIONS: readonly DrawingModeOption[] = [
 
 export default memo(function Modes({
   disabled = false,
+  compact = false,
 }: {
   disabled?: boolean;
+  compact?: boolean;
 }) {
   const { mode: currentMode } = useAtomValue(modeAtom);
   const setDrawingMode = useDrawingMode();
@@ -103,7 +105,7 @@ export default memo(function Modes({
       </MenuAction>
       <SelectionTool />
       <TraceTool />
-      {isLgOrLarger ? (
+      {isLgOrLarger && !compact ? (
         DRAWING_MODE_OPTIONS.map(({ mode, hotkey, Icon }) => {
           const modeInfo = MODE_INFO[mode];
 

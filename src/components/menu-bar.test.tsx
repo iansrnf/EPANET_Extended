@@ -11,6 +11,8 @@ import { useTranslate } from "src/hooks/use-translate";
 import { dialogAtom } from "src/state/dialog";
 import { TrialOrUpgradeButton } from "./menu-bar";
 
+vi.mock("src/selection/use-selection", () => ({ useSelection: vi.fn() }));
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const inThreeDays = new Date(Date.now() + 3 * MS_PER_DAY).toISOString();

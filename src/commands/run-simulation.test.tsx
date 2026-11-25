@@ -7,7 +7,10 @@ import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { setInitialState } from "src/__helpers__/state";
 import { dialogAtom } from "src/state/dialog";
 import { splitsAtom } from "src/state/layout";
-import { selectedReviewCheckAtom } from "src/state/network-review";
+import {
+  networkReviewOpenAtom,
+  selectedReviewCheckAtom,
+} from "src/state/network-review";
 import { CheckType } from "src/lib/network-review";
 import userEvent from "@testing-library/user-event";
 import { useRunSimulation } from "./run-simulation";
@@ -638,7 +641,8 @@ describe("Run simulation", () => {
           CheckType.orphanAssets,
         );
       });
-      expect(store.get(splitsAtom).leftOpen).toBe(true);
+      expect(store.get(networkReviewOpenAtom)).toBe(true);
+      expect(store.get(splitsAtom).leftOpen).toBe(false);
     });
 
     it("opens the summary when more than one check failed", async () => {
@@ -660,6 +664,7 @@ describe("Run simulation", () => {
       await waitFor(() => {
         expect(store.get(selectedReviewCheckAtom)).toEqual("summary");
       });
+      expect(store.get(networkReviewOpenAtom)).toBe(true);
     });
 
     // The gate is advisory: a check that breaks must not become the reason a

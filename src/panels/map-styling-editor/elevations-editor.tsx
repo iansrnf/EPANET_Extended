@@ -1,6 +1,7 @@
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { isPlayingAtom } from "src/state/simulation-playback";
-import { useCallback, useContext, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useRef, useState } from "react";
+import clsx from "clsx";
 import { fetchProjections } from "@epanet-js/projections";
 
 import { LngLatBoundsLike } from "mapbox-gl";
@@ -90,6 +91,10 @@ import {
   type LinearUnit,
 } from "src/lib/elevations";
 import { TextField } from "src/components/form/text-field";
+import {
+  useMapStylingPopoverClassName,
+  useMapStylingPopoverProps,
+} from "./popover-placement";
 
 export const ElevationsEditor = () => {
   const isPlaying = useAtomValue(isPlayingAtom);
@@ -213,6 +218,7 @@ const ElevationSourceRowShell = ({
       ) : (
         <div
           className="opacity-20 hover:opacity-100 cursor-grab active:cursor-grabbing flex items-center h-8"
+          data-map-drag-handle
           {...attributes}
           {...listeners}
         >
@@ -251,6 +257,7 @@ const GeoTiffElevationSourceRow = ({
 }) => {
   const translate = useTranslate();
   const sideTowardMap = useSideTowardMap();
+  const popoverProps = useMapStylingPopoverProps();
   const { units } = useAtomValue(projectSettingsAtom);
   const elevationUnit = units.elevation;
   const resolutionDisplay = Math.round(
@@ -294,6 +301,7 @@ const GeoTiffElevationSourceRow = ({
             onOpenAutoFocus={(e) => e.preventDefault()}
             side={sideTowardMap}
             align="start"
+            {...popoverProps}
           >
             <StyledPopoverArrow />
             <IndentationContext.Provider value={0}>
@@ -426,6 +434,7 @@ const TileServerElevationSourceRow = ({
 }) => {
   const translate = useTranslate();
   const sideTowardMap = useSideTowardMap();
+  const popoverProps = useMapStylingPopoverProps();
   const isOffline = useAtomValue(offlineAtom);
   const isDisabled = isOffline || !source.enabled;
 
@@ -449,6 +458,7 @@ const TileServerElevationSourceRow = ({
             onOpenAutoFocus={(e) => e.preventDefault()}
             side={sideTowardMap}
             align="start"
+            {...popoverProps}
           >
             <StyledPopoverArrow />
             <IndentationContext.Provider value={0}>
@@ -637,6 +647,7 @@ const AddElevationDataButton = ({ actions }: { actions: Actions }) => {
 
 const RecomputeElevationsButton = () => {
   const translate = useTranslate();
+  const popoverClassName = useMapStylingPopoverClassName();
   const setDialogState = useSetAtom(dialogAtom);
   const { isLocked, openPaywall } = useFeatureLock("refreshElevations");
   const { recompute } = useRecomputeElevations();
@@ -675,7 +686,11 @@ const RecomputeElevationsButton = () => {
           </Button>
         </DD.Trigger>
         <DD.Portal>
-          <DDContent align="end" side="bottom" className="z-50">
+          <DDContent
+            align="end"
+            side="bottom"
+            className={clsx("z-50", popoverClassName)}
+          >
             <StyledItem
               className="data-[disabled]:opacity-40 data-[disabled]:cursor-not-allowed"
               disabled={!isLocked && (targets === null || missingCount === 0)}
@@ -1093,6 +1108,8 @@ const useElevationCoverageOverlay = () => {
     hoveredTileIdRef.current = null;
     setCoverageFeatures([]);
   }, [setCoverageFeatures]);
+
+  useEffect(() => hideCoverage, [hideCoverage]);
 
   const highlightTile = useCallback(
     (sourceId: string, tileId: string | null) => {

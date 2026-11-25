@@ -1180,7 +1180,7 @@ type AssetPanelOpened = {
 
 type NetworkReviewOpened = {
   name: "networkReview.opened";
-  source: "auto";
+  source: "auto" | "map";
 };
 
 type NetworkReviewChecked = {

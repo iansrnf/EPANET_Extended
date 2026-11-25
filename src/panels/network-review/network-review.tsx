@@ -23,9 +23,6 @@ import { ProximityAnomalies } from "./proximity-anomalies";
 import { CrossingPipes } from "./crossing-pipes";
 import { ConnectivityTrace } from "./connectivity-trace";
 import { ModelAttributesValidation } from "./model-attributes-validation";
-import { EarlyAccessBadge } from "src/components/early-access-badge";
-import { useEarlyAccess } from "src/hooks/use-early-access";
-import { useAuth } from "src/hooks/use-auth";
 import {
   reviewResultsAtom,
   selectedReviewCheckAtom,
@@ -73,7 +70,7 @@ const CheckRowText = ({
 const isBlockingCheck = (check: CheckType): check is BlockingCheckType =>
   (blockingChecks as readonly CheckType[]).includes(check);
 
-export function NetworkReview() {
+export function NetworkReview({ showTitle = true }: { showTitle?: boolean }) {
   const [selectedReviewCheck, setSelectedReviewCheck] = useAtom(
     selectedReviewCheckAtom,
   );
@@ -112,6 +109,7 @@ export function NetworkReview() {
     default:
       return (
         <NetworkReviewSummary
+          showTitle={showTitle}
           onClick={(checkType: CheckType) => setCheckType(checkType)}
         />
       );
@@ -128,15 +126,15 @@ const allChecks = [
 
 function NetworkReviewSummary({
   onClick,
+  showTitle,
 }: {
   onClick: (check: CheckType) => void;
+  showTitle: boolean;
 }) {
   const translate = useTranslate();
   const { ensureFresh } = useReviewChecks();
   const reviewResults = useAtomValue(reviewResultsAtom);
   const [isRunning, setIsRunning] = useState(false);
-  const { isSignedIn, isLoaded } = useAuth();
-  const showEarlyAccessBadge = isLoaded && !isSignedIn;
 
   const [selectedCheckType, setSelectedCheckType] = useState<CheckType | null>(
     null,
@@ -253,16 +251,14 @@ function NetworkReviewSummary({
   return (
     <div
       ref={containerRef}
+      data-network-review-summary
       className="flex-auto overflow-y-auto placemark-scrollbar"
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
-      <div className="py-3 px-4 text-size-base font-bold text-default border-b w-full">
-        <span>{translate("networkReview.title")}</span>
-      </div>
-      {showEarlyAccessBadge && (
-        <div className="px-4 pt-3">
-          <EarlyAccessBadge />
+      {showTitle && (
+        <div className="py-3 px-4 text-size-base font-bold text-default border-b w-full">
+          <span>{translate("networkReview.title")}</span>
         </div>
       )}
       <div className="px-4 py-2 text-size-base">
@@ -276,9 +272,6 @@ function NetworkReviewSummary({
             onClick={onClick}
             isSelected={selectedCheckType === checkType}
             issueCount={issueCount(checkType)}
-            requiresEarlyAccess={
-              checkType !== CheckType.modelAttributesValidation
-            }
           />
         ))}
         {isRunning && <LoadingState overlay />}
@@ -310,42 +303,25 @@ const ReviewCheck = ({
   isEnabled = true,
   isSelected,
   issueCount,
-  requiresEarlyAccess = true,
 }: {
   checkType: CheckType;
   onClick: (checkType: CheckType) => void;
   isEnabled?: boolean;
   isSelected: boolean;
   issueCount: number;
-  requiresEarlyAccess?: boolean;
 }) => {
   const translate = useTranslate();
   const userTracking = useUserTracking();
-  const onlyEarlyAccess = useEarlyAccess();
 
   const label = translate(labelKeyByCheckType[checkType]);
 
   const selectCheck = useCallback(() => {
     if (!isEnabled) return;
-    const openCheck = () => {
-      userTracking.capture({
-        name: `networkReview.${checkType}.opened`,
-      });
-      onClick(checkType);
-    };
-    if (requiresEarlyAccess) {
-      onlyEarlyAccess(openCheck);
-    } else {
-      openCheck();
-    }
-  }, [
-    onClick,
-    checkType,
-    userTracking,
-    isEnabled,
-    onlyEarlyAccess,
-    requiresEarlyAccess,
-  ]);
+    userTracking.capture({
+      name: `networkReview.${checkType}.opened`,
+    });
+    onClick(checkType);
+  }, [onClick, checkType, userTracking, isEnabled]);
 
   return (
     <Button

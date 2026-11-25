@@ -41,8 +41,10 @@ import { projectSettingsAtom } from "src/state/project-settings";
 import { resetProjectRevision } from "src/state/project-revision";
 import {
   archivedNetworkReviewItemsAtom,
+  networkReviewOpenAtom,
   proximityDistanceAtom,
   reviewResultsAtom,
+  selectedReviewCheckAtom,
 } from "src/state/network-review";
 import {
   simulationDerivedAtom,
@@ -87,6 +89,8 @@ import {
 } from "src/state/simulation-playback";
 import {
   bookmarksAtom,
+  collectionsOpenAtom,
+  pendingCollectionDraftAtom,
   selectionSetGroupsAtom,
   selectionSetsAtom,
 } from "src/state/collections";
@@ -147,9 +151,13 @@ export const resetAppState = (set: Setter, panels: Panel[]) => {
   set(selectionSetGroupsAtom, initializeSelectionSetGroups());
   set(selectionSetsAtom, initializeSelectionSets());
   set(bookmarksAtom, initializeBookmarks());
+  set(collectionsOpenAtom, false);
+  set(pendingCollectionDraftAtom, null);
   set(userScriptsAtom, []);
   set(scriptDraftAtom, null);
   set(reviewResultsAtom, {});
+  set(networkReviewOpenAtom, false);
+  set(selectedReviewCheckAtom, null);
   set(archivedNetworkReviewItemsAtom, {});
   set(proximityDistanceAtom, null);
 };

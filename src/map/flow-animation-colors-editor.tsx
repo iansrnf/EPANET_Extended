@@ -39,7 +39,7 @@ export const FlowAnimationColorsEditor = () => {
         <button
           type="button"
           aria-label={translate("flowAnimation.colors.edit")}
-          className="flex min-h-[37.4px] w-full items-center gap-2 rounded-lg px-2 text-left text-default transition-colors hover:bg-base-hover focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:min-h-11"
+          className="map-overlay-theme flex min-h-[37.4px] w-full items-center gap-2 rounded-lg px-2 text-left text-default transition-colors hover:bg-base-hover focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:min-h-11"
         >
           <span
             aria-hidden="true"
@@ -67,7 +67,7 @@ export const FlowAnimationColorsEditor = () => {
           collisionPadding={12}
           aria-labelledby={titleId}
           aria-describedby={descriptionId}
-          className="z-50 w-[285.6px] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-[13.6px] border bg-popover text-default shadow-2xl outline-none"
+          className="map-overlay-theme map-overlay-surface map-overlay-popover z-50 w-[285.6px] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-[13.6px] text-default shadow-2xl outline-none"
           style={{
             maxHeight:
               "min(544px, var(--radix-popover-content-available-height, calc(100dvh - 24px)))",

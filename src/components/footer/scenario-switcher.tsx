@@ -3,6 +3,7 @@ import * as DD from "@radix-ui/react-dropdown-menu";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { Branch } from "@epanet-js/worktree";
 import { Tooltip } from "@epanet-js/ui-kit";
+import clsx from "clsx";
 import { useAtomValue, useSetAtom } from "jotai";
 import { isPlayingAtom } from "src/state/simulation-playback";
 
@@ -29,7 +30,11 @@ import { useSwitchToBranch } from "src/commands/switch-scenario";
 import { useFeatureLock } from "src/components/form/paywall";
 import { Button, DDContent, DDSeparator, StyledItem } from "../elements";
 
-export const ScenarioSwitcher = () => {
+export const ScenarioSwitcher = ({
+  compact = false,
+}: {
+  compact?: boolean;
+}) => {
   const translate = useTranslate();
   const userTracking = useUserTracking();
   const worktree = useAtomValue(worktreeAtom);
@@ -159,7 +164,14 @@ export const ScenarioSwitcher = () => {
   }
 
   return (
-    <div className="min-w-44 max-w-80 h-10 group bn flex items-stretch py-1 focus:outline-hidden">
+    <div
+      className={clsx(
+        "group bn flex items-stretch focus:outline-hidden",
+        compact
+          ? "scenario-switcher-compact min-w-24 max-w-32 h-[var(--map-control-target-size)]"
+          : "min-w-44 max-w-80 h-10 py-1",
+      )}
+    >
       <DD.Root
         onOpenChange={(open) => {
           if (open) {
@@ -173,6 +185,7 @@ export const ScenarioSwitcher = () => {
               variant="quiet"
               className="w-full justify-between"
               disabled={isPlaying}
+              aria-label={`${translate("scenarios.switcherTooltip")}: ${activeDisplayName}`}
             >
               <div className="flex items-center gap-1 min-w-0">
                 {isMainActive ? (
@@ -192,7 +205,15 @@ export const ScenarioSwitcher = () => {
           </DD.Trigger>
         </Tooltip>
         <DD.Portal>
-          <DDContent align="start" side="top" className="min-w-64 max-w-80">
+          <DDContent
+            align="start"
+            side="top"
+            className={clsx(
+              "min-w-64 max-w-80",
+              compact &&
+                "map-overlay-theme map-overlay-surface map-overlay-popover z-40",
+            )}
+          >
             <StyledItem
               onSelect={handleSelectMain}
               className={isMainActive ? "bg-accent-tint!" : undefined}

@@ -4,6 +4,7 @@ import "mapbox-gl/dist/mapbox-gl.css";
 import type { Feature, FeatureCollection, Geometry, Position } from "geojson";
 import type { NetworkLayerRole } from "src/lib/model-builder/network";
 import { Button } from "src/components/elements";
+import { defaultBasemap } from "src/map/basemaps";
 
 type MapItem = { feature: Feature; role?: NetworkLayerRole; name: string };
 
@@ -46,7 +47,7 @@ export const BasemapPreview = ({
       instance = new mapboxgl.Map({
         container: container.current,
         accessToken: token,
-        style: "mapbox://styles/mapbox/light-v11",
+        style: defaultBasemap.url,
         center: [125, 6],
         zoom: 9,
         attributionControl: true,

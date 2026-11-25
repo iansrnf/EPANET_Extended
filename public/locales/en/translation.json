@@ -618,6 +618,20 @@
   "simulation": "Simulation",
   "simulationReport": "Simulation report",
   "simulationReadyToRun": "Ready to run",
+  "simulationStatus": {
+    "ready": "Ready",
+    "running": "Running",
+    "success": "Success",
+    "failure": "Failed",
+    "warning": "Warning",
+    "stopped": "Stopped",
+    "outdated": "Outdated"
+  },
+  "modelSettings": {
+    "title": "Model settings",
+    "close": "Close model settings",
+    "openSimulationSettings": "Open simulation settings"
+  },
   "simulationRunning": "Running...",
   "simulationSuccess": "Simulation was successful",
   "simulationWarning": "Simulation with warnings",
@@ -794,7 +808,7 @@
   "nothingSelectedSearch": "Or search assets by their label to quickly find and select them.",
   "onboardingRunningModel": "Running a model and viewing results",
   "onboardingRunSimulation": "Press Simulate button to run a hydraulic simulation.",
-  "onboardingMap": "Switch to the map tab to add visualizations of hydraulic results.",
+  "onboardingMap": "Open Map styling with the sliders icon to visualize hydraulic results.",
   "onboardingOtherFeatures": "Other helpful features",
   "onboardingUndoRedo": "Undo or redo with {{1}} and {{2}}.",
   "onboardingFiles": "Working with files",
@@ -1013,6 +1027,11 @@
   "optional": "optional",
   "basemap": "Basemap",
   "mapProvider": "Map provider",
+  "mapView": {
+    "threeDLabel": "3D view",
+    "enable3D": "Enable 3D view",
+    "returnTo2D": "Return to 2D view"
+  },
   "mapCursorCoordinates": {
     "label": "Cursor coordinates",
     "longitude": "Longitude",
@@ -1040,10 +1059,8 @@
     }
   },
   "basemapModes": {
-    "roadmap": "Roadmap",
     "satellite": "Satellite",
-    "monochrome": "Monochrome",
-    "outdoors": "Outdoors"
+    "black": "Black"
   },
   "switchMapProvider": "Switch to {{1}}",
   "googleMaps": {
@@ -1264,6 +1281,10 @@
   "unitHeadloss": "Unit headloss",
   "showLabels": "Show labels",
   "map": "Map",
+  "mapStyling": {
+    "title": "Map styling",
+    "close": "Close map styling"
+  },
   "colorBy": "Color by",
   "defaultColor": "Default color",
   "range": "Range",
@@ -1798,6 +1819,7 @@
   },
   "networkReview": {
     "title": "Network Review",
+    "close": "Close network review",
     "description": "Run a series of checks to validate your network's topology and ensure data quality.",
     "issuesFound_one": "1 issue",
     "issuesFound_other": "{{count}} issues",
@@ -2393,6 +2415,7 @@
   },
   "collections": {
     "title": "Collections",
+    "close": "Close collections",
     "selectionSets": {
       "title": "Selection sets",
       "saveCurrent": "Save current selection",

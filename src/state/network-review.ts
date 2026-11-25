@@ -18,6 +18,8 @@ export type ReviewResults = {
 
 export const reviewResultsAtom = atom<ReviewResults>({});
 
+export const networkReviewOpenAtom = atom(false);
+
 export const selectedReviewCheckAtom = atom<CheckType | "summary" | null>(null);
 
 export type ArchivedItems = Partial<Record<CheckType, string[]>>;

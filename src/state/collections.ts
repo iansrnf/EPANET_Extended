@@ -19,4 +19,6 @@ export const selectionSetGroupsAtom = atom<SelectionSetGroup[]>(
 
 export const bookmarksAtom = atom<Bookmark[]>(initializeBookmarks());
 
+export const collectionsOpenAtom = atom(false);
+
 export const pendingCollectionDraftAtom = atom<CollectionDraft | null>(null);

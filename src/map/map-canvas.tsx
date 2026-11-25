@@ -49,6 +49,9 @@ import { GoogleMapsAttribution } from "./google-maps-attribution";
 import { DeviceLocationControl } from "./device-location-control";
 import { MapCursorCoordinates } from "./cursor-coordinates";
 import { FlowAnimationControl } from "./flow-animation-control";
+import { NetworkReviewControl } from "./network-review-control";
+import { CollectionsControl } from "./collections-control";
+import { MapStylingControl } from "./map-styling-control";
 import { deviceLocationNavigationRevisionAtom } from "src/state/device-location";
 import { useFitToExtent } from "./use-fit-to-extent";
 import { CustomMapControlClick, FIT_TO_EXTENT_CONTROL } from "@epanet-js/map";
@@ -57,6 +60,12 @@ import { useTranslate } from "src/hooks/use-translate";
 import { supportEmail } from "src/global-config";
 import { MapHandlers } from "@epanet-js/map";
 import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
+import { Map3DControl } from "./map-3d-control";
+import { captureMapViewport } from "src/lib/map-viewport";
+import {
+  currentMapPitchAtom,
+  mapPitchTransitioningAtom,
+} from "src/state/map-view";
 mapboxgl.accessToken = env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 mapboxgl.setRTLTextPlugin(
@@ -111,10 +120,16 @@ export const MapCanvas = memo(function MapCanvas({
   setMap: (arg0: MapEngine | null) => void;
 }) {
   const rep = usePersistence();
-  const setMapViewport = useSetAtom(mapViewportAtom);
   const readViewport = useAtomCallback(
     useCallback((get) => get(mapViewportAtom), []),
   );
+  const saveViewport = useAtomCallback(
+    useCallback((get, set, map: mapboxgl.Map) => {
+      set(mapViewportAtom, captureMapViewport(map, get(mapViewportAtom)));
+    }, []),
+  );
+  const setCurrentPitch = useSetAtom(currentMapPitchAtom);
+  const setPitchTransitioning = useSetAtom(mapPitchTransitioningAtom);
 
   const selection = useAtomValue(selectionAtom);
   const { units } = useAtomValue(projectSettingsAtom);
@@ -181,10 +196,13 @@ export const MapCanvas = memo(function MapCanvas({
         handlers: mapHandlers as MutableRefObject<MapHandlers>,
         onControlClick,
         onContextRestored: () => {
+          if (mapRef.current?.isAlive()) saveViewport(mapRef.current.map);
           captureWarning("Map rebuilt after WebGL context was restored");
           setContextRestarts((restarts) => restarts + 1);
         },
         initialViewport: readViewport(),
+        compactAttribution: true,
+        attributionPosition: "top-right",
       });
       setMapInstance(mapRef.current);
       setMap(mapRef.current);
@@ -197,6 +215,7 @@ export const MapCanvas = memo(function MapCanvas({
     }
 
     return () => {
+      if (mapRef.current?.isAlive()) saveViewport(mapRef.current.map);
       setMapInstance(null);
       setMap(null);
       if (mapRef.current && "remove" in mapRef.current) {
@@ -210,8 +229,30 @@ export const MapCanvas = memo(function MapCanvas({
     setMap,
     onControlClick,
     readViewport,
+    saveViewport,
     contextRestarts,
   ]);
+
+  useEffect(() => {
+    if (!mapInstance) return;
+    const map = mapInstance.map;
+    const updatePitch = () => setCurrentPitch(map.getPitch());
+    const startTransition = () => setPitchTransitioning(true);
+    const endTransition = () => {
+      updatePitch();
+      setPitchTransitioning(false);
+    };
+    updatePitch();
+    map.on("pitch", updatePitch);
+    map.on("pitchstart", startTransition);
+    map.on("pitchend", endTransition);
+    return () => {
+      map.off("pitch", updatePitch);
+      map.off("pitchstart", startTransition);
+      map.off("pitchend", endTransition);
+      setPitchTransitioning(false);
+    };
+  }, [mapInstance, setCurrentPitch, setPitchTransitioning]);
 
   if (isDebugOn) (window as any).mapEngine = mapRef.current;
 
@@ -285,11 +326,7 @@ export const MapCanvas = memo(function MapCanvas({
     },
     onMoveEnd(e: mapboxgl.MapboxEvent & mapboxgl.EventData) {
       debug(e, mode.mode, selection, dragTargetRef, "onMouseMoveEnd");
-      const center = e.target.getCenter();
-      setMapViewport({
-        center: [center.lng, center.lat],
-        zoom: e.target.getZoom(),
-      });
+      saveViewport(e.target);
     },
     onMove: throttle((e: mapboxgl.MapboxEvent & mapboxgl.EventData) => {
       debug(e, mode.mode, selection, dragTargetRef, "onMove");
@@ -444,8 +481,12 @@ export const MapCanvas = memo(function MapCanvas({
       <BasemapSelector />
       <GoogleMapsAttribution map={mapInstance} />
       <DeviceLocationControl mapReady={mapInstance !== null} />
+      <Map3DControl mapReady={mapInstance !== null} />
       <MapCursorCoordinates map={mapInstance} />
       <FlowAnimationControl />
+      <NetworkReviewControl />
+      <CollectionsControl />
+      <MapStylingControl />
     </CM.Root>
   );
 });

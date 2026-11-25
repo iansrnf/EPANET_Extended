@@ -89,9 +89,57 @@ describe("Google Maps tiles", () => {
         mapType: "roadmap",
         language: "en",
         region: "PH",
-        styles: [{ elementType: "labels", stylers: [{ visibility: "off" }] }],
+        styles: expect.arrayContaining([
+          { elementType: "geometry", stylers: [{ color: "#10151d" }] },
+          { elementType: "labels", stylers: [{ visibility: "off" }] },
+        ]),
       },
     ]);
+  });
+
+  it("keeps dark roadmap styling when labels are hidden", async () => {
+    const fetch = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(jsonResponse(sessionResponse)));
+    vi.stubGlobal("fetch", fetch);
+
+    await client.getGoogleMapsSession({ ...options, mapType: "roadmap" });
+    await client.getGoogleMapsSession({
+      ...options,
+      mapType: "roadmap",
+      labelVisibility: false,
+    });
+
+    const [visibleLabels, hiddenLabels] = fetch.mock.calls.map(
+      (call) =>
+        JSON.parse((call[1] as RequestInit).body as string) as {
+          styles: unknown[];
+        },
+    );
+    const hideLabelsStyle = {
+      elementType: "labels",
+      stylers: [{ visibility: "off" }],
+    };
+
+    expect(visibleLabels.styles).toEqual(
+      expect.arrayContaining([
+        { elementType: "geometry", stylers: [{ color: "#10151d" }] },
+        {
+          elementType: "labels.text.fill",
+          stylers: [{ color: "#b6c4d6" }],
+        },
+        {
+          elementType: "labels.text.stroke",
+          stylers: [{ color: "#10151d" }],
+        },
+      ]),
+    );
+    expect(visibleLabels.styles).not.toContainEqual(hideLabelsStyle);
+    expect(hiddenLabels.styles).toEqual([
+      ...visibleLabels.styles,
+      hideLabelsStyle,
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it("rejects missing keys without making a request", async () => {

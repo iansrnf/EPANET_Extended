@@ -120,7 +120,7 @@ const renderComponent = (store: Store) => {
       <JotaiProvider store={store}>
         <AuthMockProvider user={aUser({ plan: "pro" })}>
           <TooltipProvider>
-            <ScenarioSwitcher />
+            <ScenarioSwitcher compact />
           </TooltipProvider>
         </AuthMockProvider>
       </JotaiProvider>

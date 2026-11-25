@@ -14,13 +14,10 @@ const dockedPanels = (seed: ReturnType<typeof useDefaultPanels>) => {
 };
 
 describe("useDefaultPanels", () => {
-  it("seeds the left dock with the network review and the collections panel", () => {
+  it("leaves the left dock empty", () => {
     const { result } = renderHook(() => useDefaultPanels());
 
-    expect(dockedPanels(result.current).left).toEqual([
-      "network-review",
-      "collections",
-    ]);
+    expect(dockedPanels(result.current).left).toEqual([]);
   });
 
   it("leaves the bottom dock empty", () => {

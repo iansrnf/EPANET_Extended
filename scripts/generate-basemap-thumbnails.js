@@ -16,10 +16,8 @@ if (!MAPBOX_TOKEN) {
 
 // Basemap configurations from src/map/basemaps.ts
 const BASEMAPS = {
-  monochrome: "mapbox://styles/mapbox/light-v10",
+  black: "mapbox://styles/mapbox/dark-v11",
   satellite: "mapbox://styles/mapbox/satellite-streets-v12",
-  outdoors: "mapbox://styles/mapbox/outdoors-v12",
-  streets: "mapbox://styles/mapbox/navigation-guidance-day-v4",
 };
 
 // Constants from src/lib/constants.ts and mapbox-static-url.ts
@@ -87,7 +85,6 @@ async function generateThumbnails() {
       const filePath = path.join(outputDir, fileName);
 
       console.log(`Downloading ${name}...`);
-      console.log(`  URL: ${thumbnailUrl}`);
       console.log(`  File: ${filePath}`);
 
       await downloadImage(thumbnailUrl, filePath);

@@ -8,11 +8,6 @@ import { ILayerConfig } from "src/types";
 import { useSelectBasemap } from "./select-basemap";
 import { useToggleSatellite } from "./toggle-satellite";
 
-vi.mock("@epanet-js/map", () => ({
-  DEFAULT_CENTER: [-4.3800042, 55.914314],
-  DEFAULT_ZOOM: 15.5,
-}));
-
 const mockedEnv = vi.hoisted(() => ({
   NEXT_PUBLIC_MAPBOX_TOKEN: "pk.test",
   NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: "test-google-key",
@@ -38,13 +33,13 @@ describe("basemap selection", () => {
     });
 
     act(() => {
-      result.current(basemaps.googleRoadmap);
+      result.current(basemaps.googleBlack);
     });
     act(() => {
       result.current(basemaps.googleSatellite);
     });
     act(() => {
-      result.current(basemaps.monochrome);
+      result.current(basemaps.black);
     });
 
     const layers = [...store.get(layerConfigAtom).values()];
@@ -52,7 +47,7 @@ describe("basemap selection", () => {
     expect(layers.find((layer) => layer.id === "overlay")).toEqual(overlay);
     expect(layers.find((layer) => layer.isBasemap)).toMatchObject({
       type: "MAPBOX",
-      name: "Monochrome",
+      name: "Black",
       at: "a1",
       labelVisibility: false,
     });
@@ -74,9 +69,44 @@ describe("basemap selection", () => {
     );
   });
 
+  it("toggles black and satellite while preserving overlays and labels", () => {
+    const store = basemapStore({
+      ...basemaps.black,
+      name: "Custom basemap name",
+      id: "basemap",
+      at: "a1",
+      visibility: true,
+      labelVisibility: false,
+      tms: false,
+    });
+    const { result } = renderHook(() => useToggleSatellite(), {
+      wrapper: ({ children }) => <Provider store={store}>{children}</Provider>,
+    });
+
+    act(() => result.current());
+
+    expect(currentBasemap(store)).toMatchObject({
+      type: "MAPBOX",
+      url: basemaps.satellite.url,
+      at: "a1",
+      labelVisibility: false,
+    });
+    expect(store.get(layerConfigAtom).get("overlay")).toEqual(overlay);
+
+    act(() => result.current());
+
+    expect(currentBasemap(store)).toMatchObject({
+      type: "MAPBOX",
+      url: basemaps.black.url,
+      at: "a1",
+      labelVisibility: false,
+    });
+    expect(store.get(layerConfigAtom).get("overlay")).toEqual(overlay);
+  });
+
   it("toggles satellite within the selected Google provider", () => {
     const store = basemapStore({
-      ...basemaps.googleRoadmap,
+      ...basemaps.googleBlack,
       id: "basemap",
       at: "a1",
       visibility: true,
@@ -91,12 +121,17 @@ describe("basemap selection", () => {
     expect(currentBasemap(store)).toMatchObject({
       type: "GOOGLE",
       mapType: "satellite",
+      at: "a1",
+      labelVisibility: false,
     });
 
     act(() => result.current());
     expect(currentBasemap(store)).toMatchObject({
       type: "GOOGLE",
       mapType: "roadmap",
+      name: "Google Black",
+      at: "a1",
+      labelVisibility: false,
     });
     expect(store.get(layerConfigAtom).get("overlay")).toEqual(overlay);
   });
@@ -118,7 +153,7 @@ const overlay: ILayerConfig = {
 
 const basemapStore = (
   basemap: ILayerConfig = {
-    ...basemaps.monochrome,
+    ...basemaps.black,
     id: "basemap",
     at: "a1",
     visibility: true,

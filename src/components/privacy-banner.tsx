@@ -31,7 +31,7 @@ export const PrivacyBanner = () => {
   };
 
   return (
-    <div className="fixed bottom-10 left-0 w-full z-50 pointer-events-none">
+    <div className="fixed bottom-2 left-0 w-full z-50 pointer-events-none">
       <div className="max-w-4xl mx-auto px-4 pointer-events-auto">
         <div
           className="bg-popover border border-strong rounded-md shadow-lg p-6"

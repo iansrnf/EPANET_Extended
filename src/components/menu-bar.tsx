@@ -1,8 +1,10 @@
-import React, { memo, useMemo, useRef, useState } from "react";
+import React, { memo, useId, useMemo, useRef, useState } from "react";
 import type { User } from "src/auth-types";
 import type { TranslateFn } from "src/hooks/use-translate";
 import { FileInfo } from "src/components/file-info";
 import * as DD from "@radix-ui/react-dropdown-menu";
+import * as Popover from "@radix-ui/react-popover";
+import { Tooltip } from "@epanet-js/ui-kit";
 import { Button, DDContent, StyledItem } from "./elements";
 import { GscwdBrand } from "./gscwd-brand";
 import { GscwdWaterfront } from "./gscwd-waterfront";
@@ -12,6 +14,7 @@ import { helpCenterUrl, roadmapUrl, utilitiesUrl } from "src/global-config";
 import { useAuth } from "src/hooks/use-auth";
 import { SignedIn, SignedOut, UserButton } from "src/components/auth";
 import { useAccountManager } from "src/hooks/use-account-manager";
+import { useOrganization } from "src/hooks/use-organization";
 import { useShowWelcome } from "src/commands/show-welcome";
 import { useUserTracking } from "src/infra/user-tracking";
 import { useShowShortcuts } from "src/commands/show-shortcuts";
@@ -56,15 +59,9 @@ export const HeaderLogoUpdated = () => {
 
 export const MenuBarPlay = memo(function MenuBar() {
   const translate = useTranslate();
-  const userTracking = useUserTracking();
-  const { user } = useAuth();
-  const setDialogState = useSetAtom(dialogAtom);
   const showWelcome = useShowWelcome();
   const isMdOrLarger = useBreakpoint("md");
   const isSmOrLarger = useBreakpoint("sm");
-  const effectivePlan = useEffectivePlan();
-  const { openOrganizationProfile } = useAccountManager();
-  const { canManageOrganization } = usePermissions();
 
   return (
     <header className={styles.header}>
@@ -93,164 +90,189 @@ export const MenuBarPlay = memo(function MenuBar() {
             <Divider />
           </>
         )}
-        <SignedIn>
-          <div className="relative flex items-center gap-x-2">
-            <AccountSection layout="navbar">
-              {effectivePlan === "free" ? (
-                <TrialOrUpgradeButton
-                  user={user}
-                  translate={translate}
-                  onUpgrade={() => {
-                    userTracking.capture({
-                      name: "upgradeButton.clicked",
-                      source: "menu",
-                    });
-                    setDialogState({
-                      type: "upgrade",
-                      feature: "upgradeMenu",
-                      source: "menu",
-                    });
-                  }}
-                />
-              ) : (
-                <PlanLabel
-                  plan={effectivePlan}
-                  onOrgClick={
-                    canManageOrganization
-                      ? () => openOrganizationProfile()
-                      : undefined
-                  }
-                />
-              )}
-              <UserButton />
-            </AccountSection>
-          </div>
-        </SignedIn>
-        <SignedOut>
-          <div className="flex items-center gap-x-1">
-            {isMdOrLarger && (
-              <Button
-                type="button"
-                variant="default"
-                disabled
-                className={styles.accountButton}
-              >
-                {translate("login")}
-              </Button>
-            )}
-            <Button
-              type="button"
-              variant="default"
-              disabled
-              className={styles.accountButton}
-            >
-              <UserIcon />
-              {translate("register")}
-            </Button>
-          </div>
-        </SignedOut>
+        <AccountActions layout="navbar" showLogin={isMdOrLarger} />
         <SideMenu />
       </div>
     </header>
   );
 });
 
-export function HelpDot() {
+export const MapAccountControls = ({
+  compact = false,
+}: {
+  compact?: boolean;
+}) => (
+  <div
+    className="map-account-controls map-overlay-theme map-overlay-surface pointer-events-auto flex shrink-0 items-center gap-1 rounded-md border px-1 py-1 shadow-lg"
+    onKeyDown={(event) => event.stopPropagation()}
+    onKeyPress={(event) => event.stopPropagation()}
+    onKeyUp={(event) => event.stopPropagation()}
+    onPointerDown={(event) => event.stopPropagation()}
+    onDoubleClick={(event) => event.stopPropagation()}
+  >
+    {compact ? (
+      <>
+        <CompactMapAccountMenu />
+        <SignedIn>
+          <span className="shrink-0 [&_button]:min-h-11 [&_button]:min-w-11">
+            <UserButton />
+          </span>
+        </SignedIn>
+      </>
+    ) : (
+      <>
+        <HelpDot floating />
+        <LanguageSelector floating />
+        <span aria-hidden="true" className="mx-1 h-5 border-l" />
+        <AccountActions layout="floating" floating />
+      </>
+    )}
+  </div>
+);
+
+export function HelpDot({
+  floating = false,
+  onNavigate,
+}: {
+  floating?: boolean;
+  onNavigate?: () => void;
+}) {
   const translate = useTranslate();
   const showWelcome = useShowWelcome();
   const showShortcuts = useShowShortcuts();
   const userTracking = useUserTracking();
   const scriptingDocs = useScriptingDocs();
+  const MenuPortal = floating ? DD.Portal : React.Fragment;
 
   return (
     <DD.Root>
       <DD.Trigger asChild>
-        <Button variant="quiet">{translate("help")}</Button>
+        <Button
+          variant="quiet"
+          size={floating ? "xxs" : undefined}
+          aria-label={translate("help")}
+          className={
+            floating
+              ? "h-11 min-w-11 justify-center px-2 text-size-small"
+              : undefined
+          }
+        >
+          {translate("help")}
+        </Button>
       </DD.Trigger>
-      <DDContent side="bottom" align="end">
-        <StyledItem
-          onSelect={() => {
-            showWelcome({ source: "menu" });
-          }}
+      <MenuPortal>
+        <DDContent
+          side="bottom"
+          align="end"
+          sideOffset={floating ? 6 : undefined}
+          collisionPadding={floating ? 8 : undefined}
+          className={
+            floating
+              ? "map-overlay-theme map-overlay-surface map-overlay-popover placemark-scrollbar z-50 max-w-[calc(100vw-1rem)] overflow-y-auto [&_[data-highlighted]]:bg-base-hover"
+              : undefined
+          }
+          style={
+            floating
+              ? {
+                  maxHeight:
+                    "min(calc(100dvh - 1rem), var(--radix-dropdown-menu-content-available-height))",
+                }
+              : undefined
+          }
+          onKeyDown={floating ? (event) => event.stopPropagation() : undefined}
+          onKeyPress={floating ? (event) => event.stopPropagation() : undefined}
+          onKeyUp={floating ? (event) => event.stopPropagation() : undefined}
         >
-          <NewFromExampleIcon />
-          {translate("welcomePage")}
-        </StyledItem>
-        <a
-          href={helpCenterUrl}
-          target="_blank"
-          onClick={() => {
-            userTracking.capture({
-              name: "helpCenter.visited",
-              source: "menu",
-            });
-          }}
-        >
-          <StyledItem>
-            <HelpIcon />
-            {translate("helpCenter")}
+          <StyledItem
+            onSelect={() => {
+              onNavigate?.();
+              showWelcome({ source: "menu" });
+            }}
+          >
+            <NewFromExampleIcon />
+            {translate("welcomePage")}
           </StyledItem>
-        </a>
-        <a
-          href={roadmapUrl}
-          target="_blank"
-          onClick={() => {
-            userTracking.capture({
-              name: "roadmap.visited",
-              source: "menu",
-            });
-          }}
-        >
-          <StyledItem>
-            <RoadmapIcon />
-            {translate("roadmap")}
-          </StyledItem>
-        </a>
-        <a
-          href={utilitiesUrl}
-          target="_blank"
-          onClick={() => {
-            userTracking.capture({
-              name: "utilities.visited",
-              source: "menu",
-            });
-          }}
-        >
-          <StyledItem>
-            <UtilitiesIcon />
-            {translate("utilities")}
-          </StyledItem>
-        </a>
-        {getScripting() && (
           <a
-            href={scriptingDocs.apiPath}
+            href={helpCenterUrl}
             target="_blank"
             onClick={() => {
+              onNavigate?.();
               userTracking.capture({
-                name: "scriptingApi.visited",
+                name: "helpCenter.visited",
                 source: "menu",
               });
             }}
           >
             <StyledItem>
-              <ScriptsIcon />
-              {translate("scripting.apiReference")}
+              <HelpIcon />
+              {translate("helpCenter")}
             </StyledItem>
           </a>
-        )}
-        <StyledItem
-          onSelect={() => {
-            userTracking.capture({
-              name: "shortcuts.opened",
-              source: "menu",
-            });
-            showShortcuts();
-          }}
-        >
-          <KeyboardIcon />
-          {translate("keyboardShortcuts.title")}
-        </StyledItem>
-      </DDContent>
+          <a
+            href={roadmapUrl}
+            target="_blank"
+            onClick={() => {
+              onNavigate?.();
+              userTracking.capture({
+                name: "roadmap.visited",
+                source: "menu",
+              });
+            }}
+          >
+            <StyledItem>
+              <RoadmapIcon />
+              {translate("roadmap")}
+            </StyledItem>
+          </a>
+          <a
+            href={utilitiesUrl}
+            target="_blank"
+            onClick={() => {
+              onNavigate?.();
+              userTracking.capture({
+                name: "utilities.visited",
+                source: "menu",
+              });
+            }}
+          >
+            <StyledItem>
+              <UtilitiesIcon />
+              {translate("utilities")}
+            </StyledItem>
+          </a>
+          {getScripting() && (
+            <a
+              href={scriptingDocs.apiPath}
+              target="_blank"
+              onClick={() => {
+                onNavigate?.();
+                userTracking.capture({
+                  name: "scriptingApi.visited",
+                  source: "menu",
+                });
+              }}
+            >
+              <StyledItem>
+                <ScriptsIcon />
+                {translate("scripting.apiReference")}
+              </StyledItem>
+            </a>
+          )}
+          <StyledItem
+            onSelect={() => {
+              userTracking.capture({
+                name: "shortcuts.opened",
+                source: "menu",
+              });
+              onNavigate?.();
+              showShortcuts();
+            }}
+          >
+            <KeyboardIcon />
+            {translate("keyboardShortcuts.title")}
+          </StyledItem>
+        </DDContent>
+      </MenuPortal>
     </DD.Root>
   );
 }
@@ -423,17 +445,253 @@ export const SideMenu = () => {
   );
 };
 
+const CompactMapAccountMenu = () => {
+  const translate = useTranslate();
+  const titleId = useId();
+  const [open, setOpen] = useState(false);
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const navigatingRef = useRef(false);
+  const closeForNavigation = () => {
+    navigatingRef.current = true;
+    setOpen(false);
+    setTooltipOpen(false);
+  };
+
+  return (
+    <Popover.Root
+      modal={false}
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        setTooltipOpen(false);
+      }}
+    >
+      <Tooltip
+        content={translate("gscwd.navigation")}
+        side="bottom"
+        sideOffset={6}
+        zIndex={60}
+        className="map-overlay-theme map-overlay-surface map-overlay-tooltip pointer-events-none"
+        open={tooltipOpen && !open}
+        onOpenChange={setTooltipOpen}
+      >
+        <Popover.Trigger asChild>
+          <button
+            type="button"
+            aria-label={translate("gscwd.navigation")}
+            className="flex h-11 w-11 items-center justify-center rounded-sm text-default hover:bg-base-hover focus-visible:outline-2 focus-visible:outline-accent aria-expanded:bg-accent-tint"
+          >
+            <MenuIcon aria-hidden="true" />
+          </button>
+        </Popover.Trigger>
+      </Tooltip>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="end"
+          sideOffset={6}
+          collisionPadding={8}
+          aria-labelledby={titleId}
+          className="map-overlay-theme map-overlay-surface map-overlay-popover placemark-scrollbar z-50 w-64 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border p-3 text-default shadow-xl outline-none"
+          style={{
+            maxHeight:
+              "min(calc(100dvh - 1rem), var(--radix-popover-content-available-height))",
+          }}
+          onKeyDown={(event) => event.stopPropagation()}
+          onKeyPress={(event) => event.stopPropagation()}
+          onKeyUp={(event) => event.stopPropagation()}
+          onCloseAutoFocus={(event) => {
+            if (navigatingRef.current) {
+              event.preventDefault();
+              navigatingRef.current = false;
+            }
+          }}
+        >
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h2 id={titleId} className="font-semibold text-accent">
+              {translate("gscwd.navigation")}
+            </h2>
+            <Popover.Close asChild>
+              <button
+                type="button"
+                aria-label={translate("dialog.close")}
+                className="-mr-2 flex h-11 w-11 items-center justify-center rounded-sm text-subtle hover:bg-base-hover hover:text-default focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                <CloseIcon aria-hidden="true" />
+              </button>
+            </Popover.Close>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <HelpDot floating onNavigate={closeForNavigation} />
+            <LanguageSelector floating align="start" />
+          </div>
+          <hr className="my-3" />
+          <AccountActions
+            layout="sidebar"
+            floating
+            showUserButton={false}
+            onNavigate={closeForNavigation}
+          />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+};
+
+const AccountActions = ({
+  layout,
+  floating = false,
+  showLogin = true,
+  showUserButton = true,
+  onNavigate,
+}: {
+  layout: "navbar" | "sidebar" | "floating";
+  floating?: boolean;
+  showLogin?: boolean;
+  showUserButton?: boolean;
+  onNavigate?: () => void;
+}) => {
+  const translate = useTranslate();
+  const userTracking = useUserTracking();
+  const { user } = useAuth();
+  const setDialogState = useSetAtom(dialogAtom);
+  const effectivePlan = useEffectivePlan();
+  const { openOrganizationProfile } = useAccountManager();
+  const { canManageOrganization } = usePermissions();
+  const onOrgClick = canManageOrganization
+    ? () => {
+        onNavigate?.();
+        openOrganizationProfile();
+      }
+    : undefined;
+  const planLabel = <PlanLabel plan={effectivePlan} onOrgClick={onOrgClick} />;
+
+  return (
+    <>
+      <SignedIn>
+        <div className="relative flex items-center gap-x-2">
+          <AccountSection layout={layout} floating={floating}>
+            {effectivePlan === "free" ? (
+              <TrialOrUpgradeButton
+                user={user}
+                translate={translate}
+                size={layout === "sidebar" ? "full-width" : undefined}
+                constrained={floating && layout === "floating"}
+                onUpgrade={() => {
+                  userTracking.capture({
+                    name: "upgradeButton.clicked",
+                    source: "menu",
+                  });
+                  onNavigate?.();
+                  setDialogState({
+                    type: "upgrade",
+                    feature: "upgradeMenu",
+                    source: "menu",
+                  });
+                }}
+                onNavigate={onNavigate}
+              />
+            ) : floating && layout === "floating" ? (
+              <BoundedAccountPlan>{planLabel}</BoundedAccountPlan>
+            ) : (
+              planLabel
+            )}
+            {showUserButton &&
+              (floating ? (
+                <span className="shrink-0">
+                  <UserButton />
+                </span>
+              ) : (
+                <UserButton />
+              ))}
+          </AccountSection>
+        </div>
+      </SignedIn>
+      <SignedOut>
+        <div
+          className={
+            layout === "sidebar"
+              ? "flex w-full flex-col items-stretch gap-2"
+              : "flex items-center gap-x-1"
+          }
+        >
+          {showLogin && (
+            <Button
+              type="button"
+              variant="default"
+              size={floating ? "xxs" : undefined}
+              disabled
+              className={
+                floating
+                  ? "h-11 min-w-11 justify-center px-2 text-size-small"
+                  : styles.accountButton
+              }
+            >
+              {translate("login")}
+            </Button>
+          )}
+          <Button
+            type="button"
+            variant="default"
+            size={floating ? "xxs" : undefined}
+            disabled
+            className={
+              floating
+                ? "h-11 min-w-11 justify-center px-2 text-size-small"
+                : styles.accountButton
+            }
+          >
+            <UserIcon />
+            {translate("register")}
+          </Button>
+        </div>
+      </SignedOut>
+    </>
+  );
+};
+
+const BoundedAccountPlan = ({ children }: { children: React.ReactNode }) => {
+  const { organization } = useOrganization();
+
+  return (
+    <span
+      title={organization?.name}
+      className="flex min-w-0 max-w-36 items-center overflow-hidden [&>button]:min-w-0 [&>button]:max-w-full [&>button]:truncate [&>span]:block [&>span]:truncate"
+    >
+      {children}
+    </span>
+  );
+};
+
 const AccountSection = ({
   children,
   layout,
+  floating = false,
 }: {
   children: React.ReactNode;
-  layout: "navbar" | "sidebar";
+  layout: "navbar" | "sidebar" | "floating";
+  floating?: boolean;
 }) => {
   if (layout === "sidebar") {
-    return <div className="flex flex-col items-start gap-2">{children}</div>;
+    return (
+      <div
+        className={`flex flex-col items-start gap-2 ${floating ? "[&_button]:min-h-11 [&_button]:min-w-11" : ""}`}
+      >
+        {children}
+      </div>
+    );
   }
-  return <div className="hidden md:flex items-center gap-x-2">{children}</div>;
+  return (
+    <div
+      className={
+        layout === "floating"
+          ? "flex min-w-0 items-center gap-x-2 [&_button]:min-h-11 [&_button]:min-w-11"
+          : "hidden md:flex items-center gap-x-2"
+      }
+    >
+      {children}
+    </div>
+  );
 };
 
 export const TrialOrUpgradeButton = ({
@@ -442,12 +700,14 @@ export const TrialOrUpgradeButton = ({
   size,
   onUpgrade,
   onNavigate,
+  constrained = false,
 }: {
   user: User;
   translate: TranslateFn;
   size?: "full-width";
   onUpgrade: () => void;
   onNavigate?: () => void;
+  constrained?: boolean;
 }) => {
   const { canUpgrade } = usePermissions();
   const userTracking = useUserTracking();
@@ -482,8 +742,15 @@ export const TrialOrUpgradeButton = ({
         variant="quiet"
         size={size}
         onClick={isEnded && !trial.payable ? onUpgrade : manageBilling}
+        className={constrained ? "min-w-0 max-w-36" : undefined}
+        title={constrained ? label : undefined}
+        aria-label={constrained ? label : undefined}
       >
-        <span className={`${colorClass} font-medium`}>{label}</span>
+        <span
+          className={`${colorClass} font-medium ${constrained ? "min-w-0 truncate" : ""}`}
+        >
+          {label}
+        </span>
       </Button>
     );
   }
@@ -491,7 +758,13 @@ export const TrialOrUpgradeButton = ({
   if (!canUpgrade) return null;
 
   return (
-    <Button variant="primary" size={size} onClick={onUpgrade}>
+    <Button
+      variant="primary"
+      size={size}
+      onClick={onUpgrade}
+      className={constrained ? "min-w-0 max-w-36" : undefined}
+      title={constrained ? translate("upgrade") : undefined}
+    >
       <UpgradeIcon />
       {translate("upgrade")}
     </Button>

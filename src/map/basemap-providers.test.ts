@@ -17,12 +17,10 @@ vi.mock("src/lib/env-client", () => ({
 
 describe("basemap providers", () => {
   it.each([
-    [basemaps.googleRoadmap, "google", "roadmap"],
+    [basemaps.googleBlack, "google", "black"],
     [basemaps.googleSatellite, "google", "satellite"],
-    [basemaps.streets, "mapbox", "roadmap"],
     [basemaps.satellite, "mapbox", "satellite"],
-    [basemaps.monochrome, "mapbox", "monochrome"],
-    [basemaps.outdoors, "mapbox", "outdoors"],
+    [basemaps.black, "mapbox", "black"],
   ] as const)(
     "%# identifies a known provider and mode",
     (basemap, provider, mode) => {
@@ -42,13 +40,25 @@ describe("basemap providers", () => {
 
   it("does not identify custom styles by their names", () => {
     const layer = createBasemap({
-      ...basemaps.streets,
+      ...basemaps.black,
       url: "mapbox://styles/example/custom-style",
     });
 
     expect(getBasemapProvider(layer)).toBeNull();
     expect(getBasemapMode(layer)).toBeNull();
-    expect(getProviderBasemap("google", layer)).toBe(basemaps.googleRoadmap);
+    expect(getProviderBasemap("google", layer)).toBe(basemaps.googleBlack);
+  });
+
+  it.each([
+    "mapbox://styles/mapbox/light-v10",
+    "mapbox://styles/mapbox/navigation-guidance-day-v4",
+    "mapbox://styles/mapbox/outdoors-v12",
+  ])("leaves removed light styles unclassified: %s", (url) => {
+    const layer = createBasemap({ ...basemaps.black, url });
+
+    expect(getBasemapProvider(layer)).toBeNull();
+    expect(getBasemapMode(layer)).toBeNull();
+    expect(getProviderBasemap("mapbox", layer)).toBe(basemaps.black);
   });
 
   it("does not identify an overlay as a selected basemap", () => {
@@ -60,7 +70,7 @@ describe("basemap providers", () => {
 
   it("leaves unknown providers unclassified", () => {
     const layer: ILayerConfig = {
-      ...createBasemap(basemaps.streets),
+      ...createBasemap(basemaps.black),
       type: "XYZ",
       token: "",
       url: "https://example.com/{z}/{x}/{y}.png",
@@ -68,14 +78,14 @@ describe("basemap providers", () => {
 
     expect(getBasemapProvider(layer)).toBeNull();
     expect(getBasemapMode(layer)).toBeNull();
-    expect(getProviderBasemap("mapbox", layer)).toBe(basemaps.streets);
+    expect(getProviderBasemap("mapbox", layer)).toBe(basemaps.black);
   });
 
   it.each([
     [basemaps.satellite, "google", basemaps.googleSatellite],
     [basemaps.googleSatellite, "mapbox", basemaps.satellite],
-    [basemaps.streets, "google", basemaps.googleRoadmap],
-    [basemaps.googleRoadmap, "mapbox", basemaps.streets],
+    [basemaps.black, "google", basemaps.googleBlack],
+    [basemaps.googleBlack, "mapbox", basemaps.black],
   ] as const)(
     "%# preserves a supported mode between providers",
     (current, targetProvider, expected) => {
@@ -85,26 +95,20 @@ describe("basemap providers", () => {
     },
   );
 
-  it.each([basemaps.monochrome, basemaps.outdoors])(
-    "uses roadmap when Google does not support $name",
-    (current) => {
-      expect(getProviderBasemap("google", createBasemap(current))).toBe(
-        basemaps.googleRoadmap,
+  it.each([basemaps.black, basemaps.satellite])(
+    "preserves $name within Mapbox",
+    (basemap) => {
+      expect(getProviderBasemap("mapbox", createBasemap(basemap))).toBe(
+        basemap,
       );
     },
   );
 
-  it("preserves modes supported by the current provider", () => {
-    expect(getProviderBasemap("mapbox", createBasemap(basemaps.outdoors))).toBe(
-      basemaps.outdoors,
-    );
-  });
-
-  it("defaults to roadmap without a selected basemap", () => {
+  it("defaults to black without a selected basemap", () => {
     expect(getBasemapProvider()).toBeNull();
     expect(getBasemapMode()).toBeNull();
-    expect(getProviderBasemap("google")).toBe(basemaps.googleRoadmap);
-    expect(getProviderBasemap("mapbox")).toBe(basemaps.streets);
+    expect(getProviderBasemap("google")).toBe(basemaps.googleBlack);
+    expect(getProviderBasemap("mapbox")).toBe(basemaps.black);
   });
 });
 

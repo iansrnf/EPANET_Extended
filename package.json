@@ -8,7 +8,7 @@
     "build:lib-assets:watch": "node scripts/build-lib-assets.mjs --watch",
     "prebuild": "pnpm copy-wasm && pnpm build:lib-assets",
     "build": "next build",
-    "dev": "pnpm prebuild && concurrently -k -n next-app,libs-server -c blue,magenta \"next dev\" \"pnpm build:lib-assets:watch\"",
+    "dev": "pnpm prebuild && concurrently -k -n next-app,libs-server -c blue,magenta \"next dev --port 3100\" \"pnpm build:lib-assets:watch\"",
     "start": "next start",
     "lint": "eslint --cache --ignore-path .gitignore --ext .js,.ts,.tsx .",
     "lint:fix": "pnpm lint --fix",

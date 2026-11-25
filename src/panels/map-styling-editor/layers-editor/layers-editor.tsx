@@ -76,6 +76,7 @@ import {
   WarningIcon,
 } from "src/icons";
 import { TextField } from "src/components/form/text-field";
+import { useMapStylingPopoverProps } from "../popover-placement";
 
 type Mode =
   | "custom"
@@ -469,6 +470,7 @@ function XYZLayer({
 
 export function AddLayer() {
   const translate = useTranslate();
+  const popoverProps = useMapStylingPopoverProps();
   const [isOpen, setOpen] = useState<boolean>(false);
   const [mode, setMode] = useAtom(layerModeAtom);
   const userTracking = useUserTracking();
@@ -616,6 +618,7 @@ export function AddLayer() {
           flush="yes"
           size="sm"
           onOpenAutoFocus={(e) => e.preventDefault()}
+          {...popoverProps}
         >
           <E.StyledPopoverArrow />
           <Suspense fallback={<E.Loading />}>
@@ -763,7 +766,7 @@ const BaseMapOptions = ({ onDone }: { onDone?: () => void }) => {
           }}
         />
       ))}
-      {!isBasemapConfigured(basemaps.googleRoadmap) && (
+      {!isBasemapConfigured(basemaps.googleBlack) && (
         <p className="text-size-xs text-subtle">
           {translate("googleMaps.configureKey")}
         </p>
@@ -1004,6 +1007,7 @@ const MapboxItem = ({
   layerConfig: ILayerConfig;
   readonly: boolean;
 }) => {
+  const popoverProps = useMapStylingPopoverProps();
   const [isEditing, setEditing] = useState<boolean>(false);
   const isRaster = layerConfig.name.includes("Satellite");
 
@@ -1014,14 +1018,16 @@ const MapboxItem = ({
           <SettingsIcon />
         </Button>
       </P.Trigger>
-      <E.StyledPopoverContent>
-        <E.StyledPopoverArrow />
-        <MapboxLayer
-          layer={layerConfig}
-          onDone={() => setEditing(false)}
-          readonly={readonly}
-        />
-      </E.StyledPopoverContent>
+      <P.Portal>
+        <E.StyledPopoverContent {...popoverProps}>
+          <E.StyledPopoverArrow />
+          <MapboxLayer
+            layer={layerConfig}
+            onDone={() => setEditing(false)}
+            readonly={readonly}
+          />
+        </E.StyledPopoverContent>
+      </P.Portal>
     </P.Root>
   );
 
@@ -1073,6 +1079,7 @@ const XYZItem = ({
   layerConfig: ILayerConfig;
   readonly: boolean;
 }) => {
+  const popoverProps = useMapStylingPopoverProps();
   const [isEditing, setEditing] = useState<boolean>(false);
 
   const editPopover = (
@@ -1082,14 +1089,16 @@ const XYZItem = ({
           <SettingsIcon />
         </Button>
       </P.Trigger>
-      <E.StyledPopoverContent>
-        <E.StyledPopoverArrow />
-        <XYZLayer
-          layer={layerConfig}
-          onDone={() => setEditing(false)}
-          readonly={readonly}
-        />
-      </E.StyledPopoverContent>
+      <P.Portal>
+        <E.StyledPopoverContent {...popoverProps}>
+          <E.StyledPopoverArrow />
+          <XYZLayer
+            layer={layerConfig}
+            onDone={() => setEditing(false)}
+            readonly={readonly}
+          />
+        </E.StyledPopoverContent>
+      </P.Portal>
     </P.Root>
   );
 
@@ -1114,6 +1123,7 @@ const TileJSONItem = ({
   layerConfig: ILayerConfig;
   readonly: boolean;
 }) => {
+  const popoverProps = useMapStylingPopoverProps();
   const [isEditing, setEditing] = useState<boolean>(false);
   const url = layerConfig.type === "TILEJSON" ? layerConfig.url : "";
   const { isError } = useQuery({
@@ -1130,14 +1140,16 @@ const TileJSONItem = ({
           <SettingsIcon />
         </Button>
       </P.Trigger>
-      <E.StyledPopoverContent>
-        <E.StyledPopoverArrow />
-        <TileJSONLayer
-          layer={layerConfig}
-          onDone={() => setEditing(false)}
-          readonly={readonly}
-        />
-      </E.StyledPopoverContent>
+      <P.Portal>
+        <E.StyledPopoverContent {...popoverProps}>
+          <E.StyledPopoverArrow />
+          <TileJSONLayer
+            layer={layerConfig}
+            onDone={() => setEditing(false)}
+            readonly={readonly}
+          />
+        </E.StyledPopoverContent>
+      </P.Portal>
     </P.Root>
   );
 
@@ -1190,6 +1202,7 @@ const VectorFileItem = ({
   readonly?: boolean;
 }) => {
   const translate = useTranslate();
+  const popoverProps = useMapStylingPopoverProps();
   const { applyChanges } = useLayerConfigState();
   const setGisData = useSetAtom(gisDataAtom);
   const setGisProperties = useSetAtom(gisPropertiesAtom);
@@ -1251,138 +1264,141 @@ const VectorFileItem = ({
           <SettingsIcon />
         </Button>
       </P.Trigger>
-      <E.StyledPopoverContent>
-        <E.StyledPopoverArrow />
-        <div className="space-y-2 min-w-[200px]">
-          <div className="font-bold text-size-base pb-1">
-            {translate("customLayers.vectorFile")}
-          </div>
-          <InlineField
-            name={translate("name")}
-            layout="fixed-label"
-            labelSize="md"
-          >
-            {readonly ? (
-              editName
-            ) : (
-              <input
-                type="text"
-                className={E.inputClass({ _size: "sm" })}
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                onBlur={handleNameCommit}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleNameCommit();
-                }}
-                autoComplete="off"
-              />
-            )}
-          </InlineField>
-          {layerConfig.type === "GEOJSON" && (
-            <>
-              <InlineField
-                name={translate("customLayers.color")}
-                layout="fixed-label"
-                labelSize="md"
-              >
-                <div className="h-7 border rounded-xs overflow-hidden">
-                  <ColorPopover
-                    color={layerConfig.color}
-                    onChange={(color) =>
-                      applyChanges({
-                        putLayerConfigs: [
-                          { ...layerConfig, color } as ILayerConfig,
-                        ],
-                      })
-                    }
-                    readonly={readonly}
-                  />
-                </div>
-              </InlineField>
-              <InlineField
-                name={`${translate("customLayers.lineWidth")} (px)`}
-                layout="fixed-label"
-                labelSize="md"
-              >
-                {readonly ? (
-                  <TextField padding="sm">
-                    {localizeDecimal(layerConfig.lineWidth)}
-                  </TextField>
-                ) : (
-                  <NumericField
-                    label={translate("customLayers.lineWidth")}
-                    displayValue={localizeDecimal(layerConfig.lineWidth)}
-                    validate={numericChecks.positive}
-                    isRequired={true}
-                    styleOptions={{ padding: "sm" }}
-                    onChangeValue={(v) =>
-                      applyChanges({
-                        putLayerConfigs: [
-                          { ...layerConfig, lineWidth: v } as ILayerConfig,
-                        ],
-                      })
-                    }
-                  />
-                )}
-              </InlineField>
-            </>
-          )}
-          <InlineField
-            name={`${translate("customLayers.opacity")} (%)`}
-            layout="fixed-label"
-            labelSize="md"
-          >
-            {readonly ? (
-              <TextField padding="sm">
-                {String(Math.round(layerConfig.opacity * 100))}
-              </TextField>
-            ) : (
-              <NumericField
-                label={translate("customLayers.opacity")}
-                displayValue={String(Math.round(layerConfig.opacity * 100))}
-                validate={numericChecks.positive}
-                isRequired={true}
-                styleOptions={{ padding: "sm" }}
-                onChangeValue={(v) =>
-                  applyChanges({
-                    putLayerConfigs: [
-                      {
-                        ...layerConfig,
-                        opacity: clamp(Math.round(v) / 100, 0, 1),
-                      } as ILayerConfig,
-                    ],
-                  })
-                }
-              />
-            )}
-          </InlineField>
-          {availableProperties.length > 0 && (
+      <P.Portal>
+        <E.StyledPopoverContent {...popoverProps}>
+          <E.StyledPopoverArrow />
+          <div className="space-y-2 min-w-[200px]">
+            <div className="font-bold text-size-base pb-1">
+              {translate("customLayers.vectorFile")}
+            </div>
             <InlineField
-              name={translate("customLayers.labels")}
+              name={translate("name")}
+              layout="fixed-label"
+              labelSize="md"
+            >
+              {readonly ? (
+                editName
+              ) : (
+                <input
+                  type="text"
+                  className={E.inputClass({ _size: "sm" })}
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  onBlur={handleNameCommit}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleNameCommit();
+                  }}
+                  autoComplete="off"
+                />
+              )}
+            </InlineField>
+            {layerConfig.type === "GEOJSON" && (
+              <>
+                <InlineField
+                  name={translate("customLayers.color")}
+                  layout="fixed-label"
+                  labelSize="md"
+                >
+                  <div className="h-7 border rounded-xs overflow-hidden">
+                    <ColorPopover
+                      contentClassName={popoverProps.className}
+                      color={layerConfig.color}
+                      onChange={(color) =>
+                        applyChanges({
+                          putLayerConfigs: [
+                            { ...layerConfig, color } as ILayerConfig,
+                          ],
+                        })
+                      }
+                      readonly={readonly}
+                    />
+                  </div>
+                </InlineField>
+                <InlineField
+                  name={`${translate("customLayers.lineWidth")} (px)`}
+                  layout="fixed-label"
+                  labelSize="md"
+                >
+                  {readonly ? (
+                    <TextField padding="sm">
+                      {localizeDecimal(layerConfig.lineWidth)}
+                    </TextField>
+                  ) : (
+                    <NumericField
+                      label={translate("customLayers.lineWidth")}
+                      displayValue={localizeDecimal(layerConfig.lineWidth)}
+                      validate={numericChecks.positive}
+                      isRequired={true}
+                      styleOptions={{ padding: "sm" }}
+                      onChangeValue={(v) =>
+                        applyChanges({
+                          putLayerConfigs: [
+                            { ...layerConfig, lineWidth: v } as ILayerConfig,
+                          ],
+                        })
+                      }
+                    />
+                  )}
+                </InlineField>
+              </>
+            )}
+            <InlineField
+              name={`${translate("customLayers.opacity")} (%)`}
               layout="fixed-label"
               labelSize="md"
             >
               {readonly ? (
                 <TextField padding="sm">
-                  {layerConfig.labelProperty ?? translate("none")}{" "}
+                  {String(Math.round(layerConfig.opacity * 100))}
                 </TextField>
               ) : (
-                <Selector
-                  nullable
-                  placeholder={translate("none")}
-                  options={availableProperties.map((p) => ({
-                    value: p,
-                    label: p,
-                  }))}
-                  selected={layerConfig.labelProperty ?? null}
-                  minOptionsForSearch={1}
-                  onChange={handleLabelPropertyChange}
+                <NumericField
+                  label={translate("customLayers.opacity")}
+                  displayValue={String(Math.round(layerConfig.opacity * 100))}
+                  validate={numericChecks.positive}
+                  isRequired={true}
+                  styleOptions={{ padding: "sm" }}
+                  onChangeValue={(v) =>
+                    applyChanges({
+                      putLayerConfigs: [
+                        {
+                          ...layerConfig,
+                          opacity: clamp(Math.round(v) / 100, 0, 1),
+                        } as ILayerConfig,
+                      ],
+                    })
+                  }
                 />
               )}
             </InlineField>
-          )}
-        </div>
-      </E.StyledPopoverContent>
+            {availableProperties.length > 0 && (
+              <InlineField
+                name={translate("customLayers.labels")}
+                layout="fixed-label"
+                labelSize="md"
+              >
+                {readonly ? (
+                  <TextField padding="sm">
+                    {layerConfig.labelProperty ?? translate("none")}{" "}
+                  </TextField>
+                ) : (
+                  <Selector
+                    nullable
+                    placeholder={translate("none")}
+                    options={availableProperties.map((p) => ({
+                      value: p,
+                      label: p,
+                    }))}
+                    selected={layerConfig.labelProperty ?? null}
+                    minOptionsForSearch={1}
+                    onChange={handleLabelPropertyChange}
+                  />
+                )}
+              </InlineField>
+            )}
+          </div>
+        </E.StyledPopoverContent>
+      </P.Portal>
     </P.Root>
   );
 
@@ -1436,6 +1452,7 @@ function SortableLayerConfig({
       ) : (
         <div
           className="opacity-20 hover:opacity-100 cursor-grab active:cursor-grabbing flex items-center h-8"
+          data-map-drag-handle
           {...attributes}
           {...listeners}
         >

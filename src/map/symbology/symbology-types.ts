@@ -80,7 +80,7 @@ export const nullSymbologySpec: SymbologySpec = {
   link: {
     colorRule: null,
     labelRule: null,
-    defaults: { color: colors.indigo900 },
+    defaults: { color: colors.blue500 },
   },
   node: {
     colorRule: null,

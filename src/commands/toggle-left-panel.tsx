@@ -3,7 +3,7 @@ import { useCallback } from "react";
 import { useDeactivatePanel } from "src/commands/deactivate-panel";
 import { useUserTracking } from "src/infra/user-tracking";
 import { panelTrackingName } from "src/panels/panel";
-import { activePanelIn } from "src/state/panels";
+import { activePanelIn, panelsIn } from "src/state/panels";
 import { defaultSplits, splitsAtom } from "src/state/layout";
 
 export const toggleLeftPanelShortcut = "ctrl+b";
@@ -12,11 +12,13 @@ export const useToggleLeftPanel = () => {
   const setSplits = useSetAtom(splitsAtom);
   const splits = useAtomValue(splitsAtom);
   const activeLeftPanel = useAtomValue(activePanelIn("left"));
+  const hasLeftPanels = useAtomValue(panelsIn("left")).length > 0;
   const deactivatePanel = useDeactivatePanel();
   const userTracking = useUserTracking();
 
   const toggleLeftPanel = useCallback(
     ({ source }: { source: "toolbar" | "shortcut" }) => {
+      if (!hasLeftPanels && !splits.leftOpen) return;
       if (splits.leftOpen) {
         deactivatePanel(activeLeftPanel?.panel);
       }
@@ -34,6 +36,7 @@ export const useToggleLeftPanel = () => {
     [
       splits.leftOpen,
       activeLeftPanel,
+      hasLeftPanels,
       deactivatePanel,
       setSplits,
       userTracking,

@@ -116,45 +116,27 @@ export const MapCursorCoordinates = ({ map }: { map: MapEngine | null }) => {
       ".mapboxgl-ctrl-bottom-right > .mapboxgl-ctrl-attrib",
     );
     const logo = container.querySelector<HTMLElement>(".mapboxgl-ctrl-logo");
-    const credits = container.ownerDocument.createRange();
     let googleAttribution: HTMLElement | null = null;
     const updatePlacement = () => {
       const bounds = container.getBoundingClientRect();
       const creditsBounds = attribution?.getBoundingClientRect();
-      const creditText = attribution?.querySelector(
-        ".mapboxgl-ctrl-attrib-inner",
-      );
-      if (creditText) credits.selectNodeContents(creditText);
-      const creditTextBounds = creditText
-        ? credits.getBoundingClientRect()
-        : creditsBounds;
       const logoRight = logo?.getBoundingClientRect().right ?? bounds.left + 8;
       const style = getComputedStyle(element);
       const timelineHeight =
         Number.parseFloat(
           style.getPropertyValue("--simulation-controls-height"),
         ) || 0;
-      const rem = Number.parseFloat(
-        getComputedStyle(element.ownerDocument.documentElement).fontSize,
-      );
-      const children = Array.from(element.children);
-      const width =
-        Math.max(
-          ...children.map((child) => child.getBoundingClientRect().width),
-        ) +
-        Number.parseFloat(style.paddingLeft || "0") +
-        Number.parseFloat(style.paddingRight || "0");
+      const rem =
+        Number.parseFloat(
+          getComputedStyle(element.ownerDocument.documentElement).fontSize,
+        ) || 16;
+      const width = element.getBoundingClientRect().width;
       const creditsVisible =
-        creditsBounds &&
-        creditTextBounds &&
-        creditTextBounds.width > 0 &&
-        creditTextBounds.height > 0;
+        creditsBounds && creditsBounds.width > 0 && creditsBounds.height > 0;
       const googleBounds = googleAttribution?.getBoundingClientRect();
       const googleVisible =
         googleBounds && googleBounds.width > 0 && googleBounds.height > 0;
-      const right = creditsVisible
-        ? bounds.right - creditTextBounds.left + 8
-        : 8;
+      const right = creditsVisible ? bounds.right - creditsBounds.left + 8 : 8;
       const availableWidth = bounds.right - right - logoRight - 8;
       const next: CSSProperties =
         width <= availableWidth
@@ -227,7 +209,7 @@ export const MapCursorCoordinates = ({ map }: { map: MapEngine | null }) => {
       role="group"
       aria-label={translate("mapCursorCoordinates.label")}
       aria-live="off"
-      className="pointer-events-none absolute z-10 flex flex-col items-start rounded-sm bg-popover/40 px-1.5 text-size-small leading-3 tabular-nums text-default"
+      className="map-overlay-theme map-overlay-surface pointer-events-none absolute z-10 flex w-max items-center gap-2 whitespace-nowrap rounded-sm px-1.5 text-size-small leading-3 tabular-nums text-default"
       style={placement}
     >
       <span className="whitespace-nowrap">

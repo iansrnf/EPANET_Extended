@@ -2,7 +2,7 @@ import type { ILayerConfig } from "src/types";
 import { basemaps, type LayerConfigTemplate } from "./basemaps";
 
 export type BasemapProviderId = "google" | "mapbox";
-export type BasemapModeId = "roadmap" | "satellite" | "monochrome" | "outdoors";
+export type BasemapModeId = "black" | "satellite";
 
 export const basemapProviders = [
   {
@@ -10,9 +10,9 @@ export const basemapProviders = [
     name: "Google Maps",
     modes: [
       {
-        id: "roadmap",
-        labelKey: "basemapModes.roadmap",
-        basemap: basemaps.googleRoadmap,
+        id: "black",
+        labelKey: "basemapModes.black",
+        basemap: basemaps.googleBlack,
       },
       {
         id: "satellite",
@@ -26,24 +26,14 @@ export const basemapProviders = [
     name: "Mapbox",
     modes: [
       {
-        id: "roadmap",
-        labelKey: "basemapModes.roadmap",
-        basemap: basemaps.streets,
+        id: "black",
+        labelKey: "basemapModes.black",
+        basemap: basemaps.black,
       },
       {
         id: "satellite",
         labelKey: "basemapModes.satellite",
         basemap: basemaps.satellite,
-      },
-      {
-        id: "monochrome",
-        labelKey: "basemapModes.monochrome",
-        basemap: basemaps.monochrome,
-      },
-      {
-        id: "outdoors",
-        labelKey: "basemapModes.outdoors",
-        basemap: basemaps.outdoors,
       },
     ],
   },

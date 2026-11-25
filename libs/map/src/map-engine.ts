@@ -49,6 +49,8 @@ export const LAYER_MAX_ZOOM = 24;
 export type InitialViewport = {
   center: [number, number];
   zoom: number;
+  pitch?: number;
+  bearing?: number;
 };
 
 const MAP_OPTIONS: Omit<mapboxgl.MapboxOptions, "container"> = {
@@ -128,17 +130,23 @@ export class MapEngine {
     onControlClick,
     onContextRestored,
     initialViewport,
+    compactAttribution = false,
+    attributionPosition = "bottom-right",
   }: {
     element: HTMLDivElement;
     handlers: HandlersRef;
     onControlClick: (event: CustomMapControlClick) => void;
     onContextRestored: () => void;
     initialViewport?: InitialViewport;
+    compactAttribution?: boolean;
+    attributionPosition?: Parameters<MapboxMap["addControl"]>[1];
   }) {
     const defaultStart = {
       center: (initialViewport?.center ??
         DEFAULT_CENTER) as mapboxgl.LngLatLike,
       zoom: initialViewport?.zoom ?? DEFAULT_ZOOM,
+      pitch: initialViewport?.pitch ?? 0,
+      bearing: initialViewport?.bearing ?? 0,
     };
 
     const map = new mapboxgl.Map({
@@ -157,10 +165,21 @@ export class MapEngine {
 
     map.addControl(
       new mapboxgl.AttributionControl({
-        compact: false,
+        compact: compactAttribution,
       }),
-      "bottom-right",
+      attributionPosition,
     );
+    const attributionButton = element.querySelector<HTMLButtonElement>(
+      ".mapboxgl-ctrl-attrib-button",
+    );
+    if (attributionButton && !attributionButton.hasAttribute("aria-label")) {
+      const label = attributionButton
+        .querySelector("[title]")
+        ?.getAttribute("title");
+      if (label) attributionButton.setAttribute("aria-label", label);
+    }
+    if (compactAttribution)
+      attributionButton?.setAttribute("aria-expanded", "false");
     map.addControl(new mapboxgl.NavigationControl({}), "bottom-right");
     map.addControl(
       new CustomMapControl(

@@ -20,19 +20,15 @@ describe("buildBaseStyle", () => {
   });
 
   it.each([
-    basemaps.satellite,
-    basemaps.outdoors,
-    basemaps.streets,
-    basemaps.monochrome,
+    { basemap: basemaps.satellite, projection: { name: "globe" as const } },
+    { basemap: basemaps.black, projection: undefined },
   ])(
-    "keeps $name tiles while using an overlay-compatible projection",
-    async (basemap) => {
+    "keeps $basemap.name tiles while using an overlay-compatible projection",
+    async ({ basemap, projection }) => {
       const providerStyle: Style = {
         version: 8,
         name: "Provider style",
-        ...(basemap === basemaps.monochrome
-          ? {}
-          : { projection: { name: "globe" as const } }),
+        ...(projection ? { projection } : {}),
         sources: {
           imagery: {
             type: "raster",
@@ -79,7 +75,7 @@ describe("buildBaseStyle", () => {
     },
   );
 
-  it.each([basemaps.googleRoadmap, basemaps.googleSatellite])(
+  it.each([basemaps.googleBlack, basemaps.googleSatellite])(
     "keeps $name tile dimensions and opacity with the same projection",
     async (basemap) => {
       vi.mocked(getGoogleMapsSession).mockResolvedValue({

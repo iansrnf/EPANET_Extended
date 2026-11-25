@@ -43,9 +43,12 @@ beforeAll(() => {
     };
 });
 
-const renderPanel = (store: Store) => {
+const renderPanel = (
+  store: Store,
+  { isSignedIn = true }: { isSignedIn?: boolean } = {},
+) => {
   render(
-    <AuthMockProvider>
+    <AuthMockProvider isSignedIn={isSignedIn}>
       <JotaiProvider store={store}>
         <TooltipProvider>
           <ModelAttributesValidation onGoBack={vi.fn()} />
@@ -164,37 +167,44 @@ describe("ModelAttributesValidation panel", () => {
     expect(store.get(selectedReviewCheckAtom)).toBeNull();
   });
 
-  describe("without permission", () => {
-    it("discloses the first issue and paywalls the rest behind an overlay", async () => {
-      canValidateModelAttributes = false;
-      const hydraulicModel = HydraulicModelBuilder.with()
-        .aPipe(1, { label: "P1", roughness: null, diameter: 100, length: 100 })
-        .aPipe(2, { label: "P2", roughness: 0, diameter: 100, length: 100 })
-        .build();
-      const store = setInitialState({ hydraulicModel });
+  it("lets signed-out users inspect all issue groups without paid access", async () => {
+    const IDS = { missingRoughness: 1, nonPositiveRoughness: 2 } as const;
+    canValidateModelAttributes = false;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aPipe(IDS.missingRoughness, {
+        roughness: null,
+        diameter: 100,
+        length: 100,
+      })
+      .aPipe(IDS.nonPositiveRoughness, {
+        roughness: 0,
+        diameter: 100,
+        length: 100,
+      })
+      .build();
+    const store = setInitialState({ hydraulicModel });
 
-      renderPanel(store);
+    renderPanel(store, { isSignedIn: false });
 
-      // The first group (missing roughness) is disclosed...
-      const firstGroup = await screen.findByRole("button", {
-        name: /roughness missing/i,
-      });
-      // ...the rest are rendered (dimmed under the overlay) but still route to
-      // the paywall on click.
-      const blockedGroup = screen.getByRole("button", {
-        name: /must be positive/i,
-      });
-
-      // Clicking the disclosed issue opens the upgrade dialog, no selection.
-      fireEvent.click(firstGroup);
-      expect(store.get(dialogAtom)).toMatchObject({ type: "upgrade" });
-      expect(USelection.getAssetIds(store.get(selectionAtom))).toEqual([]);
-
-      // Clicking a blocked issue also opens the upgrade dialog, no selection.
-      act(() => store.set(dialogAtom, null));
-      fireEvent.click(blockedGroup);
-      expect(store.get(dialogAtom)).toMatchObject({ type: "upgrade" });
-      expect(USelection.getAssetIds(store.get(selectionAtom))).toEqual([]);
+    const firstGroup = await screen.findByRole("button", {
+      name: /roughness missing/i,
     });
+
+    fireEvent.click(firstGroup);
+
+    expect(USelection.getAssetIds(store.get(selectionAtom))).toEqual([
+      IDS.missingRoughness,
+    ]);
+    expect(store.get(dialogAtom)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /must be positive/i }),
+    );
+
+    expect(USelection.getAssetIds(store.get(selectionAtom))).toEqual([
+      IDS.nonPositiveRoughness,
+    ]);
+    expect(store.get(dialogAtom)).toBeNull();
   });
 });

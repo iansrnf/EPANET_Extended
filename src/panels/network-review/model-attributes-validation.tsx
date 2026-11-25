@@ -1,14 +1,12 @@
 import { useAtom, useAtomValue } from "jotai";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChevronRight, Lock } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { Button } from "src/components/elements";
 import { Action } from "src/components/action-button";
 import { useTranslate } from "src/hooks/use-translate";
 import { useZoomTo } from "src/hooks/use-zoom-to";
 import { useShowAssetPanel } from "src/commands/show-asset-panel";
 import { ErrorIcon, PointerClickIcon, WarningIcon } from "src/icons";
-import { usePermissions } from "src/hooks/use-permissions";
-import { PaywallFade, PaywallUpgradeBox } from "src/components/form/paywall";
 import { useUserTracking } from "src/infra/user-tracking";
 import { USelection, useSelection } from "src/selection";
 import { AssetId } from "@epanet-js/hydraulic-model";
@@ -53,7 +51,6 @@ export const ModelAttributesValidation = ({
   onGoBack: () => void;
 }) => {
   const userTracking = useUserTracking();
-  const { canValidateModelAttributes } = usePermissions();
   const { groups, checkModelAttributesValidation, isLoading, isReady } =
     useCheckModelAttributesValidation();
   const selection = useAtomValue(selectionAtom);
@@ -208,15 +205,11 @@ export const ModelAttributesValidation = ({
         {isReady ? (
           <>
             {groups.length > 0 ? (
-              canValidateModelAttributes ? (
-                <ModelAttributesValidationGroupList
-                  groups={groups}
-                  onOpen={openGroup}
-                  onGoBack={onGoBack}
-                />
-              ) : (
-                <ModelAttributesValidationLockedList groups={groups} />
-              )
+              <ModelAttributesValidationGroupList
+                groups={groups}
+                onOpen={openGroup}
+                onGoBack={onGoBack}
+              />
             ) : (
               <>
                 <ToolDescription
@@ -313,12 +306,10 @@ const ModelAttributesValidationGroupRow = ({
   group,
   isSelected,
   onClick,
-  locked = false,
 }: {
   group: ValidationGroup;
   isSelected: boolean;
-  onClick?: () => void;
-  locked?: boolean;
+  onClick: () => void;
 }) => {
   const translate = useTranslate();
   const label = translate(ruleLabelKey(group.ruleId));
@@ -352,53 +343,10 @@ const ModelAttributesValidationGroupRow = ({
             isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           }`}
         >
-          {locked ? <Lock size={16} /> : <ChevronRight size={16} />}
+          <ChevronRight size={16} />
         </div>
       </div>
     </Button>
-  );
-};
-
-const ModelAttributesValidationLockedList = ({
-  groups,
-}: {
-  groups: ValidationGroup[];
-}) => {
-  const translate = useTranslate();
-
-  return (
-    <>
-      <PaywallFade
-        feature="modelAttributesValidation"
-        className="flex-auto flex flex-col min-h-0"
-      >
-        <ToolDescription checkType={CheckType.modelAttributesValidation} />
-        <div
-          className="flex-auto overflow-y-auto placemark-scrollbar px-1"
-          style={{ contain: "strict" }}
-        >
-          {groups.map((group) => (
-            <ModelAttributesValidationGroupRow
-              key={group.ruleId}
-              group={group}
-              isSelected={false}
-              locked
-            />
-          ))}
-        </div>
-      </PaywallFade>
-      <div className="absolute inset-x-0 bottom-0">
-        <PaywallUpgradeBox
-          feature="modelAttributesValidation"
-          title={translate(
-            "networkReview.modelAttributesValidation.upgrade.title",
-          )}
-          description={translate(
-            "networkReview.modelAttributesValidation.upgrade.description",
-          )}
-        />
-      </div>
-    </>
   );
 };
 

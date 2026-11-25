@@ -33,10 +33,12 @@ export function ColorPopover({
   _size = "sm",
   ariaLabel = "",
   readonly = false,
+  contentClassName,
 }: React.ComponentProps<typeof HexColorPicker> & {
   _size?: E.B3Size;
   ariaLabel?: string;
   readonly?: boolean;
+  contentClassName?: string;
 }) {
   const translate = useTranslate();
   const safeColor = isValidHex(color as string)
@@ -70,7 +72,7 @@ export function ColorPopover({
           style={{ backgroundColor: color as string }}
         ></button>
       </P.Trigger>
-      <E.PopoverContent2 size="no-width">
+      <E.PopoverContent2 size="no-width" className={contentClassName}>
         <div className="space-y-2">
           <div
             className="border border-white"

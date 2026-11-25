@@ -6,7 +6,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="notranslate" translate="no">
+    <html lang="en" className="dark notranslate" translate="no">
       <head>
         <link rel="prefetch" href="https://swot-checker.vercel.app/api/check" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />

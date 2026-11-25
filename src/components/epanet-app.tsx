@@ -44,10 +44,9 @@ import debounce from "lodash/debounce";
 import { Legends } from "./legends";
 import { SimulationPlaybackSpeedWarning } from "./simulation-playback-speed-warning";
 import { MapLoading } from "src/map/map-loader";
-import { Toolbar } from "src/toolbar/";
+import { ProjectToolbar, ViewControls } from "src/toolbar/";
 import { MapToolbar } from "src/toolbar/map-toolbar";
 import { useIsDrawingAvailable } from "src/hooks/use-is-drawing-available";
-import { Footer } from "./footer";
 import { useHydrateAtoms } from "jotai/utils";
 import { TabCloseGuard } from "./tab-close-guard";
 import { CommandShortcuts } from "./commands-shortcuts";
@@ -80,6 +79,8 @@ import { ModelBuildViewUrl } from "src/views/model-build-view-url";
 import { DialogFromUrl } from "./dialog-from-url";
 import { useLoggerStreamLifecycle } from "src/hooks/use-logger-stream-lifecycle";
 import { FloatingAssetPanel } from "src/panels/asset-panel/floating-asset-panel";
+import { MapWorkspaceIdentity } from "./map-workspace-identity";
+import type { MapToolbarSpace } from "./map-workspace-identity";
 
 type ResolvedLayout = "HORIZONTAL" | "VERTICAL" | "FLOATING";
 
@@ -186,20 +187,11 @@ export function EpanetApp() {
     <main className={"custom-cursor-family h-dvh flex flex-col bg-popover"}>
       <MapContext.Provider value={map}>
         <ScriptEditorProvider>
-          <div className="shrink-0">
-            <MenuBarPlay />
-            {!isContentViewOpen && (
-              <Toolbar
-                readonly={isEditionBlocked}
-                customerAllocationDisabled={isCustomerAllocationDisabled}
-              />
-            )}
-          </div>
+          {isContentViewOpen && <MenuBarPlay />}
           <div
             className={clsx(
               layout === "VERTICAL" && "flex-col h-full",
-              "flex grow relative border-t dark:border-gray-900",
-              "pb-10",
+              "flex grow min-h-0 relative",
               isContentViewOpen && "invisible",
             )}
           >
@@ -229,6 +221,8 @@ export function EpanetApp() {
                     setMap={setMap}
                     layout={layout}
                     readonly={isEditionBlocked}
+                    customerAllocationDisabled={isCustomerAllocationDisabled}
+                    showWorkspaceIdentity={!isContentViewOpen}
                   />
                 </DndContext>
                 {layout === "HORIZONTAL" && <BottomPanel />}
@@ -257,7 +251,6 @@ export function EpanetApp() {
             </>
           )}
           <Notifications />
-          {!isContentViewOpen && <Footer />}
         </ScriptEditorProvider>
       </MapContext.Provider>
       <TabCloseGuard />
@@ -277,15 +270,54 @@ function DraggableMap({
   layout,
   persistentTransform,
   readonly = false,
+  customerAllocationDisabled = false,
+  showWorkspaceIdentity = true,
 }: {
   setMap: (arg0: MapEngine | null) => void;
   layout: ResolvedLayout;
   persistentTransform: Transform;
   readonly?: boolean;
+  customerAllocationDisabled?: boolean;
+  showWorkspaceIdentity?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [simulationControlsHeight, setSimulationControlsHeight] = useState(128);
+  const [projectToolbarRow, setProjectToolbarRow] = useState(false);
+  const [compactMapHeight, setCompactMapHeight] = useState(false);
+  const [compactIdentity, setCompactIdentity] = useState(false);
+  const [identityHeight, setIdentityHeight] = useState(54);
+  const [drawingToolbarSpace, setDrawingToolbarSpace] =
+    useState<MapToolbarSpace | null>(null);
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateLayout = () => {
+      const targetSize = parseFloat(
+        getComputedStyle(container).getPropertyValue(
+          "--map-control-target-size",
+        ),
+      );
+      setProjectToolbarRow(
+        container.clientWidth < 768 ||
+          container.clientHeight <
+            simulationControlsHeight + identityHeight + 88 + 13 * targetSize,
+      );
+      setCompactMapHeight(container.clientHeight - identityHeight - 8 < 500);
+      setCompactIdentity(container.clientWidth < 1000);
+    };
+    const coarsePointer = window.matchMedia("(pointer: coarse)");
+    const observer = new ResizeObserver(updateLayout);
+    observer.observe(container);
+    coarsePointer.addEventListener("change", updateLayout);
+    updateLayout();
+    return () => {
+      observer.disconnect();
+      coarsePointer.removeEventListener("change", updateLayout);
+    };
+  }, [simulationControlsHeight, identityHeight]);
   const { setNodeRef, transform } = useDraggable({
     id: "map",
   });
@@ -301,6 +333,8 @@ function DraggableMap({
           : "relative min-h-0 flex-auto flex flex-col",
         "drawing-toolbar-controls",
       )}
+      data-project-toolbar-layout={projectToolbarRow ? "row" : "column"}
+      data-map-compact-height={compactMapHeight || undefined}
       ref={(elem) => {
         setNodeRef(elem);
         containerRef.current = elem;
@@ -308,6 +342,10 @@ function DraggableMap({
       style={
         {
           "--simulation-controls-height": `${simulationControlsHeight}px`,
+          "--map-workspace-top": `${identityHeight + 8}px`,
+          "--project-toolbar-offset": projectToolbarRow
+            ? "calc(var(--map-control-target-size) + 0.5rem)"
+            : "0px",
           ...(layout === "FLOATING"
             ? {
                 resize: "both",
@@ -325,14 +363,32 @@ function DraggableMap({
       >
         <MapCanvas setMap={setMap} />
         <FloatingAssetPanel />
+        {showWorkspaceIdentity && (
+          <MapWorkspaceIdentity
+            compact={compactIdentity}
+            onHeightChange={setIdentityHeight}
+            onToolbarSpaceChange={setDrawingToolbarSpace}
+          />
+        )}
+        <ProjectToolbar
+          readonly={readonly}
+          customerAllocationDisabled={customerAllocationDisabled}
+        />
+        <ViewControls />
       </div>
       <SimulationTimeline onHeightChange={setSimulationControlsHeight} />
       <Legends />
-      <div className="absolute flex flex-col gap-1 items-end top-2 right-2">
+      <div className="map-top-status absolute flex flex-col gap-1 items-end right-2">
         <SimulationPlaybackSpeedWarning />
         <MapLoading />
       </div>
-      {isDrawingAvailable && <MapToolbar readonly={readonly} />}
+      {isDrawingAvailable && (
+        <MapToolbar
+          readonly={readonly}
+          dockingSpace={showWorkspaceIdentity ? drawingToolbarSpace : null}
+          compactHeight={compactMapHeight}
+        />
+      )}
     </div>
   );
 }

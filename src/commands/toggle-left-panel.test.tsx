@@ -23,6 +23,17 @@ beforeEach(() => {
 });
 
 describe("useToggleLeftPanel", () => {
+  it("keeps an empty left dock closed", async () => {
+    const store = aStore();
+    store.set(panelsAtom, []);
+    store.set(splitsAtom, (s) => ({ ...s, leftOpen: false }));
+    const splits = store.get(splitsAtom);
+
+    await toggle(store);
+
+    expect(store.get(splitsAtom)).toBe(splits);
+  });
+
   it("opens the left panel when it is closed", async () => {
     const store = aStore();
     store.set(splitsAtom, (s) => ({ ...s, leftOpen: false }));

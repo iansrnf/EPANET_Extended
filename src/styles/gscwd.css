@@ -12,6 +12,22 @@
 }
 
 .dark {
+  color-scheme: dark;
+  color: var(--color-default);
+  background-color: var(--color-background-base);
+  --color-background-base: var(--color-slate-950);
+  --color-panel: var(--color-slate-900);
+  --color-popover: var(--color-slate-900);
+  --color-popover-inverse: var(--color-slate-100);
+  --color-default: var(--color-slate-100);
+  --color-default-inverse: var(--color-slate-950);
+  --color-subtle: var(--color-slate-300);
+  --color-disabled: var(--color-slate-500);
+  --color-base-disabled: var(--color-slate-800);
+  --color-base-hover: color-mix(in srgb, var(--color-blue-400) 12%, transparent);
+  --color-track: var(--color-slate-700);
+  --color-border: var(--color-slate-700);
+  --color-border-strong: var(--color-slate-600);
   --color-accent: var(--color-blue-400);
   --color-accent-hover: var(--color-blue-300);
   --color-accent-tint: var(--color-blue-950);
@@ -21,6 +37,10 @@
   --gscwd-footer: #19384f;
   --gscwd-line: #2a4559;
   --gscwd-muted: #abc2d4;
+}
+
+.dark .bg-accent:is(.text-white, .text-default) {
+  color: var(--color-default-inverse);
 }
 
 .gscwd-sidebar {
@@ -38,18 +58,6 @@
     var(--gscwd-cyan)
   );
   background-color: var(--gscwd-sidebar);
-}
-
-.gscwd-app-footer {
-  --color-panel: var(--gscwd-footer);
-  --color-subtle: var(--gscwd-navy);
-  --color-border: var(--gscwd-line);
-  --color-border-strong: color-mix(
-    in srgb,
-    var(--gscwd-line) 80%,
-    var(--gscwd-cyan)
-  );
-  background: linear-gradient(90deg, var(--gscwd-footer), var(--gscwd-sidebar));
 }
 
 .gscwd-welcome-overlay {

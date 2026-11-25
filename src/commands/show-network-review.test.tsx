@@ -1,88 +1,126 @@
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
+import { act, renderHook } from "@testing-library/react";
+import { Provider } from "jotai";
 import { setInitialState } from "src/__helpers__/state";
 import { stubUserTracking } from "src/__helpers__/user-tracking";
+import { CheckType } from "src/lib/network-review";
 import { splitsAtom } from "src/state/layout";
 import { createAssetTablePanel } from "src/panels/data-tables/create-panel";
-import { createNetworkReviewPanel } from "src/panels/network-review/create-panel";
+import {
+  networkReviewOpenAtom,
+  selectedReviewCheckAtom,
+} from "src/state/network-review";
 import {
   activatePanelAtom,
   activePanelIn,
   panelsAtom,
   panelLayoutAtom,
 } from "src/state/panels";
-import { Store } from "src/state";
-import { CommandContainer } from "./__helpers__/command-container";
-import { useShowNetworkReview } from "./show-network-review";
-
-const aStore = () =>
-  setInitialState({
-    hydraulicModel: HydraulicModelBuilder.with().aJunction(1).build(),
-  });
-
-const withANeighbourPanel = (store: Store) => {
-  store.set(panelsAtom, [
-    createNetworkReviewPanel(),
-    createAssetTablePanel("junction", { id: "neighbour" }),
-  ]);
-  store.set(panelLayoutAtom, { neighbour: { movedToDock: "left" } });
-};
+import {
+  useSetNetworkReviewOpen,
+  useShowNetworkReview,
+} from "./show-network-review";
 
 beforeEach(() => {
   stubUserTracking();
 });
 
 describe("useShowNetworkReview", () => {
-  it("opens the left panel when it is closed", async () => {
-    const store = aStore();
-    store.set(panelsAtom, [createNetworkReviewPanel()]);
-    store.set(splitsAtom, (s) => ({ ...s, leftOpen: false }));
+  it.each([false, true])(
+    "opens the map review without changing the left dock when open is %s",
+    (leftOpen) => {
+      const store = setInitialState();
+      store.set(panelsAtom, [
+        createAssetTablePanel("junction", { id: "neighbour" }),
+      ]);
+      store.set(panelLayoutAtom, { neighbour: { movedToDock: "left" } });
+      store.set(activatePanelAtom, "neighbour");
+      store.set(splitsAtom, (splits) => ({ ...splits, leftOpen }));
+      const splits = store.get(splitsAtom);
+      const panels = store.get(panelsAtom);
+      const panelLayout = store.get(panelLayoutAtom);
+      const { result } = renderHook(() => useShowNetworkReview(), {
+        wrapper: ({ children }) => (
+          <Provider store={store}>{children}</Provider>
+        ),
+      });
 
-    await show(store);
+      act(() => result.current({ source: "auto" }));
 
-    expect(store.get(splitsAtom).leftOpen).toBe(true);
-  });
+      expect(store.get(networkReviewOpenAtom)).toBe(true);
+      expect(store.get(splitsAtom)).toBe(splits);
+      expect(store.get(panelsAtom)).toBe(panels);
+      expect(store.get(panelLayoutAtom)).toBe(panelLayout);
+      expect(store.get(activePanelIn("left"))?.id).toBe("neighbour");
+    },
+  );
 
-  it("brings the network review forward when another panel is active", async () => {
-    const store = aStore();
-    withANeighbourPanel(store);
-    store.set(activatePanelAtom, "neighbour");
+  it("preserves the simulation target and records automatic opening", () => {
+    const userTracking = stubUserTracking();
+    const store = setInitialState();
+    store.set(selectedReviewCheckAtom, CheckType.modelAttributesValidation);
+    const { result } = renderHook(() => useShowNetworkReview(), {
+      wrapper: ({ children }) => <Provider store={store}>{children}</Provider>,
+    });
 
-    await show(store);
+    act(() => result.current({ source: "auto" }));
 
-    expect(store.get(activePanelIn("left"))?.id).toEqual("network-review");
-  });
-
-  it("leaves the left panel open when it already is", async () => {
-    const store = aStore();
-    withANeighbourPanel(store);
-    store.set(splitsAtom, (s) => ({ ...s, leftOpen: true }));
-
-    await show(store);
-
-    expect(store.get(splitsAtom).leftOpen).toBe(true);
-    expect(store.get(activePanelIn("left"))?.id).toEqual("network-review");
+    expect(store.get(networkReviewOpenAtom)).toBe(true);
+    expect(store.get(selectedReviewCheckAtom)).toBe(
+      CheckType.modelAttributesValidation,
+    );
+    expect(userTracking.capture).toHaveBeenCalledWith({
+      name: "networkReview.opened",
+      source: "auto",
+    });
   });
 });
 
-const Trigger = () => {
-  const showNetworkReview = useShowNetworkReview();
-  return (
-    <button
-      aria-label="show"
-      onClick={() => showNetworkReview({ source: "auto" })}
-    >
-      Show
-    </button>
-  );
-};
+describe("useSetNetworkReviewOpen", () => {
+  it("records one map event per opening transition", () => {
+    const userTracking = stubUserTracking();
+    const store = setInitialState();
+    const { result } = renderHook(() => useSetNetworkReviewOpen(), {
+      wrapper: ({ children }) => <Provider store={store}>{children}</Provider>,
+    });
 
-const show = async (store: Store) => {
-  render(
-    <CommandContainer store={store}>
-      <Trigger />
-    </CommandContainer>,
+    act(() => {
+      result.current(true);
+      result.current(true);
+    });
+
+    expect(store.get(networkReviewOpenAtom)).toBe(true);
+    expect(userTracking.capture).toHaveBeenCalledTimes(1);
+    expect(userTracking.capture).toHaveBeenCalledWith({
+      name: "networkReview.opened",
+      source: "map",
+    });
+
+    act(() => {
+      result.current(false);
+      result.current(true);
+    });
+
+    expect(userTracking.capture).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([false, true])(
+    "clears a pending target on close when open is %s",
+    (open) => {
+      const userTracking = stubUserTracking();
+      const store = setInitialState();
+      store.set(networkReviewOpenAtom, open);
+      store.set(selectedReviewCheckAtom, "summary");
+      const { result } = renderHook(() => useSetNetworkReviewOpen(), {
+        wrapper: ({ children }) => (
+          <Provider store={store}>{children}</Provider>
+        ),
+      });
+
+      act(() => result.current(false));
+
+      expect(store.get(networkReviewOpenAtom)).toBe(false);
+      expect(store.get(selectedReviewCheckAtom)).toBeNull();
+      expect(userTracking.capture).not.toHaveBeenCalled();
+    },
   );
-  await userEvent.click(screen.getByRole("button", { name: "show" }));
-};
+});

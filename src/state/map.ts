@@ -22,7 +22,7 @@ import {
 } from "src/types";
 import { DEFAULT_CENTER, DEFAULT_ZOOM } from "@epanet-js/map";
 import type { InitialViewport } from "@epanet-js/map";
-import { basemaps } from "src/map/basemaps";
+import { defaultBasemap } from "src/map/basemaps";
 import {
   MapEditionsTracker,
   nullMapEditionsTracker,
@@ -69,6 +69,7 @@ import {
   type DeviceLocation,
   type DeviceLocationViewportRequest,
 } from "src/state/device-location";
+import { mapPitchRequestAtom, type MapPitchRequest } from "src/state/map-view";
 
 export const mapEditionsTrackerAtom = atom<MapEditionsTracker>(
   new MapEditionsTracker(),
@@ -91,7 +92,7 @@ export const mapViewportAtom = atom<InitialViewport>({
 
 const defaultLayerConfigs: ILayerConfig[] = [
   {
-    ...basemaps.monochrome,
+    ...defaultBasemap,
     at: "a0",
     opacity: 1,
     tms: false,
@@ -158,6 +159,7 @@ export type MapState = {
   nodeSize: NodeSizeConfig;
   deviceLocation: DeviceLocation | null;
   deviceLocationViewportRequest: DeviceLocationViewportRequest | null;
+  pitchRequest: MapPitchRequest | null;
 };
 
 export const nullMapState: MapState = {
@@ -196,6 +198,7 @@ export const nullMapState: MapState = {
   nodeSize: defaultNodeSizeConfig,
   deviceLocation: null,
   deviceLocationViewportRequest: null,
+  pitchRequest: null,
 } as const;
 
 export const stylesConfigAtom = atom<StylesConfig>((get) => {
@@ -277,5 +280,6 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
     nodeSize,
     deviceLocation,
     deviceLocationViewportRequest,
+    pitchRequest: get(mapPitchRequestAtom),
   };
 });

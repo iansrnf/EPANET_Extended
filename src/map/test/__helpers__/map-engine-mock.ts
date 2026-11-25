@@ -122,6 +122,8 @@ class MapTestEngine {
       y: lngLat[1] * 100,
     })),
     getZoom: vi.fn().mockReturnValue(18),
+    getPitch: vi.fn().mockReturnValue(0),
+    getBearing: vi.fn().mockReturnValue(0),
   };
 
   getSource(name: string): GeoJSONSourceRaw | null {

@@ -26,7 +26,7 @@ export const GoogleMapsAttribution = ({ map }: { map: MapEngine | null }) => {
   return (
     <div
       data-map-attribution="google"
-      className="absolute bottom-[calc(var(--simulation-controls-height,0px)+52px)] right-12 z-10 max-w-[calc(100%-4rem)] rounded-sm border bg-base px-2 py-1 text-right text-size-small text-default shadow-sm"
+      className="map-overlay-theme map-overlay-surface absolute bottom-[calc(var(--simulation-controls-height,0px)+52px)] right-12 z-10 max-w-[calc(100%-4rem)] rounded-sm px-2 py-1 text-right text-size-small text-default shadow-sm"
       aria-label={translate("googleMaps.basemapAttribution")}
     >
       <a

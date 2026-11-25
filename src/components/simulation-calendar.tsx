@@ -119,23 +119,28 @@ export const SimulationCalendar = ({
         setOpen(nextOpen);
       }}
     >
-      <Tooltip content={translate("simulationTimeline.calendar")} side="top">
+      <Tooltip
+        content={translate("simulationTimeline.calendar")}
+        side="top"
+        sideOffset={8}
+        zIndex={50}
+        className="map-overlay-theme map-overlay-surface map-overlay-tooltip"
+      >
         <Popover.Trigger asChild>
           <button
             type="button"
             disabled={disabled}
             aria-label={`${translate("simulationTimeline.calendar")}: ${calendarDateLabel} ${calendarTimeLabel}`}
-            className="pointer-events-auto flex h-[var(--map-control-target-size)] min-w-0 max-w-full items-center justify-center rounded-sm transition-[filter] enabled:hover:brightness-110 focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed"
+            className="group pointer-events-auto flex h-[var(--map-control-target-size)] min-w-0 max-w-full items-center justify-center rounded-sm focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed"
             onKeyDown={(event) => event.stopPropagation()}
             onKeyPress={(event) => event.stopPropagation()}
             onKeyUp={(event) => event.stopPropagation()}
           >
             <span
               className={clsx(
-                "flex h-[var(--map-control-face-size)] min-w-0 items-center gap-1 rounded-sm border bg-popover-inverse/40 px-2 text-size-small font-semibold text-default-inverse shadow-md",
+                "flex h-[var(--map-control-face-size)] min-w-0 items-center gap-1 rounded-md border px-2 text-size-small font-semibold text-default transition-colors group-hover:bg-base-hover",
                 open ? "border-accent" : "border-transparent",
               )}
-              style={{ textShadow: "none" }}
             >
               <span className="min-w-0 truncate">{calendarDateLabel}</span>
               <time
@@ -162,7 +167,7 @@ export const SimulationCalendar = ({
           collisionPadding={12}
           aria-labelledby={titleId}
           aria-describedby={descriptionId}
-          className="z-50 w-[336px] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl border bg-popover p-3 text-size-small text-default shadow-xl outline-none"
+          className="map-overlay-theme map-overlay-surface map-overlay-popover z-50 w-[336px] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-xl p-3 text-size-small text-default shadow-xl outline-none"
           style={{ maxHeight: "var(--radix-popover-content-available-height)" }}
           onOpenAutoFocus={(event) => {
             if (!selectedDayRef.current) return;
@@ -274,7 +279,7 @@ export const SimulationCalendar = ({
                           className={clsx(
                             "flex min-h-11 w-full items-center justify-center rounded-lg border tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-40",
                             isSelected
-                              ? "bg-accent font-semibold text-white"
+                              ? "bg-accent font-semibold text-default-inverse"
                               : "hover:bg-base-hover",
                             !isSelected && day === today
                               ? "border-accent text-accent"

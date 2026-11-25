@@ -9,6 +9,8 @@ import type { Feature, FeatureCollection } from "geojson";
 import type { Style } from "mapbox-gl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setInitialState } from "src/__helpers__/state";
+import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
+import type { HydraulicModel } from "src/hydraulic-model";
 import { basemaps } from "src/map/basemaps";
 import { DEVICE_LOCATION_SOURCE_ID } from "src/map/device-location-overlay";
 import {
@@ -16,6 +18,7 @@ import {
   deviceLocationViewportRequestAtom,
 } from "src/state/device-location";
 import { layerConfigAtom, mapViewportAtom } from "src/state/map";
+import { mapPitchRequestAtom } from "src/state/map-view";
 import type { Store } from "src/state";
 import type { ILayerConfig } from "src/types";
 import type { MapTestEngine } from "./__helpers__/map-engine-mock";
@@ -208,6 +211,92 @@ describe("device location on the map", () => {
     expect(store.get(deviceLocationViewportRequestAtom)).toBeNull();
   });
 
+  it("tilts without rebuilding the network or applying a late automatic location", async () => {
+    const IDS = { J1: 1 };
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1)
+      .build();
+    const { map, store } = await mountMap(hydraulicModel);
+    await waitFor(() => {
+      expect(
+        (map.getSource("main-features")?.data as FeatureCollection).features,
+      ).toHaveLength(1);
+    });
+    const networkData = map.getSource("main-features")?.data;
+    const iconData = map.getSource("icons")?.data;
+    const viewport = store.get(mapViewportAtom);
+    const writeSource = vi.spyOn(map, "setSource");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "mapView.threeDLabel" }),
+    );
+
+    await waitFor(() => {
+      expect(map.map.easeTo).toHaveBeenCalledWith({ pitch: 60, duration: 450 });
+      expect(store.get(mapPitchRequestAtom)).toBeNull();
+    });
+    await resolvePosition();
+    await waitFor(() => expect(locationFeatures(map)).toHaveLength(1));
+
+    expect(map.map.easeTo).toHaveBeenCalledTimes(1);
+    expect(map.setStyle).toHaveBeenCalledTimes(1);
+    expect(map.getSource("main-features")?.data).toBe(networkData);
+    expect(map.getSource("icons")?.data).toBe(iconData);
+    expect(writeSource.mock.calls.map(([source]) => source)).not.toContain(
+      "main-features",
+    );
+    expect(store.get(mapViewportAtom)).toBe(viewport);
+    expect(store.get(deviceLocationViewportRequestAtom)).toBeNull();
+  });
+
+  it("returns from an observed manual tilt without recentering the map", async () => {
+    const { map, store } = await mountMap();
+    const button = screen.getByRole("button", {
+      name: "mapView.threeDLabel",
+    });
+    const pitchListener = map.map.on.mock.calls.find(
+      ([event]) => event === "pitch",
+    )?.[1] as (() => void) | undefined;
+    const pitchStartListener = map.map.on.mock.calls.find(
+      ([event]) => event === "pitchstart",
+    )?.[1] as (() => void) | undefined;
+    const pitchEndListener = map.map.on.mock.calls.find(
+      ([event]) => event === "pitchend",
+    )?.[1] as (() => void) | undefined;
+    expect(pitchListener).toBeTypeOf("function");
+    expect(pitchStartListener).toBeTypeOf("function");
+    expect(pitchEndListener).toBeTypeOf("function");
+
+    act(() => {
+      pitchStartListener?.();
+      map.map.getPitch.mockReturnValue(35);
+      pitchListener?.();
+    });
+
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(button).not.toBeDisabled();
+
+    act(() => pitchEndListener?.());
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(map.map.easeTo).toHaveBeenCalledWith({ pitch: 0, duration: 450 });
+      expect(store.get(mapPitchRequestAtom)).toBeNull();
+    });
+    expect(map.map.easeTo).toHaveBeenCalledTimes(1);
+    expect(button).toHaveAttribute("aria-pressed", "true");
+
+    act(() => {
+      map.map.getPitch.mockReturnValue(0);
+      pitchEndListener?.();
+    });
+
+    expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(map.setStyle).toHaveBeenCalledTimes(1);
+  });
+
   it("cancels initial centering when navigation occurs during style application", async () => {
     const { map, store } = await mountMap();
     const applyStyle = map.setStyle.getMockImplementation()!;
@@ -222,10 +311,7 @@ describe("device location on the map", () => {
     );
 
     await act(async () => {
-      store.set(
-        layerConfigAtom,
-        new Map([["basemap", layer(basemaps.streets)]]),
-      );
+      store.set(layerConfigAtom, new Map([["basemap", layer(basemaps.black)]]));
       success(position());
       await Promise.resolve();
     });
@@ -274,8 +360,11 @@ describe("device location on the map", () => {
   });
 });
 
-const mountMap = async (): Promise<{ map: MapTestEngine; store: Store }> => {
+const mountMap = async (
+  hydraulicModel?: HydraulicModel,
+): Promise<{ map: MapTestEngine; store: Store }> => {
   const store = setInitialState({
+    hydraulicModel,
     layerConfigs: new Map([["basemap", layer(basemaps.satellite)]]),
   });
   const map = await renderMap(store);
@@ -287,7 +376,7 @@ const mountMap = async (): Promise<{ map: MapTestEngine; store: Store }> => {
 };
 
 const layer = (
-  template: typeof basemaps.satellite | typeof basemaps.streets,
+  template: typeof basemaps.satellite | typeof basemaps.black,
 ): ILayerConfig => ({
   ...template,
   id: "basemap",

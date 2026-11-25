@@ -9,8 +9,9 @@ import { CustomMapControl, FIT_TO_EXTENT_ICON } from "@epanet-js/map";
 import type { Bbox } from "./types";
 import type { MapPreviewHandle } from "./use-map-preview";
 import { useTranslate } from "src/hooks/use-translate";
+import { defaultBasemap } from "src/map/basemaps";
 
-const BASEMAP_STYLE = "mapbox://styles/mapbox/light-v10";
+const BASEMAP_STYLE = defaultBasemap.url;
 
 const EMPTY_STYLE: mapboxgl.Style = {
   version: 8,
@@ -22,7 +23,7 @@ const EMPTY_STYLE: mapboxgl.Style = {
     {
       id: "background",
       type: "background",
-      paint: { "background-color": "#F5F5F5" },
+      paint: { "background-color": "#10151d" },
     },
   ],
 };
@@ -34,7 +35,7 @@ const NETWORK_LAYERS: mapboxgl.AnyLayer[] = [
     source: "network",
     filter: ["==", "$type", "LineString"],
     paint: {
-      "line-color": colors.indigo900,
+      "line-color": colors.blue500,
       "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.5, 16, 4],
     },
   },
@@ -202,8 +203,7 @@ export const MapPreview = ({
     }
 
     const source = map.getSource("network") as
-      | mapboxgl.GeoJSONSource
-      | undefined;
+      mapboxgl.GeoJSONSource | undefined;
     if (source) {
       source.setData(geoJSON ?? emptyFeatureCollection);
     }

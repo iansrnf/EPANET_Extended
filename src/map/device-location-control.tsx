@@ -33,7 +33,7 @@ export const DeviceLocationControl = ({ mapReady }: { mapReady: boolean }) => {
 
   return (
     <div
-      className="absolute bottom-[calc(var(--simulation-controls-height,0px)+2rem)] right-2 z-20 sm:bottom-[calc(var(--simulation-controls-height,0px)+4*var(--map-control-target-size)+5rem)]"
+      className="map-location-control map-overlay-theme absolute bottom-[calc(var(--simulation-controls-height,0px)+2rem)] right-2 z-20 sm:bottom-[calc(var(--simulation-controls-height,0px)+4*var(--map-control-target-size)+5rem)]"
       onKeyDown={(event) => event.stopPropagation()}
       onKeyPress={(event) => event.stopPropagation()}
       onKeyUp={(event) => event.stopPropagation()}
@@ -41,7 +41,13 @@ export const DeviceLocationControl = ({ mapReady }: { mapReady: boolean }) => {
       onDoubleClick={(event) => event.stopPropagation()}
     >
       <div className="mapboxgl-ctrl-group">
-        <Tooltip content={label} side="left" sideOffset={8}>
+        <Tooltip
+          content={label}
+          side="left"
+          sideOffset={8}
+          zIndex={50}
+          className="map-overlay-theme map-overlay-surface map-overlay-tooltip"
+        >
           <button
             ref={buttonRef}
             type="button"
@@ -78,7 +84,7 @@ export const DeviceLocationControl = ({ mapReady }: { mapReady: boolean }) => {
       {isLocating && (
         <p
           aria-hidden="true"
-          className="pointer-events-none absolute right-[calc(var(--map-control-target-size)+8px)] bottom-0 flex min-h-11 w-max max-w-[calc(100vw-6rem)] items-center rounded-xl border bg-popover px-3 py-2 text-size-small text-default shadow-lg"
+          className="map-overlay-surface map-overlay-popover pointer-events-none absolute right-[calc(var(--map-control-target-size)+8px)] bottom-0 flex min-h-11 w-max max-w-[calc(100vw-6rem)] items-center rounded-xl px-3 py-2 text-size-small text-default shadow-lg"
         >
           {translate("deviceLocation.locating")}
         </p>
@@ -86,7 +92,7 @@ export const DeviceLocationControl = ({ mapReady }: { mapReady: boolean }) => {
       {status === "error" && error && !errorDismissed && (
         <div
           role="alert"
-          className="absolute right-[calc(var(--map-control-target-size)+8px)] bottom-0 w-72 max-w-[calc(100vw-6rem)] rounded-xl border bg-popover p-3 text-size-small text-default shadow-lg"
+          className="map-overlay-surface map-overlay-popover absolute right-[calc(var(--map-control-target-size)+8px)] bottom-0 w-72 max-w-[calc(100vw-6rem)] rounded-xl p-3 text-size-small text-default shadow-lg"
         >
           <div className="flex items-start justify-between gap-2">
             <p className="py-2 font-semibold">

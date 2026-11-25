@@ -22,7 +22,10 @@ import { Checkbox } from "src/components/form/Checkbox";
 import { ColorRampSelector } from "src/components/color-ramp-selector";
 import { RangeColorRuleEditor } from "./range-color-rule-editor";
 import { NodeSizeField } from "./node-size-field";
-import { useOutsidePanelPlacement } from "./popover-placement";
+import {
+  useMapStylingPopoverClassName,
+  useOutsidePanelPlacement,
+} from "./popover-placement";
 import {
   StyledPopoverArrow,
   StyledPopoverContent,
@@ -92,7 +95,7 @@ export const MapStylingEditor = () => {
   const showZoneSymbology = zoneFeatures.length > 0;
 
   return (
-    <div className="flex-auto overflow-y-auto placemark-scrollbar ">
+    <div className="min-h-0 flex-auto overflow-y-auto placemark-scrollbar">
       <SectionList gap={1} padding={3}>
         <SymbologyEditor
           geometryType="node"
@@ -139,6 +142,7 @@ const SymbologyEditor = ({
   properties: readonly SupportedProperty[];
 }) => {
   const translate = useTranslate();
+  const popoverClassName = useMapStylingPopoverClassName();
   const readonly = useAtomValue(isPlayingAtom);
   const translateUnit = useTranslateUnit();
   const simulation = useAtomValue(simulationDerivedAtom);
@@ -317,6 +321,7 @@ const SymbologyEditor = ({
                 <ColorRampSelector
                   geometryType={geometryType}
                   readonly={readonly}
+                  contentClassName={popoverClassName}
                 />
               </InlineField>
             </>
@@ -345,6 +350,7 @@ const SymbologyEditor = ({
               color={defaultColor}
               onChange={handleDefaultColorChange}
               ariaLabel={`Default ${geometryType} color`}
+              contentClassName={popoverClassName}
               readonly={readonly}
             />
           </div>
@@ -439,6 +445,7 @@ const zoneRuleOptions = [{ label: "Label", value: "label" }];
 
 const ZoneSymbologySection = () => {
   const translate = useTranslate();
+  const popoverClassName = useMapStylingPopoverClassName();
   const userTracking = useUserTracking();
   const { zoneSymbology, updateZoneSymbology } = useSymbologyState();
 
@@ -512,7 +519,10 @@ const ZoneSymbologySection = () => {
           labelSize="sm"
           layout="fixed-label"
         >
-          <ColorRampSelector geometryType="zone" />
+          <ColorRampSelector
+            geometryType="zone"
+            contentClassName={popoverClassName}
+          />
         </InlineField>
       ) : (
         <InlineField
@@ -525,6 +535,7 @@ const ZoneSymbologySection = () => {
               color={zoneSymbology.defaults.color}
               onChange={handleDefaultColorChange}
               ariaLabel="Default zone color"
+              contentClassName={popoverClassName}
             />
           </div>
         </InlineField>
@@ -561,6 +572,7 @@ const RangeColorRuleEditorTrigger = ({
 }) => {
   const translate = useTranslate();
   const placement = useOutsidePanelPlacement();
+  const popoverClassName = useMapStylingPopoverClassName();
 
   return readonly ? (
     <TextField>
@@ -576,6 +588,7 @@ const RangeColorRuleEditorTrigger = ({
       <Popover.Portal>
         <StyledPopoverContent
           size="sm"
+          className={popoverClassName}
           onOpenAutoFocus={(e) => e.preventDefault()}
           side={placement.side}
           align="start"

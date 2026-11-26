@@ -118,18 +118,6 @@ export class FlowAnimation {
     this.pathGroups = [];
     this.pipes = [];
     this.maximumFlow = 0;
-    if (options.results) {
-      let maximum = this.flowMaximums.get(options.results);
-      if (maximum === undefined) {
-        maximum = 0;
-        for (const flow of options.results.getAllValues("flow")) {
-          if (Number.isFinite(flow))
-            maximum = Math.max(maximum, Math.abs(flow));
-        }
-        this.flowMaximums.set(options.results, maximum);
-      }
-      this.maximumFlow = maximum;
-    }
     if (this.canAnimate()) this.scheduleRefresh(0);
   }
 
@@ -178,6 +166,7 @@ export class FlowAnimation {
       !!this.context &&
       !!this.options?.enabled &&
       !!this.options.results &&
+      !(this.moving && this.terrainEnabled) &&
       !document.hidden &&
       (!this.motionPreference?.matches ||
         this.options.allowReducedMotion === true) &&
@@ -186,7 +175,9 @@ export class FlowAnimation {
   }
 
   private handleMoveStart = () => {
+    this.terrainEnabled = !!this.map.map.getTerrain();
     this.moving = true;
+    if (this.terrainEnabled) this.stop();
     this.handleMove();
   };
 
@@ -214,10 +205,14 @@ export class FlowAnimation {
   };
 
   private handleSourceData = (event: MapSourceDataEvent) => {
+    if (event.sourceId === TERRAIN_SOURCE_ID) {
+      this.projectionDirty = true;
+      if (event.isSourceLoaded && !this.pipes.length) this.scheduleRefresh();
+      return;
+    }
     if (
       event.sourceId === "main-features" ||
-      event.sourceId === "delta-features" ||
-      event.sourceId === TERRAIN_SOURCE_ID
+      event.sourceId === "delta-features"
     ) {
       this.scheduleRefresh();
     }
@@ -228,6 +223,10 @@ export class FlowAnimation {
     if (terrainEnabled === this.terrainEnabled) return;
     this.terrainEnabled = terrainEnabled;
     this.projectionDirty = true;
+    if (this.moving && terrainEnabled) {
+      this.stop();
+      return;
+    }
     this.scheduleRefresh();
   };
 
@@ -267,10 +266,24 @@ export class FlowAnimation {
     const features = this.map.queryRenderedFeatures(undefined, {
       layers: PIPE_LAYERS,
     });
+    if (features.length) this.refreshAfterRender = false;
     this.lastSourceRefresh = Date.now();
     if (this.moving && !features.length && this.pipes.length) {
       this.projectionDirty = true;
       return;
+    }
+    const results = this.options.results;
+    if (results) {
+      let maximum = this.flowMaximums.get(results);
+      if (maximum === undefined) {
+        maximum = 0;
+        for (const flow of results.getAllValues("flow")) {
+          if (Number.isFinite(flow))
+            maximum = Math.max(maximum, Math.abs(flow));
+        }
+        this.flowMaximums.set(results, maximum);
+      }
+      this.maximumFlow = maximum;
     }
     const ids = new Set<number>();
     const pipes: CachedFlowPipe[] = [];

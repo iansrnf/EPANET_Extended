@@ -254,6 +254,12 @@ describe("device location on the map", () => {
     const button = screen.getByRole("button", {
       name: "mapView.threeDLabel",
     });
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(map.map.easeTo).toHaveBeenCalledWith({ pitch: 60, duration: 450 });
+      expect(store.get(mapPitchRequestAtom)).toBeNull();
+    });
+    map.map.easeTo.mockClear();
     const pitchListener = map.map.on.mock.calls.find(
       ([event]) => event === "pitch",
     )?.[1] as (() => void) | undefined;
@@ -286,7 +292,7 @@ describe("device location on the map", () => {
       expect(store.get(mapPitchRequestAtom)).toBeNull();
     });
     expect(map.map.easeTo).toHaveBeenCalledTimes(1);
-    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(button).toHaveAttribute("aria-pressed", "false");
 
     act(() => {
       map.map.getPitch.mockReturnValue(0);

@@ -324,6 +324,12 @@ export function useNoneHandlers({
   };
 
   const handlers: Handlers = {
+    cancelPointerGesture: () => {
+      loggerInteractions.cancelPointerGesture();
+      resetMove();
+      resetCustomerPointMove();
+      setCursor("default");
+    },
     double: noop,
     down: (e) => {
       if (isUpdatingRef.current) return;

@@ -27,6 +27,11 @@ class MapTestEngine {
   private runtimeSources = new Map<string, mapboxgl.AnySourceData>();
   private runtimeLayers = new Map<string, mapboxgl.AnyLayer>();
   private terrain: { source: string; exaggeration?: number } | null = null;
+  private dragRotationEnabled = false;
+  private touchPitchEnabled = true;
+  private touchRotationEnabled = true;
+  private keyboardRotationEnabled = false;
+  private maximumPitch = 85;
   private features: Map<string, any[]> = new Map();
   private featureStates: Map<string, Map<string, FeatureState>> = new Map();
 
@@ -60,6 +65,47 @@ class MapTestEngine {
   }
 
   map = {
+    dragRotate: {
+      enable: vi.fn(() => {
+        this.dragRotationEnabled = true;
+      }),
+      disable: vi.fn(() => {
+        this.dragRotationEnabled = false;
+      }),
+      isEnabled: vi.fn(() => this.dragRotationEnabled),
+      isActive: vi.fn().mockReturnValue(false),
+    },
+    touchPitch: {
+      enable: vi.fn(() => {
+        this.touchPitchEnabled = true;
+      }),
+      disable: vi.fn(() => {
+        this.touchPitchEnabled = false;
+      }),
+      isEnabled: vi.fn(() => this.touchPitchEnabled),
+    },
+    touchZoomRotate: {
+      enableRotation: vi.fn(() => {
+        this.touchRotationEnabled = true;
+      }),
+      disableRotation: vi.fn(() => {
+        this.touchRotationEnabled = false;
+      }),
+      isRotationEnabled: vi.fn(() => this.touchRotationEnabled),
+    },
+    keyboard: {
+      enableRotation: vi.fn(() => {
+        this.keyboardRotationEnabled = true;
+      }),
+      disableRotation: vi.fn(() => {
+        this.keyboardRotationEnabled = false;
+      }),
+      isRotationEnabled: vi.fn(() => this.keyboardRotationEnabled),
+    },
+    setMaxPitch: vi.fn((pitch: number) => {
+      this.maximumPitch = pitch;
+    }),
+    getMaxPitch: vi.fn(() => this.maximumPitch),
     getSource: (name: string): mapboxgl.AnySourceData | null =>
       this.runtimeSources.get(name) || this.sources.get(name) || null,
     on: vi.fn(),
@@ -118,7 +164,23 @@ class MapTestEngine {
       const sourceStates = this.featureStates.get(source.source);
       return sourceStates?.get(source.id) || {};
     },
-    setLayoutProperty: vi.fn(),
+    setLayoutProperty: vi.fn(
+      (name: string, property: string, value: unknown) => {
+        const layer = this.runtimeLayers.get(name);
+        if (layer && layer.type !== "custom") {
+          layer.layout = {
+            ...layer.layout,
+            [property]: value,
+          } as typeof layer.layout;
+        }
+      },
+    ),
+    getLayoutProperty: vi.fn((name: string, property: string): unknown => {
+      const layer = this.runtimeLayers.get(name);
+      if (!layer || layer.type === "custom") return undefined;
+      const layout = layer.layout as Record<string, unknown> | undefined;
+      return layout?.[property];
+    }),
     getLayer: vi.fn((name: string) => this.runtimeLayers.get(name)),
     queryRenderedFeatures: vi.fn(),
     remove: vi.fn(),

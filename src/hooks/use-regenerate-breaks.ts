@@ -16,6 +16,7 @@ import {
   simulationResultsDerivedAtom,
 } from "src/state/derived-branch-state";
 import { useSymbologyState } from "src/state/map-symbology";
+import { projectSettingsAtom } from "src/state/project-settings";
 
 export type RegenerateResult = {
   colorRule: RangeColorRule;
@@ -27,6 +28,7 @@ export const useRegenerateBreaks = (geometryType: "node" | "link") => {
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
   const simulationResults = useAtomValue(simulationResultsDerivedAtom);
   const simulation = useAtomValue(simulationDerivedAtom);
+  const { units } = useAtomValue(projectSettingsAtom);
   const { nodeSymbology, linkSymbology } = useSymbologyState();
 
   const [isWorking, setIsWorking] = useState(false);
@@ -63,7 +65,10 @@ export const useRegenerateBreaks = (geometryType: "node" | "link") => {
           const data = await getSortedSimulationDataForBreaks(
             currentRule.property,
             { mode: "initial", epsReader, resultsReader: simulationResults },
-            { absValues: Boolean(currentRule.absValues) },
+            {
+              absValues: Boolean(currentRule.absValues),
+              pressureUnit: units.pressure,
+            },
           );
           return data ? applyMode(currentRule, currentRule.mode, data) : null;
         } finally {
@@ -75,11 +80,20 @@ export const useRegenerateBreaks = (geometryType: "node" | "link") => {
         currentRule.property,
         hydraulicModel,
         simulationResults,
-        { absValues: Boolean(currentRule.absValues) },
+        {
+          absValues: Boolean(currentRule.absValues),
+          pressureUnit: units.pressure,
+        },
       );
       return applyMode(currentRule, currentRule.mode, data);
     },
-    [userTracking, simulation, simulationResults, hydraulicModel],
+    [
+      userTracking,
+      simulation,
+      simulationResults,
+      hydraulicModel,
+      units.pressure,
+    ],
   );
 
   const regenerateFromCurrentStep = useCallback(
@@ -97,7 +111,10 @@ export const useRegenerateBreaks = (geometryType: "node" | "link") => {
         const data = await getSortedSimulationDataForBreaks(
           currentRule.property,
           { mode: "currentStep", resultsReader: simulationResults },
-          { absValues: Boolean(currentRule.absValues) },
+          {
+            absValues: Boolean(currentRule.absValues),
+            pressureUnit: units.pressure,
+          },
         );
         if (!data) return null;
         return applyMode(currentRule, currentRule.mode, data);
@@ -105,7 +122,7 @@ export const useRegenerateBreaks = (geometryType: "node" | "link") => {
         setIsWorking(false);
       }
     },
-    [userTracking, simulationResults],
+    [userTracking, simulationResults, units.pressure],
   );
 
   const regenerateFromAllData = useCallback(
@@ -129,14 +146,17 @@ export const useRegenerateBreaks = (geometryType: "node" | "link") => {
         const data = await getSortedSimulationDataForBreaks(
           currentRule.property,
           { mode: "allSteps", epsReader, resultsReader: simulationResults },
-          { absValues: Boolean(currentRule.absValues) },
+          {
+            absValues: Boolean(currentRule.absValues),
+            pressureUnit: units.pressure,
+          },
         );
         return data ? applyMode(currentRule, currentRule.mode, data) : null;
       } finally {
         setIsWorking(false);
       }
     },
-    [simulation, simulationResults, userTracking],
+    [simulation, simulationResults, userTracking, units.pressure],
   );
 
   return {

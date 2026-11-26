@@ -44,6 +44,7 @@ import {
   ChevronDownIcon,
 } from "src/icons";
 import { useMapStylingPopoverClassName } from "./popover-placement";
+import { projectSettingsAtom } from "src/state/project-settings";
 
 type ErrorType = "rampShouldBeAscending" | "notEnoughData";
 
@@ -551,6 +552,7 @@ const DebugHistogram = ({ colorRule }: { colorRule: RangeColorRule }) => {
   const isEnabled = useFeatureFlag("FLAG_DEBUG_HISTOGRAM");
   const hydraulicModel = useAtomValue(stagingModelDerivedAtom);
   const simulationResults = useAtomValue(simulationResultsDerivedAtom);
+  const { units } = useAtomValue(projectSettingsAtom);
 
   const sortedData = useMemo(
     () =>
@@ -558,13 +560,17 @@ const DebugHistogram = ({ colorRule }: { colorRule: RangeColorRule }) => {
         colorRule.property,
         hydraulicModel,
         simulationResults,
-        { absValues: Boolean(colorRule.absValues) },
+        {
+          absValues: Boolean(colorRule.absValues),
+          pressureUnit: units.pressure,
+        },
       ),
     [
       colorRule.property,
       colorRule.absValues,
       hydraulicModel,
       simulationResults,
+      units.pressure,
     ],
   );
 

@@ -49,7 +49,7 @@ export const useChangeColorBy = (geometryType: "node" | "link") => {
           const sorted = await getSortedSimulationDataForBreaks(
             property,
             { mode: "initial", epsReader },
-            { absValues },
+            { absValues, pressureUnit: units.pressure },
           );
           if (sorted) return sorted;
         }
@@ -59,10 +59,10 @@ export const useChangeColorBy = (geometryType: "node" | "link") => {
         property,
         hydraulicModel,
         simulationResults,
-        { absValues },
+        { absValues, pressureUnit: units.pressure },
       );
     },
-    [hydraulicModel, simulationResults, simulation],
+    [hydraulicModel, simulationResults, simulation, units.pressure],
   );
 
   const changeColorBy = useCallback(

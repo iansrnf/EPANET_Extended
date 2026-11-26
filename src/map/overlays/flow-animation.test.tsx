@@ -303,6 +303,101 @@ describe("flow animation", () => {
     expect(fixture.getAllValues).toHaveBeenCalledTimes(1);
   });
 
+  it("defers flow work during a terrain camera move and resumes the latest results once", () => {
+    const fixture = createFixture();
+    fixture.animation.update(fixture.options);
+    vi.advanceTimersByTime(0);
+    fixture.renderFrame(0);
+    fixture.getTerrain.mockReturnValue({ source: TERRAIN_SOURCE_ID });
+    fixture.emit("movestart");
+    fixture.queryRenderedFeatures.mockClear();
+    fixture.project.mockClear();
+    fixture.context.stroke.mockClear();
+    fixture.context.clearRect.mockClear();
+    const nextGetAllValues = vi.fn(() => new Float32Array([10]));
+    const nextGetPipe = vi.fn(() => ({ flow: 10, status: "open" }));
+    fixture.animation.update({
+      ...fixture.options,
+      results: {
+        getPipe: nextGetPipe,
+        getAllValues: nextGetAllValues,
+      } as unknown as ResultsReader,
+    });
+
+    for (let frame = 0; frame < 10; frame++) {
+      fixture.emit("move");
+      fixture.emit("sourcedata", { sourceId: "main-features" });
+      fixture.emit("sourcedata", {
+        sourceId: TERRAIN_SOURCE_ID,
+        isSourceLoaded: frame === 9,
+      });
+      fixture.emit("render");
+      vi.advanceTimersByTime(50);
+      fixture.renderFrame(frame * 50);
+    }
+
+    expect(fixture.context.clearRect).toHaveBeenCalled();
+    expect(fixture.context.stroke).not.toHaveBeenCalled();
+    expect(fixture.frames.size).toBe(0);
+    expect(fixture.queryRenderedFeatures).not.toHaveBeenCalled();
+    expect(fixture.project).not.toHaveBeenCalled();
+    expect(nextGetAllValues).not.toHaveBeenCalled();
+    expect(nextGetPipe).not.toHaveBeenCalled();
+
+    fixture.emit("moveend");
+    vi.advanceTimersByTime(0);
+    fixture.renderFrame(500);
+    fixture.emit("render");
+    vi.advanceTimersByTime(100);
+
+    expect(fixture.queryRenderedFeatures).toHaveBeenCalledTimes(1);
+    expect(nextGetAllValues).toHaveBeenCalledTimes(1);
+    expect(nextGetPipe).toHaveBeenCalledTimes(1);
+    expect(fixture.project).toHaveBeenCalled();
+    expect(fixture.context.stroke).toHaveBeenCalled();
+    expect(fixture.frames.size).toBe(1);
+
+    fixture.emit("movestart");
+    fixture.emit("remove");
+    fixture.emit("moveend");
+    fixture.emit("sourcedata", { sourceId: TERRAIN_SOURCE_ID });
+    vi.advanceTimersByTime(1000);
+    expect(fixture.frames.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+    expect([...fixture.listeners.values()].every((set) => set.size === 0)).toBe(
+      true,
+    );
+  });
+
+  it("suspends an active 2D camera animation as soon as terrain is enabled", () => {
+    const fixture = createFixture();
+    fixture.animation.update(fixture.options);
+    vi.advanceTimersByTime(0);
+    fixture.renderFrame(0);
+    fixture.emit("movestart");
+    expect(fixture.frames.size).toBe(1);
+    fixture.queryRenderedFeatures.mockClear();
+    fixture.project.mockClear();
+
+    fixture.getTerrain.mockReturnValue({ source: TERRAIN_SOURCE_ID });
+    fixture.emit("styledata");
+    fixture.emit("move");
+    fixture.emit("render");
+    vi.advanceTimersByTime(500);
+    fixture.renderFrame(500);
+
+    expect(fixture.frames.size).toBe(0);
+    expect(fixture.queryRenderedFeatures).not.toHaveBeenCalled();
+    expect(fixture.project).not.toHaveBeenCalled();
+
+    fixture.emit("moveend");
+    vi.advanceTimersByTime(0);
+    fixture.renderFrame(600);
+    fixture.emit("render");
+    expect(fixture.queryRenderedFeatures).toHaveBeenCalledTimes(1);
+    expect(fixture.frames.size).toBe(1);
+  });
+
   it("realigns water after terrain loads or switches off without camera movement", () => {
     const fixture = createFixture();
     const scan = vi.spyOn(fixture.assets, "values").mockImplementation(() => {
@@ -317,12 +412,19 @@ describe("flow animation", () => {
 
     fixture.projection.offsetY = 15;
     fixture.emit("sourcedata", { sourceId: TERRAIN_SOURCE_ID });
+    fixture.emit("sourcedata", { sourceId: TERRAIN_SOURCE_ID });
+    fixture.emit("sourcedata", {
+      sourceId: TERRAIN_SOURCE_ID,
+      isSourceLoaded: true,
+    });
     vi.advanceTimersByTime(80);
     fixture.renderFrame(100);
 
     expect(fixture.context.moveTo.mock.calls.some(([, y]) => y === 65)).toBe(
       true,
     );
+    expect(fixture.queryRenderedFeatures).toHaveBeenCalledTimes(1);
+    expect(fixture.getPipe).toHaveBeenCalledTimes(1);
     fixture.context.moveTo.mockClear();
     fixture.projection.offsetY = 0;
     fixture.getTerrain.mockReturnValue(null);
@@ -334,7 +436,7 @@ describe("flow animation", () => {
     expect(fixture.context.moveTo.mock.calls.some(([, y]) => y === 50)).toBe(
       true,
     );
-    expect(fixture.queryRenderedFeatures).toHaveBeenCalledTimes(3);
+    expect(fixture.queryRenderedFeatures).toHaveBeenCalledTimes(2);
     expect(fixture.getAllValues).toHaveBeenCalledTimes(1);
     expect(scan).not.toHaveBeenCalled();
   });

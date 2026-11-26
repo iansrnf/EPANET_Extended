@@ -19,9 +19,10 @@ import {
 import type { Unit } from "@epanet-js/quantity";
 import {
   defaultProjectName,
+  defaultProjectProjection,
   ProjectSettings,
 } from "@epanet-js/project-settings";
-import { type Projection, WGS84 } from "@epanet-js/projections";
+import { type Projection, WGS84, WEB_MERCATOR } from "@epanet-js/projections";
 import { HeadlossFormula, headlossFormulas } from "src/hydraulic-model";
 import { headlossFormulasFullNames } from "@epanet-js/hydraulic-model";
 import { useTranslate } from "src/hooks/use-translate";
@@ -51,15 +52,25 @@ import {
   type LocationData,
 } from "../components/form/location-search";
 
-type ProjectionOption = { id: string; name: string };
-const XY_GRID_OPTION: ProjectionOption = { id: "xy-grid", name: "XY Grid" };
+const XY_GRID_CENTER: [number, number] = [0, 0];
+const XY_GRID_OPTION: Projection = {
+  type: "xy-grid",
+  id: "xy-grid",
+  name: "XY Grid",
+  centroid: XY_GRID_CENTER,
+};
+const projectedProjections = [defaultProjectProjection, WEB_MERCATOR, WGS84];
+const projectedProjectionOptions = projectedProjections.map((projection) => ({
+  label: `${projection.type === "wgs84" ? "EPSG:4326" : projection.id} — ${projection.name}`,
+  value: projection.id,
+}));
 
 type SubmitProps = {
   unitsSpec: keyof Presets;
   headlossFormula: HeadlossFormula;
   pressureUnit?: Unit;
   location?: LocationData;
-  projection: ProjectionOption;
+  projection: Projection;
 };
 
 export const CreateNew = () => {
@@ -114,7 +125,7 @@ export const CreateNew = () => {
         defaults,
         headlossFormula,
         formatting: { decimals: spec.decimals, defaultDecimals: 3 },
-        projection: buildNewProjection(projection),
+        projection,
       };
       setGridPreview(false);
       setGridHidden(false);
@@ -182,7 +193,7 @@ export const CreateNew = () => {
               unitsSpec: "LPS",
               headlossFormula: "H-W",
               location: undefined,
-              projection: WGS84,
+              projection: defaultProjectProjection,
             } as SubmitProps
           }
         >
@@ -401,8 +412,8 @@ const ProjectionSelector = ({
   selected,
   onChange,
 }: {
-  selected: ProjectionOption;
-  onChange: (projection: ProjectionOption) => void;
+  selected: Projection;
+  onChange: (projection: Projection) => void;
 }) => {
   const translate = useTranslate();
 
@@ -414,10 +425,14 @@ const ProjectionSelector = ({
       <div className="grid grid-cols-2 gap-3">
         <button
           type="button"
-          onClick={() => onChange(WGS84)}
+          onClick={() =>
+            onChange(
+              selected.type === "xy-grid" ? defaultProjectProjection : selected,
+            )
+          }
           className={clsx(
             projectionCardBase,
-            selected.id === "wgs84"
+            selected.type !== "xy-grid"
               ? projectionCardSelected
               : projectionCardUnselected,
           )}
@@ -452,27 +467,29 @@ const ProjectionSelector = ({
           </div>
         </button>
       </div>
+      {selected.type !== "xy-grid" && (
+        <div className="mt-3">
+          <Selector
+            options={projectedProjectionOptions}
+            selected={selected.id}
+            onChange={(id) => {
+              const projection = projectedProjections.find((p) => p.id === id);
+              if (projection) onChange(projection);
+            }}
+            ariaLabel={translate("projection")}
+          />
+        </div>
+      )}
     </div>
   );
 };
 
-const XY_GRID_CENTER: [number, number] = [0, 0];
 const XY_GRID_ZOOM = 15;
 const DEFAULT_MAP_ZOOM = 15.5;
 
-const buildNewProjection = (option: ProjectionOption): Projection =>
-  option.id === "xy-grid"
-    ? {
-        type: "xy-grid",
-        id: "xy-grid",
-        name: "XY Grid",
-        centroid: XY_GRID_CENTER,
-      }
-    : WGS84;
-
 const centerMapForNewProject = (
   map: MapEngine,
-  projection: ProjectionOption,
+  projection: Projection,
   location?: LocationData,
 ) => {
   if (projection.id === "xy-grid") {

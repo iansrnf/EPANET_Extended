@@ -7,6 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { Provider } from "jotai";
+import mapboxgl from "mapbox-gl";
 import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { moveNode } from "@epanet-js/hydraulic-model-operations";
 import type { Logger } from "@epanet-js/project-settings";
@@ -29,9 +30,11 @@ import {
   LOGGER_LAYER_ID,
   LOGGER_PRESSURE_LAYER_ID,
 } from "src/map/overlays/loggers";
-import { loggerReadingsAtom } from "src/state/logger-stream";
+import { loggerReadingsAtom, loggerStreamsAtom } from "src/state/logger-stream";
+import { getLoggerStreamManager } from "src/commands/logger-stream";
+import { cursorStyleAtom } from "src/state/map";
 import { localeAtom } from "src/state/locale";
-import type { LoggerReading } from "src/lib/logger-stream";
+import type { LoggerReading, LoggerSocket } from "src/lib/logger-stream";
 import { renderMap } from "./__helpers__/map";
 import {
   fireMapClick,
@@ -63,11 +66,57 @@ const logger: Logger = {
   connection: null,
 };
 
+const streamStores = new Set<ReturnType<typeof setInitialState>>();
+const loadStreamConfig = vi.fn(() =>
+  Promise.resolve({
+    ok: true,
+    json: () => Promise.resolve({ url: "wss://example.com/stream" }),
+  }),
+);
+
+class FakeSocket implements LoggerSocket {
+  static sockets: FakeSocket[] = [];
+  onopen: LoggerSocket["onopen"] = null;
+  onmessage: LoggerSocket["onmessage"] = null;
+  onerror: LoggerSocket["onerror"] = null;
+  onclose: LoggerSocket["onclose"] = null;
+  close = vi.fn();
+
+  constructor(public readonly url: string) {
+    FakeSocket.sockets.push(this);
+  }
+
+  receivePressure(pressure: number, timestamp: string) {
+    this.onmessage?.(
+      new MessageEvent("message", {
+        data: JSON.stringify({
+          deviceId: "L1",
+          type: "pressure",
+          timestamp,
+          pressure,
+        }),
+      }),
+    );
+  }
+}
+
+beforeEach(() => {
+  FakeSocket.sockets = [];
+  loadStreamConfig.mockClear();
+  vi.stubGlobal("fetch", loadStreamConfig);
+  vi.stubGlobal("WebSocket", FakeSocket);
+});
+
 afterEach(() => {
+  act(() => {
+    for (const store of streamStores) getLoggerStreamManager(store).clear();
+  });
+  streamStores.clear();
   cleanup();
   sessionStorage.removeItem("locale");
   isEditionBlocked = false;
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("loggers on the map", () => {
@@ -395,6 +444,7 @@ describe("loggers on the map", () => {
 
   it("draws and selects a logger without adding hydraulic assets or customers", async () => {
     const store = setInitialState({ mode: Mode.DRAW_LOGGER });
+    streamStores.add(store);
     const map = await renderMap(store);
 
     await fireMapMove(map, { lng: 3, lat: 4 });
@@ -407,6 +457,9 @@ describe("loggers on the map", () => {
     const [created] = store.get(loggersAtom);
     expect(created.coordinates).toEqual([3, 4]);
     expect(store.get(selectedLoggerIdAtom)).toBe(created.id);
+    expect(created.connection).toBeNull();
+    expect(store.get(modeAtom).mode).toBe(Mode.NONE);
+    expect(store.get(loggerStreamsAtom).get(created.id)?.isRunning).toBe(true);
     expect(store.get(stagingModelDerivedAtom).assets.size).toBe(0);
     expect(store.get(stagingModelDerivedAtom).customerPoints.size).toBe(0);
     await waitFor(() =>
@@ -414,6 +467,81 @@ describe("loggers on the map", () => {
         expect.objectContaining({ id: created.id, coordinates: [3, 4] }),
       ),
     );
+  });
+
+  it("places once, connects the nearest junction and keeps live readings in Select mode", async () => {
+    const IDS = { NEAR: 1, FAR: 2, TANK: 3 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.FAR, { coordinates: [10, 0] })
+      .aJunction(IDS.NEAR, { coordinates: [2, 3] })
+      .aTank(IDS.TANK, { coordinates: [3, 4] })
+      .build();
+    const store = setInitialState({ hydraulicModel, mode: Mode.DRAW_LOGGER });
+    streamStores.add(store);
+    const map = await renderMap(store);
+    await fireMapMove(map, { lng: 3, lat: 4 });
+    const placementHandler = map.handlers.current.onClick;
+    const event = {
+      lngLat: new mapboxgl.LngLat(3, 4),
+      point: new mapboxgl.Point(300, 400),
+      originalEvent: new MouseEvent("click"),
+      target: map.map,
+      type: "click",
+      defaultPrevented: false,
+    } as unknown as Parameters<typeof placementHandler>[0];
+
+    await act(async () => {
+      placementHandler(event);
+      placementHandler(event);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(FakeSocket.sockets).toHaveLength(1));
+    const [created] = store.get(loggersAtom);
+    expect(store.get(loggersAtom)).toHaveLength(1);
+    expect(created.connection).toEqual({
+      assetId: IDS.NEAR,
+      snapPoint: [2, 3],
+    });
+    expect(store.get(selectedLoggerIdAtom)).toBe(created.id);
+    expect(store.get(modeAtom).mode).toBe(Mode.NONE);
+    expect(store.get(loggerPreviewAtom)).toBeNull();
+    expect(store.get(cursorStyleAtom)).toBe("default");
+    expect(store.get(stagingModelDerivedAtom)).toBe(hydraulicModel);
+    await waitFor(() =>
+      expect(overlayData(map, "logger-connections-layer")).toContainEqual(
+        expect.objectContaining({ source: [3, 4], target: [2, 3] }),
+      ),
+    );
+    expect(store.get(loggerStreamsAtom).get(created.id)).toMatchObject({
+      deviceId: "L1",
+      isRunning: true,
+    });
+    const socket = FakeSocket.sockets[0];
+    expect(socket.url).toBe("wss://example.com/stream?deviceId=L1");
+    act(() => {
+      socket.onopen?.(new Event("open"));
+      socket.receivePressure(12.5, "2026-11-26T13:23:34");
+    });
+    await waitFor(() =>
+      expect(overlayData(map, LOGGER_PRESSURE_LAYER_ID)).toContainEqual(
+        expect.objectContaining({ text: "12.5 psi" }),
+      ),
+    );
+
+    act(() => placementHandler(event));
+    await fireMapClick(map, { lng: 20, lat: 20 });
+    act(() => socket.receivePressure(13, "2026-11-26T13:23:35"));
+
+    await waitFor(() =>
+      expect(overlayData(map, LOGGER_PRESSURE_LAYER_ID)).toContainEqual(
+        expect.objectContaining({ text: "13 psi" }),
+      ),
+    );
+    expect(store.get(modeAtom).mode).toBe(Mode.NONE);
+    expect(store.get(loggersAtom)).toHaveLength(1);
+    expect(loadStreamConfig).toHaveBeenCalledOnce();
+    expect(FakeSocket.sockets).toHaveLength(1);
+    expect(socket.close).not.toHaveBeenCalled();
   });
 
   it("reselects a logger and moves it after a significant drag", async () => {
@@ -606,11 +734,16 @@ describe("loggers on the map", () => {
   it("does not place loggers when editing is blocked", async () => {
     isEditionBlocked = true;
     const store = setInitialState({ mode: Mode.DRAW_LOGGER });
+    streamStores.add(store);
     const map = await renderMap(store);
 
     await fireMapClick(map, { lng: 3, lat: 4 });
 
     expect(store.get(loggersAtom)).toHaveLength(0);
+    expect(store.get(modeAtom).mode).toBe(Mode.DRAW_LOGGER);
+    expect(store.get(loggerStreamsAtom).size).toBe(0);
+    expect(loadStreamConfig).not.toHaveBeenCalled();
+    expect(FakeSocket.sockets).toHaveLength(0);
   });
 });
 

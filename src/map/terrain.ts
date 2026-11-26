@@ -9,7 +9,10 @@ export const updateTerrain = (map: MapEngine, enabled: boolean) => {
   const renderer = map.map;
   if (!enabled) {
     if (renderer.getTerrain()) renderer.setTerrain(null);
-    if (renderer.getLayer(TERRAIN_LAYER_ID)) {
+    if (
+      renderer.getLayer(TERRAIN_LAYER_ID) &&
+      renderer.getLayoutProperty(TERRAIN_LAYER_ID, "visibility") !== "none"
+    ) {
       renderer.setLayoutProperty(TERRAIN_LAYER_ID, "visibility", "none");
     }
     return;
@@ -39,9 +42,14 @@ export const updateTerrain = (map: MapEngine, enabled: boolean) => {
       },
       "grid-minor",
     );
-  } else {
+  } else if (
+    renderer.getLayoutProperty(TERRAIN_LAYER_ID, "visibility") === "none"
+  ) {
     renderer.setLayoutProperty(TERRAIN_LAYER_ID, "visibility", "visible");
   }
 
-  renderer.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: 1.5 });
+  const terrain = renderer.getTerrain();
+  if (terrain?.source !== TERRAIN_SOURCE_ID || terrain.exaggeration !== 1.5) {
+    renderer.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: 1.5 });
+  }
 };

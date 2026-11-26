@@ -10,8 +10,10 @@ import {
   currentMapPitchAtom,
   isMap3DAtom,
   map3DBusyAtom,
+  map3DFlatteningAtom,
   mapPitchRequestAtom,
   mapPitchTransitioningAtom,
+  mapTerrainEnabledAtom,
 } from "src/state/map-view";
 import { toggleMap3D } from "./toggle-map-3d";
 
@@ -19,13 +21,16 @@ const IDS = { JUNCTION: 1, CUSTOMER: 2, ZONE: 3 };
 
 describe("toggleMap3D", () => {
   it.each([
-    { currentPitch: 0, targetPitch: 60 },
-    { currentPitch: 1, targetPitch: 60 },
-    { currentPitch: 45, targetPitch: 0 },
+    { enabled: false, currentPitch: 0, targetPitch: 60, flattening: false },
+    { enabled: false, currentPitch: 1, targetPitch: 60, flattening: false },
+    { enabled: false, currentPitch: 45, targetPitch: 60, flattening: false },
+    { enabled: true, currentPitch: 0, targetPitch: 0, flattening: false },
+    { enabled: true, currentPitch: 45, targetPitch: 0, flattening: true },
   ])(
-    "toggles from pitch $currentPitch to $targetPitch",
-    ({ currentPitch, targetPitch }) => {
+    "toggles explicit mode $enabled at pitch $currentPitch to $targetPitch",
+    ({ enabled, currentPitch, targetPitch, flattening }) => {
       const store = createStore();
+      store.set(isMap3DAtom, enabled);
       store.set(currentMapPitchAtom, currentPitch);
 
       toggleMap3D(store.get, store.set);
@@ -35,8 +40,32 @@ describe("toggleMap3D", () => {
         duration: 450,
       });
       expect(store.get(currentMapPitchAtom)).toBe(currentPitch);
-      expect(store.get(isMap3DAtom)).toBe(currentPitch > 1);
+      expect(store.get(isMap3DAtom)).toBe(!enabled);
+      expect(store.get(map3DFlatteningAtom)).toBe(flattening);
+      expect(store.get(mapTerrainEnabledAtom)).toBe(!enabled || flattening);
       expect(store.get(map3DBusyAtom)).toBe(true);
+    },
+  );
+
+  it.each([0, 35])(
+    "keeps 2D camera events at pitch %d from enabling 3D",
+    (pitch) => {
+      const store = createStore();
+      store.set(currentMapPitchAtom, pitch);
+      store.set(mapPitchTransitioningAtom, true);
+
+      expect(store.get(isMap3DAtom)).toBe(false);
+      expect(store.get(mapTerrainEnabledAtom)).toBe(false);
+      expect(store.get(map3DBusyAtom)).toBe(false);
+
+      toggleMap3D(store.get, store.set);
+
+      expect(store.get(isMap3DAtom)).toBe(true);
+      expect(store.get(mapTerrainEnabledAtom)).toBe(true);
+      expect(store.get(mapPitchRequestAtom)).toEqual({
+        pitch: 60,
+        duration: 450,
+      });
     },
   );
 
@@ -68,14 +97,18 @@ describe("toggleMap3D", () => {
     expect(store.get(deviceLocationNavigationRevisionAtom)).toBe(5);
   });
 
-  it.each(["queued", "transitioning"])(
+  it.each(["queued", "transitioning", "flattening"])(
     "ignores repeat toggles while %s",
     (phase) => {
       const store = createStore();
       const pendingRequest = { pitch: 60, duration: 450 };
       if (phase === "queued") {
         store.set(mapPitchRequestAtom, pendingRequest);
+      } else if (phase === "flattening") {
+        store.set(map3DFlatteningAtom, true);
+        store.set(mapPitchTransitioningAtom, true);
       } else {
+        store.set(isMap3DAtom, true);
         store.set(mapPitchTransitioningAtom, true);
       }
       store.set(hoveredAssetIdAtom, IDS.JUNCTION);

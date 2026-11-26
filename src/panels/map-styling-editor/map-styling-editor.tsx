@@ -50,6 +50,11 @@ import { ElevationsEditor } from "./elevations-editor";
 import { ProjectionSection } from "./projection-section";
 import { TextField } from "src/components/form/text-field";
 import { zoneFeaturesAtom } from "src/state/zone-features";
+import {
+  isPsiPressureProperty,
+  pressurePropertyFor,
+  symbologyUnitFor,
+} from "src/map/symbology/pressure-properties";
 
 const colorPropertyLabelFor = (
   property: string,
@@ -174,21 +179,24 @@ const SymbologyEditor = ({
   const { changeColorBy } = useChangeColorBy(geometryType);
 
   const colorByOptions = useMemo(() => {
-    const unitKeyFor = (type: SupportedProperty): keyof typeof units => {
-      if (type === "minPressure" || type === "maxPressure") return "pressure";
-      return type as keyof typeof units;
-    };
     return properties
+      .filter(
+        (type) => units.pressure !== "psi" || !isPsiPressureProperty(type),
+      )
       .map((type) => {
-        const unit = units[unitKeyFor(type)] ?? null;
-        const isSimProp = simulationProperties.includes(type);
+        const unit = symbologyUnitFor(type, units);
+        const pressureProperty = pressurePropertyFor(type);
+        const isSimProp = simulationProperties.includes(
+          pressureProperty ?? type,
+        );
         const label = `${colorPropertyLabelFor(type, translate)} ${unit ? `(${translateUnit(unit)})` : ""}`;
         return {
           value: type,
           label,
           disabled:
             (!hasCompletedSimulation && isSimProp) ||
-            ((type === "minPressure" || type === "maxPressure") &&
+            ((pressureProperty === "minPressure" ||
+              pressureProperty === "maxPressure") &&
               !isEpsSimulation) ||
             (type === "waterAge" && !hasWaterAge) ||
             (type === "waterTrace" && !hasWaterTrace) ||

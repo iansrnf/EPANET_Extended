@@ -52,6 +52,7 @@ export const useLoggerInteractions = ({
   };
 
   return {
+    cancelPointerGesture: resetDrag,
     click: (event: MapEvent): boolean => {
       const logger = pickLogger(event);
       if (!logger) return false;

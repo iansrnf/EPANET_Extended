@@ -3,11 +3,98 @@ import type { Logger } from "@epanet-js/project-settings";
 import {
   isLoggerLabelAvailable,
   nextLoggerLabel,
+  nearestLoggerJunctionConnection,
   resolveLoggerConnection,
   transformLoggersCoordinates,
 } from "./loggers";
 
 describe("loggers", () => {
+  it("chooses the nearest junction even when closer assets have other types", () => {
+    const IDS = { J1: 1, J2: 2, P1: 3, T1: 4, R1: 5 } as const;
+    const model = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [0, 0.02], isActive: false })
+      .aJunction(IDS.J2, { coordinates: [0.03, 0] })
+      .aPipe(IDS.P1, { startNodeId: IDS.J1, endNodeId: IDS.J2 })
+      .aTank(IDS.T1, { coordinates: [0, 0.001] })
+      .aReservoir(IDS.R1, { coordinates: [0.001, 0] })
+      .build();
+
+    expect(nearestLoggerJunctionConnection(model.assets, [0, 0])).toEqual({
+      assetId: IDS.J1,
+      snapPoint: [0, 0.02],
+    });
+  });
+
+  it("accounts for latitude when comparing junction distances", () => {
+    const IDS = { EAST: 1, NORTH: 2 } as const;
+    const model = HydraulicModelBuilder.with()
+      .aJunction(IDS.EAST, { coordinates: [0.02, 60] })
+      .aJunction(IDS.NORTH, { coordinates: [0, 60.015] })
+      .build();
+
+    expect(nearestLoggerJunctionConnection(model.assets, [0, 60])).toEqual({
+      assetId: IDS.EAST,
+      snapPoint: [0.02, 60],
+    });
+  });
+
+  it("resolves equally near junctions by ID rather than insertion order", () => {
+    const IDS = { FIRST: 1, SECOND: 2 } as const;
+    const model = HydraulicModelBuilder.with()
+      .aJunction(IDS.SECOND, { coordinates: [-0.01, 0] })
+      .aJunction(IDS.FIRST, { coordinates: [0.01, 0] })
+      .build();
+
+    expect(nearestLoggerJunctionConnection(model.assets, [0, 0])).toEqual({
+      assetId: IDS.FIRST,
+      snapPoint: [0.01, 0],
+    });
+  });
+
+  it("leaves a logger unconnected when the model has no junction", () => {
+    const IDS = { T1: 1 } as const;
+    const model = HydraulicModelBuilder.with()
+      .aTank(IDS.T1, { coordinates: [0, 0] })
+      .build();
+
+    expect(nearestLoggerJunctionConnection(model.assets, [0, 0])).toBeNull();
+    expect(
+      nearestLoggerJunctionConnection(
+        HydraulicModelBuilder.empty().assets,
+        [0, 0],
+      ),
+    ).toBeNull();
+  });
+
+  it.each([
+    { coordinates: [NaN, 0] },
+    { coordinates: [0, Infinity] },
+    { coordinates: [-Infinity, 0] },
+  ])(
+    "ignores invalid placement coordinates $coordinates",
+    ({ coordinates }) => {
+      const IDS = { J1: 1 } as const;
+      const model = HydraulicModelBuilder.with().aJunction(IDS.J1).build();
+
+      expect(
+        nearestLoggerJunctionConnection(model.assets, coordinates),
+      ).toBeNull();
+    },
+  );
+
+  it("copies the junction position into the connection", () => {
+    const IDS = { J1: 1 } as const;
+    const model = HydraulicModelBuilder.with()
+      .aJunction(IDS.J1, { coordinates: [0.01, 0] })
+      .build();
+    const connection = nearestLoggerJunctionConnection(model.assets, [0, 0]);
+    const junction = model.assets.get(IDS.J1)!;
+
+    expect(connection?.snapPoint).not.toBe(junction.coordinates);
+    connection!.snapPoint[0] = 1;
+    expect(junction.coordinates).toEqual([0.01, 0]);
+  });
+
   it("reprojects logger positions and their connections without changing the source", () => {
     const IDS = { L1: "1", L2: "2", P1: 3 } as const;
     const loggers: Logger[] = [

@@ -17,6 +17,8 @@ import { aFileInfo, setInitialState } from "src/__helpers__/state";
 import { CommandContainer } from "./__helpers__/command-container";
 import { useInProcessDb } from "src/lib/db/__test-helpers__/in-process-db";
 import { modelFactoriesAtom } from "src/state/model-factories";
+import { fetchProject } from "src/lib/db/commands/fetch-project";
+import { createProjectionMapper } from "@epanet-js/projections";
 
 const aHistoryWithChanges = () => {
   const sessionHistory = new SessionHistory();
@@ -26,6 +28,72 @@ const aHistoryWithChanges = () => {
 
 describe("create new project", () => {
   useInProcessDb();
+
+  it("persists UTM zone 51N by default", async () => {
+    const store = setInitialState({});
+    renderComponent({ store });
+
+    await triggerNew();
+    await userEvent.click(screen.getByRole("button", { name: /create/i }));
+    await waitFor(() => {
+      expect(store.get(projectSettingsAtom).uniqueId).toEqual(
+        expect.any(String),
+      );
+    });
+
+    const projection = store.get(projectSettingsAtom).projection;
+    expect(projection).toMatchObject({ type: "proj4", id: "EPSG:32651" });
+    expect((await fetchProject()).projectSettings.projection).toEqual(
+      projection,
+    );
+
+    const [easting, northing] = createProjectionMapper(projection).toSource([
+      123, 0,
+    ]);
+    expect(easting).toBeCloseTo(500000, 3);
+    expect(northing).toBeCloseTo(0, 3);
+  });
+
+  it("persists the selected Web Mercator projection", async () => {
+    const store = setInitialState({});
+    renderComponent({ store });
+
+    await triggerNew();
+    await userEvent.click(
+      screen.getByRole("combobox", { name: /^projection$/i }),
+    );
+    await userEvent.click(screen.getByRole("option", { name: /EPSG:3857/ }));
+    await userEvent.click(screen.getByRole("button", { name: /create/i }));
+    await waitFor(() => {
+      expect(store.get(projectSettingsAtom).projection.id).toBe("EPSG:3857");
+    });
+
+    const projection = (await fetchProject()).projectSettings.projection;
+    expect(projection).toMatchObject({ type: "proj4", id: "EPSG:3857" });
+    expect(projection).toEqual(store.get(projectSettingsAtom).projection);
+  });
+
+  it("preserves the X-Y grid projection choice", async () => {
+    const store = setInitialState({});
+    renderComponent({ store });
+
+    await triggerNew();
+    await userEvent.click(
+      screen.getByRole("button", { name: /simple x-y grid/i }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /create/i }));
+    await waitFor(() => {
+      expect(store.get(projectSettingsAtom).projection.type).toBe("xy-grid");
+    });
+
+    const projection = (await fetchProject()).projectSettings.projection;
+    expect(projection).toMatchObject({
+      type: "xy-grid",
+      id: "xy-grid",
+      centroid: [0, 0],
+    });
+    expect(projection).toEqual(store.get(projectSettingsAtom).projection);
+  });
 
   it("allows to choose the unit system", async () => {
     const store = setInitialState({});

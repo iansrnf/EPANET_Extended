@@ -269,6 +269,163 @@ describe("build optimized source", () => {
       const [junction] = features;
       expect(junction.properties!.label).toBeUndefined();
     });
+
+    it.each([
+      {
+        property: "pressurePsi",
+        sourceUnit: "mwc",
+        label: "14.22 psi",
+        color: "#222222",
+      },
+      {
+        property: "minPressurePsi",
+        sourceUnit: "mwc",
+        label: "11.38 psi",
+        color: "#111111",
+      },
+      {
+        property: "maxPressurePsi",
+        sourceUnit: "mwc",
+        label: "42.67 psi",
+        color: "#333333",
+      },
+      {
+        property: "pressurePsi",
+        sourceUnit: "psi",
+        label: "10 psi",
+        color: "#111111",
+      },
+      {
+        property: "minPressurePsi",
+        sourceUnit: "psi",
+        label: "8 psi",
+        color: "#111111",
+      },
+      {
+        property: "maxPressurePsi",
+        sourceUnit: "psi",
+        label: "30 psi",
+        color: "#333333",
+      },
+    ] as const)(
+      "renders $property colors and labels from $sourceUnit results",
+      async ({ property, sourceUnit, label, color }) => {
+        const IDS = { J1: 1 } as const;
+        const { assets } = HydraulicModelBuilder.with()
+          .aJunction(IDS.J1)
+          .build();
+        const symbology: SymbologySpec = {
+          ...nullSymbologySpec,
+          node: aNodeSymbology({
+            colorRule: aRangeColorRule({
+              property,
+              unit: "psi",
+              breaks: [12, 20],
+              colors: ["#111111", "#222222", "#333333"],
+            }),
+            labelRule: property,
+          }),
+        };
+        const simulationResults = createMockResultsReader({
+          junctions: {
+            [IDS.J1]: { pressure: 10, minPressure: 8, maxPressure: 30 },
+          },
+        });
+
+        const [junction] = await buildOptimizedAssetsSource(
+          assets,
+          symbology,
+          { ...defaultUnits, pressure: sourceUnit },
+          { ...defaultFormatting, decimals: { pressure: 2 } },
+          (unit) => unit ?? "",
+          simulationResults,
+        );
+
+        expect(junction.properties).toMatchObject({ color, label });
+        expect(junction.properties!.strokeColor).toBeDefined();
+      },
+    );
+
+    it("keeps native pressure colors when labels use PSI", async () => {
+      const IDS = { J1: 1 } as const;
+      const { assets } = HydraulicModelBuilder.with().aJunction(IDS.J1).build();
+      const symbology: SymbologySpec = {
+        ...nullSymbologySpec,
+        node: aNodeSymbology({
+          colorRule: aRangeColorRule({
+            property: "pressure",
+            unit: "mwc",
+            breaks: [12, 20],
+            colors: ["#111111", "#222222", "#333333"],
+          }),
+          labelRule: "pressurePsi",
+        }),
+      };
+      const [junction] = await buildOptimizedAssetsSource(
+        assets,
+        symbology,
+        defaultUnits,
+        { ...defaultFormatting, decimals: { pressure: 2 } },
+        (unit) => unit ?? "",
+        createMockResultsReader({ junctions: { [IDS.J1]: { pressure: 10 } } }),
+      );
+
+      expect(junction.properties).toMatchObject({
+        color: "#111111",
+        label: "14.22 psi",
+      });
+    });
+
+    it.each(["minPressure", "maxPressure"])(
+      "uses pressure units and precision for native %s labels",
+      async (property) => {
+        const IDS = { J1: 1 } as const;
+        const { assets } = HydraulicModelBuilder.with()
+          .aJunction(IDS.J1)
+          .build();
+        const [junction] = await buildOptimizedAssetsSource(
+          assets,
+          {
+            ...nullSymbologySpec,
+            node: aNodeSymbology({ labelRule: property }),
+          },
+          defaultUnits,
+          { ...defaultFormatting, decimals: { pressure: 2 } },
+          (unit) => (unit === "mwc" ? "m" : (unit ?? "")),
+          createMockResultsReader({
+            junctions: { [IDS.J1]: { minPressure: 8.125, maxPressure: 8.125 } },
+          }),
+        );
+
+        expect(junction.properties!.label).toBe("8.13 m");
+      },
+    );
+
+    it("uses the lowest PSI color without inventing a missing pressure label", async () => {
+      const IDS = { J1: 1 } as const;
+      const { assets } = HydraulicModelBuilder.with().aJunction(IDS.J1).build();
+      const [junction] = await buildOptimizedAssetsSource(
+        assets,
+        {
+          ...nullSymbologySpec,
+          node: aNodeSymbology({
+            colorRule: aRangeColorRule({
+              property: "pressurePsi",
+              unit: "psi",
+              breaks: [12, 20],
+              colors: ["#111111", "#222222", "#333333"],
+            }),
+            labelRule: "pressurePsi",
+          }),
+        },
+        defaultUnits,
+        defaultFormatting,
+        (unit) => unit ?? "",
+      );
+
+      expect(junction.properties!.color).toBe("#111111");
+      expect(junction.properties!.label).toBeUndefined();
+    });
   });
 
   describe("link symbology", () => {

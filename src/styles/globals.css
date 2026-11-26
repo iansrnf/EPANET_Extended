@@ -39,9 +39,9 @@
   --color-background-base: var(--color-slate-950);
   --color-panel: var(--color-slate-900);
   --color-popover: var(--color-slate-950);
-  --color-default: var(--color-slate-100);
+  --color-default: var(--color-white);
   --color-default-inverse: var(--color-slate-950);
-  --color-subtle: var(--color-slate-300);
+  --color-subtle: var(--color-slate-100);
   --color-disabled: var(--color-slate-500);
   --color-border: rgb(255 255 255 / 0.16);
   --color-border-strong: rgb(255 255 255 / 0.25);
@@ -52,7 +52,7 @@
 }
 
 .map-overlay-surface {
-  --map-overlay-opacity: 82%;
+  --map-overlay-opacity: 10%;
   border: 1px solid var(--color-border);
   background-color: color-mix(
     in srgb,
@@ -63,11 +63,16 @@
   box-shadow: 0 4px 16px rgb(0 0 0 / 0.18);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  text-shadow: none;
+  text-shadow:
+    -1px 0 1px var(--color-popover),
+    1px 0 1px var(--color-popover),
+    0 -1px 1px var(--color-popover),
+    0 1px 1px var(--color-popover),
+    0 1px 3px var(--color-popover);
 }
 
 .map-overlay-surface.map-overlay-ruler {
-  --map-overlay-opacity: 20%;
+  --map-overlay-opacity: 2%;
   --timeline-active-color: color-mix(
     in oklab,
     var(--color-info) 60%,
@@ -75,15 +80,15 @@
   );
   --timeline-track-color: var(--color-disabled);
   --timeline-outline-color: var(--color-popover);
+  border-color: transparent;
   box-shadow: none;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   text-shadow: 0 1px 2px var(--timeline-outline-color);
   outline-color: var(--timeline-active-color);
 }
 
-.map-overlay-surface.map-overlay-tooltip,
-.map-overlay-surface.map-overlay-popover {
+.map-overlay-surface.map-overlay-tooltip {
   --map-overlay-opacity: 96%;
 }
 
@@ -280,6 +285,12 @@
   [data-map-compact-height] .map-3d-control {
     top: var(--map-short-navigation-top);
     right: calc(6 * var(--map-control-target-size) + 2.5rem);
+    bottom: auto;
+  }
+
+  [data-map-compact-height] .map-tilt-controls {
+    top: calc(100% + 0.5rem);
+    right: 0;
     bottom: auto;
   }
 

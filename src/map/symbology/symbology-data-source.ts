@@ -4,22 +4,56 @@ import { getSortedValues } from "@epanet-js/hydraulic-model";
 import { EPSResultsReader } from "src/simulation/epanet/eps-results-reader";
 import {
   type ResultsReader,
-  type SimulationProperty,
-  isSimulationProperty,
+  type SimulationProperty as NativeSimulationProperty,
+  isSimulationProperty as isNativeSimulationProperty,
+  simulationProperties as nativeSimulationProperties,
 } from "@epanet-js/simulation";
+import type { Unit } from "@epanet-js/quantity";
+import {
+  type PsiPressureProperty,
+  isPsiPressureProperty,
+  pressurePropertyFor,
+  pressureToPsiFactor,
+} from "./pressure-properties";
 
-export {
-  simulationProperties,
-  isSimulationProperty,
-  type SimulationProperty,
-} from "@epanet-js/simulation";
+export const simulationProperties = [
+  ...nativeSimulationProperties,
+  "pressurePsi",
+  "minPressurePsi",
+  "maxPressurePsi",
+] as const;
+
+export type SimulationProperty = NativeSimulationProperty | PsiPressureProperty;
+
+export const isSimulationProperty = (
+  property: string,
+): property is SimulationProperty =>
+  isNativeSimulationProperty(property) || isPsiPressureProperty(property);
+
+type SimulationValueOptions = {
+  absValues?: boolean;
+  pressureUnit?: Unit;
+};
 
 const getSimulationValues = (
   resultsReader: ResultsReader,
   property: SimulationProperty,
-  { absValues = false }: { absValues?: boolean } = {},
+  { absValues = false, pressureUnit }: SimulationValueOptions = {},
 ): Float32Array => {
-  const values = resultsReader.getAllValues(property);
+  let values: Float32Array;
+  if (isPsiPressureProperty(property)) {
+    if (pressureUnit == null) {
+      throw new Error("A source pressure unit is required for PSI symbology");
+    }
+    const factor = pressureToPsiFactor(pressureUnit);
+    const sourceProperty = pressurePropertyFor(property)!;
+    values = Float32Array.from(
+      resultsReader.getAllValues(sourceProperty),
+      (value) => value * factor,
+    );
+  } else {
+    values = resultsReader.getAllValues(property);
+  }
   if (absValues) {
     for (let i = 0; i < values.length; i++) values[i] = Math.abs(values[i]);
   }
@@ -29,7 +63,7 @@ const getSimulationValues = (
 export const getSortedSimulationValues = (
   resultsReader: ResultsReader,
   property: SimulationProperty,
-  options?: { absValues?: boolean },
+  options?: SimulationValueOptions,
 ): number[] =>
   Array.from(getSimulationValues(resultsReader, property, options).sort());
 
@@ -51,31 +85,57 @@ export type SimulationDataSource =
 export const getSortedSimulationDataForBreaks = async (
   property: SimulationProperty,
   source: SimulationDataSource,
-  options?: { absValues?: boolean },
+  options?: SimulationValueOptions,
 ): Promise<number[] | null> => {
+  const resolvedOptions: SimulationValueOptions | undefined =
+    isPsiPressureProperty(property) &&
+    options?.pressureUnit == null &&
+    source.mode !== "currentStep"
+      ? {
+          ...options,
+          pressureUnit:
+            source.epsReader.pressureUnits === "m"
+              ? "mwc"
+              : source.epsReader.pressureUnits === "ft"
+                ? "fwc"
+                : source.epsReader.pressureUnits,
+        }
+      : options;
   switch (source.mode) {
     case "currentStep":
-      return getSortedSimulationValues(source.resultsReader, property, options);
+      return getSortedSimulationValues(
+        source.resultsReader,
+        property,
+        resolvedOptions,
+      );
     case "initial": {
       const data = await getInitialSortedValues(
         source.epsReader,
         property,
-        options,
+        resolvedOptions,
       );
       if (data) return data;
       return source.resultsReader
-        ? getSortedSimulationValues(source.resultsReader, property, options)
+        ? getSortedSimulationValues(
+            source.resultsReader,
+            property,
+            resolvedOptions,
+          )
         : null;
     }
     case "allSteps": {
       const data = await getAllStepsSortedValues(
         source.epsReader,
         property,
-        options,
+        resolvedOptions,
       );
       if (data) return data;
       return source.resultsReader
-        ? getSortedSimulationValues(source.resultsReader, property, options)
+        ? getSortedSimulationValues(
+            source.resultsReader,
+            property,
+            resolvedOptions,
+          )
         : null;
     }
   }
@@ -84,7 +144,7 @@ export const getSortedSimulationDataForBreaks = async (
 const getAllStepsSortedValues = async (
   epsReader: EPSResultsReader,
   property: SimulationProperty,
-  options?: { absValues?: boolean },
+  options?: SimulationValueOptions,
 ): Promise<number[] | null> => {
   const timestepCount = epsReader.timestepCount;
   if (timestepCount <= 0) return null;
@@ -111,7 +171,7 @@ const getAllStepsSortedValues = async (
 const getInitialSortedValues = async (
   epsReader: EPSResultsReader,
   property: SimulationProperty,
-  options?: { absValues?: boolean },
+  options?: SimulationValueOptions,
 ): Promise<number[] | null> => {
   const lastIndex = epsReader.timestepCount - 1;
   if (lastIndex < 0) return null;
@@ -151,7 +211,7 @@ export const getSortedDataForProperty = (
   property: string,
   hydraulicModel: HydraulicModel,
   resultsReader: ResultsReader | null,
-  options?: { absValues?: boolean },
+  options?: SimulationValueOptions,
 ): number[] => {
   if (resultsReader && isSimulationProperty(property)) {
     return getSortedSimulationValues(resultsReader, property, options);

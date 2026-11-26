@@ -9,6 +9,7 @@ import { nullLabelRule } from "./labeling";
 import type { RangeEndpoints } from "./range-color-rule";
 import type { Unit } from "@epanet-js/quantity";
 import { defaultPropertyColorConfigs } from "src/state/map-symbology";
+import type { PsiPressureProperty } from "./pressure-properties";
 
 const VELOCITY_FALLBACK_ENDPOINTS: Record<string, RangeEndpoints> = {
   "m/s": [0, 4],
@@ -42,6 +43,9 @@ type SymbologyBuilders = {
   pressure: SymbologyBuilderFn<NodeSymbology>;
   minPressure: SymbologyBuilderFn<NodeSymbology>;
   maxPressure: SymbologyBuilderFn<NodeSymbology>;
+  pressurePsi: SymbologyBuilderFn<NodeSymbology>;
+  minPressurePsi: SymbologyBuilderFn<NodeSymbology>;
+  maxPressurePsi: SymbologyBuilderFn<NodeSymbology>;
   actualDemand: SymbologyBuilderFn<NodeSymbology>;
   elevation: SymbologyBuilderFn<NodeSymbology>;
   head: SymbologyBuilderFn<NodeSymbology>;
@@ -154,6 +158,15 @@ export const symbologyBuilders: SymbologyBuilders = {
     return { ...nullSymbologySpec.node, colorRule, labelRule: nullLabelRule };
   },
 
+  pressurePsi: (_units, sortedData): NodeSymbology =>
+    buildPsiPressureSymbology("pressurePsi", sortedData),
+
+  minPressurePsi: (_units, sortedData): NodeSymbology =>
+    buildPsiPressureSymbology("minPressurePsi", sortedData),
+
+  maxPressurePsi: (_units, sortedData): NodeSymbology =>
+    buildPsiPressureSymbology("maxPressurePsi", sortedData),
+
   actualDemand: (units, sortedData): NodeSymbology => {
     const colorRule = initializeColorRule({
       property: "actualDemand",
@@ -220,3 +233,18 @@ export const symbologyBuilders: SymbologyBuilders = {
     };
   },
 };
+
+const buildPsiPressureSymbology = (
+  property: PsiPressureProperty,
+  sortedData: number[],
+): NodeSymbology => ({
+  ...nullSymbologySpec.node,
+  colorRule: initializeColorRule({
+    property,
+    unit: "psi",
+    ...defaults[property],
+    fallbackEndpoints: [0, 100],
+    sortedData,
+  }),
+  labelRule: nullLabelRule,
+});

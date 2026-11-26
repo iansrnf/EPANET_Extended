@@ -64,8 +64,14 @@ import { Map3DControl } from "./map-3d-control";
 import { captureMapViewport } from "src/lib/map-viewport";
 import {
   currentMapPitchAtom,
+  map3DFlatteningAtom,
   mapPitchTransitioningAtom,
 } from "src/state/map-view";
+import { showGridAtom } from "src/state/map-projection";
+import {
+  MapCameraGestureState,
+  type MapContextMenuPosition,
+} from "./map-3d-gestures";
 mapboxgl.accessToken = env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 mapboxgl.setRTLTextPlugin(
@@ -129,7 +135,10 @@ export const MapCanvas = memo(function MapCanvas({
     }, []),
   );
   const setCurrentPitch = useSetAtom(currentMapPitchAtom);
+  const setFlattening = useSetAtom(map3DFlatteningAtom);
   const setPitchTransitioning = useSetAtom(mapPitchTransitioningAtom);
+  const isGridOn = useAtomValue(showGridAtom);
+  const cameraGesturesEnabled = !isGridOn;
 
   const selection = useAtomValue(selectionAtom);
   const { units } = useAtomValue(projectSettingsAtom);
@@ -167,6 +176,40 @@ export const MapCanvas = memo(function MapCanvas({
   const dragTargetRef: React.MutableRefObject<DragTarget | null> =
     useRef<DragTarget>(null);
   const mapHandlers = useRef<MapHandlers>();
+  const cameraGestureRef = useRef(new MapCameraGestureState());
+
+  const forwardContextMenu = useCallback((position: MapContextMenuPosition) => {
+    const container = mapDivRef.current;
+    if (!container) return;
+
+    container.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        ...position,
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+      }),
+    );
+  }, []);
+
+  useEffect(() => {
+    const gesture = cameraGestureRef.current;
+    const onMouseMove = (event: MouseEvent) => gesture.moveMouse(event);
+    const onMouseUp = (event: MouseEvent) => {
+      const menu = gesture.endMouse(event);
+      if (menu) forwardContextMenu(menu);
+    };
+    const resetGesture = () => gesture.reset();
+    window.addEventListener("mousemove", onMouseMove, true);
+    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("blur", resetGesture);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove, true);
+      window.removeEventListener("mouseup", onMouseUp);
+      window.removeEventListener("blur", resetGesture);
+      gesture.reset();
+    };
+  }, [forwardContextMenu]);
 
   const fitToExtent = useFitToExtent();
 
@@ -241,6 +284,7 @@ export const MapCanvas = memo(function MapCanvas({
     const endTransition = () => {
       updatePitch();
       setPitchTransitioning(false);
+      setFlattening(false);
     };
     updatePitch();
     map.on("pitch", updatePitch);
@@ -251,8 +295,9 @@ export const MapCanvas = memo(function MapCanvas({
       map.off("pitchstart", startTransition);
       map.off("pitchend", endTransition);
       setPitchTransitioning(false);
+      setFlattening(false);
     };
-  }, [mapInstance, setCurrentPitch, setPitchTransitioning]);
+  }, [mapInstance, setCurrentPitch, setPitchTransitioning, setFlattening]);
 
   if (isDebugOn) (window as any).mapEngine = mapRef.current;
 
@@ -272,16 +317,37 @@ export const MapCanvas = memo(function MapCanvas({
   const leftClick = 0;
   const newHandlers: MapHandlers = {
     onClick: (e: mapboxgl.MapMouseEvent) => {
+      if (e.defaultPrevented || cameraGestureRef.current.clickSuppressed)
+        return;
       debug(e, mode.mode, selection, dragTargetRef, "click");
       HANDLERS[mode.mode].click(e);
     },
     onMapMouseDown: (e: mapboxgl.MapMouseEvent) => {
       clearHover();
+      if (
+        cameraGestureRef.current.startMouse(
+          e.originalEvent,
+          cameraGesturesEnabled,
+        )
+      ) {
+        HANDLERS[mode.mode].cancelPointerGesture?.();
+        return;
+      }
       debug(e, mode.mode, selection, dragTargetRef, "onMapMouseDown");
       if (e.originalEvent.button === leftClick) HANDLERS[mode.mode].down(e);
     },
     onMapTouchStart: (e: mapboxgl.MapTouchEvent) => {
       clearHover();
+      const alreadyNavigating = cameraGestureRef.current.touchActive;
+      if (
+        cameraGestureRef.current.startTouch(
+          e.originalEvent.touches.length,
+          cameraGesturesEnabled,
+        )
+      ) {
+        if (!alreadyNavigating) HANDLERS[mode.mode].cancelPointerGesture?.();
+        return;
+      }
       debug(e, mode.mode, selection, dragTargetRef, "onMapTouchStart");
       const handler = HANDLERS[mode.mode];
       if (handler.touchstart) {
@@ -291,10 +357,19 @@ export const MapCanvas = memo(function MapCanvas({
       }
     },
     onMapMouseUp: (e: mapboxgl.MapMouseEvent) => {
+      if (cameraGestureRef.current.mouseActive) return;
       debug(e, mode.mode, selection, dragTargetRef, "onMapMouseUp");
       if (e.originalEvent.button === leftClick) HANDLERS[mode.mode].up(e);
     },
     onMapTouchEnd: (e: mapboxgl.MapTouchEvent) => {
+      if (
+        cameraGestureRef.current.endTouch(
+          e.originalEvent.touches.length,
+          e.originalEvent,
+        )
+      ) {
+        return;
+      }
       debug(e, mode.mode, selection, dragTargetRef, "onMapTouchEnd");
 
       const handler = HANDLERS[mode.mode];
@@ -305,6 +380,16 @@ export const MapCanvas = memo(function MapCanvas({
       }
     },
     onMapTouchMove: (e: mapboxgl.MapTouchEvent) => {
+      const alreadyNavigating = cameraGestureRef.current.touchActive;
+      if (
+        cameraGestureRef.current.startTouch(
+          e.originalEvent.touches.length,
+          cameraGesturesEnabled,
+        )
+      ) {
+        if (!alreadyNavigating) HANDLERS[mode.mode].cancelPointerGesture?.();
+        return;
+      }
       debug(e, mode.mode, selection, dragTargetRef, "onMapTouchMove");
 
       const handler = HANDLERS[mode.mode];
@@ -315,11 +400,19 @@ export const MapCanvas = memo(function MapCanvas({
       }
     },
     onMapMouseMove: (e: mapboxgl.MapMouseEvent) => {
+      if (
+        cameraGestureRef.current.mouseActive ||
+        cameraGestureRef.current.touchActive
+      ) {
+        return;
+      }
       debug(e, mode.mode, selection, dragTargetRef, "onMapMouseMove");
 
       HANDLERS[mode.mode].move(e);
     },
     onDoubleClick: (e: mapboxgl.MapMouseEvent) => {
+      if (e.defaultPrevented || cameraGestureRef.current.clickSuppressed)
+        return;
       debug(e, mode.mode, selection, dragTargetRef, "doubleClick");
 
       HANDLERS[mode.mode].double(e);
@@ -354,22 +447,34 @@ export const MapCanvas = memo(function MapCanvas({
 
   const onKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      if (
+        e.defaultPrevented ||
+        (cameraGesturesEnabled && e.shiftKey && e.key.startsWith("Arrow"))
+      ) {
+        return;
+      }
       const handler = HANDLERS[mode.mode];
       if (handler.keydown) {
         handler.keydown(e);
       }
     },
-    [HANDLERS, mode],
+    [HANDLERS, mode, cameraGesturesEnabled],
   );
 
   const onKeyUp = useCallback(
     (e: KeyboardEvent) => {
+      if (
+        e.defaultPrevented ||
+        (cameraGesturesEnabled && e.key.startsWith("Arrow"))
+      ) {
+        return;
+      }
       const handler = HANDLERS[mode.mode];
       if (handler.keyup) {
         handler.keyup(e);
       }
     },
-    [HANDLERS, mode],
+    [HANDLERS, mode, cameraGesturesEnabled],
   );
 
   useEffect(() => {
@@ -382,6 +487,22 @@ export const MapCanvas = memo(function MapCanvas({
   }, [onKeyDown, onKeyUp]);
 
   mapHandlers.current = newHandlers;
+
+  const captureCameraContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      if (event.target === event.currentTarget) return;
+      if (
+        !cameraGesturesEnabled &&
+        !cameraGestureRef.current.contextMenuHandled
+      )
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      const position = cameraGestureRef.current.contextMenu(event.nativeEvent);
+      if (position) forwardContextMenu(position);
+    },
+    [cameraGesturesEnabled, forwardContextMenu],
+  );
 
   const onContextMenu = useAtomCallback(
     useCallback(
@@ -471,6 +592,12 @@ export const MapCanvas = memo(function MapCanvas({
           ref={mapDivRef}
           data-testid="map"
           onMouseLeave={clearHover}
+          onContextMenuCapture={captureCameraContextMenu}
+          onTouchCancelCapture={() => {
+            cameraGestureRef.current.reset();
+            HANDLERS[mode.mode].cancelPointerGesture?.();
+            clearHover();
+          }}
           onPointerDownCapture={markMapInteraction}
           onWheelCapture={markMapInteraction}
           onKeyDownCapture={markMapInteraction}

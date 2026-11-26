@@ -684,8 +684,11 @@
   "stoppingSimulation": "Stopping...",
   "notAvailable": "Not available",
   "pressure": "Pressure",
+  "pressurePsi": "Pressure",
   "minPressure": "Min pressure",
   "maxPressure": "Max pressure",
+  "minPressurePsi": "Min pressure",
+  "maxPressurePsi": "Max pressure",
   "minElevation": "Min elevation",
   "maxElevation": "Max elevation",
   "pressures": "Pressures",
@@ -1030,7 +1033,10 @@
   "mapView": {
     "threeDLabel": "3D view",
     "enable3D": "Enable 3D view",
-    "returnTo2D": "Return to 2D view"
+    "returnTo2D": "Return to 2D view",
+    "tilt": "Tilt",
+    "tiltDegrees": "{{1}}°",
+    "tiltHint": "Ctrl + drag to tilt or rotate. On touchscreens, use two fingers."
   },
   "mapCursorCoordinates": {
     "label": "Cursor coordinates",

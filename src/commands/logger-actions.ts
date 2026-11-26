@@ -11,6 +11,7 @@ import { useProjectSettingsTransaction } from "src/hooks/persistence/use-project
 import { useIsEditionBlocked } from "src/hooks/use-is-edition-blocked";
 import { useTranslate } from "src/hooks/use-translate";
 import { useShowAssetPanel } from "src/commands/show-asset-panel";
+import { useLoggerStreamActions } from "src/commands/logger-stream";
 import { USelection } from "src/selection";
 import { selectionAtom } from "src/state/selection";
 import { selectedLoggerIdAtom } from "src/state/loggers";
@@ -23,6 +24,7 @@ import {
   isLoggerLabelAvailable,
   loggerCoordinates,
   nextLoggerLabel,
+  nearestLoggerJunctionConnection,
   resolveLoggerConnection,
 } from "src/lib/loggers";
 
@@ -32,6 +34,7 @@ export const useLoggerActions = () => {
   const { transact } = useProjectSettingsTransaction();
   const isEditionBlocked = useIsEditionBlocked();
   const showAssetPanel = useShowAssetPanel();
+  const { startLoggerStream } = useLoggerStreamActions();
   const translate = useTranslate();
 
   const clearLoggerInteraction = useCallback(
@@ -80,6 +83,7 @@ export const useLoggerActions = () => {
       const settings = store.get(projectSettingsAtom);
       const loggers = settings.loggers ?? [];
       const id = nanoid();
+      const { assets } = store.get(stagingModelDerivedAtom);
       const applied = await transact({
         ...settings,
         loggers: [
@@ -88,15 +92,29 @@ export const useLoggerActions = () => {
             id,
             label: nextLoggerLabel(loggers, translate("logger")),
             coordinates: loggerCoordinates(coordinates),
-            connection: null,
+            connection: nearestLoggerJunctionConnection(assets, coordinates),
           },
         ],
       });
       if (!applied) return null;
+      store.set(loggerPreviewAtom, null);
+      store.set(cursorStyleAtom, "default");
+      if (store.get(modeAtom).mode === Mode.DRAW_LOGGER) {
+        setMode({ mode: Mode.NONE });
+      }
       selectLogger(id);
+      startLoggerStream(id);
       return id;
     },
-    [store, transact, isEditionBlocked, selectLogger, translate],
+    [
+      store,
+      transact,
+      isEditionBlocked,
+      selectLogger,
+      translate,
+      setMode,
+      startLoggerStream,
+    ],
   );
 
   const moveLogger = useCallback(

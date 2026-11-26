@@ -200,7 +200,6 @@ export class MapEngine {
     map.on("dblclick", (e) => this.handlers.current.onDoubleClick(e));
     map.on("mouseup", (e) => this.handlers.current.onMapMouseUp(e));
     map.on("moveend", (e: MoveEvent) => this.handlers.current.onMoveEnd(e));
-    map.on("touchend", (e) => this.handlers.current.onMapTouchEnd(e));
     map.on("move", (e: MoveEvent) => this.handlers.current.onMove(e));
 
     map.on("touchstart", (e) => this.handlers.current.onMapTouchStart(e));

@@ -28,15 +28,104 @@ import { createMapStylingPanel } from "src/panels/map-styling-editor/create-pane
 import type { Store } from "src/state";
 import { useLoggerActions } from "./logger-actions";
 import { useDismissAssetPanel } from "./dismiss-asset-panel";
+import { getLoggerStreamManager } from "./logger-stream";
+import { loggerStreamsAtom } from "src/state/logger-stream";
+import type { LoggerSocket } from "src/lib/logger-stream";
 
-const renderActions = (store: Store) =>
-  renderHook(() => useLoggerActions(), {
+const streamStores = new Set<Store>();
+const loadStreamConfig = vi.fn(() =>
+  Promise.resolve({
+    ok: true,
+    json: () => Promise.resolve({ url: "wss://example.com/stream" }),
+  }),
+);
+
+class FakeSocket implements LoggerSocket {
+  static sockets: FakeSocket[] = [];
+  onopen: LoggerSocket["onopen"] = null;
+  onmessage: LoggerSocket["onmessage"] = null;
+  onerror: LoggerSocket["onerror"] = null;
+  onclose: LoggerSocket["onclose"] = null;
+  close = vi.fn();
+
+  constructor(public readonly url: string) {
+    FakeSocket.sockets.push(this);
+  }
+}
+
+const renderActions = (store: Store) => {
+  streamStores.add(store);
+  return renderHook(() => useLoggerActions(), {
     wrapper: ({ children }) => <Provider store={store}>{children}</Provider>,
   });
+};
 
 describe("logger actions", () => {
   useInProcessDb();
-  beforeEach(() => stubUserTracking());
+  beforeEach(() => {
+    stubUserTracking();
+    FakeSocket.sockets = [];
+    loadStreamConfig.mockClear();
+    vi.stubGlobal("fetch", loadStreamConfig);
+    vi.stubGlobal("WebSocket", FakeSocket);
+  });
+  afterEach(() => {
+    act(() => {
+      for (const store of streamStores) getLoggerStreamManager(store).clear();
+    });
+    streamStores.clear();
+    vi.unstubAllGlobals();
+  });
+
+  it("creates a logger with its nearest junction and starts live data", async () => {
+    const IDS = { NEAR: 1, FAR: 2, TANK: 3 } as const;
+    const hydraulicModel = HydraulicModelBuilder.with()
+      .aJunction(IDS.FAR, { coordinates: [10, 0] })
+      .aJunction(IDS.NEAR, { coordinates: [1, 0] })
+      .aTank(IDS.TANK, { coordinates: [2, 1] })
+      .build();
+    await importProject({
+      newDb: true,
+      hydraulicModel,
+      projectSettings: defaultProjectSettings,
+      simulationSettings: defaultSimulationSettings,
+    });
+    const store = setInitialState({ hydraulicModel, mode: Mode.DRAW_LOGGER });
+    store.set(loggerPreviewAtom, { type: "draw", coordinates: [2, 1] });
+    store.set(cursorStyleAtom, "crosshair");
+    const snapshots: ProjectSettings[] = [];
+    const unsubscribe = store.sub(projectSettingsAtom, () =>
+      snapshots.push(store.get(projectSettingsAtom)),
+    );
+    const { result } = renderActions(store);
+
+    await act(async () => {
+      await result.current.addLogger([2, 1]);
+      await writeQueue.whenIdle();
+    });
+    unsubscribe();
+
+    const [created] = store.get(loggersAtom);
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].loggers?.[0].connection).toEqual({
+      assetId: IDS.NEAR,
+      snapPoint: [1, 0],
+    });
+    expect((await fetchProject()).projectSettings.loggers).toEqual([created]);
+    expect(store.get(selectedLoggerIdAtom)).toBe(created.id);
+    expect(store.get(modeAtom).mode).toBe(Mode.NONE);
+    expect(store.get(loggerPreviewAtom)).toBeNull();
+    expect(store.get(cursorStyleAtom)).toBe("default");
+    expect(store.get(loggerStreamsAtom).get(created.id)).toMatchObject({
+      deviceId: "L1",
+      isRunning: true,
+      status: "connecting",
+    });
+    expect(loadStreamConfig).toHaveBeenCalledOnce();
+    expect(FakeSocket.sockets.map((socket) => socket.url)).toEqual([
+      "wss://example.com/stream?deviceId=L1",
+    ]);
+  });
 
   it.each([false, true])(
     "selects a logger into the floating inspector and collapses docked inspectors (narrow: %s)",
@@ -141,6 +230,11 @@ describe("logger actions", () => {
       await result.current.addLogger([2, 1]);
       await result.current.addLogger([8, 1]);
       const [first, second] = store.get(loggersAtom);
+      expect(first.connection).toEqual({ assetId: IDS.J1, snapPoint: [0, 0] });
+      expect(second.connection).toEqual({
+        assetId: IDS.J2,
+        snapPoint: [10, 0],
+      });
       await result.current.connectLogger(first.id, {
         assetId: IDS.P1,
         snapPoint: [2, 0],
@@ -175,7 +269,12 @@ describe("logger actions", () => {
       projectSettings: defaultProjectSettings,
       simulationSettings: defaultSimulationSettings,
     });
-    const store = setInitialState({ hydraulicModel });
+    const store = setInitialState({ hydraulicModel, mode: Mode.DRAW_LOGGER });
+    const preview = {
+      type: "draw" as const,
+      coordinates: [1, 1] as [number, number],
+    };
+    store.set(loggerPreviewAtom, preview);
     const settingsBefore = store.get(projectSettingsAtom);
     const versionBefore = store.get(projectDataVersionAtom);
     const { result } = renderActions(store);
@@ -190,6 +289,11 @@ describe("logger actions", () => {
     expect(store.get(projectSettingsAtom)).toBe(settingsBefore);
     expect(store.get(projectDataVersionAtom)).toBe(versionBefore);
     expect(store.get(dialogAtom)).toEqual({ type: "changeNotApplied" });
+    expect(store.get(modeAtom).mode).toBe(Mode.DRAW_LOGGER);
+    expect(store.get(loggerPreviewAtom)).toEqual(preview);
+    expect(store.get(loggerStreamsAtom).size).toBe(0);
+    expect(loadStreamConfig).not.toHaveBeenCalled();
+    expect(FakeSocket.sockets).toHaveLength(0);
     expect((await fetchProject()).projectSettings.loggers).toBeUndefined();
   });
 

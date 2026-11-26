@@ -1,4 +1,5 @@
-import { useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom, useStore } from "jotai";
+import { useRef } from "react";
 import noop from "lodash/noop";
 import type { HandlerContext } from "src/types";
 import { useLoggerActions } from "src/commands/logger-actions";
@@ -13,18 +14,34 @@ export function useDrawLoggerHandlers({
   readonly = false,
 }: HandlerContext): Handlers {
   const { addLogger } = useLoggerActions();
+  const store = useStore();
   const setPreview = useSetAtom(loggerPreviewAtom);
   const setMode = useSetAtom(modeAtom);
   const setCursor = useSetAtom(cursorStyleAtom);
+  const placingRef = useRef(false);
 
   return {
-    click: (event) => {
-      if (readonly) return;
-      void addLogger(getMapCoord(event));
-      setPreview(null);
+    click: async (event) => {
+      if (
+        readonly ||
+        placingRef.current ||
+        store.get(modeAtom).mode !== Mode.DRAW_LOGGER
+      )
+        return;
+      placingRef.current = true;
+      try {
+        await addLogger(getMapCoord(event));
+      } finally {
+        placingRef.current = false;
+      }
     },
     move: (event) => {
-      if (readonly) return;
+      if (
+        readonly ||
+        placingRef.current ||
+        store.get(modeAtom).mode !== Mode.DRAW_LOGGER
+      )
+        return;
       setPreview({ type: "draw", coordinates: getMapCoord(event) });
     },
     down: noop,

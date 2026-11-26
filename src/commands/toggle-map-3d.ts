@@ -4,8 +4,10 @@ import { useCallback } from "react";
 import { deviceLocationNavigationRevisionAtom } from "src/state/device-location";
 import { clearMapHoverAtom } from "src/state/map-hover";
 import {
+  currentMapPitchAtom,
   isMap3DAtom,
   map3DBusyAtom,
+  map3DFlatteningAtom,
   mapPitchRequestAtom,
 } from "src/state/map-view";
 
@@ -16,10 +18,13 @@ export const toggleMap3D = (
 ) => {
   if (get(map3DBusyAtom)) return;
 
+  const enabled = !get(isMap3DAtom);
   set(clearMapHoverAtom);
   set(deviceLocationNavigationRevisionAtom, (revision) => revision + 1);
+  set(map3DFlatteningAtom, !enabled && get(currentMapPitchAtom) > 0);
+  set(isMap3DAtom, enabled);
   set(mapPitchRequestAtom, {
-    pitch: get(isMap3DAtom) ? 0 : 60,
+    pitch: enabled ? 60 : 0,
     duration: reducedMotion ? 0 : 450,
   });
 };

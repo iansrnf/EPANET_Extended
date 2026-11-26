@@ -55,5 +55,6 @@ type Handlers = {
   double: BothHandler;
   keydown?: KeyboardHandler;
   keyup?: KeyboardHandler;
+  cancelPointerGesture?: () => void;
   exit: () => Promisable<void>;
 };

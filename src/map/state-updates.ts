@@ -66,6 +66,7 @@ import type { ZoneSymbology, NodeSizeConfig } from "src/map/symbology";
 import { buildZoneColorExpression } from "src/map/layers/zones";
 import { mapPitchRequestAtom } from "src/state/map-view";
 import { updateTerrain } from "./terrain";
+import { updateMapCameraGestures } from "./map-3d-gestures";
 
 import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
@@ -149,6 +150,7 @@ const detectChanges = (
   hasNewDeviceLocationViewportRequest: boolean;
   hasNewPitchRequest: boolean;
   hasNewTerrain: boolean;
+  hasNewTiltEnabled: boolean;
   hasNewLoggers: boolean;
   hasNewLoggerFeedback: boolean;
 } => {
@@ -220,6 +222,7 @@ const detectChanges = (
       prev.deviceLocationViewportRequest,
     hasNewPitchRequest: state.pitchRequest !== prev.pitchRequest,
     hasNewTerrain: state.terrainEnabled !== prev.terrainEnabled,
+    hasNewTiltEnabled: state.tiltEnabled !== prev.tiltEnabled,
   };
 };
 
@@ -448,6 +451,14 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
 
       if (changes.hasNewTerrain || hasNewStyles) {
         updateTerrain(map, mapState.terrainEnabled);
+      }
+
+      if (changes.hasNewTerrain || changes.hasNewTiltEnabled || hasNewStyles) {
+        updateMapCameraGestures(map, {
+          terrainEnabled: mapState.terrainEnabled,
+          tiltEnabled: mapState.tiltEnabled,
+          rotationEnabled: !isGridOn,
+        });
       }
 
       if (hasNewDefaultColors && !hasNewStyles) {

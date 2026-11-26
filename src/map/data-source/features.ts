@@ -26,6 +26,12 @@ import { isSimulationProperty } from "src/map/symbology/symbology-data-source";
 import { assetLabelRule } from "src/map/symbology/labeling";
 import { LabelRule } from "src/map/symbology/symbology-types";
 import { createTimeSlicer } from "src/infra/yield-to-main";
+import {
+  isPsiPressureProperty,
+  pressurePropertyFor,
+  pressureToPsiFactor,
+  symbologyUnitFor,
+} from "src/map/symbology/pressure-properties";
 
 export const buildFeatureId = (assetId: AssetId) => assetId;
 
@@ -48,6 +54,12 @@ export const buildOptimizedAssetsSource = async (
   const strippedFeatures = [];
   const keepProperties: string[] = ["type", "isActive"];
   const yieldIfSliceElapsed = createTimeSlicer(BUILD_SLICE_MS);
+  const psiFactor =
+    isPsiPressureProperty(symbology.node.colorRule?.property ?? "") ||
+    isPsiPressureProperty(symbology.node.labelRule ?? "") ||
+    isPsiPressureProperty(symbology.link.labelRule ?? "")
+      ? pressureToPsiFactor(units.pressure)
+      : 1;
 
   for (const asset of assets.values()) {
     await yieldIfSliceElapsed();
@@ -78,6 +90,7 @@ export const buildOptimizedAssetsSource = async (
       units,
       formatting,
       translateUnit,
+      psiFactor,
       simulationResults,
     );
 
@@ -97,6 +110,7 @@ export const buildOptimizedAssetsSource = async (
           asset as Junction,
           feature,
           symbology.node,
+          psiFactor,
           simulationResults,
           defaultsResolvers,
         );
@@ -140,6 +154,7 @@ const appendJunctionProps = (
   junction: Junction,
   feature: Feature,
   nodeSymbology: RenderAssetSymbology,
+  psiFactor: number,
   simulationResults?: ResultsReader | null,
   defaultsResolvers?: DefaultsResolvers,
 ) => {
@@ -147,6 +162,7 @@ const appendJunctionProps = (
     junction,
     feature,
     nodeSymbology,
+    psiFactor,
     simulationResults,
     defaultsResolvers,
   );
@@ -251,13 +267,15 @@ const appendPipeSymbologyProps = (
 // Maps symbology property names to simulation property names
 const getJunctionSimProperty = (property: string): keyof JunctionSimulation => {
   if (property === "actualDemand") return "demand";
-  return property as keyof JunctionSimulation;
+  return (pressurePropertyFor(property) ??
+    property) as keyof JunctionSimulation;
 };
 
 const appendJunctionSymbologyProps = (
   junction: Junction,
   feature: Feature,
   nodeSymbology: RenderAssetSymbology,
+  psiFactor: number,
   simulationResults?: ResultsReader | null,
   defaultsResolvers?: DefaultsResolvers,
 ) => {
@@ -279,7 +297,9 @@ const appendJunctionSymbologyProps = (
       resolveAssetDefault(defaultsResolvers, junction, property);
   }
   if (!Number.isNaN(value) && (isSimProperty || value !== null)) {
-    const fillColor = colorFor(nodeSymbology.colorRule, value ?? 0);
+    const displayValue =
+      (value ?? 0) * (isPsiPressureProperty(property) ? psiFactor : 1);
+    const fillColor = colorFor(nodeSymbology.colorRule, displayValue);
     feature.properties!.color = fillColor;
     feature.properties!.strokeColor = strokeColorFor(fillColor);
   }
@@ -292,6 +312,7 @@ const appendLabel = (
   units: UnitsSpec,
   formatting: FormattingSpec,
   translateUnit: (unit: Unit) => string,
+  psiFactor: number,
   simulationResults?: ResultsReader | null,
 ) => {
   if (!labelRule) return;
@@ -307,7 +328,8 @@ const appendLabel = (
   if (isSimulationProperty(property)) {
     if (asset.type === "pipe") {
       const sim = simulationResults?.getPipe(asset.id);
-      value = sim ? (sim[property as keyof PipeSimulation] as number) : null;
+      const simProperty = pressurePropertyFor(property) ?? property;
+      value = sim ? (sim[simProperty as keyof PipeSimulation] as number) : null;
     } else if (asset.type === "junction") {
       const simProperty = getJunctionSimProperty(property);
       const sim = simulationResults?.getJunction(asset.id);
@@ -318,11 +340,15 @@ const appendLabel = (
       (asset as unknown as Record<string, number | null>)[property] ?? null;
   }
 
-  if (value === null || Number.isNaN(value)) return;
+  if (value === null || value === undefined || Number.isNaN(value)) return;
 
-  const unit = units[property as QuantityProperty];
+  if (isPsiPressureProperty(property)) value *= psiFactor;
+  const unit = symbologyUnitFor(property, units);
+  const quantityProperty = pressurePropertyFor(property)
+    ? "pressure"
+    : (property as QuantityProperty);
   const localizedNumber = localizeDecimal(value, {
-    decimals: getDecimals(formatting, property as QuantityProperty),
+    decimals: getDecimals(formatting, quantityProperty),
   });
   const unitText = unit ? translateUnit(unit) : "";
   feature.properties!.label = `${localizedNumber} ${unitText}`;

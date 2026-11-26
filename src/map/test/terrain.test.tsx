@@ -12,6 +12,7 @@ import type { MapEngine } from "@epanet-js/map";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { setInitialState } from "src/__helpers__/state";
+import { orbitMap } from "src/commands/orbit-map";
 import { basemaps } from "src/map/basemaps";
 import {
   TERRAIN_LAYER_ID,
@@ -209,18 +210,19 @@ describe("3D terrain", () => {
       expect(map.map.easeTo).toHaveBeenCalledWith({ pitch: 60, duration: 450 }),
     );
     finishPitch(map, 60);
+    map.map.easeTo.mockClear();
     const networkData = map.getSource("main-features")?.data;
     const iconData = map.getSource("icons")?.data;
     const viewport = store.get(mapViewportAtom);
-    const slider = screen.getByRole("slider", { name: "mapView.tilt" });
-
-    fireEvent.change(slider, { target: { value: "35" } });
-    fireEvent.change(slider, { target: { value: "47" } });
+    act(() => {
+      orbitMap(store.get, store.set, { bearing: 0, pitch: 35 });
+      orbitMap(store.get, store.set, { bearing: 0, pitch: 47 });
+    });
 
     await waitFor(() => {
-      expect(map.map.easeTo).toHaveBeenLastCalledWith({
+      expect(map.map.jumpTo).toHaveBeenLastCalledWith({
         pitch: 47,
-        duration: 0,
+        bearing: 0,
       });
       expect(store.get(mapPitchRequestAtom)).toBeNull();
     });
@@ -230,20 +232,20 @@ describe("3D terrain", () => {
     expect(map.getSource("icons")?.data).toBe(iconData);
     expect(store.get(mapViewportAtom)).toBe(viewport);
     expect(map.setStyle).toHaveBeenCalledTimes(1);
+    expect(map.map.easeTo).not.toHaveBeenCalled();
 
-    fireEvent.change(slider, { target: { value: "0" } });
+    act(() => orbitMap(store.get, store.set, { bearing: 0, pitch: 0 }));
 
     await waitFor(() =>
-      expect(map.map.easeTo).toHaveBeenLastCalledWith({
+      expect(map.map.jumpTo).toHaveBeenLastCalledWith({
         pitch: 0,
-        duration: 0,
+        bearing: 0,
       }),
     );
     finishPitch(map, 0);
     await waitFor(() => expectCameraGestures(map, true));
     expect(store.get(isMap3DAtom)).toBe(true);
     expect(button).toHaveAttribute("aria-pressed", "true");
-    expect(slider).toBeInTheDocument();
     expect(map.map.getTerrain()).toEqual(TERRAIN);
 
     fireEvent.click(button);
@@ -266,7 +268,6 @@ describe("3D terrain", () => {
     expect(store.get(isMap3DAtom)).toBe(false);
     expect(map.map.getTerrain()).toBeNull();
     expect(map.map.addSource).not.toHaveBeenCalled();
-    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
 
     fireEvent.click(button);
     await waitFor(() => {
@@ -316,7 +317,6 @@ describe("3D terrain", () => {
     expect(map.map.easeTo).not.toHaveBeenCalled();
     map.map.setTerrain.mockClear();
     map.map.addSource.mockClear();
-    map.map.dragRotate.enable.mockClear();
 
     act(() => store.set(layerConfigAtom, satelliteLayers()));
 
@@ -328,7 +328,6 @@ describe("3D terrain", () => {
         TERRAIN_SOURCE_ID,
         expect.objectContaining({ type: "raster-dem" }),
       );
-      expect(map.map.dragRotate.enable).toHaveBeenCalled();
       expectCameraGestures(map, true);
     });
     expect(map.map.easeTo).not.toHaveBeenCalled();
@@ -491,7 +490,7 @@ const expectCameraGestures = (
   pitchEnabled: boolean,
   rotationEnabled = true,
 ) => {
-  expect(map.map.dragRotate.isEnabled()).toBe(rotationEnabled);
+  expect(map.map.dragRotate.isEnabled()).toBe(false);
   expect(map.map.touchPitch.isEnabled()).toBe(pitchEnabled);
   expect(map.map.touchZoomRotate.isRotationEnabled()).toBe(rotationEnabled);
   expect(map.map.keyboard.isRotationEnabled()).toBe(rotationEnabled);

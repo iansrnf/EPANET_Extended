@@ -1034,9 +1034,7 @@
     "threeDLabel": "3D view",
     "enable3D": "Enable 3D view",
     "returnTo2D": "Return to 2D view",
-    "tilt": "Tilt",
-    "tiltDegrees": "{{1}}°",
-    "tiltHint": "Ctrl + drag to tilt or rotate. On touchscreens, use two fingers."
+    "tiltHint": "Hold only the scroll-wheel button and drag to tilt or rotate. No keyboard keys are needed. On touchscreens, use two fingers."
   },
   "mapCursorCoordinates": {
     "label": "Cursor coordinates",

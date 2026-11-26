@@ -27,7 +27,7 @@ import {
   currentZoomAtom,
   mapViewportAtom,
 } from "src/state/map";
-import { useSetAtom } from "jotai";
+import { useSetAtom, useStore } from "jotai";
 import { modeAtom, Mode } from "src/state/mode";
 import { MapEngine } from "@epanet-js/map";
 import * as CM from "@radix-ui/react-context-menu";
@@ -64,7 +64,10 @@ import { Map3DControl } from "./map-3d-control";
 import { captureMapViewport } from "src/lib/map-viewport";
 import {
   currentMapPitchAtom,
+  isMap3DAtom,
+  mapCameraDraggingAtom,
   map3DFlatteningAtom,
+  mapPitchRequestAtom,
   mapPitchTransitioningAtom,
 } from "src/state/map-view";
 import { showGridAtom } from "src/state/map-projection";
@@ -72,6 +75,7 @@ import {
   MapCameraGestureState,
   type MapContextMenuPosition,
 } from "./map-3d-gestures";
+import { useOrbitMap } from "src/commands/orbit-map";
 mapboxgl.accessToken = env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
 mapboxgl.setRTLTextPlugin(
@@ -125,6 +129,8 @@ export const MapCanvas = memo(function MapCanvas({
 }: {
   setMap: (arg0: MapEngine | null) => void;
 }) {
+  const store = useStore();
+  const orbitMap = useOrbitMap();
   const rep = usePersistence();
   const readViewport = useAtomCallback(
     useCallback((get) => get(mapViewportAtom), []),
@@ -194,12 +200,69 @@ export const MapCanvas = memo(function MapCanvas({
 
   useEffect(() => {
     const gesture = cameraGestureRef.current;
-    const onMouseMove = (event: MouseEvent) => gesture.moveMouse(event);
+    let frame: number | null = null;
+    let pendingCamera: { bearing: number; pitch: number } | null = null;
+    const cancelFrame = () => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      frame = null;
+    };
+    const flushCamera = () => {
+      cancelFrame();
+      const camera = pendingCamera;
+      pendingCamera = null;
+      if (camera && gesture.middleMouseActive) orbitMap(camera);
+    };
+    const saveFinalViewport = () => {
+      const map = mapRef.current;
+      if (
+        map?.isAlive() &&
+        store.get(mapPitchRequestAtom)?.bearing === undefined
+      )
+        saveViewport(map.map);
+    };
+    const resetGesture = () => {
+      const wasDragging = gesture.middleMouseActive;
+      cancelFrame();
+      pendingCamera = null;
+      if (
+        wasDragging &&
+        store.get(mapPitchRequestAtom)?.bearing !== undefined
+      ) {
+        store.set(mapPitchRequestAtom, null);
+      }
+      gesture.reset();
+      store.set(mapCameraDraggingAtom, false);
+      if (wasDragging) saveFinalViewport();
+    };
+    const onMouseMove = (event: MouseEvent) => {
+      if (
+        gesture.middleMouseActive &&
+        (!(event.buttons & 4) ||
+          store.get(showGridAtom) ||
+          store.get(map3DFlatteningAtom))
+      ) {
+        resetGesture();
+        return;
+      }
+      const camera = gesture.moveMouse(event);
+      if (camera) {
+        event.preventDefault();
+        pendingCamera = camera;
+        if (frame === null) frame = window.requestAnimationFrame(flushCamera);
+      }
+    };
     const onMouseUp = (event: MouseEvent) => {
+      const endedMiddleDrag = gesture.middleMouseActive && event.button === 1;
+      if (endedMiddleDrag) {
+        const camera = gesture.moveMouse(event);
+        if (camera) pendingCamera = camera;
+        flushCamera();
+      }
       const menu = gesture.endMouse(event);
+      if (!gesture.middleMouseActive) store.set(mapCameraDraggingAtom, false);
+      if (endedMiddleDrag) saveFinalViewport();
       if (menu) forwardContextMenu(menu);
     };
-    const resetGesture = () => gesture.reset();
     window.addEventListener("mousemove", onMouseMove, true);
     window.addEventListener("mouseup", onMouseUp);
     window.addEventListener("blur", resetGesture);
@@ -207,9 +270,9 @@ export const MapCanvas = memo(function MapCanvas({
       window.removeEventListener("mousemove", onMouseMove, true);
       window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("blur", resetGesture);
-      gesture.reset();
+      resetGesture();
     };
-  }, [forwardContextMenu]);
+  }, [forwardContextMenu, orbitMap, store, mapInstance, saveViewport]);
 
   const fitToExtent = useFitToExtent();
 
@@ -324,12 +387,27 @@ export const MapCanvas = memo(function MapCanvas({
     },
     onMapMouseDown: (e: mapboxgl.MapMouseEvent) => {
       clearHover();
+      const middleMouse = e.originalEvent.button === 1;
+      const map = mapRef.current;
+      if (middleMouse) {
+        e.originalEvent.preventDefault();
+        e.preventDefault();
+      }
       if (
         cameraGestureRef.current.startMouse(
           e.originalEvent,
-          cameraGesturesEnabled,
+          !store.get(showGridAtom) &&
+            !store.get(map3DFlatteningAtom) &&
+            !!map?.isAlive(),
+          middleMouse && map
+            ? {
+                bearing: map.map.getBearing(),
+                pitch: store.get(isMap3DAtom) ? map.map.getPitch() : 0,
+              }
+            : undefined,
         )
       ) {
+        if (middleMouse) store.set(mapCameraDraggingAtom, true);
         HANDLERS[mode.mode].cancelPointerGesture?.();
         return;
       }
@@ -419,16 +497,10 @@ export const MapCanvas = memo(function MapCanvas({
     },
     onMoveEnd(e: mapboxgl.MapboxEvent & mapboxgl.EventData) {
       debug(e, mode.mode, selection, dragTargetRef, "onMouseMoveEnd");
-      saveViewport(e.target);
+      if (!cameraGestureRef.current.middleMouseActive) saveViewport(e.target);
     },
     onMove: throttle((e: mapboxgl.MapboxEvent & mapboxgl.EventData) => {
       debug(e, mode.mode, selection, dragTargetRef, "onMove");
-      const center = e.target.getCenter().toArray();
-      const bounds = e.target.getBounds().toArray();
-      return {
-        center,
-        bounds,
-      };
     }, 300),
     onZoom: (e: mapboxgl.MapBoxZoomEvent) => {
       const zoom = e.target.getZoom();
@@ -593,6 +665,11 @@ export const MapCanvas = memo(function MapCanvas({
           data-testid="map"
           onMouseLeave={clearHover}
           onContextMenuCapture={captureCameraContextMenu}
+          onAuxClickCapture={(event) => {
+            if (event.button !== 1) return;
+            event.preventDefault();
+            event.stopPropagation();
+          }}
           onTouchCancelCapture={() => {
             cameraGestureRef.current.reset();
             HANDLERS[mode.mode].cancelPointerGesture?.();

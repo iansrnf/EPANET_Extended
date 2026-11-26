@@ -369,34 +369,120 @@ describe("flow animation", () => {
     );
   });
 
-  it("suspends an active 2D camera animation as soon as terrain is enabled", () => {
+  it("keeps terrain flow paused across camera updates until the drag ends", () => {
     const fixture = createFixture();
     fixture.animation.update(fixture.options);
     vi.advanceTimersByTime(0);
     fixture.renderFrame(0);
-    fixture.emit("movestart");
-    expect(fixture.frames.size).toBe(1);
+    fixture.getTerrain.mockReturnValue({ source: TERRAIN_SOURCE_ID });
+    fixture.animation.setCameraDragging(true);
+    fixture.animation.setCameraDragging(true);
     fixture.queryRenderedFeatures.mockClear();
     fixture.project.mockClear();
+    fixture.context.stroke.mockClear();
+    const nextGetAllValues = vi.fn(() => new Float32Array([10]));
+    const nextGetPipe = vi.fn(() => ({ flow: 10, status: "open" }));
+    fixture.animation.update({
+      ...fixture.options,
+      results: {
+        getPipe: nextGetPipe,
+        getAllValues: nextGetAllValues,
+      } as unknown as ResultsReader,
+    });
 
-    fixture.getTerrain.mockReturnValue({ source: TERRAIN_SOURCE_ID });
-    fixture.emit("styledata");
-    fixture.emit("move");
-    fixture.emit("render");
-    vi.advanceTimersByTime(500);
-    fixture.renderFrame(500);
+    for (let frame = 0; frame < 10; frame++) {
+      fixture.animation.setCameraDragging(true);
+      fixture.emit("movestart");
+      fixture.emit("move");
+      fixture.emit("moveend");
+      fixture.emit("sourcedata", { sourceId: "main-features" });
+      fixture.emit("render");
+      vi.advanceTimersByTime(50);
+      fixture.renderFrame(frame * 50);
+    }
 
     expect(fixture.frames.size).toBe(0);
     expect(fixture.queryRenderedFeatures).not.toHaveBeenCalled();
     expect(fixture.project).not.toHaveBeenCalled();
+    expect(fixture.context.stroke).not.toHaveBeenCalled();
+    expect(nextGetAllValues).not.toHaveBeenCalled();
+    expect(nextGetPipe).not.toHaveBeenCalled();
 
-    fixture.emit("moveend");
+    fixture.animation.setCameraDragging(false);
+    fixture.animation.setCameraDragging(false);
     vi.advanceTimersByTime(0);
-    fixture.renderFrame(600);
+    fixture.renderFrame(500);
     fixture.emit("render");
+    vi.advanceTimersByTime(100);
+
     expect(fixture.queryRenderedFeatures).toHaveBeenCalledTimes(1);
+    expect(nextGetAllValues).toHaveBeenCalledTimes(1);
+    expect(nextGetPipe).toHaveBeenCalledTimes(1);
+    expect(fixture.context.stroke).toHaveBeenCalled();
     expect(fixture.frames.size).toBe(1);
   });
+
+  it("keeps 2D particles moving throughout a camera drag", () => {
+    const fixture = createFixture();
+    fixture.animation.update(fixture.options);
+    vi.advanceTimersByTime(0);
+    fixture.renderFrame(0);
+    const initialHead = fixture.context.lineTo.mock.calls[0][0];
+    fixture.context.lineTo.mockClear();
+
+    fixture.animation.setCameraDragging(true);
+    fixture.emit("movestart");
+    fixture.projection.offsetX = 30;
+    fixture.emit("move");
+    fixture.emit("moveend");
+    vi.advanceTimersByTime(0);
+    fixture.renderFrame(100);
+
+    const draggedHead = fixture.context.lineTo.mock.calls[0][0];
+    expect(draggedHead - initialHead - 30).toBeGreaterThan(0);
+    expect(fixture.frames.size).toBe(1);
+    expect(fixture.queryRenderedFeatures).toHaveBeenCalledTimes(1);
+    expect(fixture.getAllValues).toHaveBeenCalledTimes(1);
+
+    fixture.animation.setCameraDragging(false);
+    vi.advanceTimersByTime(0);
+    expect(fixture.frames.size).toBe(1);
+    expect(fixture.queryRenderedFeatures).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["move", "drag"] as const)(
+    "suspends an active 2D camera %s as soon as terrain is enabled",
+    (gesture) => {
+      const fixture = createFixture();
+      fixture.animation.update(fixture.options);
+      vi.advanceTimersByTime(0);
+      fixture.renderFrame(0);
+      if (gesture === "move") fixture.emit("movestart");
+      else fixture.animation.setCameraDragging(true);
+      expect(fixture.frames.size).toBe(1);
+      fixture.queryRenderedFeatures.mockClear();
+      fixture.project.mockClear();
+
+      fixture.getTerrain.mockReturnValue({ source: TERRAIN_SOURCE_ID });
+      fixture.emit("styledata");
+      fixture.emit("move");
+      fixture.emit("render");
+      vi.advanceTimersByTime(500);
+      fixture.renderFrame(500);
+
+      expect(fixture.frames.size).toBe(0);
+      expect(fixture.queryRenderedFeatures).not.toHaveBeenCalled();
+      expect(fixture.project).not.toHaveBeenCalled();
+
+      if (gesture === "move") fixture.emit("moveend");
+      else fixture.animation.setCameraDragging(false);
+      vi.advanceTimersByTime(0);
+      fixture.renderFrame(600);
+      fixture.emit("render");
+      expect(fixture.queryRenderedFeatures).toHaveBeenCalledTimes(1);
+      expect(fixture.frames.size).toBe(1);
+    },
+  );
 
   it("realigns water after terrain loads or switches off without camera movement", () => {
     const fixture = createFixture();

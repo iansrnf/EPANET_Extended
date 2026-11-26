@@ -1,29 +1,16 @@
 import { useAtomValue } from "jotai";
 import { Tooltip } from "@epanet-js/ui-kit";
 import { useMediaQuery } from "react-responsive";
-import { useId } from "react";
 import clsx from "clsx";
 import { useToggleMap3D } from "src/commands/toggle-map-3d";
-import { useSetMapTilt } from "src/commands/set-map-tilt";
 import { useTranslate } from "src/hooks/use-translate";
-import {
-  MAX_MAP_PITCH,
-  currentMapPitchAtom,
-  isMap3DAtom,
-  map3DBusyAtom,
-  mapPitchRequestAtom,
-} from "src/state/map-view";
+import { isMap3DAtom, map3DBusyAtom } from "src/state/map-view";
 
 export const Map3DControl = ({ mapReady }: { mapReady: boolean }) => {
   const translate = useTranslate();
   const enabled = useAtomValue(isMap3DAtom);
   const busy = useAtomValue(map3DBusyAtom);
-  const pitch = useAtomValue(currentMapPitchAtom);
-  const pitchRequest = useAtomValue(mapPitchRequestAtom);
   const toggle = useToggleMap3D();
-  const setTilt = useSetMapTilt();
-  const tiltId = useId();
-  const tilt = Math.round(pitchRequest?.pitch ?? pitch);
   const reducedMotion = useMediaQuery({
     query: "(prefers-reduced-motion: reduce)",
   });
@@ -39,9 +26,14 @@ export const Map3DControl = ({ mapReady }: { mapReady: boolean }) => {
     >
       <div className="mapboxgl-ctrl-group">
         <Tooltip
-          content={translate(
-            enabled ? "mapView.returnTo2D" : "mapView.enable3D",
-          )}
+          content={
+            <div className="max-w-56 space-y-1">
+              <p>
+                {translate(enabled ? "mapView.returnTo2D" : "mapView.enable3D")}
+              </p>
+              {enabled && <p>{translate("mapView.tiltHint")}</p>}
+            </div>
+          }
           side="left"
           sideOffset={6}
           zIndex={50}
@@ -68,37 +60,6 @@ export const Map3DControl = ({ mapReady }: { mapReady: boolean }) => {
           </button>
         </Tooltip>
       </div>
-      {enabled && (
-        <div className="map-tilt-controls map-overlay-surface absolute bottom-0 right-[calc(100%+0.5rem)] w-56 max-w-[calc(100vw-4rem)] rounded-md border p-3 text-default shadow-lg">
-          <div className="flex items-center justify-between text-size-small">
-            <label htmlFor={tiltId} className="font-medium">
-              {translate("mapView.tilt")}
-            </label>
-            <span aria-hidden="true" className="tabular-nums">
-              {translate("mapView.tiltDegrees", String(tilt))}
-            </span>
-          </div>
-          <input
-            id={tiltId}
-            type="range"
-            min={0}
-            max={MAX_MAP_PITCH}
-            step={1}
-            value={tilt}
-            disabled={!mapReady}
-            aria-valuetext={translate("mapView.tiltDegrees", String(tilt))}
-            aria-describedby={`${tiltId}-help`}
-            onChange={(event) => {
-              const nextPitch = Number(event.currentTarget.value);
-              void setTilt(nextPitch);
-            }}
-            className="mt-1 h-7 w-full cursor-pointer accent-accent focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:h-11"
-          />
-          <p id={`${tiltId}-help`} className="text-size-small text-subtle">
-            {translate("mapView.tiltHint")}
-          </p>
-        </div>
-      )}
     </div>
   );
 };

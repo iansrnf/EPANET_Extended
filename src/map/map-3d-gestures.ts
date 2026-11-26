@@ -22,14 +22,14 @@ export const updateMapCameraGestures = (
   }
 
   if (rotationEnabled && (!terrainEnabled || tiltEnabled)) {
-    renderer.dragRotate.enable();
     renderer.touchZoomRotate.enableRotation();
     renderer.keyboard.enableRotation();
   } else {
-    renderer.dragRotate.disable();
     renderer.touchZoomRotate.disableRotation();
     renderer.keyboard.disableRotation();
   }
+
+  renderer.dragRotate.disable();
 
   if (tiltEnabled) {
     renderer.touchPitch.enable();
@@ -56,6 +56,9 @@ export class MapCameraGestureState {
     clientX: number;
     clientY: number;
     dragged: boolean;
+    lastX: number;
+    lastY: number;
+    camera?: { bearing: number; pitch: number };
   } | null = null;
   private pendingContextMenu: MapContextMenuPosition | null = null;
   private dragged = false;
@@ -66,6 +69,10 @@ export class MapCameraGestureState {
 
   get mouseActive() {
     return this.mouse !== null;
+  }
+
+  get middleMouseActive() {
+    return this.mouse?.button === 1;
   }
 
   get touchActive() {
@@ -80,34 +87,62 @@ export class MapCameraGestureState {
     return this.mouseActive || this.multiTouch || this.ignoreClick;
   }
 
-  startMouse(event: MouseEvent, enabled: boolean) {
+  startMouse(
+    event: MouseEvent,
+    enabled: boolean,
+    camera?: { bearing: number; pitch: number },
+  ) {
     this.dragged = false;
     this.ignoreClick = false;
     this.pendingContextMenu = null;
     this.mouse =
-      enabled && (event.button === 2 || (event.button === 0 && event.ctrlKey))
+      enabled && (event.button === 1 || event.button === 2)
         ? {
             button: event.button,
             clientX: event.clientX,
             clientY: event.clientY,
             dragged: false,
+            lastX: event.clientX,
+            lastY: event.clientY,
+            camera: event.button === 1 && camera ? { ...camera } : undefined,
           }
         : null;
     return this.mouseActive;
   }
 
   moveMouse(event: MouseEvent) {
-    if (!this.mouse) return;
+    if (!this.mouse) return null;
     const dx = event.clientX - this.mouse.clientX;
     const dy = event.clientY - this.mouse.clientY;
     if (dx * dx + dy * dy >= 9) this.mouse.dragged = true;
+    if (!this.mouse.dragged || !this.mouse.camera) return null;
+    if (
+      this.mouse.lastX === event.clientX &&
+      this.mouse.lastY === event.clientY
+    )
+      return null;
+    const camera = {
+      bearing:
+        this.mouse.camera.bearing + (event.clientX - this.mouse.lastX) * 0.8,
+      pitch: Math.max(
+        0,
+        Math.min(
+          MAX_MAP_PITCH,
+          this.mouse.camera.pitch - (event.clientY - this.mouse.lastY) * 0.5,
+        ),
+      ),
+    };
+    this.mouse.lastX = event.clientX;
+    this.mouse.lastY = event.clientY;
+    this.mouse.camera = camera;
+    return camera;
   }
 
   endMouse(event: MouseEvent): MapContextMenuPosition | null {
     if (!this.mouse || event.button !== this.mouse.button) return null;
     this.moveMouse(event);
     this.dragged = this.mouse.dragged;
-    this.ignoreClick = this.dragged;
+    this.ignoreClick = this.dragged || this.mouse.button === 1;
     this.mouse = null;
     const menu = this.dragged ? null : this.pendingContextMenu;
     this.pendingContextMenu = null;

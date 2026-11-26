@@ -11,6 +11,7 @@ import {
   isMap3DAtom,
   map3DBusyAtom,
   map3DFlatteningAtom,
+  mapCameraDraggingAtom,
   mapPitchRequestAtom,
   mapPitchTransitioningAtom,
   mapTerrainEnabledAtom,
@@ -97,7 +98,7 @@ describe("toggleMap3D", () => {
     expect(store.get(deviceLocationNavigationRevisionAtom)).toBe(5);
   });
 
-  it.each(["queued", "transitioning", "flattening"])(
+  it.each(["queued", "transitioning", "flattening", "dragging"])(
     "ignores repeat toggles while %s",
     (phase) => {
       const store = createStore();
@@ -107,6 +108,8 @@ describe("toggleMap3D", () => {
       } else if (phase === "flattening") {
         store.set(map3DFlatteningAtom, true);
         store.set(mapPitchTransitioningAtom, true);
+      } else if (phase === "dragging") {
+        store.set(mapCameraDraggingAtom, true);
       } else {
         store.set(isMap3DAtom, true);
         store.set(mapPitchTransitioningAtom, true);

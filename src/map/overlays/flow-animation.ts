@@ -64,6 +64,7 @@ export class FlowAnimation {
   private refreshAfterRender = false;
   private motionPreference: MediaQueryList | null = null;
   private moving = false;
+  private cameraDragging = false;
   private destroyed = false;
   private elapsed = 0;
   private previousFrame: number | null = null;
@@ -137,6 +138,20 @@ export class FlowAnimation {
     this.projectionDirty = true;
   }
 
+  setCameraDragging(dragging: boolean) {
+    if (this.destroyed || this.cameraDragging === dragging) return;
+    this.cameraDragging = dragging;
+    this.terrainEnabled = !!this.map.map.getTerrain();
+    if (dragging && this.terrainEnabled) {
+      this.stop();
+    } else if (!dragging) {
+      this.projectionDirty = true;
+      if (this.refreshTimer !== null) clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+      this.scheduleRefresh(0);
+    }
+  }
+
   destroy = () => {
     if (this.destroyed) return;
     this.destroyed = true;
@@ -166,7 +181,7 @@ export class FlowAnimation {
       !!this.context &&
       !!this.options?.enabled &&
       !!this.options.results &&
-      !(this.moving && this.terrainEnabled) &&
+      !((this.moving || this.cameraDragging) && this.terrainEnabled) &&
       !document.hidden &&
       (!this.motionPreference?.matches ||
         this.options.allowReducedMotion === true) &&
@@ -223,7 +238,7 @@ export class FlowAnimation {
     if (terrainEnabled === this.terrainEnabled) return;
     this.terrainEnabled = terrainEnabled;
     this.projectionDirty = true;
-    if (this.moving && terrainEnabled) {
+    if ((this.moving || this.cameraDragging) && terrainEnabled) {
       this.stop();
       return;
     }
@@ -233,7 +248,7 @@ export class FlowAnimation {
   private handleRender = () => {
     if (!this.refreshAfterRender || !this.canAnimate()) return;
     if (
-      this.moving &&
+      (this.moving || this.cameraDragging) &&
       Date.now() - this.lastSourceRefresh < MOVING_REFRESH_INTERVAL
     )
       return;
@@ -247,7 +262,7 @@ export class FlowAnimation {
     if (!this.canAnimate()) return;
     this.refreshAfterRender = true;
     if (this.refreshTimer !== null) return;
-    if (this.moving) {
+    if (this.moving || this.cameraDragging) {
       delay = Math.max(
         delay,
         MOVING_REFRESH_INTERVAL - (Date.now() - this.lastSourceRefresh),
@@ -268,7 +283,11 @@ export class FlowAnimation {
     });
     if (features.length) this.refreshAfterRender = false;
     this.lastSourceRefresh = Date.now();
-    if (this.moving && !features.length && this.pipes.length) {
+    if (
+      (this.moving || this.cameraDragging) &&
+      !features.length &&
+      this.pipes.length
+    ) {
       this.projectionDirty = true;
       return;
     }

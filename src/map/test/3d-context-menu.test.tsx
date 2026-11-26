@@ -123,7 +123,9 @@ const mountSelectedMap = async (pitch: number) => {
   act(() => {
     store.set(selectionAtom, selection);
   });
-  await waitFor(() => expect(map.map.dragRotate.isEnabled()).toBe(true));
+  await waitFor(() =>
+    expect(map.map.touchZoomRotate.isRotationEnabled()).toBe(true),
+  );
 
   Object.assign(map.map, {
     unproject: (position: number[]) => ({ toArray: () => position }),

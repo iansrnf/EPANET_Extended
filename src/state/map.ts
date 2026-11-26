@@ -71,6 +71,7 @@ import {
 } from "src/state/device-location";
 import {
   isMap3DAtom,
+  mapCameraDraggingAtom,
   mapPitchRequestAtom,
   mapTerrainEnabledAtom,
   type MapPitchRequest,
@@ -167,6 +168,7 @@ export type MapState = {
   pitchRequest: MapPitchRequest | null;
   terrainEnabled: boolean;
   tiltEnabled: boolean;
+  cameraDragging: boolean;
 };
 
 export const nullMapState: MapState = {
@@ -208,6 +210,7 @@ export const nullMapState: MapState = {
   pitchRequest: null,
   terrainEnabled: false,
   tiltEnabled: false,
+  cameraDragging: false,
 } as const;
 
 export const stylesConfigAtom = atom<StylesConfig>((get) => {
@@ -292,5 +295,6 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
     pitchRequest: get(mapPitchRequestAtom),
     terrainEnabled: !get(showGridAtom) && get(mapTerrainEnabledAtom),
     tiltEnabled: !get(showGridAtom) && get(isMap3DAtom),
+    cameraDragging: !get(showGridAtom) && get(mapCameraDraggingAtom),
   };
 });

@@ -290,12 +290,6 @@
     bottom: auto;
   }
 
-  [data-map-compact-height] .map-tilt-controls {
-    top: calc(100% + 0.5rem);
-    right: 0;
-    bottom: auto;
-  }
-
   [data-map-compact-height] .map-drawing-toolbar:not([data-docked]) {
     justify-content: flex-end;
     padding-inline: 0.5rem;

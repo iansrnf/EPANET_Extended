@@ -858,10 +858,20 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
         pitchRequest &&
         store.get(mapPitchRequestAtom) === pitchRequest
       ) {
-        map.map.easeTo({
-          pitch: pitchRequest.pitch,
-          duration: pitchRequest.duration,
-        });
+        if (pitchRequest.duration === 0 && pitchRequest.bearing !== undefined) {
+          map.map.jumpTo({
+            pitch: pitchRequest.pitch,
+            bearing: pitchRequest.bearing,
+          });
+        } else {
+          map.map.easeTo({
+            pitch: pitchRequest.pitch,
+            duration: pitchRequest.duration,
+            ...(pitchRequest.bearing === undefined
+              ? {}
+              : { bearing: pitchRequest.bearing }),
+          });
+        }
         setPitchRequest((current) =>
           current === pitchRequest ? null : current,
         );
@@ -873,6 +883,7 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
       if (animateFlow && mapState.resultsReader && !flowAnimationRef.current) {
         flowAnimationRef.current = new FlowAnimation(map);
       }
+      flowAnimationRef.current?.setCameraDragging(mapState.cameraDragging);
       if (
         hasNewImport ||
         hasNewStyles ||

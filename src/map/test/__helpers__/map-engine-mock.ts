@@ -123,6 +123,7 @@ class MapTestEngine {
       },
     ),
     easeTo: vi.fn(),
+    jumpTo: vi.fn(),
     getStyle: vi.fn().mockReturnValue({ layers: [] }),
     removeLayer: vi.fn(),
     removeSource: vi.fn(),

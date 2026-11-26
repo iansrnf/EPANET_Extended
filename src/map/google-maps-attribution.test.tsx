@@ -55,7 +55,7 @@ describe("Google Maps session lifecycle", () => {
     vi.mocked(getGoogleMapsSession)
       .mockResolvedValueOnce(session("initial", initialExpiry))
       .mockResolvedValue(session("renewed", initialExpiry + 120));
-    const { store } = mountAttribution();
+    const { store, attributionControl } = mountAttribution();
 
     await act(() => Promise.resolve());
     expect(store.get(googleMapsSessionVersionAtom)).toBe(0);
@@ -67,6 +67,9 @@ describe("Google Maps session lifecycle", () => {
     expect(store.get(googleMapsSessionVersionAtom)).toBe(1);
     expect(getGoogleMapsSession).toHaveBeenCalledTimes(2);
     expect(screen.getByText("Map data Google, Maxar")).toBeInTheDocument();
+    expect(screen.getByText("Map data Google, Maxar").parentElement).toBe(
+      attributionControl,
+    );
   });
 
   it("does not rebuild the style when focus reuses a session", async () => {
@@ -144,7 +147,9 @@ describe("Google Maps session lifecycle", () => {
       applySession(null);
       await Promise.resolve();
     });
-    expect(screen.queryByText("Google Maps")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("googleMaps.basemapAttribution"),
+    ).not.toBeInTheDocument();
   });
 
   it("uses the displayed session while a new Google basemap is pending", async () => {
@@ -210,7 +215,9 @@ describe("Google Maps session lifecycle", () => {
     await act(() => Promise.resolve());
 
     expect(getGoogleMapsAttribution).not.toHaveBeenCalled();
-    expect(screen.queryByText("Google Maps")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("googleMaps.basemapAttribution"),
+    ).not.toBeInTheDocument();
 
     await act(async () => {
       setStyleReadable(true, "style.load");
@@ -261,6 +268,10 @@ const mountAttribution = ({ styleReadable = true } = {}) => {
   let appliedSession: string | null = "initial";
   let isStyleReadable = styleReadable;
   const listeners = new Map<string, Set<() => void>>();
+  const container = document.createElement("div");
+  const attributionControl = document.createElement("div");
+  attributionControl.className = "mapboxgl-ctrl-attrib mapboxgl-compact";
+  container.appendChild(attributionControl);
   store.set(
     layerConfigAtom,
     new Map([
@@ -291,6 +302,7 @@ const mountAttribution = ({ styleReadable = true } = {}) => {
       getWest: () => 120,
     }),
     map: {
+      getContainer: () => container,
       on: vi.fn((event: string, listener: () => void) => {
         const eventListeners = listeners.get(event) ?? new Set();
         eventListeners.add(listener);
@@ -318,6 +330,11 @@ const mountAttribution = ({ styleReadable = true } = {}) => {
   };
   render(
     <Provider store={store}>
+      <div
+        ref={(element) => {
+          element?.appendChild(container);
+        }}
+      />
       <GoogleMapsAttribution map={map as unknown as MapEngine} />
     </Provider>,
   );
@@ -332,5 +349,5 @@ const mountAttribution = ({ styleReadable = true } = {}) => {
     listeners.get(event)?.forEach((listener) => listener());
   };
 
-  return { store, map, applySession, setStyleReadable };
+  return { store, map, applySession, setStyleReadable, attributionControl };
 };

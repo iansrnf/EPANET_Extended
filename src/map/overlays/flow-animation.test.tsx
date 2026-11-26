@@ -4,6 +4,7 @@ import type { ResultsReader } from "@epanet-js/simulation";
 import { HydraulicModelBuilder } from "@epanet-js/hydraulic-model-testing";
 import { FlowAnimation } from "./flow-animation";
 import { FLOW_PARTICLE_SPACING } from "./flow-animation-path";
+import { TERRAIN_SOURCE_ID } from "../terrain";
 
 const IDS = { J1: 1, J2: 2, J3: 3, J4: 4, P1: 5, P2: 6 } as const;
 const controllers: FlowAnimation[] = [];
@@ -302,6 +303,42 @@ describe("flow animation", () => {
     expect(fixture.getAllValues).toHaveBeenCalledTimes(1);
   });
 
+  it("realigns water after terrain loads or switches off without camera movement", () => {
+    const fixture = createFixture();
+    const scan = vi.spyOn(fixture.assets, "values").mockImplementation(() => {
+      throw new Error("Animation must not scan the model");
+    });
+    fixture.getTerrain.mockReturnValue({ source: TERRAIN_SOURCE_ID });
+    fixture.emit("styledata");
+    fixture.animation.update(fixture.options);
+    vi.advanceTimersByTime(0);
+    fixture.renderFrame(0);
+    fixture.context.moveTo.mockClear();
+
+    fixture.projection.offsetY = 15;
+    fixture.emit("sourcedata", { sourceId: TERRAIN_SOURCE_ID });
+    vi.advanceTimersByTime(80);
+    fixture.renderFrame(100);
+
+    expect(fixture.context.moveTo.mock.calls.some(([, y]) => y === 65)).toBe(
+      true,
+    );
+    fixture.context.moveTo.mockClear();
+    fixture.projection.offsetY = 0;
+    fixture.getTerrain.mockReturnValue(null);
+    fixture.emit("styledata");
+    fixture.emit("styledata");
+    vi.advanceTimersByTime(80);
+    fixture.renderFrame(200);
+
+    expect(fixture.context.moveTo.mock.calls.some(([, y]) => y === 50)).toBe(
+      true,
+    );
+    expect(fixture.queryRenderedFeatures).toHaveBeenCalledTimes(3);
+    expect(fixture.getAllValues).toHaveBeenCalledTimes(1);
+    expect(scan).not.toHaveBeenCalled();
+  });
+
   it("preserves moving water while newly exposed tiles are loading", () => {
     const fixture = createFixture();
     fixture.animation.update(fixture.options);
@@ -456,6 +493,7 @@ const createFixture = (flow = 1) => {
     (_property: string) => new Float32Array([Math.abs(flow)]),
   );
   const getZoom = vi.fn().mockReturnValue(16);
+  const getTerrain = vi.fn().mockReturnValue(null);
   const projection = { offsetX: 0, offsetY: 0, scale: 100 };
   const project = vi.fn(([x, y]: number[]) => ({
     x: x * projection.scale + projection.offsetX,
@@ -469,6 +507,7 @@ const createFixture = (flow = 1) => {
       getCanvasContainer: () => container,
       getCanvas: () => ({ clientWidth: 300, clientHeight: 200 }),
       project,
+      getTerrain,
       on: (name: string, callback: (event?: unknown) => void) => {
         if (!listeners.has(name)) listeners.set(name, new Set());
         listeners.get(name)!.add(callback);
@@ -489,6 +528,7 @@ const createFixture = (flow = 1) => {
     getPipe,
     getAllValues,
     getZoom,
+    getTerrain,
     hidden,
     media,
     listeners,

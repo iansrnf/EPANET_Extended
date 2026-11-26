@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAtomValue, useSetAtom } from "jotai";
 import type { MapEngine } from "@epanet-js/map";
 import type { Style } from "mapbox-gl";
@@ -21,24 +22,22 @@ export const GoogleMapsAttribution = ({ map }: { map: MapEngine | null }) => {
   const appliedSession = useAppliedGoogleMapsSession(map);
   const copyright = useGoogleMapsCopyright(map, appliedSession);
 
-  if (!appliedSession) return null;
+  if (!appliedSession || !map) return null;
 
-  return (
+  const attributionControl = map.map
+    .getContainer()
+    .querySelector(".mapboxgl-ctrl-attrib");
+  if (!attributionControl) return null;
+
+  return createPortal(
     <div
       data-map-attribution="google"
-      className="map-overlay-theme map-overlay-surface absolute bottom-[calc(var(--simulation-controls-height,0px)+52px)] right-12 z-10 max-w-[calc(100%-4rem)] rounded-sm px-2 py-1 text-right text-size-small text-default shadow-sm"
+      className="mapboxgl-ctrl-attrib-inner max-w-[min(28rem,calc(100vw-5rem))] whitespace-normal text-right text-size-small text-default"
       aria-label={translate("googleMaps.basemapAttribution")}
     >
-      <a
-        href="https://maps.google.com/"
-        target="_blank"
-        rel="noreferrer"
-        className="font-medium"
-      >
-        Google Maps
-      </a>
-      {copyright && <div>{copyright}</div>}
-    </div>
+      {copyright}
+    </div>,
+    attributionControl,
   );
 };
 

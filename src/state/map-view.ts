@@ -11,6 +11,13 @@ export const mapPitchTransitioningAtom = atom(false);
 
 export const isMap3DAtom = atom((get) => get(currentMapPitchAtom) > 1);
 
+export const mapTerrainEnabledAtom = atom(
+  (get) =>
+    get(isMap3DAtom) ||
+    get(mapPitchTransitioningAtom) ||
+    (get(mapPitchRequestAtom)?.pitch ?? 0) > 1,
+);
+
 export const map3DBusyAtom = atom(
   (get) => get(mapPitchRequestAtom) !== null || get(mapPitchTransitioningAtom),
 );

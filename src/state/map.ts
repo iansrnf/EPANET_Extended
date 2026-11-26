@@ -69,7 +69,11 @@ import {
   type DeviceLocation,
   type DeviceLocationViewportRequest,
 } from "src/state/device-location";
-import { mapPitchRequestAtom, type MapPitchRequest } from "src/state/map-view";
+import {
+  mapPitchRequestAtom,
+  mapTerrainEnabledAtom,
+  type MapPitchRequest,
+} from "src/state/map-view";
 
 export const mapEditionsTrackerAtom = atom<MapEditionsTracker>(
   new MapEditionsTracker(),
@@ -160,6 +164,7 @@ export type MapState = {
   deviceLocation: DeviceLocation | null;
   deviceLocationViewportRequest: DeviceLocationViewportRequest | null;
   pitchRequest: MapPitchRequest | null;
+  terrainEnabled: boolean;
 };
 
 export const nullMapState: MapState = {
@@ -199,6 +204,7 @@ export const nullMapState: MapState = {
   deviceLocation: null,
   deviceLocationViewportRequest: null,
   pitchRequest: null,
+  terrainEnabled: false,
 } as const;
 
 export const stylesConfigAtom = atom<StylesConfig>((get) => {
@@ -281,5 +287,6 @@ export const mapStateDerivedAtom = atom<MapState>((get) => {
     deviceLocation,
     deviceLocationViewportRequest,
     pitchRequest: get(mapPitchRequestAtom),
+    terrainEnabled: !get(showGridAtom) && get(mapTerrainEnabledAtom),
   };
 });

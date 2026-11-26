@@ -30,7 +30,8 @@ export async function addGoogleStyle(
     tileSize: session.tileWidth,
     minzoom: 0,
     maxzoom: 22,
-    attribution: "Google Maps",
+    attribution:
+      '<a href="https://maps.google.com/" target="_blank" rel="noreferrer">Google Maps</a>',
   };
   style.layers.push({
     id: `googleMapsLayer${id}`,

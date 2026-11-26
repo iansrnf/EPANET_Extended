@@ -11,6 +11,7 @@ import {
   type FlowAnimationPath,
 } from "./flow-animation-path";
 import { visibleFlowAnimationFragments } from "./flow-animation-fragments";
+import { TERRAIN_SOURCE_ID } from "../terrain";
 
 type FlowAnimationOptions = {
   assets: AssetsMap;
@@ -69,6 +70,7 @@ export class FlowAnimation {
   private width = 0;
   private height = 0;
   private pixelRatio = 1;
+  private terrainEnabled = false;
 
   constructor(private map: MapEngine) {
     const container =
@@ -90,6 +92,7 @@ export class FlowAnimation {
 
     this.canvas = canvas;
     this.context = context;
+    this.terrainEnabled = !!map.map.getTerrain();
     container.appendChild(canvas);
     this.motionPreference =
       typeof window.matchMedia === "function"
@@ -102,6 +105,7 @@ export class FlowAnimation {
     map.map.on("moveend", this.handleMoveEnd);
     map.map.on("resize", this.handleResize);
     map.map.on("sourcedata", this.handleSourceData);
+    map.map.on("styledata", this.handleStyleData);
     map.map.on("render", this.handleRender);
     map.map.on("remove", this.destroy);
   }
@@ -158,6 +162,7 @@ export class FlowAnimation {
     this.map.map.off("moveend", this.handleMoveEnd);
     this.map.map.off("resize", this.handleResize);
     this.map.map.off("sourcedata", this.handleSourceData);
+    this.map.map.off("styledata", this.handleStyleData);
     this.map.map.off("render", this.handleRender);
     this.map.map.off("remove", this.destroy);
     document.removeEventListener("visibilitychange", this.handleVisibility);
@@ -211,10 +216,19 @@ export class FlowAnimation {
   private handleSourceData = (event: MapSourceDataEvent) => {
     if (
       event.sourceId === "main-features" ||
-      event.sourceId === "delta-features"
+      event.sourceId === "delta-features" ||
+      event.sourceId === TERRAIN_SOURCE_ID
     ) {
       this.scheduleRefresh();
     }
+  };
+
+  private handleStyleData = () => {
+    const terrainEnabled = !!this.map.map.getTerrain();
+    if (terrainEnabled === this.terrainEnabled) return;
+    this.terrainEnabled = terrainEnabled;
+    this.projectionDirty = true;
+    this.scheduleRefresh();
   };
 
   private handleRender = () => {

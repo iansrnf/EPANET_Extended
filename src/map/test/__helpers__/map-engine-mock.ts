@@ -24,6 +24,9 @@ class MapTestEngine {
   restoreContext: () => void;
   private removed = false;
   private sources: Map<string, GeoJSONSourceRaw> = new Map();
+  private runtimeSources = new Map<string, mapboxgl.AnySourceData>();
+  private runtimeLayers = new Map<string, mapboxgl.AnyLayer>();
+  private terrain: { source: string; exaggeration?: number } | null = null;
   private features: Map<string, any[]> = new Map();
   private featureStates: Map<string, Map<string, FeatureState>> = new Map();
 
@@ -57,8 +60,8 @@ class MapTestEngine {
   }
 
   map = {
-    getSource: (name: string): GeoJSONSourceRaw | null =>
-      this.sources.get(name) || null,
+    getSource: (name: string): mapboxgl.AnySourceData | null =>
+      this.runtimeSources.get(name) || this.sources.get(name) || null,
     on: vi.fn(),
     off: vi.fn(),
     once: vi.fn(),
@@ -67,12 +70,22 @@ class MapTestEngine {
     hasImage: vi.fn().mockReturnValue(false),
     getCanvas: vi.fn().mockReturnValue({ style: { cursor: "" } }),
     setStyle: vi.fn(),
+    getTerrain: vi.fn(() => this.terrain),
+    setTerrain: vi.fn(
+      (terrain: { source: string; exaggeration?: number } | null) => {
+        this.terrain = terrain;
+      },
+    ),
     easeTo: vi.fn(),
     getStyle: vi.fn().mockReturnValue({ layers: [] }),
     removeLayer: vi.fn(),
     removeSource: vi.fn(),
-    addLayer: vi.fn(),
-    addSource: vi.fn(),
+    addLayer: vi.fn((layer: mapboxgl.AnyLayer, _beforeId?: string) => {
+      this.runtimeLayers.set(layer.id, layer);
+    }),
+    addSource: vi.fn((name: string, source: mapboxgl.AnySourceData) => {
+      this.runtimeSources.set(name, source);
+    }),
     removeFeatureState: (
       source: { source: string; id?: string },
       key?: string,
@@ -106,7 +119,7 @@ class MapTestEngine {
       return sourceStates?.get(source.id) || {};
     },
     setLayoutProperty: vi.fn(),
-    getLayer: vi.fn(),
+    getLayer: vi.fn((name: string) => this.runtimeLayers.get(name)),
     queryRenderedFeatures: vi.fn(),
     remove: vi.fn(),
     resize: vi.fn(),
@@ -131,6 +144,9 @@ class MapTestEngine {
   }
 
   setStyle = vi.fn((style: mapboxgl.Style) => {
+    this.runtimeSources.clear();
+    this.runtimeLayers.clear();
+    this.terrain = null;
     for (const [name, source] of Object.entries(style.sources)) {
       if (source.type === "geojson") this.sources.set(name, { ...source });
     }

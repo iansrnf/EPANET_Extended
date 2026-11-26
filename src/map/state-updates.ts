@@ -65,6 +65,7 @@ import { SymbologySpec } from "src/state/map-symbology";
 import type { ZoneSymbology, NodeSizeConfig } from "src/map/symbology";
 import { buildZoneColorExpression } from "src/map/layers/zones";
 import { mapPitchRequestAtom } from "src/state/map-view";
+import { updateTerrain } from "./terrain";
 
 import { useTranslate } from "src/hooks/use-translate";
 import { useTranslateUnit } from "src/hooks/use-translate-unit";
@@ -147,6 +148,7 @@ const detectChanges = (
   hasNewDeviceLocation: boolean;
   hasNewDeviceLocationViewportRequest: boolean;
   hasNewPitchRequest: boolean;
+  hasNewTerrain: boolean;
   hasNewLoggers: boolean;
   hasNewLoggerFeedback: boolean;
 } => {
@@ -217,6 +219,7 @@ const detectChanges = (
       state.deviceLocationViewportRequest !==
       prev.deviceLocationViewportRequest,
     hasNewPitchRequest: state.pitchRequest !== prev.pitchRequest,
+    hasNewTerrain: state.terrainEnabled !== prev.terrainEnabled,
   };
 };
 
@@ -441,6 +444,10 @@ export const useMapStateUpdates = (map: MapEngine | null) => {
           gridRef,
           scaleControlRef,
         });
+      }
+
+      if (changes.hasNewTerrain || hasNewStyles) {
+        updateTerrain(map, mapState.terrainEnabled);
       }
 
       if (hasNewDefaultColors && !hasNewStyles) {

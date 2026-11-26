@@ -24,35 +24,37 @@ export const Map3DControl = ({ mapReady }: { mapReady: boolean }) => {
       onPointerDown={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
     >
-      <Tooltip
-        content={translate(enabled ? "mapView.returnTo2D" : "mapView.enable3D")}
-        side="left"
-        sideOffset={6}
-        zIndex={50}
-        className="map-overlay-theme map-overlay-surface map-overlay-tooltip pointer-events-none"
-      >
-        <button
-          type="button"
-          aria-label={translate("mapView.threeDLabel")}
-          aria-pressed={enabled}
-          aria-disabled={!mapReady || busy}
-          aria-busy={busy}
-          disabled={!mapReady}
-          onClick={() => toggle({ reducedMotion })}
-          className="group flex h-[var(--map-control-target-size)] w-[var(--map-control-target-size)] items-center justify-center rounded-sm focus-visible:outline-2 focus-visible:outline-accent aria-disabled:cursor-wait aria-disabled:opacity-50"
+      <div className="mapboxgl-ctrl-group">
+        <Tooltip
+          content={translate(
+            enabled ? "mapView.returnTo2D" : "mapView.enable3D",
+          )}
+          side="left"
+          sideOffset={6}
+          zIndex={50}
+          className="map-overlay-theme map-overlay-surface map-overlay-tooltip pointer-events-none"
         >
-          <span
-            className={clsx(
-              "flex h-[var(--map-control-face-size)] w-[var(--map-control-face-size)] items-center justify-center rounded-sm border text-[10px] font-bold leading-none shadow-lg transition-colors pointer-coarse:text-xs",
-              enabled
-                ? "border-accent bg-accent text-default-inverse"
-                : "map-overlay-surface text-default group-hover:bg-base-hover group-focus-visible:bg-base-hover",
-            )}
+          <button
+            type="button"
+            aria-label={translate("mapView.threeDLabel")}
+            aria-pressed={enabled}
+            aria-disabled={!mapReady || busy}
+            aria-busy={busy}
+            disabled={!mapReady}
+            onClick={() => toggle({ reducedMotion })}
+            className="flex h-[var(--map-control-target-size)] w-[var(--map-control-target-size)] items-center justify-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent aria-disabled:cursor-wait aria-disabled:opacity-50"
           >
-            3D
-          </span>
-        </button>
-      </Tooltip>
+            <span
+              className={clsx(
+                "flex h-full w-full items-center justify-center rounded-sm text-[10px] font-bold leading-none transition-colors pointer-coarse:text-xs",
+                enabled ? "bg-accent text-default-inverse" : "text-default",
+              )}
+            >
+              3D
+            </span>
+          </button>
+        </Tooltip>
+      </div>
     </div>
   );
 };

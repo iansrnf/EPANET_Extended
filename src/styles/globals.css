@@ -141,10 +141,8 @@
 }
 
 .map-3d-control {
-  top: calc(
-    var(--map-workspace-top, 0px) + var(--map-control-target-size) + 1rem
-  );
-  right: calc(var(--map-control-target-size) + 1rem);
+  bottom: calc(var(--simulation-controls-height, 0px) + 2rem);
+  right: calc(var(--map-control-target-size) + 1rem + 2px);
 }
 
 .map-legends {
@@ -213,6 +211,21 @@
 }
 
 @media (min-width: 640px) {
+  .map-3d-control {
+    bottom: calc(
+      var(--simulation-controls-height, 0px) + 4 *
+        var(--map-control-target-size) + 3rem
+    );
+    right: 0.5rem;
+  }
+
+  .map-location-control {
+    bottom: calc(
+      var(--simulation-controls-height, 0px) + 5 *
+        var(--map-control-target-size) + 3.5rem
+    );
+  }
+
   .drawing-toolbar-controls[data-map-compact-height] {
     --map-short-navigation-top: calc(
       var(--map-workspace-top, 0px) + var(--project-toolbar-offset) +
@@ -254,7 +267,7 @@
 
   [data-map-compact-height] .map-location-control {
     top: var(--map-short-navigation-top);
-    right: calc(6 * var(--map-control-target-size) + 2.5rem);
+    right: calc(7 * var(--map-control-target-size) + 3rem);
     bottom: auto;
   }
 
@@ -266,6 +279,8 @@
 
   [data-map-compact-height] .map-3d-control {
     top: var(--map-short-navigation-top);
+    right: calc(6 * var(--map-control-target-size) + 2.5rem);
+    bottom: auto;
   }
 
   [data-map-compact-height] .map-drawing-toolbar:not([data-docked]) {

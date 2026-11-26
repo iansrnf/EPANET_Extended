@@ -13,8 +13,8 @@ vi.mock("@deck.gl/mapbox", () => ({ MapboxOverlay: class {} }));
 
 vi.mock("src/map/overlays/customer-points", () => ({
   buildCustomerPointsOverlay: () => [],
+  buildCustomerPointHoverOverlay: () => [],
   buildCustomerPointsHighlightOverlay: () => [],
-  buildCustomerPointsSelectionOverlay: () => [],
   buildConnectCustomerPointsPreviewOverlay: () => [],
   buildMovingCustomerPointOverlay: () => [],
   applyCustomerPointsStyles: () => [],

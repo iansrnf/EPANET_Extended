@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Code+Pro&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Caveat&display=swap");
 @import "tailwindcss";
 
 /* Design tokens (@theme, semantic colors, dark overrides, token utilities) now

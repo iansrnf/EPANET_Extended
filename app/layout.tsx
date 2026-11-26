@@ -9,15 +9,6 @@ export default function RootLayout({
     <html lang="en" className="dark notranslate" translate="no">
       <head>
         <link rel="prefetch" href="https://swot-checker.vercel.app/api/check" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Code+Pro&display=swap"
-          rel="stylesheet"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Caveat&display=swap"
-          rel="stylesheet"
-        />
       </head>
       <body>{children}</body>
     </html>
